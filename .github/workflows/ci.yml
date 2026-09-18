@@ -47,3 +47,36 @@ jobs:
         with:
           name: coverage-${{ matrix.python-version }}
           path: coverage.xml
+
+  can-capabilities:
+    # Records whether kernel-dependent integration tests (marker "vcan") can run on
+    # this runner. Informational only in Phase 1: it never fails the workflow.
+    name: Probe vcan and can_isotp on the runner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Load kernel modules and create vcan0
+        continue-on-error: true
+        run: |
+          set -x
+          uname -r
+          sudo modprobe vcan
+          sudo modprobe can_isotp
+          sudo ip link add dev vcan0 type vcan
+          sudo ip link set up vcan0
+          ip -details link show vcan0
+      - name: Install can-utils
+        continue-on-error: true
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq can-utils
+      - name: Probe capabilities
+        run: |
+          python scripts/probe_can_capabilities.py --format markdown | tee -a "$GITHUB_STEP_SUMMARY"
+          python scripts/probe_can_capabilities.py --format json > can-capabilities.json
+      - name: Upload probe result
+        uses: actions/upload-artifact@v4
+        with:
+          name: can-capabilities
+          path: can-capabilities.json
