@@ -4,6 +4,7 @@ Nothing here opens a socket or imports a transport implementation; the only tran
 types used are the addressing-only records in :mod:`ecu_simulator.transport.messages`.
 """
 
+from ecu_simulator.ecu.ecu import Ecu, ServiceConflictError
 from ecu_simulator.ecu.router import AddressRouter, RouteConflictError
 
-__all__ = ["AddressRouter", "RouteConflictError"]
+__all__ = ["AddressRouter", "Ecu", "RouteConflictError", "ServiceConflictError"]
