@@ -6,7 +6,6 @@ import pytest
 
 from ecu_simulator import app, cli
 from ecu_simulator.transport import DiagnosticRequest, DiagnosticResponse, InterfaceNotFoundError
-from ecu_simulator.transport.socketcan import EndpointConfig, IsoTpAddress
 
 
 def test_config_from_legacy_uses_shipped_addresses_and_plus_eight_rule():
@@ -39,29 +38,49 @@ def test_pad_byte_and_padding_are_configurable():
     assert endpoints["obd_physical"].options == app.IsoTpOptions(tx_padding=False, pad_byte=0xAA)
 
 
-def test_dispatcher_routes_by_endpoint_name_and_wraps_bytes(monkeypatch):
+def test_implicit_engine_ecu_is_derived_from_legacy_config():
+    (engine,) = app.build_ecus(app.config_from_legacy())
+    assert engine.name == app.ENGINE_ECU == "engine"
+    assert [p.name for p in engine.protocols] == ["obd", "uds"]
+    assert engine.service_ids[0x01] == "obd" and engine.service_ids[0x10] == "uds"
+
+
+def test_router_maps_every_legacy_address_to_the_engine_ecu():
+    router = app.build_router(app.config_from_legacy())
+    assert dict(router.physical_routes) == {0x7E0: "engine", 0x7E1: "engine"}
+    assert dict(router.functional_routes) == {0x7DF: ("engine",)}
+
+
+def test_router_addresses_match_the_endpoints_that_receive():
+    config = app.config_from_legacy()
+    router = app.build_router(config)
+    receiving = {e.address.rx_id: e.functional for e in app.build_endpoints(config) if e.receive}
+    routed = {a: False for a in router.physical_routes} | {a: True for a in router.functional_routes}
+    assert routed == receiving
+
+
+def test_dispatcher_answers_by_sid_on_every_engine_address(monkeypatch):
     from ecu_simulator.obd import responses
 
     monkeypatch.setattr(responses, "vehicle_speed", 0)
-    endpoints = app.build_endpoints(app.config_from_legacy())
-    dispatcher = app.LegacyDispatcher.for_endpoints(endpoints)
-    obd, _physical, uds = endpoints
-    assert dispatcher(DiagnosticRequest(b"\x01\x0d", 0x7DF, functional=True, context=obd)) == DiagnosticResponse(
-        b"\x41\x0d\x00"
-    )
-    assert dispatcher(DiagnosticRequest(b"\x10\x03", 0x7E1, context=uds)) == DiagnosticResponse(
-        b"\x50\x03\x00\x1e\x0b\xb8"
-    )
+    endpoints = {e.name: e for e in app.build_endpoints(app.config_from_legacy())}
+    dispatcher = app.build_dispatcher(app.config_from_legacy())
+    obd, physical, uds = endpoints["obd_functional"], endpoints["obd_physical"], endpoints["uds_physical"]
+    speed = DiagnosticResponse(b"\x41\x0d\x00")
+    session = DiagnosticResponse(b"\x50\x03\x00\x1e\x0b\xb8")
+    assert dispatcher(DiagnosticRequest(b"\x01\x0d", 0x7DF, functional=True, context=obd)) == speed
+    assert dispatcher(DiagnosticRequest(b"\x10\x03", 0x7E1, context=uds)) == session
+    # Phase 3: dispatch is by SID, not by the address a request arrived on.
+    assert dispatcher(DiagnosticRequest(b"\x10\x03", 0x7E0, context=physical)) == session
+    assert dispatcher(DiagnosticRequest(b"\x01\x0d", 0x7E1, context=uds)) == DiagnosticResponse(b"\x41\x0d\x01")
     assert dispatcher(DiagnosticRequest(b"\x01\x0c", 0x7DF, functional=True, context=obd)) is None
 
 
-def test_dispatcher_rejects_unknown_endpoint_kind_and_unknown_context(caplog):
-    with pytest.raises(ValueError, match="no legacy handler"):
-        app.LegacyDispatcher.for_endpoints([EndpointConfig("doip", IsoTpAddress(0x1, 0x2))])
-    dispatcher = app.LegacyDispatcher({})
-    with caplog.at_level(logging.ERROR):
-        assert dispatcher(DiagnosticRequest(b"\x3e\x00", 0x7E1, context=object())) is None
-    assert "no handler" in caplog.text
+def test_dispatcher_drops_requests_on_unrouted_addresses(caplog):
+    dispatcher = app.build_dispatcher(app.config_from_legacy())
+    with caplog.at_level(logging.WARNING):
+        assert dispatcher(DiagnosticRequest(b"\x3e\x00", 0x7E5, context=object())) is None
+    assert "no ECU" in caplog.text
 
 
 class RecordingTransport:

@@ -1,12 +1,13 @@
-"""Simulator runtime: build the transport from configuration, run it, shut it down cleanly.
+"""Simulator runtime: build transport, router and ECUs from configuration, run, shut down.
 
-One asyncio event loop owns every socket. Diagnostic handling stays synchronous: the
-transport calls :class:`LegacyDispatcher`, which maps an endpoint name to the legacy
-OBD or UDS service layer and wraps the bytes it returns. No thread is started.
+One asyncio event loop owns every socket. Diagnostic handling stays synchronous:
+``transport -> AddressRouter -> Ecu -> DiagnosticProtocol``. The transport calls the
+:class:`Dispatcher`, the router maps the request's address to an ECU, the ECU dispatches
+by service identifier to a registered protocol. No thread is started.
 
-This is the Phase 2 shape. The dispatcher is a placeholder for the Phase 3 router:
-it routes by endpoint name, not by ECU, and knows nothing about addresses beyond what
-the request record carries.
+Until the YAML profile configuration lands (Phase 4), one implicit ECU named ``engine``
+is derived from the legacy ``ecu_config.json``: it owns the OBD functional and physical
+addresses and the UDS physical address, and registers the legacy OBD and UDS protocols.
 """
 
 from __future__ import annotations
@@ -14,18 +15,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ecu_simulator import ecu_config
-from ecu_simulator.obd import handler as obd_handler
-from ecu_simulator.transport import DiagnosticRequest, DiagnosticResponse, TransportError
+from ecu_simulator.ecu import AddressRouter, Dispatcher, Ecu
+from ecu_simulator.protocols.obd import LegacyObdProtocol
+from ecu_simulator.protocols.uds import LegacyUdsProtocol
+from ecu_simulator.transport import TransportError
 from ecu_simulator.transport.socketcan import EndpointConfig, IsoTpAddress, IsoTpOptions, IsoTpTransport
-from ecu_simulator.uds import handler as uds_handler
 
 logger = logging.getLogger(__name__)
 
 RESPONSE_ID_OFFSET = 0x8  # legacy rule: response id = request id + 8 (ISO 15765-4 style)
+
+ENGINE_ECU = "engine"  # the single implicit ECU until profiles make the ECU list explicit
 
 OBD_FUNCTIONAL = "obd_functional"
 OBD_PHYSICAL = "obd_physical"
@@ -88,41 +92,25 @@ def build_endpoints(config: RuntimeConfig) -> list[EndpointConfig]:
     ]
 
 
-Handler = Callable[[bytes], bytes | None]
+def build_ecus(config: RuntimeConfig) -> list[Ecu]:
+    """The implicit ``engine`` ECU with the legacy OBD and UDS protocols registered."""
+    engine = Ecu(ENGINE_ECU)
+    engine.register(LegacyObdProtocol())
+    engine.register(LegacyUdsProtocol())
+    return [engine]
 
 
-class LegacyDispatcher:
-    """Route requests to the legacy OBD or UDS service layer by endpoint name."""
+def build_router(config: RuntimeConfig) -> AddressRouter:
+    """Every legacy address routes to the engine ECU; the OBD broadcast id is functional."""
+    router = AddressRouter()
+    router.add_functional(config.obd_functional_id, ENGINE_ECU)
+    router.add_physical(config.obd_physical_id, ENGINE_ECU)
+    router.add_physical(config.uds_request_id, ENGINE_ECU)
+    return router
 
-    def __init__(self, handlers: dict[str, Handler] | None = None) -> None:
-        self._handlers = handlers if handlers is not None else {}
 
-    @classmethod
-    def for_endpoints(cls, endpoints: Iterable[EndpointConfig]) -> LegacyDispatcher:
-        handlers: dict[str, Handler] = {}
-        for endpoint in endpoints:
-            if endpoint.name.startswith("obd_"):
-                handlers[endpoint.name] = obd_handler.handle
-            elif endpoint.name.startswith("uds_"):
-                handlers[endpoint.name] = uds_handler.handle
-            else:
-                raise ValueError(f"no legacy handler for endpoint {endpoint.name!r}")
-        return cls(handlers)
-
-    def __call__(self, request: DiagnosticRequest) -> DiagnosticResponse | None:
-        endpoint = request.context
-        name = getattr(endpoint, "name", None)
-        handler = self._handlers.get(name) if name is not None else None
-        if handler is None:
-            logger.error("no handler for request on endpoint %r", name)
-            return None
-        logger.info("%s rx 0x%X request 0x%s", name, request.target_address, request.payload.hex())
-        response = handler(request.payload)
-        if response is None:
-            logger.info("%s: no response", name)
-            return None
-        logger.info("%s response 0x%s", name, response.hex())
-        return DiagnosticResponse(response)
+def build_dispatcher(config: RuntimeConfig) -> Dispatcher:
+    return Dispatcher(build_router(config), build_ecus(config))
 
 
 async def run(
@@ -138,7 +126,7 @@ async def run(
     """
     endpoints = build_endpoints(config)
     transport = transport_factory(config.interface, endpoints)
-    dispatcher = LegacyDispatcher.for_endpoints(endpoints)
+    dispatcher = build_dispatcher(config)
     stop = stop or asyncio.Event()
     loop = asyncio.get_running_loop()
     installed: list[signal.Signals] = []
