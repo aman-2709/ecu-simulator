@@ -24,7 +24,7 @@ def test_build_endpoints_reproduces_legacy_sockets():
     assert functional.functional is True and functional.reply_via == "obd_physical"
     assert (functional.address.rx_id, functional.address.tx_id) == (0x7DF, 0x7E8)
     assert (physical.address.rx_id, physical.address.tx_id) == (0x7E0, 0x7E8)
-    assert physical.receive is False  # DEV-01: bound for transmission and flow control only, never read
+    assert physical.receive is True  # DEV-01 corrected: physically addressed requests are served
     assert (uds.address.rx_id, uds.address.tx_id) == (0x7E1, 0x7E9) and uds.receive is True
     assert all(e.options.tx_padding is False for e in endpoints)
 

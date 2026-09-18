@@ -71,17 +71,23 @@ def test_uds_session_control_and_negative_response(uds):
     assert uds.recv() == bytes.fromhex("7f1913")
 
 
-@pytest.mark.xfail(strict=True, reason="DEV-01: physically addressed OBD requests are not served yet")
 def test_physical_request_is_answered(physical):
+    # DEV-01 corrected: a request on 0x7E0 is answered on 0x7E8.
     physical.send(b"\x01\x2f")
     assert physical.recv() == b"\x41\x2f\x7f"
 
 
-def test_physical_request_is_dropped_today(physical):
-    # Characterization of DEV-01 on the wire: nothing comes back on 0x7E8.
-    physical.send(b"\x01\x2f")
-    with pytest.raises(TimeoutError):
-        physical.recv()
+def test_physical_vin_is_multi_frame(physical):
+    physical.send(b"\x09\x02")
+    assert physical.recv() == VIN_RESPONSE
+
+
+def test_functional_and_physical_sockets_coexist(functional, physical):
+    for _ in range(3):
+        functional.send(b"\x01\x51")
+        assert functional.recv() == b"\x41\x51\x01"
+        physical.send(b"\x01\x51")
+        assert physical.recv() == b"\x41\x51\x01"
 
 
 @pytest.mark.xfail(strict=True, reason="DEV-08: OBD responses are not padded to DLC 8 yet")

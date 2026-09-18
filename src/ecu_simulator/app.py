@@ -59,13 +59,13 @@ def config_from_legacy(interface: str | None = None) -> RuntimeConfig:
 
 
 def build_endpoints(config: RuntimeConfig) -> list[EndpointConfig]:
-    """ISO-TP sockets to open, reproducing the legacy runtime.
+    """ISO-TP sockets to open.
 
-    The legacy runtime bound the physical OBD socket (rx 0x7E0 / tx 0x7E8) and used it
-    to transmit every OBD response, so that the tester's flow control on 0x7E0 reaches
-    the transmitting state machine, but it never read requests from it (DEV-01). Hence
-    ``receive=False`` on the physical endpoint and ``reply_via`` on the functional one.
-    No TX padding, as before (DEV-08).
+    OBD: a functional endpoint (rx 0x7DF) and a physical endpoint (rx 0x7E0), both
+    answering on 0x7E8. Every OBD response is transmitted through the physical socket so
+    that the tester's flow control on 0x7E0 reaches the transmitting state machine
+    (ISO 15765-4); physically addressed requests are served as well (DEV-01 corrected).
+    UDS: one physical endpoint. No TX padding yet (DEV-08).
     """
     options = IsoTpOptions()
     return [
@@ -76,12 +76,7 @@ def build_endpoints(config: RuntimeConfig) -> list[EndpointConfig]:
             options=options,
             reply_via=OBD_PHYSICAL,
         ),
-        EndpointConfig(
-            OBD_PHYSICAL,
-            IsoTpAddress(config.obd_physical_id, config.obd_response_id),
-            options=options,
-            receive=False,
-        ),
+        EndpointConfig(OBD_PHYSICAL, IsoTpAddress(config.obd_physical_id, config.obd_response_id), options=options),
         EndpointConfig(UDS_PHYSICAL, IsoTpAddress(config.uds_request_id, config.uds_response_id), options=options),
     ]
 
