@@ -82,31 +82,37 @@ def test_physical_vin_is_multi_frame(physical):
     assert physical.recv() == VIN_RESPONSE
 
 
-def test_functional_and_physical_sockets_coexist(functional, physical):
+def test_functional_and_physical_sockets_coexist(functional):
+    # One tester channel, alternating ATSH 7DF / ATSH 7E0 style requests with distinct answers.
     for _ in range(3):
         functional.send(b"\x01\x51")
         assert functional.recv() == b"\x41\x51\x01"
-        physical.send(b"\x01\x51")
-        assert physical.recv() == b"\x41\x51\x01"
+        functional.send_physical(b"\x01\x2f")
+        assert functional.recv() == b"\x41\x2f\x7f"
 
 
-@pytest.mark.xfail(strict=True, reason="DEV-08: OBD responses are not padded to DLC 8 yet")
 def test_obd_response_frames_are_padded_to_dlc_8(vcan, functional):
+    # DEV-08 corrected: every OBD response frame on the wire is DLC 8, padded with 0x00.
     capture = RawCapture(vcan)
     functional.send(b"\x01\x2f")
     assert functional.recv() == b"\x41\x2f\x7f"
+    functional.send_physical(b"\x09\x02")
+    assert functional.recv() == VIN_RESPONSE
     frames = capture.collect(0.2)
     capture.close()
     response_frames = [f for f in frames if f.can_id == 0x7E8]
-    assert response_frames, "no response frame captured"
+    assert len(response_frames) >= 4, f"expected SF + FF + 2 CF from 0x7E8, saw {[f.data.hex() for f in response_frames]}"
     assert {f.dlc for f in response_frames} == {8}, [f.dlc for f in response_frames]
+    single = response_frames[0]
+    assert single.data == b"\x03\x41\x2f\x7f\x00\x00\x00\x00"
 
 
-def test_obd_response_frames_are_short_today(vcan, functional):
+def test_uds_response_frames_are_not_padded(vcan, uds):
+    # Unchanged in Phase 2: UDS padding waits for per-ECU configuration.
     capture = RawCapture(vcan)
-    functional.send(b"\x01\x2f")
-    assert functional.recv() == b"\x41\x2f\x7f"
+    uds.send(b"\x11\x01")
+    assert uds.recv() == b"\x51\x01"
     frames = capture.collect(0.2)
     capture.close()
-    (response,) = [f for f in frames if f.can_id == 0x7E8]
-    assert response.dlc == 4 and response.data == b"\x03\x41\x2f\x7f"
+    (response,) = [f for f in frames if f.can_id == 0x7E9]
+    assert response.dlc == 3 and response.data == b"\x02\x51\x01"

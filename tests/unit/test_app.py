@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import logging
 
 import pytest
@@ -26,7 +27,16 @@ def test_build_endpoints_reproduces_legacy_sockets():
     assert (physical.address.rx_id, physical.address.tx_id) == (0x7E0, 0x7E8)
     assert physical.receive is True  # DEV-01 corrected: physically addressed requests are served
     assert (uds.address.rx_id, uds.address.tx_id) == (0x7E1, 0x7E9) and uds.receive is True
-    assert all(e.options.tx_padding is False for e in endpoints)
+    # DEV-08 corrected for OBD: padded to DLC 8 with the configured pad byte; UDS unchanged.
+    assert functional.options.tx_padding is True and physical.options.tx_padding is True
+    assert functional.options.pad_byte == 0x00
+    assert uds.options.tx_padding is False
+
+
+def test_pad_byte_and_padding_are_configurable():
+    custom = dataclasses.replace(app.config_from_legacy(), pad_byte=0xAA, obd_tx_padding=False)
+    endpoints = {e.name: e for e in app.build_endpoints(custom)}
+    assert endpoints["obd_physical"].options == app.IsoTpOptions(tx_padding=False, pad_byte=0xAA)
 
 
 def test_dispatcher_routes_by_endpoint_name_and_wraps_bytes(monkeypatch):

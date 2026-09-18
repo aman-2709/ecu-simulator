@@ -91,7 +91,12 @@ class FunctionalTester:
         self.rx = open_tester_socket(interface, rx_id=response_id, tx_id=physical_id, timeout=timeout)
 
     def send(self, payload: bytes) -> None:
+        """Functionally addressed request (like ELM327 with ATSH 7DF)."""
         self.tx.send(payload)
+
+    def send_physical(self, payload: bytes) -> None:
+        """Physically addressed request on the same channel (like ELM327 with ATSH 7E0)."""
+        self.rx.send(payload)
 
     def recv(self) -> bytes:
         return self.rx.recv()

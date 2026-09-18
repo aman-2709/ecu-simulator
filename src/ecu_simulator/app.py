@@ -42,6 +42,11 @@ class RuntimeConfig:
     obd_response_id: int
     uds_request_id: int
     uds_response_id: int
+    # ISO 15765-4 requires 8-byte frames on Classical CAN for OBD; the pad byte is a
+    # convention (0x00 here, 0x55 and 0xAA are also common). UDS padding is left as it
+    # was (off) until per-ECU configuration exists.
+    obd_tx_padding: bool = True
+    pad_byte: int = 0x00
 
 
 def config_from_legacy(interface: str | None = None) -> RuntimeConfig:
@@ -65,19 +70,21 @@ def build_endpoints(config: RuntimeConfig) -> list[EndpointConfig]:
     answering on 0x7E8. Every OBD response is transmitted through the physical socket so
     that the tester's flow control on 0x7E0 reaches the transmitting state machine
     (ISO 15765-4); physically addressed requests are served as well (DEV-01 corrected).
-    UDS: one physical endpoint. No TX padding yet (DEV-08).
+    OBD frames are padded to DLC 8 (DEV-08 corrected). UDS: one physical endpoint,
+    unpadded as before.
     """
-    options = IsoTpOptions()
+    obd_options = IsoTpOptions(tx_padding=config.obd_tx_padding, pad_byte=config.pad_byte)
+    uds_options = IsoTpOptions()
     return [
         EndpointConfig(
             OBD_FUNCTIONAL,
             IsoTpAddress(config.obd_functional_id, config.obd_response_id),
             functional=True,
-            options=options,
+            options=obd_options,
             reply_via=OBD_PHYSICAL,
         ),
-        EndpointConfig(OBD_PHYSICAL, IsoTpAddress(config.obd_physical_id, config.obd_response_id), options=options),
-        EndpointConfig(UDS_PHYSICAL, IsoTpAddress(config.uds_request_id, config.uds_response_id), options=options),
+        EndpointConfig(OBD_PHYSICAL, IsoTpAddress(config.obd_physical_id, config.obd_response_id), options=obd_options),
+        EndpointConfig(UDS_PHYSICAL, IsoTpAddress(config.uds_request_id, config.uds_response_id), options=uds_options),
     ]
 
 
