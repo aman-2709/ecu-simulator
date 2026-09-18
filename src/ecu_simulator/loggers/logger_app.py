@@ -1,9 +1,10 @@
 import logging
 from logging import handlers
 
-from ecu_simulator.loggers.logger_utils import MAX_LOG_FILE_SIZE
 
 LOGGER_NAME = "ecu_simulator"
+
+MAX_LOG_FILE_SIZE = 1500000  # bytes per rotated ecu_simulator.log file
 
 DATE_FORMAT = "%Y-%m-%dT%H:%M:%S"
 

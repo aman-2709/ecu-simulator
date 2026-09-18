@@ -23,13 +23,10 @@ classifiers = [
     "Topic :: Software Development :: Testing",
     "Topic :: System :: Hardware",
 ]
-# Runtime dependencies of the legacy implementation. can-isotp 2.x keeps the
-# isotp.socket().bind(interface, isotp.Address(...)) API the code uses; the
-# Phase 2 spike decides whether it stays. python-can 4.x renamed the SocketCAN
-# backend from "socketcan_native" to "socketcan".
+# can-isotp 2.x drives the kernel CAN_ISOTP socket (docs/decisions/0001-isotp-binding.md).
+# It is the only runtime dependency; raw CAN capture is left to candump.
 dependencies = [
     "can-isotp>=2.0,<3",
-    "python-can>=4.3,<5",
 ]
 
 [project.optional-dependencies]
@@ -77,7 +74,6 @@ select = ["E", "F", "W", "I", "B", "UP"]
 # Legacy modules are frozen until the phase that rewrites them; only import paths were
 # touched by the package move. Remove each entry when its module is replaced.
 "src/ecu_simulator/ecu_config.py" = ["UP015"]
-"src/ecu_simulator/loggers/logger_utils.py" = ["E501"]
 "src/ecu_simulator/obd/services.py" = ["E501"]
 "src/ecu_simulator/uds/services.py" = ["E501"]
 
