@@ -3,13 +3,12 @@
 Phase 2 routed by endpoint name: a UDS SID arriving on an OBD address, or an OBD SID on
 the UDS address, was dropped. Since Phase 3 every address of the implicit ``engine`` ECU
 routes to that one ECU, which dispatches by SID, so each registered service is served on
-each of the ECU's addresses. DEV-06 (unsupported SID on a physical address answered with
-NRC 0x11) keeps its own strict xfail until its own commit.
+each of the ECU's addresses, and a SID no protocol serves is answered with NRC 0x11 on a
+physical address and ignored on the functional one (DEV-06 corrected).
 """
 
 import pytest
 
-from tests.characterization.conftest import xfail_deviation
 from tests.integration.conftest import FunctionalTester, Simulator, open_tester_socket
 
 SESSION_RESPONSE = bytes.fromhex("5001001e0bb8")
@@ -67,14 +66,8 @@ def test_obd_sid_on_uds_address_is_answered(uds_physical):
 # --- SIDs no protocol serves (DEV-06) --------------------------------------------------------
 
 
-def test_unsupported_sid_on_uds_address_gets_no_response_today(uds_physical):
-    uds_physical.send(b"\x22\xf1\x90")
-    with pytest.raises(TimeoutError):
-        uds_physical.recv()
-
-
-@xfail_deviation("DEV-06", "unsupported SID should return NRC 0x11 serviceNotSupported")
 def test_unsupported_sid_on_uds_address_gets_nrc_0x11(uds_physical):
+    # DEV-06 corrected.
     uds_physical.send(b"\x22\xf1\x90")
     assert uds_physical.recv() == b"\x7f\x22\x11"
 

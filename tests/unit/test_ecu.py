@@ -7,7 +7,6 @@ import pytest
 from ecu_simulator.ecu import Ecu, ServiceConflictError
 from ecu_simulator.protocols.base import ServiceRequest
 from ecu_simulator.transport import DiagnosticRequest, DiagnosticResponse
-from tests.characterization.conftest import xfail_deviation
 
 
 class FakeProtocol:
@@ -106,16 +105,9 @@ def test_unregistered_sid_on_functional_address_gets_no_response():
     assert ecu.handle(functional(b"\x22\xf1\x90")) is None
 
 
-def test_unregistered_sid_on_physical_address_gets_no_response_today():
-    # DEV-06: pinned until the fix commit; see test_unregistered_sid_on_physical_address_corrected.
-    ecu = Ecu("engine")
-    ecu.register(FakeProtocol("obd", {0x01}))
-    assert ecu.handle(physical(b"\x22\xf1\x90")) is None
-
-
-@xfail_deviation("DEV-06", "unsupported SID should return NRC 0x11 serviceNotSupported")
 @pytest.mark.parametrize("payload, expected", [(b"\x22\xf1\x90", b"\x7f\x22\x11"), (b"\x27\x01", b"\x7f\x27\x11")])
-def test_unregistered_sid_on_physical_address_corrected(payload, expected):
+def test_unregistered_sid_on_physical_address_gets_nrc_0x11(payload, expected):
+    # DEV-06 corrected: serviceNotSupported for physically addressed requests only.
     ecu = Ecu("engine")
     ecu.register(FakeProtocol("obd", {0x01}))
     assert ecu.handle(physical(payload)) == DiagnosticResponse(expected)

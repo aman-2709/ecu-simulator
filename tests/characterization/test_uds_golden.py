@@ -6,12 +6,21 @@ the corrected behavior for a known deviation listed in docs/known-deviations.md.
 """
 import pytest
 
+from ecu_simulator import app
+from ecu_simulator.transport import DiagnosticRequest
 from ecu_simulator.uds import services
 from tests.characterization.conftest import xfail_deviation
 
 
 def uds(hex_request):
     return services.process_service_request(bytes.fromhex(hex_request))
+
+
+def engine_uds(hex_request):
+    """The same request as the wire sees it: physically addressed to the engine ECU's UDS id."""
+    dispatcher = app.build_dispatcher(app.config_from_legacy())
+    response = dispatcher(DiagnosticRequest(bytes.fromhex(hex_request), 0x7E1))
+    return response.payload if response is not None else None
 
 
 # --- 0x10 DiagnosticSessionControl ---------------------------------------------------------
@@ -93,14 +102,16 @@ def test_0x19_02_with_empty_dtc_list_returns_header_only(monkeypatch):
 # --- Unsupported services and malformed input ------------------------------------------------
 
 @pytest.mark.parametrize("request_hex", ["22f190", "3e00", "3e80", "14ffffff", "2701", "2e", "3101", "7f", "50", "ff"])
-def test_unsupported_sids_get_no_response_today(request_hex):
+def test_legacy_uds_module_ignores_unsupported_sids(request_hex):
+    # The legacy layer is unchanged; since DEV-06 these SIDs never reach it (see below).
     assert uds(request_hex) is None
 
 
-@xfail_deviation("DEV-06", "unsupported SID should return NRC 0x11 serviceNotSupported")
 @pytest.mark.parametrize("request_hex, expected", [("22f190", "7f2211"), ("2701", "7f2711"), ("3101", "7f3111")])
-def test_unsupported_sids_corrected_nrc(request_hex, expected):
-    assert uds(request_hex).hex() == expected
+def test_unsupported_sids_on_the_physical_address_get_nrc_0x11(request_hex, expected):
+    # DEV-06 corrected in Phase 3 by the ECU's unsupported-service policy, not by the
+    # legacy module: a SID no registered protocol claims gets 7F <SID> 11 on a physical address.
+    assert engine_uds(request_hex).hex() == expected
 
 
 @xfail_deviation("DEV-23", "0x3E TesterPresent is not implemented")

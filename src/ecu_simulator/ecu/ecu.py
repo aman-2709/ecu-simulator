@@ -11,7 +11,12 @@ import logging
 from types import MappingProxyType
 
 from ecu_simulator.logging import log_context
-from ecu_simulator.protocols.base import DiagnosticProtocol, ServiceRequest
+from ecu_simulator.protocols.base import (
+    NRC_SERVICE_NOT_SUPPORTED,
+    DiagnosticProtocol,
+    ServiceRequest,
+    negative_response,
+)
 from ecu_simulator.protocols.uds.providers import DidRegistry, DtcRegistry
 from ecu_simulator.transport.messages import DiagnosticRequest, DiagnosticResponse
 
@@ -104,6 +109,13 @@ class Ecu:
         return DiagnosticResponse(payload)
 
     def _unsupported_service(self, request: ServiceRequest) -> bytes | None:
-        """No protocol claims the SID. Today: silence (DEV-06)."""
+        """No protocol claims the SID: NRC 0x11 serviceNotSupported on a physical address.
+
+        Functionally addressed requests get no negative response (DEV-06 corrected; the
+        functional carve-out follows the public ISO 14229-1 convention and is not a
+        compliance claim).
+        """
         logger.warning("%s: SID 0x%02X is not served by any protocol", self.name, request.sid)
-        return None
+        if request.functional:
+            return None
+        return negative_response(request.sid, NRC_SERVICE_NOT_SUPPORTED)
