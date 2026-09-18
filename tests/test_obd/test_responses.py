@@ -1,5 +1,6 @@
 import unittest
-from obd import responses
+
+from ecu_simulator.obd import responses
 
 BIG_ENDIAN = "big"
 

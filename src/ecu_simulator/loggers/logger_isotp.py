@@ -1,8 +1,14 @@
 import isotp
-from loggers import logger_utils
-from loggers.logger_utils import CAN_INTERFACE
-from addresses import UDS_ECU_ADDRESS, UDS_TARGET_ADDRESS
-from addresses import OBD_BROADCAST_ADDRESS, OBD_ECU_ADDRESS, OBD_TARGET_ADDRESS
+
+from ecu_simulator.addresses import (
+    OBD_BROADCAST_ADDRESS,
+    OBD_ECU_ADDRESS,
+    OBD_TARGET_ADDRESS,
+    UDS_ECU_ADDRESS,
+    UDS_TARGET_ADDRESS,
+)
+from ecu_simulator.loggers import logger_utils
+from ecu_simulator.loggers.logger_utils import CAN_INTERFACE
 
 LOG_TYPE = "isotp"
 

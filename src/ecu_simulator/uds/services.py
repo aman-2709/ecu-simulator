@@ -1,6 +1,5 @@
-import dtc_utils
-import ecu_config as ecu_config
-from loggers.logger_app import logger
+from ecu_simulator import dtc_utils, ecu_config
+from ecu_simulator.loggers.logger_app import logger
 
 DIAGNOSTIC_SESSION_CONTROL_SID = 0x10
 

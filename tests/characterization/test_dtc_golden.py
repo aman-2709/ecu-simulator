@@ -6,7 +6,7 @@ strings are recorded as DEV-16 and DEV-13 in docs/known-deviations.md.
 """
 import pytest
 
-import dtc_utils
+from ecu_simulator import dtc_utils
 
 
 @pytest.mark.parametrize(

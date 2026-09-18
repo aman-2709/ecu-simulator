@@ -1,6 +1,7 @@
-import os
 import datetime
-import ecu_config
+import os
+
+from ecu_simulator import ecu_config
 
 CAN_INTERFACE = ecu_config.get_can_interface()
 

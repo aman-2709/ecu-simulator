@@ -1,8 +1,9 @@
 import isotp
-import ecu_config
-from uds import services
-from addresses import UDS_ECU_ADDRESS, UDS_TARGET_ADDRESS
-from loggers.logger_app import logger
+
+from ecu_simulator import ecu_config
+from ecu_simulator.addresses import UDS_ECU_ADDRESS, UDS_TARGET_ADDRESS
+from ecu_simulator.loggers.logger_app import logger
+from ecu_simulator.uds import services
 
 CAN_INTERFACE = ecu_config.get_can_interface()
 

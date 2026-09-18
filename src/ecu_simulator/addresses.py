@@ -1,4 +1,4 @@
-import ecu_config
+from ecu_simulator import ecu_config
 
 OBD_BROADCAST_ADDRESS = ecu_config.get_obd_broadcast_address()
 

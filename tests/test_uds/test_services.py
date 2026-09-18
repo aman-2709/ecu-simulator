@@ -1,8 +1,7 @@
 import unittest
-from uds import services
-import ecu_config as ecu_config
-import dtc_utils
 
+from ecu_simulator import dtc_utils, ecu_config
+from ecu_simulator.uds import services
 
 DIAGNOSTIC_SESSION_CONTROL_SID = 0x10
 

@@ -1,5 +1,6 @@
 import unittest
-from obd import services
+
+from ecu_simulator.obd import services
 
 INVALID_SID = 0xB
 

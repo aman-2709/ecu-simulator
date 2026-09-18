@@ -6,7 +6,7 @@ the corrected behavior for a known deviation listed in docs/known-deviations.md.
 """
 import pytest
 
-from uds import services
+from ecu_simulator.uds import services
 from tests.characterization.conftest import xfail_deviation
 
 

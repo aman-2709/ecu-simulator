@@ -1,8 +1,9 @@
 import isotp
-import ecu_config
-from obd import services
-from addresses import OBD_BROADCAST_ADDRESS, OBD_ECU_ADDRESS, OBD_TARGET_ADDRESS
-from loggers.logger_app import logger
+
+from ecu_simulator import ecu_config
+from ecu_simulator.addresses import OBD_BROADCAST_ADDRESS, OBD_ECU_ADDRESS, OBD_TARGET_ADDRESS
+from ecu_simulator.loggers.logger_app import logger
+from ecu_simulator.obd import services
 
 CAN_INTERFACE = ecu_config.get_can_interface()
 

@@ -1,17 +1,40 @@
+import argparse
 import os
 import sys
+from importlib.metadata import PackageNotFoundError, version
 from threading import Thread
-import ecu_config
-from obd import listener as obd_listener
-from uds import listener as uds_listener
-from loggers import logger_app, logger_can, logger_isotp
+
+from ecu_simulator import ecu_config
+from ecu_simulator.loggers import logger_app, logger_can, logger_isotp
+from ecu_simulator.obd import listener as obd_listener
+from ecu_simulator.uds import listener as uds_listener
 
 SETUP_VCAN_FILE = "setup_vcan.sh"
 
 SETUP_CAN_FILE = "setup_can.sh"
 
 
-def main():
+def package_version():
+    try:
+        return version("ecu-simulator")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def parse_args(argv=None):
+    # Phase 1 exposes only --help and --version. All behavior is still driven by
+    # ecu_config.json; runtime options arrive with the new CLI in Phase 2.
+    parser = argparse.ArgumentParser(
+        prog="ecu-simulator",
+        description="Vehicle diagnostic ECU simulator (OBD-II and UDS over ISO-TP on SocketCAN). "
+        "Configuration is read from ecu_config.json inside the package.",
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {package_version()}")
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    parse_args(argv)
     logger_app.configure()
     logger_app.logger.info("Starting ECU-Simulator")
     set_up_can_interface()

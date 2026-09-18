@@ -9,7 +9,7 @@ import random
 
 import pytest
 
-from obd import responses, services
+from ecu_simulator.obd import responses, services
 from tests.characterization.conftest import xfail_deviation
 
 VIN_BYTES = b"TESTVIN0123456789"

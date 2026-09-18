@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ecu-simulator"
+version = "0.1.0.dev0"
+description = "Vehicle diagnostic ECU simulator for SocketCAN testbenches (OBD-II and UDS over ISO-TP)"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+authors = [{ name = "Luis Alberto Benthin Sanguino" }]
+maintainers = [{ name = "Amandeep Kirpalsingh" }]
+keywords = ["automotive", "can", "socketcan", "iso-tp", "obd-ii", "uds", "iso14229", "simulator"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+    "Topic :: System :: Hardware",
+]
+# Runtime dependencies of the legacy implementation. can-isotp 2.x keeps the
+# isotp.socket().bind(interface, isotp.Address(...)) API the code uses; the
+# Phase 2 spike decides whether it stays. python-can 4.x renamed the SocketCAN
+# backend from "socketcan_native" to "socketcan".
+dependencies = [
+    "can-isotp>=2.0,<3",
+    "python-can>=4.3,<5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[project.scripts]
+ecu-simulator = "ecu_simulator.main:main"
+
+[project.urls]
+Homepage = "https://github.com/lbenthins/ecu-simulator"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ecu_simulator"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "docs", "scripts", "setup_can.sh", "setup_vcan.sh", "README.md", "LICENSE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+xfail_strict = true
+markers = [
+    "vcan: needs a vcan0 SocketCAN interface and the can_isotp kernel module; skipped when unavailable",
+    "hardware: needs physical CAN hardware and an ELM327 adapter; opt-in only, never run in CI",
+]

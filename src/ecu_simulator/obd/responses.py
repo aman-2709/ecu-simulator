@@ -1,7 +1,6 @@
 import random
-import ecu_config
-import dtc_utils
 
+from ecu_simulator import dtc_utils, ecu_config
 
 DEFAULT_ECU_NAME = "ECU_SIMULATOR"
 

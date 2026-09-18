@@ -6,8 +6,7 @@ fixed +8 offset, and that a malformed address terminates the process (DEV-14).
 """
 import pytest
 
-import addresses
-import ecu_config
+from ecu_simulator import addresses, ecu_config
 
 
 def test_shipped_config_values():

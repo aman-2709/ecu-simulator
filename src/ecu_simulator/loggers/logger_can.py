@@ -1,6 +1,7 @@
 import can
-from loggers import logger_utils
-from addresses import ECU_ADDRESSES, TARGET_ADDRESSES
+
+from ecu_simulator.addresses import ECU_ADDRESSES, TARGET_ADDRESSES
+from ecu_simulator.loggers import logger_utils
 
 LOG_TYPE = "can"
 

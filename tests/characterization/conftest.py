@@ -6,7 +6,7 @@ DEV-xx identifiers referenced in xfail reasons.
 """
 import pytest
 
-from obd import responses
+from ecu_simulator.obd import responses
 
 
 @pytest.fixture

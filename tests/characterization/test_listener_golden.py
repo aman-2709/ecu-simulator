@@ -78,14 +78,14 @@ def _load(monkeypatch, name):
 
 @pytest.fixture
 def obd_listener(fake_isotp, monkeypatch, reset_speed):
-    yield _load(monkeypatch, "obd.listener")
-    monkeypatch.delitem(sys.modules, "obd.listener", raising=False)
+    yield _load(monkeypatch, "ecu_simulator.obd.listener")
+    monkeypatch.delitem(sys.modules, "ecu_simulator.obd.listener", raising=False)
 
 
 @pytest.fixture
 def uds_listener(fake_isotp, monkeypatch):
-    yield _load(monkeypatch, "uds.listener")
-    monkeypatch.delitem(sys.modules, "uds.listener", raising=False)
+    yield _load(monkeypatch, "ecu_simulator.uds.listener")
+    monkeypatch.delitem(sys.modules, "ecu_simulator.uds.listener", raising=False)
 
 
 # --- OBD listener --------------------------------------------------------------------------
