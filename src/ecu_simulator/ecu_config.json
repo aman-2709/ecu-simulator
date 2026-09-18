@@ -16,7 +16,10 @@
     "description": "Fuel type (e.g., 1=Gasoline). See https://en.wikipedia.org/wiki/OBD-II_PIDs#Fuel_Type_Coding"
   },
   "dtcs": {
-    "value": ["B1477", "P0001"],
+    "value": [
+      "B1477",
+      "P0001"
+    ],
     "description": "List of Diagnostic Trouble Codes. The list can contain Max 255 DTCs"
   },
   "obd_broadcast_address": {
@@ -33,18 +36,6 @@
   },
   "can_interface": {
     "value": "vcan0",
-    "description": "CAN Interface used by the ECU simulator"
-  },
-  "can_interface_type": {
-    "value": "virtual",
-    "description": "Two types are possible: virtual and hardware. If any other value is provided, the ecu-simulator does not set up the CAN interface and ISO-TP linux kernel module"
-  },
-  "can_bitrate": {
-    "value": "500000",
-    "description": "CAN bitrate (refer to the specification of your CAN hardware). Only applicable for can_interface_type: hardware"
-  },
-  "isotp_ko_file_path": {
-    "value": "/usr/lib/modules/5.3.0-kali2-amd64/kernel/net/can/can-isotp.ko",
-    "description": "File path of the ISO-TP Kernel module (see https://github.com/hartkopp/can-isotp)"
+    "description": "Default SocketCAN interface (overridden by --interface). Create it first with scripts/setup_vcan.sh or scripts/setup_can.sh"
   }
 }

@@ -16,8 +16,6 @@ def test_shipped_config_values():
     assert ecu_config.get_fuel_type() == 1
     assert ecu_config.get_dtcs() == ["B1477", "P0001"]
     assert ecu_config.get_can_interface() == "vcan0"
-    assert ecu_config.get_can_interface_type() == "virtual"
-    assert ecu_config.get_can_bitrate() == "500000"  # a string, not an int
 
 
 def test_shipped_addresses_parse_from_hex_strings():
@@ -44,8 +42,3 @@ def test_malformed_address_terminates_the_process(capsys):
         ecu_config.create_address("not-hex")
     assert excinfo.value.code == 1
     assert "not-hex" in capsys.readouterr().out
-
-
-def test_isotp_kernel_module_path_is_still_read_from_config():
-    # DEV-22: obsolete out-of-tree module path, removed in Phase 2.
-    assert ecu_config.get_isotp_ko_file_path().endswith("can-isotp.ko")
