@@ -106,6 +106,18 @@ jobs:
           python scripts/probe_can_capabilities.py --format markdown | tee -a "$GITHUB_STEP_SUMMARY"
           python scripts/probe_can_capabilities.py --format json > can-capabilities.json
           echo "::notice title=can-capabilities::$(jq -c . can-capabilities.json)"
+      - name: vcan integration tests (informational; skip with reason without CAN_ISOTP)
+        # tests/integration needs a kernel with CONFIG_CAN_ISOTP. The Azure runner kernel
+        # does not build it, so the suite skips with an explicit reason; the result is
+        # published as an annotation. Not a required check yet.
+        continue-on-error: true
+        run: |
+          python -m pip install -q -e ".[dev]"
+          set -o pipefail
+          pytest tests/integration -m vcan -q -rs -p no:cacheprovider | tee integration.log || true
+          summary=$(grep -E 'passed|skipped|failed|error' integration.log | tail -1 | sed -E 's/^=+ *//; s/ *=+$//')
+          reason=$(grep -m1 -oE 'SKIPPED \[[0-9]+\] [^:]+:[0-9]+: .*' integration.log | sed -E 's/^SKIPPED \[[0-9]+\] [^:]+:[0-9]+: //')
+          echo "::notice title=vcan integration tests::${summary:-no summary}${reason:+ | skip reason: $reason}"
       - name: Kernel ISO-TP experiments (spike, only when CAN_ISOTP binds)
         # Runs the Phase 2A experiments on the runner kernel when the probe shows
         # a working CAN_ISOTP socket, so the decision record has a second kernel.
