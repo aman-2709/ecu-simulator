@@ -60,3 +60,32 @@ markers = [
     "vcan: needs a vcan0 SocketCAN interface and the can_isotp kernel module; skipped when unavailable",
     "hardware: needs physical CAN hardware and an ELM327 adapter; opt-in only, never run in CI",
 ]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Characterization tests are frozen at their Phase 0 form; long parametrize lines are deliberate.
+"tests/**" = ["E501"]
+# Legacy modules are frozen until the phase that rewrites them; only import paths were
+# touched by the package move. Remove each entry when its module is replaced.
+"src/ecu_simulator/main.py" = ["E501"]
+"src/ecu_simulator/ecu_config.py" = ["UP015"]
+"src/ecu_simulator/loggers/logger_utils.py" = ["E501"]
+"src/ecu_simulator/obd/services.py" = ["E501"]
+"src/ecu_simulator/uds/services.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src"]
+ignore_missing_imports = true
+warn_unused_configs = true
+# Lenient baseline for the untyped legacy modules. Tightened per phase as
+# modules are rewritten with type hints: new modules should pass
+# `disallow_untyped_defs` and `check_untyped_defs`.
+check_untyped_defs = false
