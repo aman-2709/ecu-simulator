@@ -5,7 +5,9 @@ from ecu_simulator.loggers import logger_utils
 
 LOG_TYPE = "can"
 
-BUS_TYPE = "socketcan_native"
+# python-can 4.x renamed the SocketCAN backend from "socketcan_native" to "socketcan"
+# and the keyword from `bustype` to `interface`.
+BUS_TYPE = "socketcan"
 
 CAN_MASK = 0x7FF
 
@@ -20,7 +22,7 @@ def start():
 
 
 def create_can_bus():
-    return can.interface.Bus(channel=logger_utils.CAN_INTERFACE, bustype=BUS_TYPE, can_filters=get_filters())
+    return can.interface.Bus(channel=logger_utils.CAN_INTERFACE, interface=BUS_TYPE, can_filters=get_filters())
 
 
 def get_filters():
