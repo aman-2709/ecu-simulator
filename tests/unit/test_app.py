@@ -19,10 +19,13 @@ def test_config_from_legacy_uses_shipped_addresses_and_plus_eight_rule():
 def test_build_endpoints_reproduces_legacy_sockets():
     endpoints = app.build_endpoints(app.config_from_legacy())
     by_name = {e.name: e for e in endpoints}
-    assert set(by_name) == {"obd_functional", "uds_physical"}
-    assert by_name["obd_functional"].functional is True
-    assert (by_name["obd_functional"].address.rx_id, by_name["obd_functional"].address.tx_id) == (0x7DF, 0x7E8)
-    assert (by_name["uds_physical"].address.rx_id, by_name["uds_physical"].address.tx_id) == (0x7E1, 0x7E9)
+    assert set(by_name) == {"obd_functional", "obd_physical", "uds_physical"}
+    functional, physical, uds = by_name["obd_functional"], by_name["obd_physical"], by_name["uds_physical"]
+    assert functional.functional is True and functional.reply_via == "obd_physical"
+    assert (functional.address.rx_id, functional.address.tx_id) == (0x7DF, 0x7E8)
+    assert (physical.address.rx_id, physical.address.tx_id) == (0x7E0, 0x7E8)
+    assert physical.receive is False  # DEV-01: bound for transmission and flow control only, never read
+    assert (uds.address.rx_id, uds.address.tx_id) == (0x7E1, 0x7E9) and uds.receive is True
     assert all(e.options.tx_padding is False for e in endpoints)
 
 
@@ -32,7 +35,7 @@ def test_dispatcher_routes_by_endpoint_name_and_wraps_bytes(monkeypatch):
     monkeypatch.setattr(responses, "vehicle_speed", 0)
     endpoints = app.build_endpoints(app.config_from_legacy())
     dispatcher = app.LegacyDispatcher.for_endpoints(endpoints)
-    obd, uds = endpoints
+    obd, _physical, uds = endpoints
     assert dispatcher(DiagnosticRequest(b"\x01\x0d", 0x7DF, functional=True, context=obd)) == DiagnosticResponse(
         b"\x41\x0d\x00"
     )
@@ -84,7 +87,7 @@ async def test_run_starts_waits_for_stop_and_stops_transport():
     await app.run(config, stop=stop, install_signal_handlers=False, transport_factory=RecordingTransport)
     (transport,) = RecordingTransport.instances
     assert transport.events == ["start", "stop"]
-    assert transport.interface == "vcan0" and len(transport.endpoints) == 2
+    assert transport.interface == "vcan0" and len(transport.endpoints) == 3
 
 
 @pytest.mark.asyncio
