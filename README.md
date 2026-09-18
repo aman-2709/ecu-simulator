@@ -52,9 +52,11 @@ I created this project to learn more about the OBD and UDS protocols. I did my b
 
 ```
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e .            # runtime
-pip install -e ".[dev]"     # plus pytest, ruff, mypy
+python -m pip install -e .            # runtime
+python -m pip install -e ".[dev]"     # plus pytest, ruff, mypy
 ```
+
+With `uv`: `uv venv --python 3.12 .venv && uv pip install -e ".[dev]"`. A venv created by `uv` has no `pip` of its own, so a bare `pip` there resolves to whatever is on your PATH (possibly another Python); use `uv pip`, or bootstrap it with `python -m ensurepip --upgrade`.
 
 ## Usage
 
