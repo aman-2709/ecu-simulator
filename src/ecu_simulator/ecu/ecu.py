@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from types import MappingProxyType
 
+from ecu_simulator.logging import log_context
 from ecu_simulator.protocols.base import DiagnosticProtocol, ServiceRequest
 from ecu_simulator.protocols.uds.providers import DidRegistry, DtcRegistry
 from ecu_simulator.transport.messages import DiagnosticRequest, DiagnosticResponse
@@ -75,6 +76,10 @@ class Ecu:
 
     def handle(self, request: DiagnosticRequest) -> DiagnosticResponse | None:
         """Answer one request; ``None`` means "send nothing"."""
+        with log_context(self.name):
+            return self._handle(request)
+
+    def _handle(self, request: DiagnosticRequest) -> DiagnosticResponse | None:
         if not request.payload:
             logger.warning("%s: empty request on 0x%X ignored", self.name, request.target_address)
             return None
@@ -90,7 +95,8 @@ class Ecu:
         if protocol is None:
             payload = self._unsupported_service(service)
         else:
-            payload = protocol.handle(service)
+            with log_context(self.name, protocol.name):
+                payload = protocol.handle(service)
         if payload is None:
             logger.info("%s: no response", self.name)
             return None
