@@ -170,8 +170,14 @@ TX padding enabled. DoD: no thread remains, `transport/` imports no domain modul
 
 `AddressRouter`, `Ecu` with SID registration and conflict detection, `DidProvider` and
 `DtcProvider` registries, legacy OBD and UDS wrapped as registered protocols, per-ECU
-logger context. Wire changes: NRC 0x11 for unsupported UDS SIDs; `suppressPosRsp` bit
-honoured. DoD: `Ecu` never receives a socket; the router never inspects payloads. Risk L.
+logger context. Wire change: NRC 0x11 for unsupported SIDs on a physical address.
+DoD: `Ecu` never receives a socket; the router never inspects payloads. Risk L.
+
+Decided 2026-09-18: one implicit ECU named `engine` is derived from the legacy JSON so
+Phase 4 can make the ECU list explicit without an architecture change; every registered
+SID is served on each of the ECU's addresses. The `suppressPosRspMsgIndicationBit` fix
+(DEV-07) is protocol semantics, not routing, and moves to the UDS behavior work
+(Phase 6/7 with 0x3E, or Phase 11 with session handling).
 
 ### Phase 4 — Vehicle and ECU state model, configuration (V1.0)
 
@@ -332,8 +338,7 @@ Phase 3
 23. `feat(uds): DidProvider and DtcProvider registries`
 24. `refactor(obd,uds): wrap legacy services as registered protocols`
 25. `fix(uds): return NRC 0x11 for unsupported services`
-26. `fix(uds): honour suppressPosRspMsgIndicationBit`
-27. `feat(logging): per-ECU logger context`
+26. `feat(logging): per-ECU logger context` (DEV-07 `suppressPosRspMsgIndicationBit` deferred to Phase 6/7 or 11)
 
 Phase 4
 28. `feat(vehicle): composed VehicleState with signal paths`

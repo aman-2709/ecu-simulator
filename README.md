@@ -82,14 +82,17 @@ The simulator no longer configures interfaces, loads kernel modules or needs roo
 
 ### Addressing on the wire
 
-* OBD: functional requests on `0x7DF` and physical requests on `0x7E0` are both served; responses go out on `0x7E8`, padded to 8-byte frames (pad byte `0x00`). The tester's flow control for multi-frame responses is expected on `0x7E0`, as ISO 15765-4 testers and ELM327 adapters send it.
-* UDS: physical requests on `0x7E1`, responses on `0x7E9`, unpadded.
+All three addresses belong to one simulated ECU, `engine`, which dispatches by service id: OBD modes `0x01`..`0x0A` and UDS services `0x10`, `0x11`, `0x19` are served on whichever of its addresses a request arrives on.
 
-Addresses still come from `ecu_config.json` inside the package (`obd_broadcast_address`, `obd_ecu_address`, `uds_ecu_address`; response id = request id + 8) until the YAML profile configuration lands.
+* Functional requests on `0x7DF` and physical requests on `0x7E0` are answered on `0x7E8`, padded to 8-byte frames (pad byte `0x00`). The tester's flow control for multi-frame responses is expected on `0x7E0`, as ISO 15765-4 testers and ELM327 adapters send it.
+* Physical requests on `0x7E1` are answered on `0x7E9`, unpadded.
+* A service id no protocol implements gets `7F <SID> 11` (serviceNotSupported) on a physical address and no response on the functional one. Modes `0x01`..`0x0A` that the legacy OBD layer does not implement still get no response (DEV-11).
+
+Addresses still come from `ecu_config.json` inside the package (`obd_broadcast_address`, `obd_ecu_address`, `uds_ecu_address`; response id = request id + 8) until the YAML profile configuration lands, which will also make the ECU list explicit.
 
 ## Logging
 
-Application events go to the console and to a rotating `ecu_simulator.log` in the working directory (1.5 MB per file, 5 files), at the level given by `--log-level`. For raw CAN or ISO-TP captures use can-utils instead of the removed file loggers:
+Application events go to the console and to a rotating `ecu_simulator.log` in the working directory (1.5 MB per file, 5 files), at the level given by `--log-level`. Every line names the ECU and protocol that produced it, `[engine/uds]`, or `[-/-]` outside request handling. For raw CAN or ISO-TP captures use can-utils instead of the removed file loggers:
 
 ```
 candump -l vcan0                 # raw frames to a candump log file
