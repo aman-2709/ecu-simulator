@@ -1,7 +1,6 @@
 import logging
 from logging import handlers
 
-
 LOGGER_NAME = "ecu_simulator"
 
 MAX_LOG_FILE_SIZE = 1500000  # bytes per rotated ecu_simulator.log file
