@@ -147,10 +147,12 @@ Runner: `ubuntu-latest`, Ubuntu 24.04.5, kernel `6.17.0-1022-azure`, kernel pack
   (version 6.17.0-1022.22).
 - After installing it: `modprobe vcan` succeeds, `vcan0` is created and brought up,
   `CAN_RAW` bind succeeds, can-utils are installable.
-- `modprobe can_isotp` still fails: the module is not present in any package for the
-  Azure kernel, and `CAN_ISOTP` socket creation still returns `EPROTONOSUPPORT`. The CI
-  probe records the on-disk CAN module list and the kernel's `CONFIG_CAN_ISOTP` value
-  to make this explicit.
+- `modprobe can_isotp` still fails and `CAN_ISOTP` socket creation still returns
+  `EPROTONOSUPPORT`. The runner's `/boot/config-6.17.0-1022-azure` contains
+  `# CONFIG_CAN_ISOTP is not set` alongside `CONFIG_CAN=m`, `CONFIG_CAN_RAW=m` and
+  `CONFIG_CAN_VCAN=m`, and the on-disk module list after installing modules-extra has
+  `can.ko`, `can-raw.ko`, `can-bcm.ko`, `can-gw.ko`, `can-j1939.ko` and `vcan.ko` but no
+  `can-isotp.ko`. ISO-TP is not built for the Azure kernel; no package can supply it.
 
 Consequences for CI: the informational probe job keeps the modules-extra install because
 it makes `vcan` and raw CAN usable on the runner. ISO-TP integration tests cannot run on
