@@ -113,6 +113,18 @@ async def test_run_propagates_startup_failure_after_cleanup():
     assert RecordingTransport.instances[0].events == ["start", "stop"]
 
 
+@pytest.mark.asyncio
+async def test_failed_start_does_not_claim_shutdown_complete(caplog):
+    RecordingTransport.instances.clear()
+
+    def factory(interface, endpoints):
+        return RecordingTransport(interface, endpoints, fail=InterfaceNotFoundError("nope"))
+
+    with caplog.at_level(logging.INFO), pytest.raises(InterfaceNotFoundError):
+        await app.run(app.config_from_legacy(), install_signal_handlers=False, transport_factory=factory)
+    assert "shutdown complete" not in caplog.text
+
+
 def test_cli_parser_defaults_and_options():
     args = cli.build_parser().parse_args([])
     assert args.interface is None and args.log_level == "INFO"

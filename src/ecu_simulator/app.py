@@ -142,8 +142,10 @@ async def run(
     stop = stop or asyncio.Event()
     loop = asyncio.get_running_loop()
     installed: list[signal.Signals] = []
+    started = False
     try:
         await transport.start(dispatcher)
+        started = True
         if install_signal_handlers:
             for sig in (signal.SIGINT, signal.SIGTERM):
                 loop.add_signal_handler(sig, _request_stop, stop, sig)
@@ -154,7 +156,8 @@ async def run(
         for sig in installed:
             loop.remove_signal_handler(sig)
         await transport.stop()
-        logger.info("shutdown complete")
+        if started:
+            logger.info("shutdown complete")
 
 
 def _request_stop(stop: asyncio.Event, sig: signal.Signals) -> None:
