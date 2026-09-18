@@ -1,5 +1,6 @@
 """UDS (ISO 14229-1) protocol package."""
 
+from ecu_simulator.protocols.uds.legacy import LEGACY_UDS_SIDS, LegacyUdsProtocol
 from ecu_simulator.protocols.uds.providers import (
     DidProvider,
     DidRegistry,
@@ -9,4 +10,13 @@ from ecu_simulator.protocols.uds.providers import (
     ProviderConflictError,
 )
 
-__all__ = ["DidProvider", "DidRegistry", "DtcProvider", "DtcRecord", "DtcRegistry", "ProviderConflictError"]
+__all__ = [
+    "LEGACY_UDS_SIDS",
+    "DidProvider",
+    "DidRegistry",
+    "DtcProvider",
+    "DtcRecord",
+    "DtcRegistry",
+    "LegacyUdsProtocol",
+    "ProviderConflictError",
+]
