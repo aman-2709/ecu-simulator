@@ -78,10 +78,13 @@ jobs:
           echo "::notice title=apt-cache policy ${extra}::${pol:-no output}"
           if out=$(sudo apt-get install -y -qq "$extra" 2>&1); then
             echo "::notice title=install ${extra}::ok ($(dpkg-query -W -f='${Version}' "$extra" 2>/dev/null))"
-            ls "/lib/modules/$(uname -r)/kernel/net/can/" "/lib/modules/$(uname -r)/kernel/drivers/net/can/" 2>&1 | tr '\n' ' '; echo
           else
             echo "::warning title=install ${extra}::failed - $(echo "$out" | tail -3 | tr '\n' ' ')"
           fi
+          mods=$(find "/lib/modules/$(uname -r)/kernel" -path '*can*' -name '*.ko*' -printf '%f ' 2>/dev/null)
+          echo "::notice title=CAN modules on disk::${mods:-none}"
+          cfg=$(grep -E '^CONFIG_CAN(_ISOTP|_RAW|_VCAN|)=|^# CONFIG_CAN_ISOTP' "/boot/config-$(uname -r)" 2>/dev/null | tr '\n' ' ')
+          echo "::notice title=kernel CAN config::${cfg:-no /boot/config file}"
       - name: Load kernel modules and create vcan0
         # Each command is attempted independently and its outcome published as an
         # annotation so the result is visible through the public API. Never fails the job.
