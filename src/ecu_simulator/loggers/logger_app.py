@@ -14,23 +14,28 @@ LOG_FILE_NAME = LOGGER_NAME + ".log"
 logger = logging.getLogger(LOGGER_NAME)
 
 
-def configure():
+def configure(level=logging.DEBUG):
+    """Attach the rotating file handler and the console handler once, at ``level``."""
+    logger.setLevel(level)
+    if logger.handlers:
+        for handler in logger.handlers:
+            handler.setLevel(level)
+        return
     formatter = logging.Formatter(LOGGER_FORMAT, datefmt=DATE_FORMAT)
-    __add_file_handler(formatter)
-    __add_console_handler(formatter)
-    logger.setLevel(logging.DEBUG)
+    __add_file_handler(formatter, level)
+    __add_console_handler(formatter, level)
 
 
-def __add_file_handler(formatter):
+def __add_file_handler(formatter, level):
     fh = handlers.RotatingFileHandler(LOG_FILE_NAME, maxBytes=MAX_LOG_FILE_SIZE, backupCount=5)
-    fh.setLevel(logging.DEBUG)
+    fh.setLevel(level)
     fh.setFormatter(formatter)
     logger.addHandler(fh)
 
 
-def __add_console_handler(formatter):
+def __add_console_handler(formatter, level):
     ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
+    ch.setLevel(level)
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 

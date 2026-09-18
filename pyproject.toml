@@ -42,7 +42,7 @@ dev = [
 ]
 
 [project.scripts]
-ecu-simulator = "ecu_simulator.main:main"
+ecu-simulator = "ecu_simulator.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/lbenthins/ecu-simulator"
@@ -76,7 +76,6 @@ select = ["E", "F", "W", "I", "B", "UP"]
 "tests/**" = ["E501"]
 # Legacy modules are frozen until the phase that rewrites them; only import paths were
 # touched by the package move. Remove each entry when its module is replaced.
-"src/ecu_simulator/main.py" = ["E501"]
 "src/ecu_simulator/ecu_config.py" = ["UP015"]
 "src/ecu_simulator/loggers/logger_utils.py" = ["E501"]
 "src/ecu_simulator/obd/services.py" = ["E501"]
