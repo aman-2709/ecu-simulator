@@ -65,6 +65,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Investigate kernel package and modules-extra availability
+        # GitHub-hosted Ubuntu runners boot an Azure kernel whose CAN modules are not
+        # installed by default. Record the kernel package, whether a matching
+        # modules-extra package exists in the archive, and whether it installs.
+        run: |
+          kpkg=$(dpkg -S "/boot/vmlinuz-$(uname -r)" 2>/dev/null | cut -d: -f1 || true)
+          extra="linux-modules-extra-$(uname -r)"
+          echo "::notice title=kernel package::${kpkg:-unknown}; candidate modules package: ${extra}"
+          sudo apt-get update -qq >/dev/null 2>&1 || true
+          pol=$(apt-cache policy "$extra" 2>&1 | tr -s ' ' | tr '\n' ' ')
+          echo "::notice title=apt-cache policy ${extra}::${pol:-no output}"
+          if out=$(sudo apt-get install -y -qq "$extra" 2>&1); then
+            echo "::notice title=install ${extra}::ok ($(dpkg-query -W -f='${Version}' "$extra" 2>/dev/null))"
+            ls "/lib/modules/$(uname -r)/kernel/net/can/" "/lib/modules/$(uname -r)/kernel/drivers/net/can/" 2>&1 | tr '\n' ' '; echo
+          else
+            echo "::warning title=install ${extra}::failed - $(echo "$out" | tail -3 | tr '\n' ' ')"
+          fi
       - name: Load kernel modules and create vcan0
         # Each command is attempted independently and its outcome published as an
         # annotation so the result is visible through the public API. Never fails the job.
@@ -86,6 +103,19 @@ jobs:
           python scripts/probe_can_capabilities.py --format markdown | tee -a "$GITHUB_STEP_SUMMARY"
           python scripts/probe_can_capabilities.py --format json > can-capabilities.json
           echo "::notice title=can-capabilities::$(jq -c . can-capabilities.json)"
+      - name: Kernel ISO-TP experiments (spike, only when CAN_ISOTP binds)
+        # Runs the Phase 2A experiments on the runner kernel when the probe shows
+        # a working CAN_ISOTP socket, so the decision record has a second kernel.
+        run: |
+          if python scripts/probe_can_capabilities.py --require can_isotp_socket_bind >/dev/null 2>&1; then
+            python -m pip install -q "can-isotp>=2,<3"
+            sudo ip link set vcan0 mtu 72 || true
+            python scripts/isotp_kernel_experiments.py --interface vcan0 --summary --json isotp-experiments.json | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "::notice title=isotp experiments::$(grep '^SUMMARY' <(python scripts/isotp_kernel_experiments.py --interface vcan0 --summary 2>/dev/null) | tail -1)"
+            echo "::notice title=isotp experiment results::$(jq -c '[.results[] | {n:.name, ok:.ok, d:.detail[:80]}]' isotp-experiments.json | head -c 3800)"
+          else
+            echo "::notice title=isotp experiments::skipped, CAN_ISOTP socket cannot bind on this runner"
+          fi
       - name: Upload probe result
         uses: actions/upload-artifact@v4
         with:
