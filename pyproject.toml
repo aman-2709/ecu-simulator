@@ -88,7 +88,17 @@ warn_unused_configs = true
 check_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = ["ecu_simulator.transport", "ecu_simulator.transport.*", "ecu_simulator.app", "ecu_simulator.cli"]
+module = [
+    "ecu_simulator.transport",
+    "ecu_simulator.transport.*",
+    "ecu_simulator.ecu",
+    "ecu_simulator.ecu.*",
+    "ecu_simulator.protocols",
+    "ecu_simulator.protocols.*",
+    "ecu_simulator.logging",
+    "ecu_simulator.app",
+    "ecu_simulator.cli",
+]
 disallow_untyped_defs = true
 check_untyped_defs = true
 warn_return_any = true
