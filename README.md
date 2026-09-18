@@ -1,6 +1,15 @@
-# :warning: This project is not maintained anymore :(  It is kept here only for reference. Thanks for the feedbacks :)
-
 # ECU Simulator
+
+## Project status
+
+This repository is a maintained fork of [lbenthins/ecu-simulator](https://github.com/lbenthins/ecu-simulator). The original upstream project is archived and no longer maintained.
+
+The fork is being actively modernized into a testbench-grade vehicle diagnostic simulator (modern Linux SocketCAN and in-tree ISO-TP, Python 3.12+, packaging, CI, deterministic vehicle state and scenarios, multi-ECU support). Development currently happens on the `modernization` branch.
+
+The project is **not yet production-ready**. Known protocol deviations of the current implementation still exist and are tracked; the sections below describe the legacy behavior until the corresponding phase replaces it.
+
+* Roadmap, architecture and release plan: [docs/modernization-plan.md](docs/modernization-plan.md)
+* Known protocol and implementation deviations: [docs/known-deviations.md](docs/known-deviations.md)
 
 This Python tool simulates some vehicle diagnostic services. It can be used to test OBD-II dongles or tester tools that support the UDS (ISO 14229) and ISO-TP (ISO 15765-2) protocols. 
 
