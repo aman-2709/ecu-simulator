@@ -11,6 +11,7 @@ import logging
 from types import MappingProxyType
 
 from ecu_simulator.protocols.base import DiagnosticProtocol, ServiceRequest
+from ecu_simulator.protocols.uds.providers import DidRegistry, DtcRegistry
 from ecu_simulator.transport.messages import DiagnosticRequest, DiagnosticResponse
 
 logger = logging.getLogger(__name__)
@@ -21,10 +22,14 @@ class ServiceConflictError(ValueError):
 
 
 class Ecu:
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, *, dids: DidRegistry | None = None, dtcs: DtcRegistry | None = None) -> None:
         if not isinstance(name, str) or not name:
             raise ValueError(f"ECU name must be a non-empty string, got {name!r}")
         self.name = name
+        # Extension points for UDS data services (plan rule 6); protocols that need them
+        # receive them at construction.
+        self.dids = dids if dids is not None else DidRegistry()
+        self.dtcs = dtcs if dtcs is not None else DtcRegistry()
         self._protocols: dict[str, DiagnosticProtocol] = {}
         self._by_sid: dict[int, DiagnosticProtocol] = {}
 
