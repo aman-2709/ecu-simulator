@@ -44,7 +44,12 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logger_app.configure(getattr(logging, args.log_level))
     config = app.config_from_legacy(args.interface)
-    return app.main(config)
+    try:
+        return app.main(config)
+    except KeyboardInterrupt:
+        # Ctrl-C before the runtime installed its signal handlers (during startup).
+        logging.getLogger("ecu_simulator").info("interrupted during startup")
+        return 130
 
 
 if __name__ == "__main__":
