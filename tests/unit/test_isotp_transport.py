@@ -53,6 +53,38 @@ def test_shared_functional_rx_with_distinct_tx_is_allowed():
     assert [e.name for e in transport.endpoints] == ["obd_functional", "tcm_functional"]
 
 
+def test_reply_via_must_name_an_existing_endpoint():
+    bad = EndpointConfig("obd_functional", IsoTpAddress(0x7DF, 0x7E8), functional=True, reply_via="nope")
+    with pytest.raises(AddressError, match="unknown endpoint 'nope'"):
+        IsoTpTransport("vcan0", [bad, PHYSICAL])
+
+
+@pytest.mark.asyncio
+async def test_reply_via_sends_the_response_on_the_designated_socket():
+    functional = EndpointConfig("obd_functional", IsoTpAddress(0x7DF, 0x7E8), functional=True, reply_via="obd_physical")
+    transport = IsoTpTransport("vcan0", [functional, PHYSICAL], socket_factory=factory(), check_environment=False)
+    await transport.start(lambda request: DiagnosticResponse(b"\x41\x00\x08\x08\x00\x01"))
+    fake_by_rx(0x7DF).feed.send(b"\x01\x00")
+    await settle()
+    await transport.stop()
+    assert fake_by_rx(0x7DF).sent == []
+    assert fake_by_rx(0x7E0).sent == [b"\x41\x00\x08\x08\x00\x01"]
+
+
+@pytest.mark.asyncio
+async def test_receive_false_opens_the_socket_but_never_delivers_requests():
+    tx_only = EndpointConfig("obd_physical", IsoTpAddress(0x7E0, 0x7E8), receive=False)
+    seen = []
+    transport = IsoTpTransport("vcan0", [tx_only, UDS], socket_factory=factory(), check_environment=False)
+    await transport.start(lambda request: seen.append(request))
+    fake_by_rx(0x7E0).feed.send(b"\x01\x0d")
+    fake_by_rx(0x7E1).feed.send(b"\x3e\x00")
+    await settle()
+    await transport.stop()
+    assert [r.target_address for r in seen] == [0x7E1]
+    assert all(f.closed for f in FakeIsotpSocket.instances)
+
+
 # --- lifecycle ---------------------------------------------------------------------------------
 
 

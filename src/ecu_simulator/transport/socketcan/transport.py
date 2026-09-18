@@ -32,12 +32,27 @@ RequestHandler = Callable[[DiagnosticRequest], DiagnosticResponse | None]
 
 @dataclass(frozen=True, slots=True)
 class EndpointConfig:
-    """One ISO-TP socket to open: an opaque name, its addresses, and its options."""
+    """One ISO-TP socket to open: an opaque name, its addresses, and its options.
+
+    ``reply_via`` names the endpoint whose socket transmits the responses to requests
+    received here. Under ISO 15765-4 a functionally addressed request is answered on the
+    ECU's physical response id and the tester sends flow control on the ECU's physical
+    request id, so a functional endpoint (rx 0x7DF / tx 0x7E8) replies through the
+    physical endpoint (rx 0x7E0 / tx 0x7E8), whose kernel state machine expects that
+    flow control. ``None`` means "reply on this socket".
+
+    ``receive=False`` opens the socket without registering it for reading: its kernel
+    state machine still transmits and handles flow control, but requests arriving on
+    its rx id are never delivered. It exists only to reproduce the legacy runtime
+    (DEV-01) until that deviation is corrected.
+    """
 
     name: str
     address: IsoTpAddress
     functional: bool = False
     options: IsoTpOptions = field(default_factory=IsoTpOptions)
+    reply_via: str | None = None
+    receive: bool = True
 
 
 @dataclass(slots=True)
@@ -69,8 +84,12 @@ class IsoTpTransport:
             # The kernel accepts identical (rx, tx) pairs on several sockets; the simulator must not.
             dupes = sorted({f"rx 0x{rx:X} / tx 0x{tx:X}" for (_, rx, tx) in pairs if pairs.count((_, rx, tx)) > 1})
             raise AddressError(f"duplicate ISO-TP address pairs: {dupes}")
+        for endpoint in endpoints:
+            if endpoint.reply_via is not None and endpoint.reply_via not in names:
+                raise AddressError(f"endpoint {endpoint.name!r} replies via unknown endpoint {endpoint.reply_via!r}")
         self.interface = interface
         self._configs = list(endpoints)
+        self._by_name: dict[str, _Endpoint] = {}
         self._factory = socket_factory
         self._check_environment = check_environment
         self._endpoints: list[_Endpoint] = []
@@ -105,16 +124,22 @@ class IsoTpTransport:
                 endpoint.socket.close()
             raise
         self._endpoints = opened
+        self._by_name = {endpoint.config.name: endpoint for endpoint in opened}
         self._handler = handler
         self._loop = loop
         for endpoint in self._endpoints:
+            config = endpoint.config
+            if not config.receive:
+                logger.info("opened %s %s (%s) for transmission only", self.interface, config.address, config.name)
+                continue
             loop.add_reader(endpoint.socket.fileno(), self._on_readable, endpoint)
             logger.info(
-                "listening on %s %s (%s%s)",
+                "listening on %s %s (%s%s%s)",
                 self.interface,
-                endpoint.config.address,
-                endpoint.config.name,
-                ", functional" if endpoint.config.functional else "",
+                config.address,
+                config.name,
+                ", functional" if config.functional else "",
+                f", replies via {config.reply_via}" if config.reply_via else "",
             )
 
     async def stop(self) -> None:
@@ -129,6 +154,7 @@ class IsoTpTransport:
                 loop.remove_writer(fd)
             endpoint.socket.close()
         self._endpoints = []
+        self._by_name = {}
         self._handler = None
         logger.info("transport on %s stopped", self.interface)
 
@@ -161,7 +187,8 @@ class IsoTpTransport:
             return
         if response.delay:
             raise NotImplementedError("DiagnosticResponse.delay is reserved for fault injection")
-        self._send(endpoint, response.payload)
+        via = self._by_name[config.reply_via] if config.reply_via is not None else endpoint
+        self._send(via, response.payload)
 
     def _send(self, endpoint: _Endpoint, payload: bytes) -> None:
         if not endpoint.pending:
