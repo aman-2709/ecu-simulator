@@ -19,6 +19,7 @@ import socket
 import struct
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -48,11 +49,34 @@ def _isotp_skip_reason() -> str | None:
     return None
 
 
+def _foreign_responder_present(interface: str) -> bool:
+    """True if something already answers OBD functional requests on the interface.
+
+    Two simulators bound to the same ids both answer every request, which makes
+    every payload assertion read a stale reply. Detect it up front.
+    """
+    probe = FunctionalTester(interface, 0x7DF, 0x7E8, 0x7E0, timeout=0.3)
+    try:
+        probe.send(b"\x01\x00")
+        try:
+            probe.recv()
+            return True
+        except (TimeoutError, OSError):
+            return False
+    finally:
+        probe.close()
+
+
 @pytest.fixture(scope="session")
 def vcan() -> str:
     reason = _isotp_skip_reason()
     if reason:
         pytest.skip(reason)
+    if _foreign_responder_present(INTERFACE):
+        pytest.fail(
+            f"another OBD responder is already active on {INTERFACE!r} (a running ecu-simulator?). "
+            "Stop it, or run the suite in a private namespace: scripts/run_integration_tests.sh"
+        )
     return INTERFACE
 
 
@@ -141,47 +165,61 @@ class RawCapture:
 
 
 class Simulator:
+    """The simulator as a subprocess, with its console log captured line by line."""
+
+    READY_MARKER = "ecu-simulator ready on"
+
     def __init__(self, interface: str, workdir: str, log_level: str = "INFO") -> None:
         self.interface = interface
         self.proc = subprocess.Popen(
             [sys.executable, "-m", "ecu_simulator", "--interface", interface, "--log-level", log_level],
             cwd=workdir,
-            stdout=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             text=True,
         )
+        self._lines: list[str] = []
+        self._ready = threading.Event()
+        self._reader = threading.Thread(target=self._pump_stderr, daemon=True)
+        self._reader.start()
+
+    def _pump_stderr(self) -> None:
+        assert self.proc.stderr is not None
+        for line in self.proc.stderr:
+            self._lines.append(line)
+            if self.READY_MARKER in line:
+                self._ready.set()
+
+    @property
+    def log(self) -> str:
+        return "".join(self._lines)
 
     def wait_ready(self, timeout: float = READY_TIMEOUT) -> None:
-        """Poll a functional request until the simulator answers."""
+        """Wait for the process's own "ready" log line (not for a wire reply, which any
+        other responder on the bus could produce before this process even started)."""
         deadline = time.monotonic() + timeout
-        probe = FunctionalTester(self.interface, 0x7DF, 0x7E8, 0x7E0, timeout=0.2)
-        try:
-            while time.monotonic() < deadline:
-                if self.proc.poll() is not None:
-                    raise RuntimeError(f"simulator exited early with {self.proc.returncode}: {self.proc.stderr.read()}")
-                try:
-                    probe.send(b"\x01\x00")
-                    if probe.recv():
-                        return
-                except (TimeoutError, OSError):
-                    pass
-                time.sleep(0.05)
-        finally:
-            probe.close()
+        while time.monotonic() < deadline:
+            if self._ready.wait(0.05):
+                return
+            if self.proc.poll() is not None:
+                self._reader.join(1)
+                raise RuntimeError(f"simulator exited early with {self.proc.returncode}:\n{self.log}")
         self.terminate()
-        raise RuntimeError("simulator did not become ready")
+        raise RuntimeError(f"simulator did not become ready:\n{self.log}")
 
     def signal(self, sig: int) -> None:
         self.proc.send_signal(sig)
 
     def wait(self, timeout: float) -> tuple[int, str]:
-        _, err = self.proc.communicate(timeout=timeout)
-        return self.proc.returncode, err
+        code = self.proc.wait(timeout=timeout)
+        self._reader.join(timeout)
+        return code, self.log
 
     def terminate(self) -> None:
         if self.proc.poll() is None:
             self.proc.kill()
-            self.proc.communicate(timeout=5)
+            self.proc.wait(timeout=5)
+        self._reader.join(1)
 
 
 @pytest.fixture(scope="module")
