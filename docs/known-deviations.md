@@ -34,10 +34,10 @@ the corrections below constitute a standards-compliance claim. Confidence levels
 | DEV-16 | UDS DTC records use a fixed third byte 0x01 and fixed status 0x2F; 0x19 sub-functions 0x01 and 0x0A unsupported | `dtc_utils.py:9-11,22-28` | Status derived from DTC state | Medium | 6, 11 | no | Open |
 | DEV-17 | 0x10 session parameter record `00 1E 0B B8` (P2 = 30 ms, P2* = 30 s) and session changes have no effect | `uds/services.py:9,54-61` | Configurable, realistic defaults; session state | Medium | 11 | no | Open |
 | DEV-18 | Mode 01 requests carrying several PIDs (`01 0D 0C`) answer only the first | `obd/listener.py:30-38` | Up to six PIDs per ISO 15765-4 request | High | 5 | no | Open |
-| DEV-19 | CAN file logger uses python-can `socketcan_native`, removed in 4.x; thread crashes at start | `loggers/logger_can.py:7,22` | Logger removed in favour of `candump -l` | n/a | 1, 2 | no | Open |
-| DEV-20 | ISO-TP file logger blocks on four sockets in sequence and cannot log independently | `loggers/logger_isotp.py:19-23` | Removed | n/a | 2 | no | Open |
-| DEV-21 | Four non-daemon `while True` threads; SIGINT does not terminate the process | `ecu_simulator.py:37-50` | asyncio runtime with clean shutdown | n/a | 2 | no | Open |
-| DEV-22 | Interface setup through `os.system` with string concatenation, `ifconfig`, `insmod` of an out-of-tree module | `ecu_simulator.py:24-34`, `setup_*.sh` | Standalone privileged scripts; in-tree `CAN_ISOTP` | n/a | 2 | no | Open |
+| DEV-19 | CAN file logger uses python-can `socketcan_native`, removed in 4.x; thread crashes at start | `loggers/logger_can.py:7,22` | Logger removed in favour of `candump -l` | n/a | 1, 2 | no | **Fixed** in Phase 2: logger removed; use `candump -l` |
+| DEV-20 | ISO-TP file logger blocks on four sockets in sequence and cannot log independently | `loggers/logger_isotp.py:19-23` | Removed | n/a | 2 | no | **Fixed** in Phase 2: logger removed |
+| DEV-21 | Four non-daemon `while True` threads; SIGINT does not terminate the process | `ecu_simulator.py:37-50` | asyncio runtime with clean shutdown | n/a | 2 | no | **Fixed** in Phase 2: asyncio runtime, SIGINT/SIGTERM exit 0 (integration test `test_signal_shuts_down_cleanly`) |
+| DEV-22 | Interface setup through `os.system` with string concatenation, `ifconfig`, `insmod` of an out-of-tree module | `ecu_simulator.py:24-34`, `setup_*.sh` | Standalone privileged scripts; in-tree `CAN_ISOTP` | n/a | 2 | no | **Fixed** in Phase 2: `scripts/setup_vcan.sh` / `setup_can.sh`, no `os.system`, in-tree `CAN_ISOTP` |
 | DEV-23 | UDS 0x3E TesterPresent and 0x14 ClearDiagnosticInformation unsupported | `uds/services.py:34-38` | `7E 00` and `54` | High | 6, 7 | yes | Open |
 
 Entries without a strict xfail are pinned by a plain golden test that asserts today's
