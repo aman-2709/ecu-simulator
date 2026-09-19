@@ -9,7 +9,9 @@ Behaviours retained deliberately, because no reviewed evidence supports changing
 this phase, each tracked by its DEV identifier:
 
 * modes 0x01 to 0x0A are all claimed, and a mode with no implementation answers with
-  silence rather than a negative response (DEV-11);
+  silence rather than a negative response. Mode 07 is still one of those: DEV-11 is
+  fixed for Mode 04 in Phase 6 and left open for Mode 07, whose framing has no public
+  worked example (docs/decisions/0004-phase-6-dtc-evidence.md);
 * outside Mode 01, only the first two request bytes are examined; Mode 01 answers
   several parameters in one response (DEV-18, corrected in Phase 5.1);
 * a Mode 03 request carrying a trailing byte echoes it after the service identifier
@@ -35,6 +37,7 @@ POSITIVE_RESPONSE_OFFSET = 0x40
 
 MODE_CURRENT_DATA = 0x01
 MODE_STORED_DTCS = 0x03
+MODE_CLEAR_DTCS = 0x04
 MODE_VEHICLE_INFO = 0x09
 
 # Claimed so that unimplemented modes keep answering with silence (DEV-11) rather than
@@ -109,6 +112,8 @@ class ObdProtocol:
         # Every other mode still reads one parameter byte: the datasheet's multi-parameter
         # rule is service 01 only, and Mode 03's trailing-byte echo is DEV-15, still frozen.
         pid = payload[1] if len(payload) >= 2 else None
+        if sid == MODE_CLEAR_DTCS:
+            return self._mode04()
         if sid == MODE_STORED_DTCS:
             return self._mode03(pid)
         if sid == MODE_VEHICLE_INFO:
@@ -165,6 +170,23 @@ class ObdProtocol:
         """
         # DEV-15: a trailing request byte is echoed after the service identifier.
         return self._prefix(MODE_STORED_DTCS, pid, obd_dtc.encode(self.dtcs.confirmed))
+
+    def _mode04(self) -> bytes:
+        """Clear the shared store and acknowledge with a single byte.
+
+        The ELM327 datasheet states the response: "A response of 44 from the vehicle
+        indicates that the mode request has been carried out, the information erased, and
+        the MIL turned off." The clear itself is DtcStore.clear(), the same operation UDS
+        0x14 calls; neither service owns the transition (plan rule 7). What that
+        transition is, and why it is narrower than either protocol's description, is in
+        docs/decisions/0004-phase-6-dtc-evidence.md. Not standards validated.
+
+        A trailing request byte is ignored rather than echoed: the Mode 03 echo is DEV-15,
+        an unresolved behavior, and a new service does not inherit it.
+        """
+        self.dtcs.clear()
+        logger.info("OBD mode 04: diagnostic trouble code state cleared")
+        return bytes([MODE_CLEAR_DTCS + POSITIVE_RESPONSE_OFFSET])
 
     def _mode09(self, pid: int | None) -> bytes | None:
         if pid is None:

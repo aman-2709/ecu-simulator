@@ -140,15 +140,21 @@ def test_mode03_with_trailing_byte_echoes_it_into_the_response():
     assert obd(0x03, 0x00).hex() == "43000294770001"
 
 
-def test_mode04_and_mode07_are_valid_sids_but_get_no_response():
-    assert obd(0x04) is None
+def test_mode07_is_a_valid_sid_but_gets_no_response():
+    # DEV-11 is split in Phase 6: Mode 04 is fixed below, Mode 07 stays deferred because
+    # its framing has no public worked example. See decisions/0004.
     assert obd(0x07) is None
-    assert obd(0x04, 0x00) is None
 
 
-@xfail_deviation("DEV-11", "Mode 04 clear DTCs is not implemented")
 def test_mode04_clear_dtcs_is_acknowledged():
+    # DEV-11, Mode 04 half, fixed in Phase 6. Before, this answered with silence.
     assert obd(0x04) == b"\x44"
+
+
+def test_mode04_with_a_trailing_byte_is_acknowledged_without_echoing_it():
+    # Unlike Mode 03 (DEV-15), a new service does not echo a trailing byte. Before, this
+    # answered with silence.
+    assert obd(0x04, 0x00) == b"\x44"
 
 
 @xfail_deviation("DEV-11", "Mode 07 pending DTCs is not implemented")

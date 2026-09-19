@@ -34,7 +34,7 @@ def test_modes_01_to_0a_are_claimed_so_unimplemented_ones_stay_silent():
     assert ObdProtocol.service_ids == frozenset(range(0x01, 0x0B))
 
 
-@pytest.mark.parametrize("request_hex", ["04", "05", "06", "07", "08", "0a", "0200"])
+@pytest.mark.parametrize("request_hex", ["05", "06", "07", "08", "0a", "0200"])
 def test_unimplemented_modes_answer_with_silence(request_hex):
     assert ask(protocol(), request_hex) is None
 
@@ -180,6 +180,48 @@ def test_mode03_follows_the_store_after_it_is_cleared():
     assert ask(proto, "03") == bytes.fromhex("430294770001")
     proto.dtcs.clear()
     assert ask(proto, "03") == b"\x43\x00"
+
+
+# --- mode 04 --------------------------------------------------------------------------------
+
+
+def test_mode04_acknowledges_with_a_single_byte():
+    assert ask(protocol(), "04") == b"\x44"
+
+
+def test_mode04_clears_the_shared_store():
+    proto = protocol()
+    assert ask(proto, "04") == b"\x44"
+    assert proto.dtcs.confirmed == () and proto.dtcs.pending == ()
+    assert proto.dtcs.indicator_on is False
+
+
+def test_mode04_keeps_the_configured_codes_so_they_can_be_raised_again():
+    proto = protocol()
+    ask(proto, "04")
+    assert proto.dtcs.codes == ("B1477", "P0001")
+
+
+def test_mode03_answers_nothing_after_mode04():
+    proto = protocol()
+    ask(proto, "04")
+    assert ask(proto, "03") == b"\x43\x00"
+
+
+def test_mode04_on_an_empty_store_still_acknowledges():
+    assert ask(protocol(dtcs=()), "04") == b"\x44"
+
+
+def test_mode04_ignores_a_trailing_request_byte():
+    # Project choice, not the DEV-15 echo: a new service does not inherit an unexplained
+    # behavior. docs/decisions/0004-phase-6-dtc-evidence.md, W11.
+    assert ask(protocol(), "0400") == b"\x44"
+
+
+def test_mode07_is_still_silent():
+    # Deferred: the 47 + count framing rests on two open-source implementations and no
+    # public worked example. DEV-11 stays open for Mode 07.
+    assert ask(protocol(), "07") is None
 
 
 # --- mode 09 --------------------------------------------------------------------------------
