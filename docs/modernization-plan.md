@@ -253,6 +253,24 @@ lazy evaluation on read plus a periodic tick for timed DTC events; `SimulatedClo
 tests. Replaces the speed counter and random coolant. Stateless UDS 0x3E as scoped in
 section 3. Risk L.
 
+Reviewed 2026-09-19 before implementation:
+[decisions/0006-phase-7-scenario-and-testerpresent.md](decisions/0006-phase-7-scenario-and-testerpresent.md).
+Two parts of the sentence above are already delivered and are recorded there so the phase
+is not credited with them: commit 42's `Clock`, `MonotonicClock` and `SimulatedClock` have
+existed since Phase 4 and Phase 7 supplies their first production use, and the speed
+counter and random coolant went in Phase 5 with DEV-09 and DEV-10. What is missing is
+variation over time, not determinism.
+
+Deviation in scope: **DEV-23**, its 0x3E half. **DEV-07** is not taken as assigned: 0x3E
+forces a decision on where the `suppressPosRspMsgIndicationBit` rule lives, and section
+7.6 of that record puts the options to the user rather than deciding.
+
+Out of this phase, and named because a scenario engine invites them: fault injection of
+every kind (Phase 10), session state, S3 and TesterPresent timing (Phase 11), scenario
+conditions or branching (not planned), and randomness (not needed). The shipped profile
+gains no scenario, so every golden byte stays reachable by the request that produces it
+today.
+
 ### Phase 8 — Physical CAN and ELM327 validation (V1.0 gate)
 
 `setup_can.sh` bitrate handling, `--bitrate` guidance, `tests/hardware` opt-in suite,
@@ -365,16 +383,20 @@ a competing version table.
 | SAE J1979-DA | `J1979DA_202607`, revised 2026-07-16 (supersedes `J1979DA_202508`) | Licensed, **text unavailable** | Would settle the service 09 field layouts and the service 01 PID 01 monitor bits; DEV-03 and PID 0x01 deferred for want of it | Phases 5, 6 |
 | SAE J2012 | `J2012_202509`, revised 2025-09-01 (supersedes `J2012_201612`) | Licensed, **text unavailable** | Existing two-byte encoder retained; the third byte of the UDS DTC number stays frozen at 0x01 for want of the failure-type definition | Phase 6 |
 | SAE J2012-DA | Current revision **not established**: the publisher index returns `J2012DA_202403` as the latest catalogued entry and a 2025 edition appears in reseller listings. No `J2012DA_202607` exists; that identifier is J1979-DA's | Licensed, **text unavailable** | None. This project encodes whatever codes a profile declares and depends on no standardized code meaning | Phase 6, found not applicable |
-| ISO 14229-1 | **`ISO 14229-1:2026`, Edition 4, published 2026-06-05**; cancels and replaces `ISO 14229-1:2020` and its `Amd 1:2022` | Licensed, **text unavailable** | V1 services implemented, labelled; 0x14, 0x19/02, the DTC status byte and the availability mask rest on corroborating public material only | Phase 6 |
+| ISO 14229-1 | **`ISO 14229-1:2026`, Edition 4, published 2026-06-05**; cancels and replaces `ISO 14229-1:2020` and its `Amd 1:2022` | Licensed, **text unavailable** | V1 services implemented, labelled; 0x14, 0x19/02, the DTC status byte, the availability mask and 0x3E rest on corroborating public material only. Clause 6.5 "Server response implementation rules" governs `suppressPosRspMsgIndicationBit`; the clause number is known only from AUTOSAR's citation of it | Phases 6, 7 |
 | SAE J1979-2, J1979-3 | not checked | Licensed, not public | Nothing implemented | — |
 | ISO 13400-2 | not checked | Licensed; layouts public | Experimental only | — |
 | ELM327 datasheet | ELM327DSJ | Public | Tester side; supplied the service 09 and service 01 captures behind the Phase 5 decisions, and the service 03 CAN framing, service 04 response and PID 01 first byte behind the Phase 6 ones | Phases 5, 6 |
 | AUTOSAR CP R24-11 SWS Diagnostic Event Manager | R24-11, document ID 19 | **Public** | Corroborates the UDS DTC status byte bit layout and the post-clear state. Not ISO 14229-1 and never a conformance claim | Phase 6 |
-| AUTOSAR CP R24-11 SWS Diagnostic Communication Manager | R24-11, document ID 18 | **Public** | Corroborates the 0x14 and 0x19/02 request and response shapes and the status-mask AND rule. Not ISO 14229-1 and never a conformance claim | Phase 6 |
+| AUTOSAR CP R24-11 SWS Diagnostic Communication Manager | R24-11, document ID 18 | **Public** | Corroborates the 0x14 and 0x19/02 request and response shapes, the status-mask AND rule, the 0x3E sub-function values, and the `suppressPosRspMsgIndicationBit` rules. Not ISO 14229-1 and never a conformance claim | Phases 6, 7 |
 
 No **specification** in this table has been reviewed against its text by this project, and
 for those marked **text unavailable** an attempt was made and the document is paywalled.
 Nothing is `standards validated`. Per-phase evidence reviews live in `docs/decisions/`.
+
+ISO 14229-2, which defines the S3 session timer that TesterPresent exists to reset, is
+deliberately absent: no phase up to and including 7 implements a timer, so this project
+does not rely on it. It is named here only so that Phase 11 knows which document it needs.
 
 The two AUTOSAR rows are the one exception to "text unavailable": those documents are
 public and were read. They are official specifications of another standards organisation
@@ -391,12 +413,25 @@ Versions recorded when the phase named in the last column reviewed them.
 |---|---|---|---|---|
 | Python | 3.12 and 3.13 supported; 3.12.12 in the venv | n/a | project configuration | Phase 4 |
 | can-isotp | 2.0.7, pinned `>=2.0,<3` | 2.0.7 (2025-05-14) | PyPI metadata, project source | Phases 2, 2A |
-| pydantic | 2.13.5, pinned `>=2.13,<3` | 2.13.5 (2026-08-28) | PyPI metadata, official docs | Phase 4 |
+| pydantic | 2.13.5, pinned `>=2.13,<3` | 2.13.5 (2026-08-28) | PyPI metadata, official docs | Phases 4, 7 |
 | ruamel.yaml | 0.19.1, pinned `>=0.19,<0.20` | 0.19.1 (2026-01-02) | PyPI metadata, experiment | Phase 4 |
 | pytest | 9.1.1, pinned `>=8.0` | 9.1.1 (2026-06-19) | PyPI metadata | Phase 4 |
 | mypy | 2.3.1, pinned `>=1.11` | 2.3.1 (2026-08-15) | PyPI metadata | Phase 4 |
 | ruff | 0.16.8, pinned `>=0.6` | 0.16.8 (2026-09-16) | PyPI metadata | Phase 4 |
 | Linux CAN_ISOTP | in-tree, kernel 6.8 and 6.17 observed | n/a | kernel source and experiments | Phases 2, 2A |
+| Python `asyncio` periodic task | stdlib 3.12.12 | n/a | stdlib; cancellation confirmed experimentally | Phase 7 |
+
+Two findings recorded at the version in use, because they constrain how a phase may be
+built rather than merely which version it was checked against:
+
+- **pydantic 2.13** forbids a `before`, `wrap` or `plain` validator on a discriminated
+  union's discriminator field. A tagged configuration list therefore cannot accept a bare
+  shorthand in place of its tag, which is why a Phase 7 scenario entry must state its
+  `type:` explicitly. See
+  [decisions/0006-phase-7-scenario-and-testerpresent.md](decisions/0006-phase-7-scenario-and-testerpresent.md).
+- **`asyncio`** on 3.12.12: a periodic task cancelled and awaited once in a `finally`
+  leaves no pending tasks and the loop closes cleanly, which is what the Phase 2 shutdown
+  tests require of any timer Phase 7 adds.
 
 ## 8. Non-goals for V1.0
 
