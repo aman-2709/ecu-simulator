@@ -94,6 +94,7 @@ column records what each encoding actually rests on.
 | 0x01 | 0x42 | control module voltage | yes | yes | no | no | no | consistent public description |
 | 0x01 | 0x46 | ambient air temperature | yes | yes | no | no | no | consistent public description |
 | 0x01 | 0x51 | fuel type | yes | yes | yes | no | no | consistent public description |
+| 0x01 | several | several parameters in one request | yes | yes | yes | no | no | two worked CAN captures in the ELM327 datasheet, reproduced byte for byte (DEV-18) |
 | 0x03 | - | stored DTCs | yes | yes | no | no | no | unchanged since ce46b87 |
 | 0x04 | - | clear DTCs | **no** | yes (absence) | no | n/a | no | deferred to Phase 6: needs mutable DTC-store semantics (DEV-11) |
 | 0x07 | - | pending DTCs | **no** | yes (absence) | no | n/a | no | deferred to Phase 6: needs a pending/confirmed distinction (DEV-11) |
@@ -102,11 +103,13 @@ column records what each encoding actually rests on.
 | 0x09 | 0x0A | ECU name | yes | yes | no | no | no | **byte layout unresolved (DEV-03, deferred)**; current bytes frozen by test |
 
 Interoperability evidence: the Mode 01 values were exercised over the kernel ISO-TP path
-on a vcan interface, and the supported-parameter chain and the multi-frame VIN were
-verified on the wire. No hardware adapter has been used yet; that is Phase 8.
+on a vcan interface, and the supported-parameter chain, the multi-frame VIN and a
+six-parameter request whose response spans several frames were verified on the wire. No hardware adapter has been used yet; that is Phase 8.
 
-Known-wrong or unresolved behavior in these rows is tracked as DEV-03, DEV-11, DEV-15 and
-DEV-18. Reads are deterministic and side-effect free since Phase 5 (DEV-09, DEV-10), but
+Known-wrong or unresolved behavior in these rows is tracked as DEV-03, DEV-11 and DEV-15.
+DEV-18 was corrected in Phase 5.1; the three project choices its evidence did not settle
+- at most six parameters, unsupported ones omitted, a repeat answered once - are recorded
+in [decisions/0005-phase-5-1-multi-pid-evidence.md](decisions/0005-phase-5-1-multi-pid-evidence.md). Reads are deterministic and side-effect free since Phase 5 (DEV-09, DEV-10), but
 nothing varies over time until the Phase 7 scenario engine.
 
 ## UDS services

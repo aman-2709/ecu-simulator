@@ -44,6 +44,7 @@ I created this project to learn more about the OBD and UDS protocols. I did my b
 | 0x01    | 0x42   | Control module voltage |
 | 0x01    | 0x46   | Ambient air temperature |
 | 0x01    | 0x51   | Fuel type |
+| 0x01    | several | Up to six parameters in one request, answered in one response |
 | 0x03    | -      | Request stored DTCs |
 | 0x09    | 0x00   | Supported parameters in service 0x09 |
 | 0x09    | 0x02   | Vehicle Identification Number (VIN) |
