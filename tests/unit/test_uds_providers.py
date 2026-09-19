@@ -78,6 +78,8 @@ def test_did_registry_rejects_duplicate_names_empty_and_out_of_range_dids():
         registry.register(StaticDids("empty", {}))
     with pytest.raises(ValueError, match="0x10000"):
         registry.register(StaticDids("wide", {0x10000: b"z"}))
+    with pytest.raises(ValueError, match="'f190'"):
+        registry.register(StaticDids("stringly", {"f190": b"z"}))
 
 
 def test_structural_provider_checks():

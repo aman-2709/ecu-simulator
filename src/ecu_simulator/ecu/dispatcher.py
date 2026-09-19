@@ -31,11 +31,7 @@ class Dispatcher:
         if unknown:
             raise ValueError(f"router names ECUs that do not exist: {unknown}")
         for address, names in router.functional_routes.items():
-            if len(names) > 1:
-                raise NotImplementedError(
-                    f"functional address 0x{address:X} is shared by {list(names)}; "
-                    "fan-out to several ECUs needs per-ECU response routing (Phase 9)"
-                )
+            _reject_fan_out(address, names)
         self._router = router
         self._ecus = by_name
 
@@ -56,5 +52,14 @@ class Dispatcher:
                 request.target_address,
             )
             return None
-        (name,) = names
-        return self._ecus[name].handle(dataclasses.replace(request, context=None))
+        # The router is a live object and may have gained routes since construction.
+        _reject_fan_out(request.target_address, names)
+        return self._ecus[names[0]].handle(dataclasses.replace(request, context=None))
+
+
+def _reject_fan_out(address: int, names: tuple[str, ...]) -> None:
+    if len(names) > 1:
+        raise NotImplementedError(
+            f"functional address 0x{address:X} is shared by {list(names)}; "
+            "fan-out to several ECUs needs per-ECU response routing (Phase 9)"
+        )

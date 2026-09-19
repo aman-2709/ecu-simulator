@@ -66,6 +66,12 @@ def test_registration_rejects_duplicate_names_empty_and_out_of_range_sids():
         ecu.register(FakeProtocol("wide", {0x100}))
 
 
+def test_a_non_integer_sid_is_reported_as_such():
+    # The message must name the offending value, not fail while formatting it.
+    with pytest.raises(ValueError, match="'0x10'"):
+        Ecu("engine").register(FakeProtocol("stringly", {"0x10"}))
+
+
 def test_ecu_name_must_be_non_empty():
     with pytest.raises(ValueError):
         Ecu("")
@@ -97,6 +103,38 @@ def test_empty_payload_gets_no_response(caplog):
     with caplog.at_level(logging.WARNING):
         assert ecu.handle(physical(b"")) is None
     assert "empty" in caplog.text
+
+
+class NegativeProtocol:
+    """A protocol that answers with a negative response, as the legacy UDS layer does."""
+
+    name = "uds"
+    service_ids = frozenset({0x10})
+
+    def handle(self, request):
+        return b"\x7f\x10\x12"
+
+
+def test_negative_response_is_suppressed_for_functionally_addressed_requests(caplog):
+    # ISO 14229-1 convention: a functionally addressed request draws no negative response.
+    # It is also what the wire did before Phase 3, when UDS SIDs never reached 0x7DF.
+    ecu = Ecu("engine")
+    ecu.register(NegativeProtocol())
+    with caplog.at_level(logging.INFO):
+        assert ecu.handle(functional(b"\x10\x05")) is None
+    assert "suppressed" in caplog.text
+
+
+def test_negative_response_is_sent_for_physically_addressed_requests():
+    ecu = Ecu("engine")
+    ecu.register(NegativeProtocol())
+    assert ecu.handle(physical(b"\x10\x05")) == DiagnosticResponse(b"\x7f\x10\x12")
+
+
+def test_positive_response_is_sent_for_functionally_addressed_requests():
+    ecu = Ecu("engine")
+    ecu.register(FakeProtocol("obd", {0x01}))
+    assert ecu.handle(functional(b"\x01\x00")) == DiagnosticResponse(b"\x41\x00")
 
 
 def test_unregistered_sid_on_functional_address_gets_no_response():

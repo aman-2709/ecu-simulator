@@ -86,7 +86,7 @@ All three addresses belong to one simulated ECU, `engine`, which dispatches by s
 
 * Functional requests on `0x7DF` and physical requests on `0x7E0` are answered on `0x7E8`, padded to 8-byte frames (pad byte `0x00`). The tester's flow control for multi-frame responses is expected on `0x7E0`, as ISO 15765-4 testers and ELM327 adapters send it.
 * Physical requests on `0x7E1` are answered on `0x7E9`, unpadded.
-* A service id no protocol implements gets `7F <SID> 11` (serviceNotSupported) on a physical address and no response on the functional one. Modes `0x01`..`0x0A` that the legacy OBD layer does not implement still get no response (DEV-11).
+* A service id no protocol implements gets `7F <SID> 11` (serviceNotSupported) on a physical address. No negative response of any kind is sent to a functionally addressed request, so a malformed request on `0x7DF` stays silent. Modes `0x01`..`0x0A` that the legacy OBD layer does not implement still get no response (DEV-11).
 
 Addresses still come from `ecu_config.json` inside the package (`obd_broadcast_address`, `obd_ecu_address`, `uds_ecu_address`; response id = request id + 8) until the YAML profile configuration lands, which will also make the ECU list explicit.
 

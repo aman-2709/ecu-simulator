@@ -12,6 +12,7 @@ from types import MappingProxyType
 
 from ecu_simulator.logging import log_context
 from ecu_simulator.protocols.base import (
+    NEGATIVE_RESPONSE_SID,
     NRC_SERVICE_NOT_SUPPORTED,
     DiagnosticProtocol,
     ServiceRequest,
@@ -49,8 +50,10 @@ class Ecu:
         sids = frozenset(protocol.service_ids)
         if not sids:
             raise ValueError(f"{self.name}: protocol {protocol.name!r} declares no service identifiers")
-        for sid in sorted(sids):
-            if not isinstance(sid, int) or not 0 <= sid <= 0xFF:
+        for sid in sids:
+            if not isinstance(sid, int):
+                raise ValueError(f"{self.name}: protocol {protocol.name!r} declares non-integer SID {sid!r}")
+            if not 0 <= sid <= 0xFF:
                 raise ValueError(f"{self.name}: protocol {protocol.name!r} declares invalid SID 0x{sid:X}")
         if protocol.name in self._protocols:
             raise ServiceConflictError(f"{self.name}: a protocol named {protocol.name!r} is already registered")
@@ -97,6 +100,7 @@ class Ecu:
             service.payload.hex(),
         )
         protocol = self._by_sid.get(service.sid)
+        payload: bytes | None
         if protocol is None:
             payload = self._unsupported_service(service)
         else:
@@ -105,17 +109,24 @@ class Ecu:
         if payload is None:
             logger.info("%s: no response", self.name)
             return None
+        if not payload:
+            # A protocol must return None for "send nothing"; an empty payload is a bug
+            # in it, not an empty frame to transmit.
+            logger.error("%s: protocol returned an empty response; nothing sent", self.name)
+            return None
+        if request.functional and payload[0] == NEGATIVE_RESPONSE_SID:
+            # A functionally addressed request draws no negative response: the public
+            # ISO 14229-1 convention, and what this bus did before the ECU served every
+            # SID on every address. Not a compliance claim.
+            logger.info("%s: negative response %s suppressed on a functional request", self.name, payload.hex())
+            return None
         logger.info("%s tx response %s", self.name, payload.hex())
         return DiagnosticResponse(payload)
 
-    def _unsupported_service(self, request: ServiceRequest) -> bytes | None:
-        """No protocol claims the SID: NRC 0x11 serviceNotSupported on a physical address.
+    def _unsupported_service(self, request: ServiceRequest) -> bytes:
+        """No protocol claims the SID: NRC 0x11 serviceNotSupported (DEV-06 corrected).
 
-        Functionally addressed requests get no negative response (DEV-06 corrected; the
-        functional carve-out follows the public ISO 14229-1 convention and is not a
-        compliance claim).
+        On a functional request the caller suppresses it, like any negative response.
         """
         logger.warning("%s: SID 0x%02X is not served by any protocol", self.name, request.sid)
-        if request.functional:
-            return None
         return negative_response(request.sid, NRC_SERVICE_NOT_SUPPORTED)

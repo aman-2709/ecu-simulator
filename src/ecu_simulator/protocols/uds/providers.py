@@ -76,8 +76,10 @@ class DidRegistry:
         dids = frozenset(provider.data_identifiers)
         if not dids:
             raise ValueError(f"DID provider {provider.name!r} declares no data identifiers")
-        for did in sorted(dids):
-            if not isinstance(did, int) or not 0 <= did <= DID_MAX:
+        for did in dids:
+            if not isinstance(did, int):
+                raise ValueError(f"DID provider {provider.name!r} declares non-integer DID {did!r}")
+            if not 0 <= did <= DID_MAX:
                 raise ValueError(f"DID provider {provider.name!r} declares invalid DID 0x{did:X}")
         if provider.name in self._providers:
             raise ProviderConflictError(f"a DID provider named {provider.name!r} is already registered")

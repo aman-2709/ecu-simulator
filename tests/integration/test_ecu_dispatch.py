@@ -72,6 +72,17 @@ def test_unsupported_sid_on_uds_address_gets_nrc_0x11(uds_physical):
     assert uds_physical.recv() == b"\x7f\x22\x11"
 
 
+def test_negative_response_is_not_sent_to_a_functional_request(functional):
+    # A UDS sub-function error reaches the functional address only since Phase 3; no
+    # negative response goes out there, as was the case before.
+    functional.send(b"\x10\x05")
+    with pytest.raises(TimeoutError):
+        functional.recv()
+    # the channel still works
+    functional.send(b"\x10\x01")
+    assert functional.recv() == SESSION_RESPONSE
+
+
 def test_unsupported_sid_on_functional_address_gets_no_response(functional):
     # Unchanged by DEV-06: negative responses are not sent to functionally addressed requests.
     functional.send(b"\x22\xf1\x90")

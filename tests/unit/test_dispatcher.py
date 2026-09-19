@@ -91,6 +91,17 @@ def test_functional_fan_out_to_several_ecus_is_not_implemented_yet():
         Dispatcher(router, ecus)
 
 
+def test_fan_out_added_after_construction_is_reported_clearly():
+    # The router is a live object; a second eligible ECU added later must not surface
+    # as an unpacking error inside the transport's readable callback.
+    router, ecus = build(Recording("engine"), Recording("tcm"))
+    router.add_functional(0x7DF, "engine")
+    dispatcher = Dispatcher(router, ecus)
+    router.add_functional(0x7DF, "tcm")
+    with pytest.raises(NotImplementedError, match=r"0x7DF.*Phase 9"):
+        dispatcher(DiagnosticRequest(b"\x3e\x00", 0x7DF, functional=True))
+
+
 def test_dispatcher_exposes_its_parts():
     engine = Ecu("engine")
     router, ecus = build(engine)
