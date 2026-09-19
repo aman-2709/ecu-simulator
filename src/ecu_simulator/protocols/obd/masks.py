@@ -29,16 +29,37 @@ def range_bases() -> tuple[int, ...]:
     return tuple(range(0x00, LAST_RANGE_BASE + 1, RANGE_SIZE))
 
 
+def has_supported_above(base: int, supported: Iterable[int]) -> bool:
+    """True when any supported identifier lies beyond the range starting at ``base``."""
+    limit = base + RANGE_SIZE
+    return any(pid > limit for pid in supported)
+
+
 def supported_mask(base: int, supported: Iterable[int]) -> bytes:
     """The four-byte mask for the range starting at ``base``.
 
-    Legacy behaviour, retained here so that introducing this module changes no bytes: the
-    continuation bit is set for every range below the last, whether or not any identifier
-    exists beyond it. Corrected separately under DEV-04.
+    The continuation bit is set only when the vehicle actually has an identifier beyond
+    this range, so the advertised chain ends after the last populated range (DEV-04). Real
+    ECUs behave this way: the ELM327 datasheet publishes one capture of ``01 00`` in which
+    the engine sets the bit and has parameters beyond, while the transmission clears it and
+    has none. Derived from the parameter table, never hard-coded per range.
     """
     members = frozenset(supported)
-    mask = CONTINUATION_BIT if base < LAST_RANGE_BASE else 0
+    mask = CONTINUATION_BIT if base < LAST_RANGE_BASE and has_supported_above(base, members) else 0
     for pid in members:
         if base < pid < base + RANGE_SIZE:
             mask |= FIRST_BIT_MASK >> (pid - base - 1)
     return mask.to_bytes(4, "big")
+
+
+def is_advertised_range(base: int, supported: Iterable[int]) -> bool:
+    """True when a tester following the chain would reach ``base``.
+
+    The first range is always reachable. A later one is reachable only if every preceding
+    range set its continuation bit, which keeps what the simulator advertises and what it
+    answers in agreement.
+    """
+    if not is_range_request(base) or not 0 <= base <= LAST_RANGE_BASE:
+        return False
+    members = frozenset(supported)
+    return all(has_supported_above(earlier, members) for earlier in range(0x00, base, RANGE_SIZE))

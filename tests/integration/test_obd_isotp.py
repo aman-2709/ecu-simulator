@@ -60,6 +60,22 @@ def test_functional_vin_is_multi_frame(vcan, functional):
     assert any(f.can_id == 0x7E0 and f.data[0] >> 4 == 3 for f in frames), "tester flow control on 0x7E0 missing"
 
 
+def test_supported_pid_chain_terminates_on_the_wire(functional):
+    # DEV-04 corrected: walk the chain as a tester would. It ends after the last populated
+    # range, and the range beyond it is not answered at all.
+    functional.send(b"\x01\x00")
+    assert functional.recv() == bytes.fromhex("41001e3f8013")
+    functional.send(b"\x01\x20")
+    assert functional.recv() == bytes.fromhex("412000020001")
+    functional.send(b"\x01\x40")
+    last = functional.recv()
+    assert last == bytes.fromhex("414044008000")
+    assert last[-1] & 0x01 == 0, "the last populated range must not claim a successor"
+    functional.send(b"\x01\x60")
+    with pytest.raises(TimeoutError):
+        functional.recv()
+
+
 def test_unsupported_pid_gets_no_response(functional):
     # PID 0x01 monitor status is deferred (Phase 6 DTC store), so nothing answers it.
     functional.send(b"\x01\x01")

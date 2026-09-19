@@ -43,32 +43,21 @@ def obd(sid, pid=None):
 @pytest.mark.parametrize(
     "pid, expected",
     [
-        # Phase 5 widened the parameter set, so the masks now advertise more.
-        (0x00, "41001e3f8013"),  # 04-07, 0B-11, 1C, 1F; bit 0 claims 0x20 (0x2F exists)
-        (0x20, "412000020001"),  # PID 2F; bit 0 claims 0x40 range (0x42, 0x46, 0x51 exist)
-        (0x40, "414044008001"),  # PIDs 42, 46, 51; bit 0 claims 0x60 (nothing there, DEV-04)
-        (0x60, "416000000001"),  # DEV-04
-        (0x80, "418000000001"),  # DEV-04
-        (0xA0, "41a000000001"),  # DEV-04
-        (0xC0, "41c000000001"),  # DEV-04
-        (0xE0, "41e000000000"),
+        # DEV-04 corrected: the chain ends after the last populated range.
+        (0x00, "41001e3f8013"),  # 04-07, 0B-11, 1C, 1F; bit 0 set, 0x2F exists beyond
+        (0x20, "412000020001"),  # PID 2F; bit 0 set, 0x42/0x46/0x51 exist beyond
+        (0x40, "414044008000"),  # PIDs 42, 46, 51; bit 0 clear, nothing beyond 0x60
     ],
 )
-def test_mode01_supported_pid_masks_today(pid, expected):
+def test_mode01_supported_pid_masks(pid, expected):
     assert obd(0x01, pid).hex() == expected
 
 
-@xfail_deviation("DEV-04", "continuation bit set although no PIDs exist in the next range")
-@pytest.mark.parametrize(
-    "pid, expected",
-    [
-        (0x40, "414044008000"),
-        (0x60, "416000000000"),
-        (0x80, "418000000000"),
-    ],
-)
-def test_mode01_supported_pid_masks_corrected(pid, expected):
-    assert obd(0x01, pid).hex() == expected
+@pytest.mark.parametrize("pid", [0x60, 0x80, 0xA0, 0xC0, 0xE0])
+def test_mode01_unadvertised_ranges_are_not_answered(pid):
+    # DEV-04 corrected: a range the chain never reaches is not advertised, so answering it
+    # would contradict the mask. Previously every one of these returned an empty mask.
+    assert obd(0x01, pid) is None
 
 
 # --- Mode 01 data parameters -------------------------------------------------------------
@@ -151,15 +140,10 @@ def test_mode07_pending_dtcs_is_answered():
 # --- Mode 09 ----------------------------------------------------------------------------
 
 
-def test_mode09_supported_pid_mask_today():
-    # PIDs 02 and 0A supported; bit 0 claims the 0x20 range although nothing exists (DEV-04)
-    assert obd(0x09, 0x00).hex() == "490040400001"
-    assert obd(0x09, 0x20).hex() == "492000000001"
-
-
-@xfail_deviation("DEV-04", "Mode 09 mask claims PIDs exist in the 0x20 range")
-def test_mode09_supported_pid_mask_corrected():
+def test_mode09_supported_pid_mask():
+    # DEV-04 corrected: mode 09 defines nothing above 0x0D, so no next range is claimed.
     assert obd(0x09, 0x00).hex() == "490040400000"
+    assert obd(0x09, 0x20) is None
 
 
 def test_mode09_pid02_vin_today_has_item_count_zero():

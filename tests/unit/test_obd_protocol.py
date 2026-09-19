@@ -119,7 +119,9 @@ def test_ecu_name_comes_from_this_ecus_configuration():
 
 
 def test_mode09_range_request_is_answered():
-    assert ask(protocol(), "0900") == bytes.fromhex("490040400001")
+    # Mode 09 defines nothing above 0x0D, so no next range is claimed (DEV-04).
+    assert ask(protocol(), "0900") == bytes.fromhex("490040400000")
+    assert ask(protocol(), "0920") is None
 
 
 def test_an_unknown_mode09_parameter_gets_no_response():

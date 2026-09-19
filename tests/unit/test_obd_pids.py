@@ -132,9 +132,9 @@ def test_an_encoder_that_produces_the_wrong_length_is_rejected():
 
 
 def test_mask_sets_the_bit_for_each_supported_identifier():
-    assert masks.supported_mask(0x00, {0x05, 0x0D}).hex() == "08080001"
-    assert masks.supported_mask(0x20, {0x2F}).hex() == "00020001"
-    assert masks.supported_mask(0x40, {0x51}).hex() == "00008001"
+    assert masks.supported_mask(0x00, {0x05, 0x0D, 0x2F}).hex() == "08080001"
+    assert masks.supported_mask(0x20, {0x2F, 0x51}).hex() == "00020001"
+    assert masks.supported_mask(0x40, {0x51}).hex() == "00008000"
 
 
 def test_mask_ignores_identifiers_outside_its_range():
@@ -143,6 +143,60 @@ def test_mask_ignores_identifiers_outside_its_range():
 
 def test_the_last_range_never_claims_a_successor():
     assert masks.supported_mask(0xE0, set()).hex() == "00000000"
+
+
+# --- DEV-04: the continuation bit follows the populated ranges ---------------------------------
+
+
+def test_no_identifier_above_the_first_range_clears_the_continuation_bit():
+    assert masks.supported_mask(0x00, {0x05, 0x0D}).hex() == "08080000"
+
+
+def test_the_range_identifier_is_never_set_as_a_data_bit():
+    # Bit 0 of a mask is the next range identifier, set only by the continuation rule.
+    # No data parameter may occupy it, which test_no_definition_collides_with_a_range_
+    # identifier enforces for the real table.
+    assert masks.supported_mask(0x00, {0x20}).hex() == "00000000"
+    assert masks.supported_mask(0x20, {0x40}).hex() == "00000000"
+
+
+def test_an_identifier_in_the_second_range_sets_the_bit_in_the_first_mask():
+    assert masks.supported_mask(0x00, {0x05, 0x2F}).hex() == "08000001"
+    assert masks.supported_mask(0x00, {0x05, 0x40}).hex() == "08000001"
+
+
+def test_no_identifier_above_the_second_range_clears_its_continuation_bit():
+    assert masks.supported_mask(0x20, {0x2F}).hex() == "00020000"
+    assert masks.supported_mask(0x20, {0x2F, 0x51}).hex() == "00020001"
+
+
+def test_only_ranges_the_chain_reaches_are_advertised():
+    supported = {0x05, 0x2F, 0x51}
+    assert masks.is_advertised_range(0x00, supported) is True
+    assert masks.is_advertised_range(0x20, supported) is True
+    assert masks.is_advertised_range(0x40, supported) is True
+    assert masks.is_advertised_range(0x60, supported) is False
+    assert masks.is_advertised_range(0xE0, supported) is False
+
+
+def test_a_vehicle_with_only_first_range_parameters_advertises_only_the_first_range():
+    supported = {0x05, 0x0D}
+    assert masks.is_advertised_range(0x00, supported) is True
+    assert masks.is_advertised_range(0x20, supported) is False
+
+
+def test_a_non_range_identifier_is_never_an_advertised_range():
+    assert masks.is_advertised_range(0x05, {0x05}) is False
+    assert masks.is_advertised_range(0x100, {0x05}) is False
+
+
+def test_adding_and_removing_a_parameter_changes_the_mask_deterministically():
+    base = {0x05, 0x0D}
+    assert masks.supported_mask(0x00, base).hex() == "08080000"
+    with_next_range = base | {0x2F}
+    assert masks.supported_mask(0x00, with_next_range).hex() == "08080001"
+    assert masks.supported_mask(0x00, with_next_range - {0x2F}).hex() == "08080000"
+    assert masks.supported_mask(0x00, base) == masks.supported_mask(0x00, set(base))
 
 
 def test_range_requests_are_recognised():

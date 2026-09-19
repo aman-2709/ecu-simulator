@@ -98,7 +98,12 @@ class ObdProtocol:
         if pid is None:
             return None
         if masks.is_range_request(pid):
-            return self._prefix(MODE_CURRENT_DATA, pid, masks.supported_mask(pid, self.supported_mode01_pids))
+            supported = self.supported_mode01_pids
+            if not masks.is_advertised_range(pid, supported):
+                # Not advertised, so not answered: DEV-04 keeps the two in agreement.
+                logger.info("OBD range 0x%02X is not advertised by this vehicle; no response", pid)
+                return None
+            return self._prefix(MODE_CURRENT_DATA, pid, masks.supported_mask(pid, supported))
         definition = self.definition(pid)
         if definition is None:
             logger.info("OBD PID 0x%02X is not supported by this vehicle; no response", pid)
@@ -117,6 +122,9 @@ class ObdProtocol:
             return None
         if masks.is_range_request(pid):
             supported = frozenset({INFO_VIN, INFO_ECU_NAME})
+            if not masks.is_advertised_range(pid, supported):
+                logger.info("OBD mode 09 range 0x%02X is not advertised; no response", pid)
+                return None
             return self._prefix(MODE_VEHICLE_INFO, pid, masks.supported_mask(pid, supported))
         if pid == INFO_VIN:
             return self._prefix(MODE_VEHICLE_INFO, pid, self._vin())
