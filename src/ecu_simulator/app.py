@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from ecu_simulator import ecu_config
@@ -113,6 +113,28 @@ def build_dispatcher(config: RuntimeConfig) -> Dispatcher:
     return Dispatcher(build_router(config), build_ecus(config))
 
 
+def check_routes(router: AddressRouter, endpoints: Iterable[EndpointConfig]) -> None:
+    """Every receiving endpoint must have a route, and every route an endpoint.
+
+    The endpoints and the routes are derived separately from the same configuration. If
+    they disagree, a socket is open that nothing answers (requests are dropped with only
+    a log line) or a route names an address no socket listens on. Both are startup
+    errors, not runtime surprises.
+    """
+    listening = {e.address.rx_id: bool(e.functional) for e in endpoints if e.receive}
+    routed: dict[int, bool] = {address: False for address in router.physical_routes}
+    routed.update({address: True for address in router.functional_routes})
+    for address, functional in sorted(listening.items()):
+        if address not in routed:
+            raise ValueError(f"no route for address 0x{address:X}: requests received there would be dropped")
+        if routed[address] != functional:
+            kind, other = ("functional", "physical") if functional else ("physical", "functional")
+            raise ValueError(f"address 0x{address:X} is a {kind} endpoint but a {other} route")
+    for address in sorted(routed):
+        if address not in listening:
+            raise ValueError(f"route for address 0x{address:X} has no endpoint receiving on it")
+
+
 async def run(
     config: RuntimeConfig,
     *,
@@ -125,8 +147,10 @@ async def run(
     Raises :class:`TransportError` if the transport cannot start; the caller reports it.
     """
     endpoints = build_endpoints(config)
+    router = build_router(config)
+    check_routes(router, endpoints)  # before any socket is opened
+    dispatcher = Dispatcher(router, build_ecus(config))
     transport = transport_factory(config.interface, endpoints)
-    dispatcher = build_dispatcher(config)
     stop = stop or asyncio.Event()
     loop = asyncio.get_running_loop()
     installed: list[signal.Signals] = []

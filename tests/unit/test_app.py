@@ -5,6 +5,7 @@ import logging
 import pytest
 
 from ecu_simulator import app, cli
+from ecu_simulator.ecu import AddressRouter
 from ecu_simulator.transport import DiagnosticRequest, DiagnosticResponse, InterfaceNotFoundError
 
 
@@ -57,6 +58,51 @@ def test_router_addresses_match_the_endpoints_that_receive():
     receiving = {e.address.rx_id: e.functional for e in app.build_endpoints(config) if e.receive}
     routed = {a: False for a in router.physical_routes} | {a: True for a in router.functional_routes}
     assert routed == receiving
+
+
+def test_check_routes_accepts_the_shipped_configuration():
+    config = app.config_from_legacy()
+    app.check_routes(app.build_router(config), app.build_endpoints(config))  # must not raise
+
+
+def test_a_receiving_endpoint_without_a_route_is_rejected_at_startup():
+    # Otherwise the socket is open and every request on it is silently dropped.
+    config = app.config_from_legacy()
+    router = AddressRouter()
+    router.add_functional(config.obd_functional_id, app.ENGINE_ECU)
+    router.add_physical(config.obd_physical_id, app.ENGINE_ECU)
+    with pytest.raises(ValueError, match="0x7E1"):
+        app.check_routes(router, app.build_endpoints(config))
+
+
+def test_a_route_without_a_receiving_endpoint_is_rejected_at_startup():
+    config = app.config_from_legacy()
+    router = app.build_router(config)
+    router.add_physical(0x7E5, app.ENGINE_ECU)
+    with pytest.raises(ValueError, match="0x7E5"):
+        app.check_routes(router, app.build_endpoints(config))
+
+
+def test_a_route_whose_addressing_kind_differs_from_the_endpoint_is_rejected():
+    config = app.config_from_legacy()
+    endpoints = app.build_endpoints(config)
+    router = AddressRouter()
+    router.add_physical(config.obd_functional_id, app.ENGINE_ECU)  # 0x7DF is the functional id
+    router.add_physical(config.obd_physical_id, app.ENGINE_ECU)
+    router.add_physical(config.uds_request_id, app.ENGINE_ECU)
+    with pytest.raises(ValueError, match="0x7DF"):
+        app.check_routes(router, endpoints)
+
+
+@pytest.mark.asyncio
+async def test_run_rejects_inconsistent_routes_before_opening_sockets(monkeypatch):
+    RecordingTransport.instances.clear()
+    monkeypatch.setattr(app, "build_router", lambda config: AddressRouter())
+    coro = app.run(app.config_from_legacy(), install_signal_handlers=False, transport_factory=RecordingTransport)
+    # wait_for bounds the failure: without the check, run() would start and wait forever.
+    with pytest.raises(ValueError):
+        await asyncio.wait_for(coro, timeout=2.0)
+    assert RecordingTransport.instances == [], "no socket may be opened when the routes are inconsistent"
 
 
 def test_dispatcher_answers_by_sid_on_every_engine_address(monkeypatch):
