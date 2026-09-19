@@ -11,7 +11,7 @@ DEV-03 and DEV-04. J1979-2, J1979-3, DoIP and other roadmap standards were not r
 | Item | Revision | Source type | Full text available? | Relevant to this phase |
 |---|---|---|---|---|
 | SAE J1979 | `J1979_202505`, reaffirmed 2025-05-23; last technical revision `J1979_201702` (Feb 2017); originally issued Dec 1991 | Official publisher listing (SAE Mobilus) | **No** — purchase or subscription | Defines the service 01 and 09 response formats all three deviations concern |
-| SAE J1979-DA (Digital Annex) | `J1979DA_202508`, revised 2025-08-18; originally issued Sep 2010 | Official publisher listing (SAE Mobilus) | **No** — purchase or subscription | Holds the registry of data identifiers; would settle the PID 0A field layout |
+| SAE J1979-DA (Digital Annex) | **`J1979DA_202607`, revised 2026-07-16** (current). `J1979DA_202508` and `J1979DA_202504` are superseded/historical | Official publisher listing (SAE Mobilus) | **No** — purchase or subscription | Holds the registry of data identifiers; would settle the PID 0A field layout |
 | ISO 15031-5 | International equivalent of J1979 | Publisher listing | **No** — licensed | Same content; equally unavailable |
 | SAE J2012 | not reviewed | — | n/a | **Not applicable.** These three deviations do not touch DTC encoding |
 | ISO 15765-4 | not reviewed | — | n/a | **Not applicable.** No transport or framing rule changes; see note below |
@@ -20,6 +20,22 @@ DEV-03 and DEV-04. J1979-2, J1979-3, DoIP and other roadmap standards were not r
 **The normative text is unavailable.** Neither J1979 nor its Digital Annex can be read by
 this project. Nothing below is a conformance claim, and no row in
 [conformance.md](../conformance.md) gains `standards validated` from this phase.
+
+Recorded explicitly, for the avoidance of doubt:
+
+- current Digital Annex revision checked: **`J1979DA_202607`** (2026-07-16);
+- normative text available: **no**;
+- therefore **none** of the Phase 5 corrections are `standards validated`;
+- **no claim is made that the public evidence gathered below reflects every requirement of
+  `J1979DA_202607`.** It reflects observed tester and vehicle behavior and public technical
+  description, nothing more. A later revision may add, narrow or contradict requirements
+  this project cannot see.
+
+The revision metadata was corrected from `J1979DA_202508` to `J1979DA_202607` after this
+review was first written. The publicly visible publisher metadata for the current revision
+describes the same scope, a global registry of regulated emissions and propulsion related
+data identifiers, and revealed nothing that contradicts the evidence or conclusions below,
+which are therefore unchanged.
 
 Note on ISO 15765-4: DEV-02 does not change the response length, so the existing ISO-TP
 multi-frame path is untouched. DEV-03 would change it from 22 to 23 bytes, which stays

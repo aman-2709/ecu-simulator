@@ -327,7 +327,7 @@ a competing version table.
 | ISO 15765-2 | not checked | Implemented by the kernel | None in-repo | — |
 | ISO 15765-4 | not checked | Licensed; conventions public | Conventions implemented, labelled | — |
 | SAE J1979 | `J1979_202505`, reaffirmed 2025-05-23; last technical revision Feb 2017 | Licensed, **text unavailable** | Listed PIDs implemented, labelled | Phase 5 |
-| SAE J1979-DA | `J1979DA_202508`, revised 2025-08-18 | Licensed, **text unavailable** | Would settle the service 09 field layouts; DEV-03 deferred for want of it | Phase 5 |
+| SAE J1979-DA | `J1979DA_202607`, revised 2026-07-16 (supersedes `J1979DA_202508`) | Licensed, **text unavailable** | Would settle the service 09 field layouts; DEV-03 deferred for want of it | Phase 5 |
 | SAE J2012 | not checked | Licensed; encoding public | Existing encoder retained | — |
 | ISO 14229-1 | not checked | Licensed; formats public | V1 services implemented, labelled | — |
 | SAE J1979-2, J1979-3 | not checked | Licensed, not public | Nothing implemented | — |
