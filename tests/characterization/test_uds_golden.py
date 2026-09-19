@@ -96,21 +96,25 @@ def test_0x11_suppress_positive_response_bit_corrected():
 # --- 0x19 ReadDTCInformation ----------------------------------------------------------------
 
 
-def test_0x19_02_without_status_mask_returns_all_dtcs_with_fixed_status():
-    # DEV-05 and DEV-16: 59 02 FF, then per DTC: 2-byte J2012 code, 0x01, status 0x2F.
-    assert uds("1902").hex() == "5902ff" + "9477012f" + "0001012f"
+def test_0x19_02_with_a_status_mask_returns_the_matching_dtcs():
+    # DEV-05 corrected in Phase 6: the three-byte form is the request shape, and the mask
+    # is applied. Before, this was answered 7F 19 13. DEV-16 still fixes the third byte at
+    # 0x01 and the status at 0x2F at this point.
+    assert uds("1902ff").hex() == "5902ff" + "9477012f" + "0001012f"
 
 
-def test_0x19_02_with_status_mask_today_gets_incorrect_length_nrc():
-    assert uds("1902ff").hex() == "7f1913"
-    assert uds("190200").hex() == "7f1913"
+def test_0x19_02_without_a_status_mask_is_now_a_length_error():
+    # DEV-05, the other half: the two-byte form used to answer 59 02 FF with every code.
+    # The mask is a mandatory request parameter, so a request without one is malformed.
+    assert uds("1902").hex() == "7f1913"
 
 
-@xfail_deviation("DEV-05", "0x19 0x02 rejects the DTCStatusMask byte")
-def test_0x19_02_with_status_mask_corrected_is_answered_positively():
-    response = uds("1902ff")
-    assert response is not None
-    assert response[:2] == b"\x59\x02"
+def test_0x19_02_with_more_than_a_status_mask_is_a_length_error():
+    assert uds("1902ff00").hex() == "7f1913"
+
+
+def test_0x19_02_with_a_mask_matching_nothing_returns_the_header_alone():
+    assert uds("190200").hex() == "5902ff"
 
 
 @pytest.mark.parametrize(
@@ -138,7 +142,7 @@ def test_0x19_02_with_empty_dtc_list_returns_header_only():
 
     providers = DtcRegistry()
     providers.register(DtcStoreProvider("engine", DtcStore()))
-    assert UdsProtocol(dtc_providers=providers).handle(ServiceRequest(b"\x19\x02")).hex() == "5902ff"
+    assert UdsProtocol(dtc_providers=providers).handle(ServiceRequest(b"\x19\x02\xff")).hex() == "5902ff"
 
 
 # --- Unsupported services and malformed input ------------------------------------------------

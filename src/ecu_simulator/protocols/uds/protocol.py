@@ -115,17 +115,25 @@ class UdsProtocol:
         and length. This one is chosen to keep every currently pinned negative response
         unchanged except where correcting DEV-05 forces a change.
 
-        DEV-05 preserved at this step: sub-function 0x02 still requires exactly two bytes.
+        Sub-function 0x02 takes a DTCStatusMask, so its request is exactly three bytes
+        (DEV-05). A record is reported when ``(status & DTCStatusMask) != 0``; when
+        nothing matches, the response is the header alone.
+
+        The request shape and the filter rule are corroborated by the AUTOSAR Dcm
+        specification, which states the rule in those words, and by two independent
+        open-source implementations that both treat the mask as mandatory. ISO 14229-1
+        itself is unread, so this is not standards validated.
         """
         if len(payload) < 2:
             return self._nrc(READ_DTC_INFORMATION, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
         report_type = payload[1]
         if report_type != REPORT_DTC_BY_STATUS_MASK:
             return self._nrc(READ_DTC_INFORMATION, NRC_SUB_FUNCTION_NOT_SUPPORTED)
-        if len(payload) != 2:
+        if len(payload) != 3:
             return self._nrc(READ_DTC_INFORMATION, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
+        status_mask = payload[2]
         header = bytes([positive_response_sid(READ_DTC_INFORMATION), report_type, STATUS_AVAILABILITY_MASK])
-        records = self.dtc_providers.read(STATUS_AVAILABILITY_MASK)
+        records = self.dtc_providers.read(status_mask)
         return header + b"".join(record.to_bytes() for record in records)
 
     # -- framing ---------------------------------------------------------------------------------

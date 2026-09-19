@@ -86,15 +86,24 @@ def test_0x11_suppress_positive_response_bit_is_still_not_masked():
 
 
 def test_0x19_02_answers_the_configured_codes_with_the_fixed_status():
-    # DEV-05 and DEV-16, both preserved at this step: the two-byte form is accepted, the
-    # availability mask is FF and every record carries third byte 01 and status 2F.
-    assert ask("1902").hex() == "5902ff" + "9477012f" + "0001012f"
+    # DEV-16 still fixes the third byte at 01 and the status at 2F at this step.
+    assert ask("1902ff").hex() == "5902ff" + "9477012f" + "0001012f"
 
 
-def test_0x19_02_with_a_status_mask_is_still_rejected():
-    # DEV-05, preserved at this step.
-    assert ask("1902ff").hex() == "7f1913"
-    assert ask("190200").hex() == "7f1913"
+def test_0x19_02_requires_a_status_mask():
+    # DEV-05: the mask is a mandatory request parameter.
+    assert ask("1902").hex() == "7f1913"
+    assert ask("1902ff00").hex() == "7f1913"
+
+
+@pytest.mark.parametrize("mask", ["00", "40", "10"])
+def test_0x19_02_omits_every_record_a_mask_matches_no_bit_of(mask):
+    # (status & mask) != 0 is the filter. 0x2F has neither bit 6 nor bit 4.
+    assert ask("1902" + mask).hex() == "5902ff"
+
+
+def test_0x19_02_keeps_a_record_a_mask_shares_one_bit_with():
+    assert ask("190201").hex() == "5902ff" + "9477012f" + "0001012f"
 
 
 @pytest.mark.parametrize(
@@ -115,16 +124,16 @@ def test_0x19_without_a_subfunction_is_a_length_error():
 
 def test_0x19_02_with_no_configured_codes_answers_the_header_alone():
     proto, _ = protocol(())
-    assert proto.handle(ServiceRequest(b"\x19\x02")).hex() == "5902ff"
+    assert proto.handle(ServiceRequest(b"\x19\x02\xff")).hex() == "5902ff"
 
 
 def test_0x19_02_reads_through_the_registry_so_it_follows_the_store():
     proto, store = protocol()
-    assert proto.handle(ServiceRequest(b"\x19\x02")).hex() == "5902ff" + "9477012f" + "0001012f"
+    assert proto.handle(ServiceRequest(b"\x19\x02\xff")).hex() == "5902ff" + "9477012f" + "0001012f"
     store.clear()
     # The status byte is still fixed at this step, so clearing does not yet remove a
     # record; it is the store that is read, not a copy taken at construction.
-    assert proto.handle(ServiceRequest(b"\x19\x02")).hex() == "5902ff" + "9477012f" + "0001012f"
+    assert proto.handle(ServiceRequest(b"\x19\x02\xff")).hex() == "5902ff" + "9477012f" + "0001012f"
 
 
 # --- unsupported and malformed -------------------------------------------------------------------

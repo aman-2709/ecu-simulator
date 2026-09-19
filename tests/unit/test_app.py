@@ -176,7 +176,7 @@ def test_uds_dtc_records_come_from_the_profile_without_any_module_global(tmp_pat
     path = tmp_path / "p.yaml"
     path.write_text(text)
     dispatcher = app.build_dispatcher(app.RuntimeConfig.build(load_profile(path)))
-    response = dispatcher(DiagnosticRequest(b"\x19\x02", 0x7E1))
+    response = dispatcher(DiagnosticRequest(b"\x19\x02\xff", 0x7E1))
     assert response.payload.hex() == "5902ff" + "0100012f" + "0001012f"
 
 
