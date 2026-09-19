@@ -48,8 +48,24 @@ def test_implicit_engine_ecu_is_derived_from_legacy_config():
 
 def test_router_maps_every_legacy_address_to_the_engine_ecu():
     router = app.build_router(app.config_from_legacy())
-    assert dict(router.physical_routes) == {0x7E0: "engine", 0x7E1: "engine"}
-    assert dict(router.functional_routes) == {0x7DF: ("engine",)}
+    assert {a: r.ecu for a, r in router.physical_routes.items()} == {0x7E0: "engine", 0x7E1: "engine"}
+    assert {a: tuple(r.ecu for r in rs) for a, rs in router.functional_routes.items()} == {0x7DF: ("engine",)}
+
+
+def test_the_obd_broadcast_route_enables_obd_only_and_stays_silent_on_unknown_services():
+    # UDS is not eligible on 0x7DF, so a UDS request there reaches no protocol at all.
+    router = app.build_router(app.config_from_legacy())
+    (broadcast,) = router.functional_routes[0x7DF]
+    assert broadcast.protocols == frozenset({"obd"})
+    assert broadcast.answer_unsupported is False
+
+
+def test_both_physical_routes_enable_obd_and_uds_and_answer_unknown_services():
+    router = app.build_router(app.config_from_legacy())
+    for address in (0x7E0, 0x7E1):
+        route = router.physical_routes[address]
+        assert route.protocols == frozenset({"obd", "uds"}), address
+        assert route.answer_unsupported is True, address
 
 
 def test_router_addresses_match_the_endpoints_that_receive():
@@ -69,8 +85,8 @@ def test_a_receiving_endpoint_without_a_route_is_rejected_at_startup():
     # Otherwise the socket is open and every request on it is silently dropped.
     config = app.config_from_legacy()
     router = AddressRouter()
-    router.add_functional(config.obd_functional_id, app.ENGINE_ECU)
-    router.add_physical(config.obd_physical_id, app.ENGINE_ECU)
+    router.add_functional(config.obd_functional_id, app.ENGINE_ECU, ("obd",))
+    router.add_physical(config.obd_physical_id, app.ENGINE_ECU, ("obd", "uds"))
     with pytest.raises(ValueError, match="0x7E1"):
         app.check_routes(router, app.build_endpoints(config))
 
@@ -78,7 +94,7 @@ def test_a_receiving_endpoint_without_a_route_is_rejected_at_startup():
 def test_a_route_without_a_receiving_endpoint_is_rejected_at_startup():
     config = app.config_from_legacy()
     router = app.build_router(config)
-    router.add_physical(0x7E5, app.ENGINE_ECU)
+    router.add_physical(0x7E5, app.ENGINE_ECU, ("obd",))
     with pytest.raises(ValueError, match="0x7E5"):
         app.check_routes(router, app.build_endpoints(config))
 
@@ -87,9 +103,9 @@ def test_a_route_whose_addressing_kind_differs_from_the_endpoint_is_rejected():
     config = app.config_from_legacy()
     endpoints = app.build_endpoints(config)
     router = AddressRouter()
-    router.add_physical(config.obd_functional_id, app.ENGINE_ECU)  # 0x7DF is the functional id
-    router.add_physical(config.obd_physical_id, app.ENGINE_ECU)
-    router.add_physical(config.uds_request_id, app.ENGINE_ECU)
+    router.add_physical(config.obd_functional_id, app.ENGINE_ECU, ("obd",))  # 0x7DF is functional
+    router.add_physical(config.obd_physical_id, app.ENGINE_ECU, ("obd", "uds"))
+    router.add_physical(config.uds_request_id, app.ENGINE_ECU, ("obd", "uds"))
     with pytest.raises(ValueError, match="0x7DF"):
         app.check_routes(router, endpoints)
 
@@ -116,8 +132,11 @@ def test_dispatcher_answers_by_sid_on_every_engine_address(monkeypatch):
     session = DiagnosticResponse(b"\x50\x03\x00\x1e\x0b\xb8")
     assert dispatcher(DiagnosticRequest(b"\x01\x0d", 0x7DF, functional=True, context=obd)) == speed
     assert dispatcher(DiagnosticRequest(b"\x10\x03", 0x7E1, context=uds)) == session
-    # Phase 3: dispatch is by SID, not by the address a request arrived on.
+    # Dispatch is by SID among the protocols the route enables; both physical ids enable
+    # OBD and UDS, so a UDS request on 0x7E0 is answered.
     assert dispatcher(DiagnosticRequest(b"\x10\x03", 0x7E0, context=physical)) == session
+    # 0x7DF enables OBD only, so UDS is never reached there.
+    assert dispatcher(DiagnosticRequest(b"\x10\x03", 0x7DF, functional=True, context=obd)) is None
     assert dispatcher(DiagnosticRequest(b"\x01\x0d", 0x7E1, context=uds)) == DiagnosticResponse(b"\x41\x0d\x01")
     assert dispatcher(DiagnosticRequest(b"\x01\x0c", 0x7DF, functional=True, context=obd)) is None
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from ecu_simulator.ecu import Ecu
+from ecu_simulator.ecu import Ecu, Route
 from ecu_simulator.obd import responses
 from ecu_simulator.protocols.base import DiagnosticProtocol, ServiceRequest
 from ecu_simulator.protocols.obd import LegacyObdProtocol
@@ -51,5 +51,10 @@ def test_both_wrappers_register_on_one_ecu_without_conflict(reset_speed):
     engine = Ecu("engine")
     engine.register(LegacyObdProtocol())
     engine.register(LegacyUdsProtocol())
-    assert engine.handle(DiagnosticRequest(b"\x01\x2f", 0x7DF, functional=True)) == DiagnosticResponse(b"\x41\x2f\x7f")
-    assert engine.handle(DiagnosticRequest(b"\x11\x01", 0x7E1)) == DiagnosticResponse(b"\x51\x01")
+    broadcast = Route("engine", frozenset({"obd"}), answer_unsupported=False)
+    direct = Route("engine", frozenset({"obd", "uds"}))
+    fuel = DiagnosticResponse(b"\x41\x2f\x7f")
+    assert engine.handle(DiagnosticRequest(b"\x01\x2f", 0x7DF, functional=True), broadcast) == fuel
+    assert engine.handle(DiagnosticRequest(b"\x11\x01", 0x7E1), direct) == DiagnosticResponse(b"\x51\x01")
+    # UDS is not enabled on the broadcast route, so the UDS wrapper is never reached there.
+    assert engine.handle(DiagnosticRequest(b"\x11\x01", 0x7DF, functional=True), broadcast) is None

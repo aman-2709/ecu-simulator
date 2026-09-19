@@ -6,6 +6,6 @@ types used are the addressing-only records in :mod:`ecu_simulator.transport.mess
 
 from ecu_simulator.ecu.dispatcher import Dispatcher
 from ecu_simulator.ecu.ecu import Ecu, ServiceConflictError
-from ecu_simulator.ecu.router import AddressRouter, RouteConflictError
+from ecu_simulator.ecu.router import AddressRouter, Route, RouteConflictError
 
-__all__ = ["AddressRouter", "Dispatcher", "Ecu", "RouteConflictError", "ServiceConflictError"]
+__all__ = ["AddressRouter", "Dispatcher", "Ecu", "Route", "RouteConflictError", "ServiceConflictError"]

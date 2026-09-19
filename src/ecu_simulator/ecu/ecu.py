@@ -1,8 +1,9 @@
 """One simulated ECU: a name and the protocols registered for its service identifiers.
 
-Dispatch is by SID only. Every SID belongs to at most one protocol; a second protocol
-claiming a registered SID is a configuration error (no first-match). The ECU receives
-addressing-only requests and returns payload-only responses: it never sees a socket.
+Dispatch is by SID, restricted to the protocols the request's route enables. Every SID
+belongs to at most one protocol; a second protocol claiming a registered SID is a
+configuration error (no first-match). The ECU receives addressing-only requests and
+returns payload-only responses: it never sees a socket.
 """
 
 from __future__ import annotations
@@ -10,9 +11,9 @@ from __future__ import annotations
 import logging
 from types import MappingProxyType
 
+from ecu_simulator.ecu.router import Route
 from ecu_simulator.logging import log_context
 from ecu_simulator.protocols.base import (
-    NEGATIVE_RESPONSE_SID,
     NRC_SERVICE_NOT_SUPPORTED,
     DiagnosticProtocol,
     ServiceRequest,
@@ -82,12 +83,21 @@ class Ecu:
 
     # -- handling ----------------------------------------------------------------------------
 
-    def handle(self, request: DiagnosticRequest) -> DiagnosticResponse | None:
-        """Answer one request; ``None`` means "send nothing"."""
-        with log_context(self.name):
-            return self._handle(request)
+    def handle(self, request: DiagnosticRequest, route: Route) -> DiagnosticResponse | None:
+        """Answer one request as ``route`` permits; ``None`` means "send nothing".
 
-    def _handle(self, request: DiagnosticRequest) -> DiagnosticResponse | None:
+        ``route`` names the protocols this ECU serves on the address the request arrived
+        on. A protocol it does not name is never invoked, so nothing it would have
+        produced has to be filtered out afterwards. A response an eligible protocol does
+        produce is transmitted as-is: it is never discarded for being negative, nor
+        because the request was functionally addressed.
+        """
+        if route.ecu != self.name:
+            raise ValueError(f"{self.name}: route belongs to ECU {route.ecu!r}")
+        with log_context(self.name):
+            return self._handle(request, route)
+
+    def _handle(self, request: DiagnosticRequest, route: Route) -> DiagnosticResponse | None:
         if not request.payload:
             logger.warning("%s: empty request on 0x%X ignored", self.name, request.target_address)
             return None
@@ -99,10 +109,10 @@ class Ecu:
             "functional" if request.functional else "physical",
             service.payload.hex(),
         )
-        protocol = self._by_sid.get(service.sid)
+        protocol = self._eligible_protocol(service, route)
         payload: bytes | None
         if protocol is None:
-            payload = self._unsupported_service(service)
+            payload = self._unserved_on_this_route(service, route)
         else:
             with log_context(self.name, protocol.name):
                 payload = protocol.handle(service)
@@ -114,19 +124,35 @@ class Ecu:
             # in it, not an empty frame to transmit.
             logger.error("%s: protocol returned an empty response; nothing sent", self.name)
             return None
-        if request.functional and payload[0] == NEGATIVE_RESPONSE_SID:
-            # A functionally addressed request draws no negative response: the public
-            # ISO 14229-1 convention, and what this bus did before the ECU served every
-            # SID on every address. Not a compliance claim.
-            logger.info("%s: negative response %s suppressed on a functional request", self.name, payload.hex())
-            return None
         logger.info("%s tx response %s", self.name, payload.hex())
         return DiagnosticResponse(payload)
 
-    def _unsupported_service(self, request: ServiceRequest) -> bytes:
-        """No protocol claims the SID: NRC 0x11 serviceNotSupported (DEV-06 corrected).
+    def _eligible_protocol(self, request: ServiceRequest, route: Route) -> DiagnosticProtocol | None:
+        """The protocol serving this SID on this route, or ``None`` if the route has none."""
+        protocol = self._by_sid.get(request.sid)
+        if protocol is None:
+            return None
+        if not route.permits(protocol.name):
+            # The SID is served by this ECU, but not on the address it arrived on. The
+            # protocol is not called at all.
+            logger.info(
+                "%s: SID 0x%02X belongs to %s, which is not enabled on this route (enabled: %s)",
+                self.name,
+                request.sid,
+                protocol.name,
+                ", ".join(sorted(route.protocols)),
+            )
+            return None
+        return protocol
 
-        On a functional request the caller suppresses it, like any negative response.
-        """
-        logger.warning("%s: SID 0x%02X is not served by any protocol", self.name, request.sid)
+    def _unserved_on_this_route(self, request: ServiceRequest, route: Route) -> bytes | None:
+        """No eligible protocol claims the SID; the route decides whether to answer."""
+        logger.warning(
+            "%s: SID 0x%02X is not served by any protocol enabled here (%s)",
+            self.name,
+            request.sid,
+            ", ".join(sorted(route.protocols)),
+        )
+        if not route.answer_unsupported:
+            return None
         return negative_response(request.sid, NRC_SERVICE_NOT_SUPPORTED)

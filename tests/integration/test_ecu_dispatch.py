@@ -1,10 +1,10 @@
 """Which services each address answers, on the real kernel ISO-TP path.
 
-Phase 2 routed by endpoint name: a UDS SID arriving on an OBD address, or an OBD SID on
-the UDS address, was dropped. Since Phase 3 every address of the implicit ``engine`` ECU
-routes to that one ECU, which dispatches by SID, so each registered service is served on
-each of the ECU's addresses, and a SID no protocol serves is answered with NRC 0x11 on a
-physical address and ignored on the functional one (DEV-06 corrected).
+The engine ECU serves the protocols its route enables. Both physical ids (0x7E0, 0x7E1)
+enable OBD and UDS, so each answers either protocol and answers an unknown service with
+NRC 0x11 (DEV-06). The OBD broadcast id 0x7DF enables OBD only, so a UDS request there
+reaches no protocol at all and nothing is transmitted; an unknown service is silent there
+too, which is the OBD convention for a broadcast.
 """
 
 import pytest
@@ -42,49 +42,58 @@ def uds_physical(vcan, simulator: Simulator):
         sock.close()
 
 
-# --- UDS SID on the OBD addresses ------------------------------------------------------------
+# --- the OBD broadcast route enables OBD only --------------------------------------------------
 
 
-def test_uds_sid_on_obd_physical_address_is_answered(obd_physical):
+def test_obd_service_on_the_functional_address_is_answered(functional):
+    functional.send(b"\x01\x2f")
+    assert functional.recv() == FUEL_RESPONSE
+
+
+@pytest.mark.parametrize("request_hex", ["1001", "1005", "1901"], ids=["session", "bad-subfunction", "read-dtc"])
+def test_uds_service_on_the_functional_address_reaches_no_protocol(functional, request_hex):
+    # UDS is not enabled on 0x7DF, so nothing is produced: neither the positive response
+    # for a well-formed request nor a negative one for a malformed request.
+    functional.send(bytes.fromhex(request_hex))
+    with pytest.raises(TimeoutError):
+        functional.recv()
+
+
+def test_the_functional_channel_still_serves_obd_after_an_ignored_uds_request(functional):
+    functional.send(b"\x10\x01")
+    with pytest.raises(TimeoutError):
+        functional.recv()
+    functional.send(b"\x01\x51")
+    assert functional.recv() == b"\x41\x51\x01"
+
+
+def test_unknown_service_on_the_functional_address_gets_no_response(functional):
+    functional.send(b"\x22\xf1\x90")
+    with pytest.raises(TimeoutError):
+        functional.recv()
+
+
+# --- both physical routes enable OBD and UDS ----------------------------------------------------
+
+
+def test_uds_service_on_the_obd_physical_address_is_answered(obd_physical):
     obd_physical.send(b"\x10\x01")
     assert obd_physical.recv() == SESSION_RESPONSE
 
 
-def test_uds_sid_on_functional_address_is_answered_on_the_physical_response_id(functional):
-    functional.send(b"\x10\x01")
-    assert functional.recv() == SESSION_RESPONSE
-
-
-# --- OBD SID on the UDS address ---------------------------------------------------------------
-
-
-def test_obd_sid_on_uds_address_is_answered(uds_physical):
+def test_obd_service_on_the_uds_physical_address_is_answered(uds_physical):
     uds_physical.send(b"\x01\x2f")
     assert uds_physical.recv() == FUEL_RESPONSE
 
 
-# --- SIDs no protocol serves (DEV-06) --------------------------------------------------------
+def test_a_negative_response_from_an_enabled_protocol_is_transmitted(uds_physical):
+    # UDS is enabled here, so its negative response goes out unaltered; nothing filters
+    # a response for being negative.
+    uds_physical.send(b"\x10\x05")
+    assert uds_physical.recv() == b"\x7f\x10\x12"
 
 
-def test_unsupported_sid_on_uds_address_gets_nrc_0x11(uds_physical):
-    # DEV-06 corrected.
+def test_unknown_service_on_a_physical_address_gets_nrc_0x11(uds_physical):
+    # DEV-06 corrected, from the route's unsupported-service policy.
     uds_physical.send(b"\x22\xf1\x90")
     assert uds_physical.recv() == b"\x7f\x22\x11"
-
-
-def test_negative_response_is_not_sent_to_a_functional_request(functional):
-    # A UDS sub-function error reaches the functional address only since Phase 3; no
-    # negative response goes out there, as was the case before.
-    functional.send(b"\x10\x05")
-    with pytest.raises(TimeoutError):
-        functional.recv()
-    # the channel still works
-    functional.send(b"\x10\x01")
-    assert functional.recv() == SESSION_RESPONSE
-
-
-def test_unsupported_sid_on_functional_address_gets_no_response(functional):
-    # Unchanged by DEV-06: negative responses are not sent to functionally addressed requests.
-    functional.send(b"\x22\xf1\x90")
-    with pytest.raises(TimeoutError):
-        functional.recv()

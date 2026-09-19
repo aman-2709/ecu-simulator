@@ -6,7 +6,7 @@ import logging
 import pytest
 
 from ecu_simulator import logging as ecu_logging
-from ecu_simulator.ecu import Ecu
+from ecu_simulator.ecu import Ecu, Route
 from ecu_simulator.loggers import logger_app
 from ecu_simulator.transport import DiagnosticRequest
 
@@ -104,7 +104,7 @@ def test_ecu_handles_requests_inside_its_context(caplog):
     spy = Spy()
     ecu.register(spy)
     with caplog.at_level(logging.INFO):
-        ecu.handle(DiagnosticRequest(b"\x3e\x00", 0x7E1))
+        ecu.handle(DiagnosticRequest(b"\x3e\x00", 0x7E1), Route("engine", frozenset({"spy"})))
     assert spy.context == ecu_logging.LogContext("engine", "spy")
     assert ecu_logging.current_context() is None
     stamped = {(r.ecu, r.protocol) for r in caplog.records}

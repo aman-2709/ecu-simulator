@@ -1,9 +1,9 @@
-"""The request handler a transport calls: route by address, hand to the ECU, return its answer.
+"""The request handler a transport calls: resolve the route, hand it to the ECU.
 
-``transport -> AddressRouter -> Ecu -> DiagnosticProtocol``. The dispatcher strips the
+``transport -> route binding -> Ecu -> eligible protocol``. The dispatcher strips the
 transport's opaque ``context`` before the ECU sees the request, so an ECU can never
-reach a socket through it. Functional fan-out to several ECUs is rejected at
-construction until the transport can carry one response per ECU (Phase 9).
+reach a socket through it. Functional fan-out to several ECUs is rejected until the
+transport can carry one response per ECU (Phase 9).
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from types import MappingProxyType
 
 from ecu_simulator.ecu.ecu import Ecu
-from ecu_simulator.ecu.router import AddressRouter
+from ecu_simulator.ecu.router import AddressRouter, Route
 from ecu_simulator.transport.messages import DiagnosticRequest, DiagnosticResponse
 
 logger = logging.getLogger(__name__)
@@ -30,8 +30,16 @@ class Dispatcher:
         unknown = sorted(router.ecu_names - set(by_name))
         if unknown:
             raise ValueError(f"router names ECUs that do not exist: {unknown}")
-        for address, names in router.functional_routes.items():
-            _reject_fan_out(address, names)
+        for route in router.routes:
+            served = {protocol.name for protocol in by_name[route.ecu].protocols}
+            missing = sorted(route.protocols - served)
+            if missing:
+                raise ValueError(
+                    f"route for ECU {route.ecu!r} enables protocols it does not serve: {missing} "
+                    f"(registered: {sorted(served)})"
+                )
+        for address, routes in router.functional_routes.items():
+            _reject_fan_out(address, routes)
         self._router = router
         self._ecus = by_name
 
@@ -44,8 +52,8 @@ class Dispatcher:
         return MappingProxyType(self._ecus)
 
     def __call__(self, request: DiagnosticRequest) -> DiagnosticResponse | None:
-        names = self._router.resolve(request)
-        if not names:
+        routes = self._router.resolve(request)
+        if not routes:
             logger.warning(
                 "no ECU for %s request on 0x%X; dropped",
                 "functional" if request.functional else "physical",
@@ -53,13 +61,14 @@ class Dispatcher:
             )
             return None
         # The router is a live object and may have gained routes since construction.
-        _reject_fan_out(request.target_address, names)
-        return self._ecus[names[0]].handle(dataclasses.replace(request, context=None))
+        _reject_fan_out(request.target_address, routes)
+        route = routes[0]
+        return self._ecus[route.ecu].handle(dataclasses.replace(request, context=None), route)
 
 
-def _reject_fan_out(address: int, names: tuple[str, ...]) -> None:
-    if len(names) > 1:
+def _reject_fan_out(address: int, routes: tuple[Route, ...]) -> None:
+    if len(routes) > 1:
         raise NotImplementedError(
-            f"functional address 0x{address:X} is shared by {list(names)}; "
+            f"functional address 0x{address:X} is shared by {[r.ecu for r in routes]}; "
             "fan-out to several ECUs needs per-ECU response routing (Phase 9)"
         )

@@ -101,11 +101,20 @@ def build_ecus(config: RuntimeConfig) -> list[Ecu]:
 
 
 def build_router(config: RuntimeConfig) -> AddressRouter:
-    """Every legacy address routes to the engine ECU; the OBD broadcast id is functional."""
+    """Every legacy address routes to the engine ECU, with the protocols enabled there.
+
+    The OBD broadcast id carries OBD only: UDS is not eligible on it, so a UDS request on
+    0x7DF reaches no protocol at all, exactly as before this ECU served several protocols
+    (the shipped config records that "the UDS module does not use functional addressing").
+    An unclaimed service identifier draws no response there either, which is the OBD
+    convention for a broadcast. Both physical ids carry OBD and UDS and answer an
+    unclaimed service identifier with NRC 0x11 (DEV-06).
+    """
+    obd, uds = LegacyObdProtocol.name, LegacyUdsProtocol.name
     router = AddressRouter()
-    router.add_functional(config.obd_functional_id, ENGINE_ECU)
-    router.add_physical(config.obd_physical_id, ENGINE_ECU)
-    router.add_physical(config.uds_request_id, ENGINE_ECU)
+    router.add_functional(config.obd_functional_id, ENGINE_ECU, protocols=(obd,), answer_unsupported=False)
+    router.add_physical(config.obd_physical_id, ENGINE_ECU, protocols=(obd, uds))
+    router.add_physical(config.uds_request_id, ENGINE_ECU, protocols=(obd, uds))
     return router
 
 
