@@ -27,15 +27,36 @@ I created this project to learn more about the OBD and UDS protocols. I did my b
 
 | Service | PID    |          Description                   |
 |:-------:|:-----: |:---------------------------------------|
-| 0x01    | 0x00   | List of supported PIDs in service 0x01 |
+| 0x01    | 0x00, 0x20, 0x40 | Supported parameters, advertised only where populated |
+| 0x01    | 0x04   | Calculated engine load |
 | 0x01    | 0x05   | Engine coolant temperature |
+| 0x01    | 0x06, 0x07 | Short and long term fuel trim, bank 1 |
+| 0x01    | 0x0B   | Intake manifold absolute pressure |
+| 0x01    | 0x0C   | Engine speed |
 | 0x01    | 0x0D   | Vehicle speed |
+| 0x01    | 0x0E   | Timing advance |
+| 0x01    | 0x0F   | Intake air temperature |
+| 0x01    | 0x10   | Mass air flow rate |
+| 0x01    | 0x11   | Throttle position |
+| 0x01    | 0x1C   | OBD standards conformed to |
+| 0x01    | 0x1F   | Run time since engine start |
 | 0x01    | 0x2F   | Fuel tank level input |
+| 0x01    | 0x42   | Control module voltage |
+| 0x01    | 0x46   | Ambient air temperature |
 | 0x01    | 0x51   | Fuel type |
-| 0x03    | -      | Request DTCs |
-| 0x09    | 0x00   | List of supported PIDs in service 0x09 |
+| 0x03    | -      | Request stored DTCs |
+| 0x09    | 0x00   | Supported parameters in service 0x09 |
 | 0x09    | 0x02   | Vehicle Identification Number (VIN) |
 | 0x09    | 0x0A   | ECU name |
+
+Values come from the profile's vehicle section as physical quantities, and the encoders
+turn them into wire bytes. A read never changes them, so two identical requests give
+identical answers; time-varying behavior arrives with the scenario engine. Which
+parameters are supported follows from which signals the configured vehicle has, so a
+battery-electric profile advertises no engine parameters.
+
+See [docs/conformance.md](docs/conformance.md) for how far each one is verified and what
+evidence its encoding rests on. Nothing is standards validated.
 
 ### UDS (ISO 14229)
 

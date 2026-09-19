@@ -66,27 +66,48 @@ usage as it is publicly described. The specification text has not been reviewed.
 
 ## OBD-II services
 
-Served by the legacy OBD implementation, unchanged from upstream except where a DEV
-identifier says otherwise. Modes `0x01` to `0x0A` are accepted as valid service
-identifiers; those not listed below produce no response (DEV-11).
+Served by the parameter table in `protocols/obd/pids.py`, which reads vehicle state
+through signal paths. Modes `0x01` to `0x0A` are accepted as valid service identifiers;
+those not listed below produce no response (DEV-11).
 
-| Service | PID | Description | Implemented | Unit tested | Integration tested | Hardware validated | Standards validated |
-|---|---|---|---|---|---|---|---|
-| 0x01 | 0x00 | supported PIDs 0x01-0x20 | yes | yes | yes | no | no |
-| 0x01 | 0x05 | engine coolant temperature | yes | yes | no | no | no |
-| 0x01 | 0x0D | vehicle speed | yes | yes | no | no | no |
-| 0x01 | 0x2F | fuel tank level input | yes | yes | yes | no | no |
-| 0x01 | 0x51 | fuel type | yes | yes | yes | no | no |
-| 0x03 | - | stored DTCs | yes | yes | no | no | no |
-| 0x04 | - | clear DTCs | no | yes (DEV-11) | no | n/a | no |
-| 0x07 | - | pending DTCs | no | yes (DEV-11) | no | n/a | no |
-| 0x09 | 0x00 | supported PIDs | yes | yes | no | no | no |
-| 0x09 | 0x02 | VIN | yes | yes | yes | no | no |
-| 0x09 | 0x0A | ECU name | yes | yes | no | no | no |
+`standards validated` is `no` for every row: SAE J1979 (`J1979_202505`) and its Digital
+Annex (`J1979DA_202607`) are licensed and have not been read by this project. The evidence
+column records what each encoding actually rests on.
 
-Known-wrong behavior in these rows is tracked as DEV-02, DEV-03, DEV-04, DEV-09, DEV-10,
-DEV-11, DEV-12, DEV-15 and DEV-18. The values several of these PIDs return are not
-deterministic yet (DEV-09, DEV-10); scenarios arrive in Phase 7.
+| Service | PID | Description | Implemented | Unit tested | Integration tested | Hardware validated | Standards validated | Evidence |
+|---|---|---|---|---|---|---|---|---|
+| 0x01 | 0x00/0x20/0x40 | supported parameters | yes | yes | yes | no | no | derived from the table; continuation behavior from a two-ECU capture in the ELM327 datasheet |
+| 0x01 | 0x01 | monitor status | **no** | yes (absence) | yes (absence) | n/a | no | deferred: DTC-store semantics belong to Phase 6 and the monitor bits are not corroborated |
+| 0x01 | 0x04 | calculated engine load | yes | yes | no | no | no | ELM327 datasheet capture (`04 3F`) |
+| 0x01 | 0x05 | engine coolant temperature | yes | yes | no | no | no | ELM327 datasheet capture (`05 44`) |
+| 0x01 | 0x06/0x07 | short and long term fuel trim, bank 1 | yes | yes | no | no | no | consistent public description; no competing formula |
+| 0x01 | 0x0B | intake manifold absolute pressure | yes | yes | no | no | no | ELM327 datasheet capture (`0B 21`) |
+| 0x01 | 0x0C | engine speed | yes | yes | yes | no | no | ELM327 datasheet capture (`0C 17 B8`) |
+| 0x01 | 0x0D | vehicle speed | yes | yes | no | no | no | consistent public description |
+| 0x01 | 0x0E | timing advance | yes | yes | no | no | no | consistent public description |
+| 0x01 | 0x0F | intake air temperature | yes | yes | no | no | no | consistent public description |
+| 0x01 | 0x10 | mass air flow rate | yes | yes | no | no | no | consistent public description |
+| 0x01 | 0x11 | throttle position | yes | yes | no | no | no | consistent public description |
+| 0x01 | 0x1C | OBD standards conformed to | yes | yes | no | no | no | consistent public description; the reported value is configuration |
+| 0x01 | 0x1F | run time since engine start | yes | yes | no | no | no | consistent public description |
+| 0x01 | 0x2F | fuel tank level input | yes | yes | yes | no | no | consistent public description; truncation unchanged since ce46b87 |
+| 0x01 | 0x42 | control module voltage | yes | yes | no | no | no | consistent public description |
+| 0x01 | 0x46 | ambient air temperature | yes | yes | no | no | no | consistent public description |
+| 0x01 | 0x51 | fuel type | yes | yes | yes | no | no | consistent public description |
+| 0x03 | - | stored DTCs | yes | yes | no | no | no | unchanged since ce46b87 |
+| 0x04 | - | clear DTCs | **no** | yes (absence) | no | n/a | no | deferred to Phase 6: needs mutable DTC-store semantics (DEV-11) |
+| 0x07 | - | pending DTCs | **no** | yes (absence) | no | n/a | no | deferred to Phase 6: needs a pending/confirmed distinction (DEV-11) |
+| 0x09 | 0x00 | supported parameters | yes | yes | no | no | no | derived from the table |
+| 0x09 | 0x02 | VIN | yes | yes | yes | no | no | three independent captures agree on the item count byte (DEV-02) |
+| 0x09 | 0x0A | ECU name | yes | yes | no | no | no | **byte layout unresolved (DEV-03, deferred)**; current bytes frozen by test |
+
+Interoperability evidence: the Mode 01 values were exercised over the kernel ISO-TP path
+on a vcan interface, and the supported-parameter chain and the multi-frame VIN were
+verified on the wire. No hardware adapter has been used yet; that is Phase 8.
+
+Known-wrong or unresolved behavior in these rows is tracked as DEV-03, DEV-11, DEV-15 and
+DEV-18. Reads are deterministic and side-effect free since Phase 5 (DEV-09, DEV-10), but
+nothing varies over time until the Phase 7 scenario engine.
 
 ## UDS services
 
@@ -126,6 +147,8 @@ specification text has not been reviewed, so the row is not `standards validated
 | `validate-config` checks a profile without opening a socket | yes | yes | no | n/a | n/a |
 | Malformed profile rejected with the path to every problem | yes | yes | no | n/a | n/a |
 | Vehicle state addressed by dotted signal path | yes | yes | no | n/a | n/a |
+| Diagnostic reads observe state without advancing it | yes | yes | yes | n/a | n/a |
+| Supported parameters derived from the configured vehicle | yes | yes | yes | n/a | n/a |
 
 The runtime rows describe project behavior, not protocol behavior, so `standards
 validated` does not apply to them. Configuration validation in particular is project input
