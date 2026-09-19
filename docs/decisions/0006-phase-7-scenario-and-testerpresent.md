@@ -492,3 +492,12 @@ Every criterion maps to an automated test, a static check, or a named command, a
 | DEV-23 | Closed by this phase |
 | DEV-07 | Option B closes it with your approval; option A leaves it open and pinned |
 | Everything in section 9 | Preserved, each with a named pin |
+
+## Revision check, 2026-09-19
+
+This record cites AUTOSAR **R24-11**. R24-11 has since been found to be superseded by
+**R25-11**, which was published and is the current release. Every requirement cited here
+was re-checked against R25-11 and is present, with the load-bearing texts identical. The
+evidence, the recommendations and the implemented behavior are unaffected; read every
+"R24-11" below as "R25-11, unchanged from R24-11 in every respect this record relies on".
+See section 7.1 of the plan.

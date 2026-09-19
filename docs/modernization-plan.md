@@ -387,8 +387,8 @@ a competing version table.
 | SAE J1979-2, J1979-3 | not checked | Licensed, not public | Nothing implemented | — |
 | ISO 13400-2 | not checked | Licensed; layouts public | Experimental only | — |
 | ELM327 datasheet | ELM327DSJ | Public | Tester side; supplied the service 09 and service 01 captures behind the Phase 5 decisions, and the service 03 CAN framing, service 04 response and PID 01 first byte behind the Phase 6 ones | Phases 5, 6 |
-| AUTOSAR CP R24-11 SWS Diagnostic Event Manager | R24-11, document ID 19 | **Public** | Corroborates the UDS DTC status byte bit layout and the post-clear state. Not ISO 14229-1 and never a conformance claim | Phase 6 |
-| AUTOSAR CP R24-11 SWS Diagnostic Communication Manager | R24-11, document ID 18 | **Public** | Corroborates the 0x14 and 0x19/02 request and response shapes, the status-mask AND rule, the 0x3E sub-function values, and the `suppressPosRspMsgIndicationBit` rules. Not ISO 14229-1 and never a conformance claim | Phases 6, 7 |
+| AUTOSAR CP SWS Diagnostic Event Manager | **R25-11** (document ID 19). Supersedes R24-11, which the Phase 6 review cited | **Public** | Corroborates the UDS DTC status byte bit layout and the post-clear state. Not ISO 14229-1 and never a conformance claim | Phases 6, 7 |
+| AUTOSAR CP SWS Diagnostic Communication Manager | **R25-11** (document ID 18). Supersedes R24-11, which the Phase 6 review cited | **Public** | Corroborates the 0x14 and 0x19/02 request and response shapes, the status-mask AND rule, the 0x3E sub-function values, and the `suppressPosRspMsgIndicationBit` rules. Not ISO 14229-1 and never a conformance claim | Phases 6, 7 |
 
 No **specification** in this table has been reviewed against its text by this project, and
 for those marked **text unavailable** an attempt was made and the document is paywalled.
@@ -397,6 +397,15 @@ Nothing is `standards validated`. Per-phase evidence reviews live in `docs/decis
 ISO 14229-2, which defines the S3 session timer that TesterPresent exists to reset, is
 deliberately absent: no phase up to and including 7 implements a timer, so this project
 does not rely on it. It is named here only so that Phase 11 knows which document it needs.
+
+The AUTOSAR revision was corrected from R24-11 to R25-11 on 2026-09-19. The Phase 6 and
+Phase 7 reviews were written against R24-11 without checking whether a newer release
+existed, which section 11.1 requires. **Every requirement those reviews cite was re-checked
+against R25-11 and all of them survive**: `SWS_Dcm_00008`, `00200`, `00201`, `00204`,
+`00251`, `01263`, `01265` and `01644`, and `SWS_Dem_00060`, `00385`, `00657` and `01203`.
+The two load-bearing texts are word for word identical - the post-clear UDS status byte
+`0x50` and "shall NOT send a positive response message". No conclusion, no wire behavior
+and no evidence row changes; only the revision label was wrong.
 
 The two AUTOSAR rows are the one exception to "text unavailable": those documents are
 public and were read. They are official specifications of another standards organisation

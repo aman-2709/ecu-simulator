@@ -534,3 +534,12 @@ of making ECU state mutable for the first time:
 - The integration suite's simulator subprocess is module-scoped, which cost nothing while
   every request was a read. A test that clears now decides what the tests after it see, so
   a `mutating` fixture restarts the process for those tests.
+
+## Revision check, 2026-09-19
+
+This record cites AUTOSAR **R24-11**. R24-11 has since been found to be superseded by
+**R25-11**, which was published and is the current release. Every requirement cited here
+was re-checked against R25-11 and is present, with the load-bearing texts identical. The
+evidence, the recommendations and the implemented behavior are unaffected; read every
+"R24-11" below as "R25-11, unchanged from R24-11 in every respect this record relies on".
+See section 7.1 of the plan.
