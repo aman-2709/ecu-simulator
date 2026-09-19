@@ -90,6 +90,9 @@ check_untyped_defs = false
 [[tool.mypy.overrides]]
 module = [
     "ecu_simulator.transport",
+    "ecu_simulator.vehicle",
+    "ecu_simulator.vehicle.*",
+    "ecu_simulator.clock",
     "ecu_simulator.transport.*",
     "ecu_simulator.ecu",
     "ecu_simulator.ecu.*",
