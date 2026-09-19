@@ -136,7 +136,9 @@ compliance. Real session timing is V1.1.
 ## 4. Phases
 
 Each phase leaves the repository runnable. Behavioral wire changes are one commit each,
-preceded by a characterization test that pins the old behavior.
+preceded by a characterization test that pins the old behavior. From Phase 3 onward every
+phase must also pass the phase completion gate in section 10 before it is declared
+complete; each phase's Definition of Done below is in addition to that gate.
 
 ### Phase 0 — Baseline and characterization (V1.0)
 
@@ -371,3 +373,65 @@ Phase 8
 47. `release: v1.0.0`
 
 V1.1 and later commits follow the phase list above with numbering continued.
+
+## 10. Phase completion gate
+
+Standing requirement, added 2026-09-18. It applies to Phase 3 and every phase after it,
+in addition to that phase's own Definition of Done in section 4.
+
+A phase is not complete until the functionality introduced or changed in that phase has
+been directly exercised and verified. Code review, a successful import, static analysis,
+or an aggregate test count that does not exercise the new behavior are never sufficient
+on their own. Targeted verification of the phase's actual behavior is mandatory.
+
+### Required before declaring a phase complete
+
+- Add or update tests for every new or intentionally changed behavior.
+- Run targeted tests for the functionality implemented in that phase.
+- Run regression tests for adjacent behavior that could reasonably have been affected.
+- Run the complete existing test suite.
+- Run the local integration tests whenever the phase touches transport, sockets,
+  CAN/ISO-TP, timing, lifecycle, routing, configuration loading, or wire behavior.
+- Run hardware or manual validation when the phase requires behavior that cannot be
+  meaningfully automated.
+- Run `ruff`.
+- Run `mypy`.
+- Verify there are no unexpected XPASS results.
+- Verify that existing characterization tests did not change except for deliberate,
+  documented behavior corrections.
+- Update the relevant DEV, conformance and documentation status for every intentional
+  behavior change.
+- Push the completed phase to `origin/modernization`.
+- Wait for GitHub CI and verify that the required jobs are green.
+- Record every CI test that was skipped, and why.
+
+### Acceptance-criterion traceability
+
+Every acceptance criterion listed for the phase maps to at least one of: an automated
+unit test, an automated integration test, a characterization or regression test, a
+static-analysis check, an explicit command and its result, or a documented manual or
+hardware verification.
+
+A criterion is never marked complete merely because the implementation exists. A
+criterion that cannot be verified is reported as **not verified**, with the reason. It is
+never silently treated as complete.
+
+### Phase completion report
+
+The report at each phase boundary states, explicitly:
+
+- functionality implemented;
+- behavior directly tested;
+- each acceptance criterion and the verification that covers it;
+- the exact test and verification commands executed;
+- the exact results and counts;
+- deliberate xfail changes with their DEV identifiers;
+- regression-suite result;
+- integration-suite result, where applicable;
+- `ruff` result;
+- `mypy` result;
+- the GitHub CI run and its result;
+- skipped tests and the reason for each;
+- anything that could not be tested, and why;
+- new defects or unexpected behavior discovered;
+- local HEAD SHA, remote HEAD SHA, and the final `git status`.
