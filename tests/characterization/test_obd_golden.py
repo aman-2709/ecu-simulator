@@ -37,6 +37,11 @@ def obd(sid, pid=None):
     return protocol().handle(ServiceRequest(payload))
 
 
+def obd_raw(hex_request):
+    """A request of any length, for the multi-parameter cases (DEV-18)."""
+    return protocol().handle(ServiceRequest(bytes.fromhex(hex_request)))
+
+
 # --- Mode 01 supported-PID masks -------------------------------------------------------
 
 
@@ -105,6 +110,24 @@ def test_mode01_pid01_monitor_status_is_still_absent():
 
 def test_mode01_without_pid_gets_no_response():
     assert obd(0x01, None) is None
+
+
+def test_mode01_multi_parameter_request_today_answers_only_the_first():
+    # DEV-18: every parameter after the first is discarded.
+    assert obd_raw("01052f51").hex() == "410582"
+    assert obd_raw("010d0c").hex() == "410d00"
+    assert obd_raw("01000c").hex() == "41001e3f8013"
+
+
+def test_mode01_multi_parameter_request_today_ignores_an_unsupported_trailing_parameter():
+    # DEV-18: the answer depends only on the first parameter, supported or not.
+    assert obd_raw("0105ff").hex() == "410582"
+    assert obd_raw("01ff05") is None
+
+
+@xfail_deviation("DEV-18", "only the first Mode 01 parameter of a request is answered")
+def test_mode01_multi_parameter_request_corrected_answers_every_parameter():
+    assert obd_raw("01052f51").hex() == "410582" + "2f7f" + "5101"
 
 
 # --- Mode 03 / 04 / 07 -------------------------------------------------------------------
