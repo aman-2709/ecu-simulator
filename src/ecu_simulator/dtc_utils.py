@@ -1,3 +1,7 @@
+# The arithmetic lives in ecu_simulator.dtc.codes now; these tables and wrappers stay
+# only until the legacy UDS module that uses them is deleted.
+from ecu_simulator.dtc import codes
+
 DTC_GROUP = {"P": "00", "C": "01", "B": "10", "U": "11"}
 
 DTC_TYPE = {"0": "00", "1": "01", "2": "10", "3": "11"}
@@ -33,24 +37,15 @@ def encode_uds_dtcs(dtcs):
 
 
 def is_dtc_valid(dtc):
-    return (
-        len(dtc) == DTC_LENGTH
-        and DTC_GROUP.get(dtc[0]) is not None
-        and DTC_TYPE.get(dtc[1]) is not None
-        and is_hex_value(dtc[2])
-        and is_hex_value(dtc[3])
-        and is_hex_value(dtc[4])
-    )
+    return codes.is_valid(dtc)
 
 
 def get_dtc_first_byte(dtc):
-    bits_0_3 = int(DTC_GROUP.get(dtc[0]) + DTC_TYPE.get(dtc[1]) + "0000", 2)
-    bits_4_7 = int("0000" + dtc[2], 16)
-    return (bits_0_3 | bits_4_7).to_bytes(1, BIG_ENDIAN)
+    return bytes([codes.code_number(dtc) >> 8])
 
 
 def get_dtc_second_byte(dtc):
-    return int((dtc[3] + dtc[4]), 16).to_bytes(1, BIG_ENDIAN)
+    return bytes([codes.code_number(dtc) & 0xFF])
 
 
 def is_hex_value(value):

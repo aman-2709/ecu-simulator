@@ -21,10 +21,10 @@ this phase, each tracked by its DEV identifier:
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 
-from ecu_simulator import dtc_utils
+from ecu_simulator.dtc import DtcStore
 from ecu_simulator.protocols.base import ServiceRequest
+from ecu_simulator.protocols.obd import dtc as obd_dtc
 from ecu_simulator.protocols.obd import masks
 from ecu_simulator.protocols.obd.pids import MODE01_PIDS, PidDefinition, supported_pids
 from ecu_simulator.vehicle import VehicleState
@@ -49,7 +49,6 @@ MAX_MODE01_PARAMETERS = 6
 VIN_LENGTH = 17
 VIN_ITEM_COUNT = 1  # DEV-02: one VIN per vehicle
 ECU_NAME_LENGTH = 20
-MAX_DTCS_IN_RESPONSE = 255
 
 INFO_VIN = 0x02
 INFO_ECU_NAME = 0x0A
@@ -78,10 +77,12 @@ class ObdProtocol:
     name = "obd"
     service_ids = CLAIMED_SERVICE_IDS
 
-    def __init__(self, vehicle: VehicleState, *, ecu_name: str, dtcs: Sequence[str] = ()) -> None:
+    def __init__(self, vehicle: VehicleState, *, ecu_name: str, dtcs: DtcStore | None = None) -> None:
         self.vehicle = vehicle
         self.ecu_name = ecu_name
-        self.dtcs = list(dtcs)
+        # The ECU's shared DTC state, not a private copy: Mode 04 clears the same object
+        # UDS 0x14 clears (plan rule 7).
+        self.dtcs = dtcs if dtcs is not None else DtcStore()
 
     # -- parameter support -------------------------------------------------------------------
 
@@ -156,11 +157,14 @@ class ObdProtocol:
         return definition.read(self.vehicle)
 
     def _mode03(self, pid: int | None) -> bytes:
-        encoded = dtc_utils.encode_obd_dtcs(self.dtcs)
-        count = len(encoded) // 2
-        body = bytes([count]) + bytes(encoded) if 0 < count <= MAX_DTCS_IN_RESPONSE else bytes(1)
+        """The confirmed codes in the shared store: what this service calls "stored".
+
+        Folding "stored" into "confirmed" is a modeling decision for this project, not a
+        claim that SAE or ISO define the two as equivalent; see
+        docs/decisions/0004-phase-6-dtc-evidence.md and ecu_simulator.dtc.store.
+        """
         # DEV-15: a trailing request byte is echoed after the service identifier.
-        return self._prefix(MODE_STORED_DTCS, pid, body)
+        return self._prefix(MODE_STORED_DTCS, pid, obd_dtc.encode(self.dtcs.confirmed))
 
     def _mode09(self, pid: int | None) -> bytes | None:
         if pid is None:

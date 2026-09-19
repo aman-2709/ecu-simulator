@@ -23,7 +23,7 @@ FROZEN_PID0A_RESPONSE = bytes.fromhex("490a") + bytes(7) + b"ECU_SIMULATOR"
 def ecu_name_response():
     config = app.RuntimeConfig.build(load_profile(default_profile_path()))
     ecu = config.profile.ecus["engine"]
-    protocol = ObdProtocol(app.build_vehicle(config), ecu_name=ecu.name, dtcs=[d.code for d in ecu.dtcs])
+    protocol = ObdProtocol(app.build_vehicle(config), ecu_name=ecu.name, dtcs=app.build_dtc_store(ecu))
     return protocol.handle(ServiceRequest(b"\x09\x0a"))
 
 

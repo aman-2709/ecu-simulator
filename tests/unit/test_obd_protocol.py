@@ -2,6 +2,7 @@
 
 import pytest
 
+from ecu_simulator.dtc import DtcState, DtcStore
 from ecu_simulator.protocols.base import ServiceRequest
 from ecu_simulator.protocols.obd import ObdProtocol
 from ecu_simulator.vehicle import CommonState, IcePowertrain, IceState, VehicleState
@@ -12,8 +13,13 @@ def vehicle(**engine):
     return VehicleState(CommonState(vin="TESTVIN0123456789"), IcePowertrain(engine=IceState(**engine)))
 
 
+def store(*codes, pending=True, confirmed=True):
+    return DtcStore(DtcState(code, pending=pending, confirmed=confirmed) for code in codes)
+
+
 def protocol(dtcs=("B1477", "P0001"), name="ECU_SIMULATOR", **engine):
-    return ObdProtocol(vehicle(**engine), ecu_name=name, dtcs=list(dtcs))
+    dtcs = dtcs if isinstance(dtcs, DtcStore) else store(*dtcs)
+    return ObdProtocol(vehicle(**engine), ecu_name=name, dtcs=dtcs)
 
 
 def ask(proto, hex_request):
@@ -151,6 +157,29 @@ def test_a_trailing_request_byte_is_echoed_after_the_service_id():
 
 def test_dtcs_come_from_this_ecu_not_a_global():
     assert ask(protocol(dtcs=("P0100",)), "03") == bytes.fromhex("43010100")
+
+
+def test_mode03_reports_the_confirmed_codes_only():
+    mixed = DtcStore(
+        [
+            DtcState("P0001", pending=True, confirmed=True),
+            DtcState("P0002", pending=True),
+            DtcState("P0003", confirmed=True),
+        ]
+    )
+    assert ask(protocol(dtcs=mixed), "03") == bytes.fromhex("4302" "0001" "0003")
+
+
+def test_mode03_answers_a_zero_count_when_nothing_is_confirmed():
+    pending_only = DtcStore([DtcState("P0001", pending=True)])
+    assert ask(protocol(dtcs=pending_only), "03") == b"\x43\x00"
+
+
+def test_mode03_follows_the_store_after_it_is_cleared():
+    proto = protocol()
+    assert ask(proto, "03") == bytes.fromhex("430294770001")
+    proto.dtcs.clear()
+    assert ask(proto, "03") == b"\x43\x00"
 
 
 # --- mode 09 --------------------------------------------------------------------------------

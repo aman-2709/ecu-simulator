@@ -150,7 +150,7 @@ def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None) -> li
         ecu = Ecu(ecu_name, dtc_store=build_dtc_store(ecu_config))
         for protocol_name in sorted({p for endpoint in ecu_config.endpoints for p in endpoint.protocols}):
             if protocol_name == ObdProtocol.name:
-                ecu.register(ObdProtocol(vehicle, ecu_name=ecu_config.name, dtcs=[d.code for d in ecu_config.dtcs]))
+                ecu.register(ObdProtocol(vehicle, ecu_name=ecu_config.name, dtcs=ecu.dtc_store))
             elif protocol_name == LegacyUdsProtocol.name:
                 ecu.register(LegacyUdsProtocol())
             else:  # pragma: no cover - the schema rejects unknown protocol names
