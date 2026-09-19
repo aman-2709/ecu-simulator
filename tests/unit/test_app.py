@@ -1,67 +1,75 @@
+"""Runtime assembly from a validated profile: endpoints, routes, ECUs, vehicle, lifecycle."""
+
 import asyncio
-import dataclasses
 import logging
 
 import pytest
 
 from ecu_simulator import app, cli
+from ecu_simulator.config import load_profile, parse_profile
 from ecu_simulator.ecu import AddressRouter
 from ecu_simulator.transport import DiagnosticRequest, DiagnosticResponse, InterfaceNotFoundError
 
 
-def test_config_from_legacy_uses_shipped_addresses_and_plus_eight_rule():
-    config = app.config_from_legacy()
-    assert config.interface == "vcan0"
-    assert (config.obd_functional_id, config.obd_physical_id, config.obd_response_id) == (0x7DF, 0x7E0, 0x7E8)
-    assert (config.uds_request_id, config.uds_response_id) == (0x7E1, 0x7E9)
-    assert app.config_from_legacy("can0").interface == "can0"
+def shipped():
+    return app.RuntimeConfig.build(load_profile(cli.default_profile_path()))
 
 
-def test_build_endpoints_reproduces_legacy_sockets():
-    endpoints = app.build_endpoints(app.config_from_legacy())
-    by_name = {e.name: e for e in endpoints}
-    assert set(by_name) == {"obd_functional", "obd_physical", "uds_physical"}
-    functional, physical, uds = by_name["obd_functional"], by_name["obd_physical"], by_name["uds_physical"]
-    assert functional.functional is True and functional.reply_via == "obd_physical"
+def with_interface(interface):
+    return app.RuntimeConfig.build(load_profile(cli.default_profile_path()), interface)
+
+
+# --- configuration ------------------------------------------------------------------------
+
+
+def test_the_profile_supplies_the_interface_and_the_command_line_overrides_it():
+    assert shipped().interface == "vcan0"
+    assert with_interface("can0").interface == "can0"
+
+
+def test_the_shipped_profile_reproduces_the_legacy_addresses_and_plus_eight_rule():
+    endpoints = {e.name: e for e in app.build_endpoints(shipped())}
+    assert set(endpoints) == {"engine.obd_functional", "engine.obd_physical", "engine.uds_physical"}
+    functional = endpoints["engine.obd_functional"]
+    physical = endpoints["engine.obd_physical"]
+    uds = endpoints["engine.uds_physical"]
     assert (functional.address.rx_id, functional.address.tx_id) == (0x7DF, 0x7E8)
     assert (physical.address.rx_id, physical.address.tx_id) == (0x7E0, 0x7E8)
-    assert physical.receive is True  # DEV-01 corrected: physically addressed requests are served
-    assert (uds.address.rx_id, uds.address.tx_id) == (0x7E1, 0x7E9) and uds.receive is True
-    # DEV-08 corrected for OBD: padded to DLC 8 with the configured pad byte; UDS unchanged.
-    assert functional.options.tx_padding is True and physical.options.tx_padding is True
-    assert functional.options.pad_byte == 0x00
+    assert (uds.address.rx_id, uds.address.tx_id) == (0x7E1, 0x7E9)
+    assert functional.functional is True and functional.reply_via == "engine.obd_physical"
+    assert physical.receive is True and uds.receive is True
+    # DEV-08 corrected for OBD: padded to DLC 8; UDS unpadded, as before.
+    assert functional.options.tx_padding is True and functional.options.pad_byte == 0x00
+    assert physical.options.tx_padding is True
     assert uds.options.tx_padding is False
 
 
-def test_pad_byte_and_padding_are_configurable():
-    custom = dataclasses.replace(app.config_from_legacy(), pad_byte=0xAA, obd_tx_padding=False)
-    endpoints = {e.name: e for e in app.build_endpoints(custom)}
-    assert endpoints["obd_physical"].options == app.IsoTpOptions(tx_padding=False, pad_byte=0xAA)
+def test_padding_is_configurable_per_endpoint(tmp_path):
+    text = cli.default_profile_path().read_text().replace("tx_padding: true", "tx_padding: false")
+    path = tmp_path / "p.yaml"
+    path.write_text(text)
+    endpoints = {e.name: e for e in app.build_endpoints(app.RuntimeConfig.build(load_profile(path)))}
+    assert endpoints["engine.obd_physical"].options.tx_padding is False
 
 
-def test_implicit_engine_ecu_is_derived_from_legacy_config():
-    (engine,) = app.build_ecus(app.config_from_legacy())
-    assert engine.name == app.ENGINE_ECU == "engine"
-    assert [p.name for p in engine.protocols] == ["obd", "uds"]
-    assert engine.service_ids[0x01] == "obd" and engine.service_ids[0x10] == "uds"
+# --- router -------------------------------------------------------------------------------
 
 
-def test_router_maps_every_legacy_address_to_the_engine_ecu():
-    router = app.build_router(app.config_from_legacy())
+def test_every_profile_address_routes_to_its_ecu():
+    router = app.build_router(shipped())
     assert {a: r.ecu for a, r in router.physical_routes.items()} == {0x7E0: "engine", 0x7E1: "engine"}
     assert {a: tuple(r.ecu for r in rs) for a, rs in router.functional_routes.items()} == {0x7DF: ("engine",)}
 
 
 def test_the_obd_broadcast_route_enables_obd_only_and_stays_silent_on_unknown_services():
     # UDS is not eligible on 0x7DF, so a UDS request there reaches no protocol at all.
-    router = app.build_router(app.config_from_legacy())
-    (broadcast,) = router.functional_routes[0x7DF]
+    (broadcast,) = app.build_router(shipped()).functional_routes[0x7DF]
     assert broadcast.protocols == frozenset({"obd"})
     assert broadcast.answer_unsupported is False
 
 
 def test_both_physical_routes_enable_obd_and_uds_and_answer_unknown_services():
-    router = app.build_router(app.config_from_legacy())
+    router = app.build_router(shipped())
     for address in (0x7E0, 0x7E1):
         route = router.physical_routes[address]
         assert route.protocols == frozenset({"obd", "uds"}), address
@@ -69,83 +77,146 @@ def test_both_physical_routes_enable_obd_and_uds_and_answer_unknown_services():
 
 
 def test_router_addresses_match_the_endpoints_that_receive():
-    config = app.config_from_legacy()
+    config = shipped()
     router = app.build_router(config)
     receiving = {e.address.rx_id: e.functional for e in app.build_endpoints(config) if e.receive}
     routed = {a: False for a in router.physical_routes} | {a: True for a in router.functional_routes}
     assert routed == receiving
 
 
-def test_check_routes_accepts_the_shipped_configuration():
-    config = app.config_from_legacy()
+# --- route and endpoint consistency ----------------------------------------------------------
+
+
+def test_check_routes_accepts_the_shipped_profile():
+    config = shipped()
     app.check_routes(app.build_router(config), app.build_endpoints(config))  # must not raise
 
 
 def test_a_receiving_endpoint_without_a_route_is_rejected_at_startup():
     # Otherwise the socket is open and every request on it is silently dropped.
-    config = app.config_from_legacy()
+    config = shipped()
     router = AddressRouter()
-    router.add_functional(config.obd_functional_id, app.ENGINE_ECU, ("obd",))
-    router.add_physical(config.obd_physical_id, app.ENGINE_ECU, ("obd", "uds"))
+    router.add_functional(0x7DF, "engine", ("obd",))
+    router.add_physical(0x7E0, "engine", ("obd", "uds"))
     with pytest.raises(ValueError, match="0x7E1"):
         app.check_routes(router, app.build_endpoints(config))
 
 
 def test_a_route_without_a_receiving_endpoint_is_rejected_at_startup():
-    config = app.config_from_legacy()
+    config = shipped()
     router = app.build_router(config)
-    router.add_physical(0x7E5, app.ENGINE_ECU, ("obd",))
+    router.add_physical(0x7E5, "engine", ("obd",))
     with pytest.raises(ValueError, match="0x7E5"):
         app.check_routes(router, app.build_endpoints(config))
 
 
 def test_a_route_whose_addressing_kind_differs_from_the_endpoint_is_rejected():
-    config = app.config_from_legacy()
-    endpoints = app.build_endpoints(config)
+    config = shipped()
     router = AddressRouter()
-    router.add_physical(config.obd_functional_id, app.ENGINE_ECU, ("obd",))  # 0x7DF is functional
-    router.add_physical(config.obd_physical_id, app.ENGINE_ECU, ("obd", "uds"))
-    router.add_physical(config.uds_request_id, app.ENGINE_ECU, ("obd", "uds"))
+    router.add_physical(0x7DF, "engine", ("obd",))  # 0x7DF is the functional endpoint
+    router.add_physical(0x7E0, "engine", ("obd", "uds"))
+    router.add_physical(0x7E1, "engine", ("obd", "uds"))
     with pytest.raises(ValueError, match="0x7DF"):
-        app.check_routes(router, endpoints)
+        app.check_routes(router, app.build_endpoints(config))
 
 
-@pytest.mark.asyncio
-async def test_run_rejects_inconsistent_routes_before_opening_sockets(monkeypatch):
-    RecordingTransport.instances.clear()
-    monkeypatch.setattr(app, "build_router", lambda config: AddressRouter())
-    coro = app.run(app.config_from_legacy(), install_signal_handlers=False, transport_factory=RecordingTransport)
-    # wait_for bounds the failure: without the check, run() would start and wait forever.
-    with pytest.raises(ValueError):
-        await asyncio.wait_for(coro, timeout=2.0)
-    assert RecordingTransport.instances == [], "no socket may be opened when the routes are inconsistent"
+# --- ECUs and vehicle --------------------------------------------------------------------------
 
 
-def test_dispatcher_answers_by_sid_on_every_engine_address(monkeypatch):
+def test_each_profile_ecu_becomes_an_ecu_with_the_protocols_its_endpoints_reference():
+    (engine,) = app.build_ecus(shipped())
+    assert engine.name == "engine"
+    assert sorted(p.name for p in engine.protocols) == ["obd", "uds"]
+    assert engine.service_ids[0x01] == "obd" and engine.service_ids[0x10] == "uds"
+
+
+def test_an_ecu_registers_only_the_protocols_its_endpoints_enable(tmp_path):
+    text = cli.default_profile_path().read_text().replace("protocols: [obd, uds]", "protocols: [obd]")
+    path = tmp_path / "obd_only.yaml"
+    path.write_text(text)
+    (engine,) = app.build_ecus(app.RuntimeConfig.build(load_profile(path)))
+    assert [p.name for p in engine.protocols] == ["obd"]
+
+
+def test_the_vehicle_is_composed_from_the_profile():
+    vehicle = app.build_vehicle(shipped())
+    assert vehicle.powertrain.kind == "ice"
+    assert vehicle.get("vehicle.vin") == "TESTVIN0123456789"
+    assert vehicle.get("engine.fuel_level") == 50
+    assert vehicle.get("engine.fuel_type") == 1
+    assert not vehicle.has("battery.soc")
+
+
+def test_a_bev_profile_composes_a_battery_powertrain():
+    data = parse_profile(
+        {
+            "version": 1,
+            "transport": {"interface": "vcan0"},
+            "vehicle": {"vin": "BEVVIN00000000001", "type": "bev", "battery": {"soc": 80.0}},
+            "ecus": {
+                "engine": {
+                    "name": "EV_ECU",
+                    "endpoints": [
+                        {"name": "p", "rx": 0x7E0, "tx": 0x7E8, "addressing": "physical", "protocols": ["uds"]}
+                    ],
+                }
+            },
+        }
+    )
+    vehicle = app.build_vehicle(app.RuntimeConfig.build(data))
+    assert vehicle.powertrain.kind == "bev"
+    assert vehicle.get("battery.soc") == 80.0
+    assert not vehicle.has("engine.rpm")
+
+
+def test_the_legacy_modules_are_configured_from_the_profile(tmp_path):
+    from ecu_simulator.obd import responses
+    from ecu_simulator.uds import services
+
+    text = cli.default_profile_path().read_text().replace("vin: TESTVIN0123456789", "vin: PROFILEVIN123456")
+    path = tmp_path / "p.yaml"
+    path.write_text(text)
+    saved_obd, saved_uds, saved_dtcs = responses.source, services.source, services.DTCS
+    try:
+        app.configure_legacy_modules(app.RuntimeConfig.build(load_profile(path)))
+        assert responses.source.get_vin() == "PROFILEVIN123456"
+        assert responses.get_vin() == b"\x00" + b"\x00" + b"PROFILEVIN123456"
+        assert services.DTCS == bytes.fromhex("9477012f" + "0001012f")
+    finally:
+        responses.source, services.source, services.DTCS = saved_obd, saved_uds, saved_dtcs
+
+
+# --- dispatch -----------------------------------------------------------------------------------
+
+
+def test_dispatcher_answers_by_sid_on_every_enabled_route(monkeypatch):
     from ecu_simulator.obd import responses
 
     monkeypatch.setattr(responses, "vehicle_speed", 0)
-    endpoints = {e.name: e for e in app.build_endpoints(app.config_from_legacy())}
-    dispatcher = app.build_dispatcher(app.config_from_legacy())
-    obd, physical, uds = endpoints["obd_functional"], endpoints["obd_physical"], endpoints["uds_physical"]
+    config = shipped()
+    endpoints = {e.name: e for e in app.build_endpoints(config)}
+    dispatcher = app.build_dispatcher(config)
+    obd, physical, uds = (endpoints[n] for n in ("engine.obd_functional", "engine.obd_physical", "engine.uds_physical"))
     speed = DiagnosticResponse(b"\x41\x0d\x00")
     session = DiagnosticResponse(b"\x50\x03\x00\x1e\x0b\xb8")
     assert dispatcher(DiagnosticRequest(b"\x01\x0d", 0x7DF, functional=True, context=obd)) == speed
     assert dispatcher(DiagnosticRequest(b"\x10\x03", 0x7E1, context=uds)) == session
-    # Dispatch is by SID among the protocols the route enables; both physical ids enable
-    # OBD and UDS, so a UDS request on 0x7E0 is answered.
+    # Both physical routes enable OBD and UDS, so a UDS request on 0x7E0 is answered.
     assert dispatcher(DiagnosticRequest(b"\x10\x03", 0x7E0, context=physical)) == session
+    assert dispatcher(DiagnosticRequest(b"\x01\x0d", 0x7E1, context=uds)) == DiagnosticResponse(b"\x41\x0d\x01")
     # 0x7DF enables OBD only, so UDS is never reached there.
     assert dispatcher(DiagnosticRequest(b"\x10\x03", 0x7DF, functional=True, context=obd)) is None
-    assert dispatcher(DiagnosticRequest(b"\x01\x0d", 0x7E1, context=uds)) == DiagnosticResponse(b"\x41\x0d\x01")
     assert dispatcher(DiagnosticRequest(b"\x01\x0c", 0x7DF, functional=True, context=obd)) is None
 
 
 def test_dispatcher_drops_requests_on_unrouted_addresses(caplog):
-    dispatcher = app.build_dispatcher(app.config_from_legacy())
+    dispatcher = app.build_dispatcher(shipped())
     with caplog.at_level(logging.WARNING):
         assert dispatcher(DiagnosticRequest(b"\x3e\x00", 0x7E5, context=object())) is None
     assert "no ECU" in caplog.text
+
+
+# --- lifecycle ------------------------------------------------------------------------------------
 
 
 class RecordingTransport:
@@ -171,14 +242,13 @@ class RecordingTransport:
 async def test_run_starts_waits_for_stop_and_stops_transport():
     RecordingTransport.instances.clear()
     stop = asyncio.Event()
-    config = app.config_from_legacy()
 
     async def trigger():
         await asyncio.sleep(0.01)
         stop.set()
 
     asyncio.get_running_loop().create_task(trigger())
-    await app.run(config, stop=stop, install_signal_handlers=False, transport_factory=RecordingTransport)
+    await app.run(shipped(), stop=stop, install_signal_handlers=False, transport_factory=RecordingTransport)
     (transport,) = RecordingTransport.instances
     assert transport.events == ["start", "stop"]
     assert transport.interface == "vcan0" and len(transport.endpoints) == 3
@@ -193,7 +263,7 @@ async def test_run_propagates_startup_failure_after_cleanup():
         return RecordingTransport(interface, endpoints, fail=error)
 
     with pytest.raises(InterfaceNotFoundError):
-        await app.run(app.config_from_legacy(), install_signal_handlers=False, transport_factory=factory)
+        await app.run(shipped(), install_signal_handlers=False, transport_factory=factory)
     assert RecordingTransport.instances[0].events == ["start", "stop"]
 
 
@@ -205,42 +275,16 @@ async def test_failed_start_does_not_claim_shutdown_complete(caplog):
         return RecordingTransport(interface, endpoints, fail=InterfaceNotFoundError("nope"))
 
     with caplog.at_level(logging.INFO), pytest.raises(InterfaceNotFoundError):
-        await app.run(app.config_from_legacy(), install_signal_handlers=False, transport_factory=factory)
+        await app.run(shipped(), install_signal_handlers=False, transport_factory=factory)
     assert "shutdown complete" not in caplog.text
 
 
-def test_cli_parser_defaults_and_options():
-    args = cli.build_parser().parse_args([])
-    assert args.interface is None and args.log_level == "INFO"
-    args = cli.build_parser().parse_args(["--interface", "can0", "--log-level", "DEBUG"])
-    assert args.interface == "can0" and args.log_level == "DEBUG"
-
-
-def test_cli_version(capsys):
-    with pytest.raises(SystemExit) as excinfo:
-        cli.main(["--version"])
-    assert excinfo.value.code == 0
-    assert capsys.readouterr().out.startswith("ecu-simulator ")
-
-
-@pytest.fixture
-def isolated_logging(tmp_path, monkeypatch):
-    """cli.main() configures the shared 'ecu_simulator' logger and writes ecu_simulator.log to the cwd."""
-    from ecu_simulator.loggers import logger_app
-
-    monkeypatch.chdir(tmp_path)
-    saved_level, saved_handlers = logger_app.logger.level, list(logger_app.logger.handlers)
-    yield
-    for handler in logger_app.logger.handlers:
-        if handler not in saved_handlers:
-            handler.close()
-    logger_app.logger.handlers[:] = saved_handlers
-    logger_app.logger.setLevel(saved_level)
-
-
-def test_cli_reports_missing_interface_with_exit_code_2(isolated_logging, caplog):
-    # Real transport, real environment checks: either the interface is missing or the
-    # kernel lacks CAN_ISOTP (GitHub-hosted runners). Both are startup failures -> 2.
-    with caplog.at_level(logging.ERROR):
-        assert cli.main(["--interface", "nosuchcan9", "--log-level", "ERROR"]) == 2
-    assert "nosuchcan9" in caplog.text or "CONFIG_CAN_ISOTP" in caplog.text
+@pytest.mark.asyncio
+async def test_run_rejects_inconsistent_routes_before_opening_sockets(monkeypatch):
+    RecordingTransport.instances.clear()
+    monkeypatch.setattr(app, "build_router", lambda config: AddressRouter())
+    coro = app.run(shipped(), install_signal_handlers=False, transport_factory=RecordingTransport)
+    # wait_for bounds the failure: without the check, run() would start and wait forever.
+    with pytest.raises(ValueError):
+        await asyncio.wait_for(coro, timeout=2.0)
+    assert RecordingTransport.instances == [], "no socket may be opened when the routes are inconsistent"

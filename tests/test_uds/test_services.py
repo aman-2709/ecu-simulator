@@ -1,6 +1,6 @@
 import unittest
 
-from ecu_simulator import dtc_utils, ecu_config
+from ecu_simulator import dtc_utils
 from ecu_simulator.uds import services
 
 DIAGNOSTIC_SESSION_CONTROL_SID = 0x10
@@ -105,7 +105,7 @@ class TestUdsServices(unittest.TestCase):
     def test_process_service_0x19(self):
         request = bytes([READ_DTC_INFO_SID]) + bytes([READ_DTC_INFO_BY_STATUS_MASK])
         response = services.process_service_request(request)
-        dtcs = dtc_utils.encode_uds_dtcs(ecu_config.get_dtcs())
+        dtcs = dtc_utils.encode_uds_dtcs(services.source.get_dtcs())
         expected_response = get_response_sid(READ_DTC_INFO_SID) + bytes([READ_DTC_INFO_BY_STATUS_MASK]) + bytes(
             [READ_DTC_STATUS_AVAILABILITY_MASK]) + dtcs
         self.assertIsNotNone(response)

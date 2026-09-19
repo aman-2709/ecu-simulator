@@ -13,9 +13,10 @@ DOMAIN_PREFIXES = (
     "ecu_simulator.uds",
     "ecu_simulator.ecu",
     "ecu_simulator.protocols",
+    "ecu_simulator.vehicle",
+    "ecu_simulator.config",
+    "ecu_simulator.clock",
     "ecu_simulator.logging",
-    "ecu_simulator.ecu_config",
-    "ecu_simulator.addresses",
     "ecu_simulator.dtc_utils",
     "ecu_simulator.loggers",
     "ecu_simulator.app",
@@ -29,6 +30,10 @@ TRANSPORT_IMPLEMENTATION_PREFIXES = (
     "ecu_simulator.transport.socketcan",
     "isotp",
 )
+
+# The vehicle model and the configuration schema are domain code: neither may reach a
+# transport implementation, and the vehicle model must not depend on the config package.
+CONFIG_FORBIDDEN_FOR_VEHICLE = ("ecu_simulator.config", "pydantic", "ruamel")
 
 
 def loaded_modules(*imports: str) -> list[str]:
@@ -45,6 +50,12 @@ def test_transport_imports_no_domain_modules():
     leaked = [m for m in loaded if m.startswith(DOMAIN_PREFIXES)]
     assert leaked == [], f"transport imported domain modules: {leaked}"
     assert "ecu_simulator.transport.socketcan.transport" in loaded
+
+
+def test_the_vehicle_model_depends_on_neither_configuration_nor_transport():
+    loaded = loaded_modules("ecu_simulator.vehicle")
+    leaked = [m for m in loaded if m.startswith(CONFIG_FORBIDDEN_FOR_VEHICLE + TRANSPORT_IMPLEMENTATION_PREFIXES)]
+    assert leaked == [], f"vehicle imported configuration or transport modules: {leaked}"
 
 
 def test_ecu_and_protocols_import_no_transport_implementation():

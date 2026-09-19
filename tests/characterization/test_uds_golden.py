@@ -7,6 +7,8 @@ the corrected behavior for a known deviation listed in docs/known-deviations.md.
 import pytest
 
 from ecu_simulator import app
+from ecu_simulator.cli import default_profile_path
+from ecu_simulator.config import load_profile
 from ecu_simulator.transport import DiagnosticRequest
 from ecu_simulator.uds import services
 from tests.characterization.conftest import xfail_deviation
@@ -18,7 +20,8 @@ def uds(hex_request):
 
 def engine_uds(hex_request):
     """The same request as the wire sees it: physically addressed to the engine ECU's UDS id."""
-    dispatcher = app.build_dispatcher(app.config_from_legacy())
+    config = app.RuntimeConfig.build(load_profile(default_profile_path()))
+    dispatcher = app.build_dispatcher(config)
     response = dispatcher(DiagnosticRequest(bytes.fromhex(hex_request), 0x7E1))
     return response.payload if response is not None else None
 

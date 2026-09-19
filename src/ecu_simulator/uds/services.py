@@ -1,5 +1,9 @@
-from ecu_simulator import dtc_utils, ecu_config
+from ecu_simulator import dtc_utils
+from ecu_simulator.config.legacy import DEFAULT_DATA, LegacyData
 from ecu_simulator.loggers.logger_app import logger
+
+# Replaced from the profile at startup by configure(); see config/legacy.py.
+source: LegacyData = DEFAULT_DATA
 
 DIAGNOSTIC_SESSION_CONTROL_SID = 0x10
 
@@ -19,7 +23,14 @@ READ_DTC_INFO_SID = 0x19
 
 READ_DTC_STATUS_AVAILABILITY_MASK = 0xFF
 
-DTCS = dtc_utils.encode_uds_dtcs(ecu_config.get_dtcs())
+DTCS = dtc_utils.encode_uds_dtcs(source.get_dtcs())
+
+
+def configure(data):
+    """Point this module at a profile's data and re-encode its DTCs."""
+    global source, DTCS
+    source = data
+    DTCS = dtc_utils.encode_uds_dtcs(data.get_dtcs())
 
 POSITIVE_RESPONSE_SID_MASK = 0x40
 

@@ -122,6 +122,13 @@ specification text has not been reviewed, so the row is not `standards validated
 | Startup failure reported with exit status 2 | yes | yes | yes | no | n/a |
 | Route and endpoint consistency checked before sockets open | yes | yes | no | n/a | n/a |
 | Per-ECU and per-protocol log context | yes | yes | no | n/a | n/a |
+| YAML profile loaded and validated before any socket opens | yes | yes | yes | n/a | n/a |
+| `validate-config` checks a profile without opening a socket | yes | yes | no | n/a | n/a |
+| Malformed profile rejected with the path to every problem | yes | yes | no | n/a | n/a |
+| Vehicle state addressed by dotted signal path | yes | yes | no | n/a | n/a |
 
 The runtime rows describe project behavior, not protocol behavior, so `standards
-validated` does not apply to them.
+validated` does not apply to them. Configuration validation in particular is project input
+validation: it rejects profiles this simulator cannot serve faithfully and makes no claim
+about SAE J2012 trouble-code format or any other specification. See
+[decisions/0002-configuration-format-and-validation.md](decisions/0002-configuration-format-and-validation.md).

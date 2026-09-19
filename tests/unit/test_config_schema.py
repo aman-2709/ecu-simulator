@@ -9,6 +9,7 @@ import copy
 
 import pytest
 
+from ecu_simulator.cli import default_profile_path
 from ecu_simulator.config import ConfigError, load_profile, parse_profile
 
 VALID = {
@@ -108,7 +109,7 @@ def test_the_unsupported_service_policy_defaults_by_addressing_and_is_overridabl
 
 
 def test_the_shipped_profile_file_loads():
-    config = load_profile("profiles/ice_default.yaml")
+    config = load_profile(default_profile_path())
     assert config.vehicle.vin == "TESTVIN0123456789"
     assert config.ecus["engine"].endpoints[0].rx == 0x7DF
 

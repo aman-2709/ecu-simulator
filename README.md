@@ -80,9 +80,21 @@ sudo scripts/setup_can.sh can0 500000
 ecu-simulator --interface can0
 ```
 
-Options: `--interface IFACE` (default: `can_interface` from the package's `ecu_config.json`), `--log-level {DEBUG,INFO,WARNING,ERROR}`, `--version`, `--help`. Stop with Ctrl-C or SIGTERM; the simulator closes its sockets and exits with status 0. A missing or down interface, or a kernel without `CAN_ISOTP`, is reported with an actionable message and exit status 2.
+Options: `--profile PATH` (default: the packaged `profiles/ice_default.yaml`), `--interface IFACE` (default: the profile's `transport.interface`), `--log-level {DEBUG,INFO,WARNING,ERROR}`, `--version`, `--help`. Stop with Ctrl-C or SIGTERM; the simulator closes its sockets and exits with status 0. A missing or down interface, a kernel without `CAN_ISOTP`, or an invalid profile is reported with an actionable message and exit status 2.
 
-The simulator no longer configures interfaces, loads kernel modules or needs root; the old `sudo python3 ecu_simulator.py` workflow and the `isotp_ko_file_path`, `can_interface_type` and `can_bitrate` configuration keys are gone.
+Check a profile without opening a socket:
+
+```
+ecu-simulator validate-config --profile my_profile.yaml
+```
+
+### Configuration
+
+Addresses, vehicle data and per-ECU trouble codes come from a YAML profile, validated before anything runs. The shipped default is `src/ecu_simulator/profiles/ice_default.yaml`; copy it and pass `--profile`. Each ECU lists its endpoints, and each endpoint carries its receive and transmit CAN identifiers, whether it is physically or functionally addressed, which protocols it enables, and its padding. The schema is multi-ECU: a second ECU is a second key under `ecus`.
+
+A malformed profile is rejected at load with the dotted path to every problem at once, rather than being silently corrected or failing later (DEV-13, DEV-14). This is project input validation and is not a standards conformance claim.
+
+The simulator no longer configures interfaces, loads kernel modules or needs root; the old `sudo python3 ecu_simulator.py` workflow is gone, and so are `ecu_config.json`, `ecu_config.py` and `addresses.py`.
 
 ### Addressing on the wire
 
@@ -105,7 +117,7 @@ sees that request.
 * OBD modes `0x01` to `0x0A` that the legacy OBD layer does not implement still get no
   response (DEV-11).
 
-Addresses still come from `ecu_config.json` inside the package (`obd_broadcast_address`, `obd_ecu_address`, `uds_ecu_address`; response id = request id + 8) until the YAML profile configuration lands, which will also make the ECU list and the per-address protocol sets explicit.
+These addresses come from the profile. The shipped profile keeps the identifiers the project has always used, with the response identifier eight above the request identifier.
 
 ## Logging
 

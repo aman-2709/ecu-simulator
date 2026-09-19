@@ -13,7 +13,7 @@ from ecu_simulator.config.schema import (
     parse_profile,
 )
 
-DEFAULT_PROFILE = "profiles/ice_default.yaml"
+DEFAULT_PROFILE = "src/ecu_simulator/profiles/ice_default.yaml"
 
 
 def load_profile(path: str | Path) -> Profile:

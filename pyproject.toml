@@ -50,9 +50,11 @@ Homepage = "https://github.com/lbenthins/ecu-simulator"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ecu_simulator"]
+# The default profile ships inside the package so the console script finds it when installed.
+artifacts = ["src/ecu_simulator/profiles/*.yaml"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "docs", "scripts", "profiles", "setup_can.sh", "setup_vcan.sh", "README.md", "LICENSE"]
+include = ["src", "tests", "docs", "scripts", "setup_can.sh", "setup_vcan.sh", "README.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

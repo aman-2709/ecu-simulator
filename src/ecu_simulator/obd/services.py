@@ -11,13 +11,8 @@ POSITIVE_RESPONSE_MASK = 0x40
 
 BIG_ENDIAN = "big"
 
-FUEL_TYPE = responses.get_fuel_type()
-
-DTCs = responses.get_dtcs()
-
-VIN = responses.get_vin()
-
-ECU_NAME = responses.get_ecu_name()
+# Read per request rather than frozen at import, so a profile loaded after this module is
+# imported is honoured. The bytes are unchanged: these values are static for a profile.
 
 
 SERVICES = [
@@ -26,13 +21,13 @@ SERVICES = [
          {"id": 0x05, "description": "Engine coolant temperature", "response": lambda: responses.get_engine_temperature()},
          {"id": 0x0D, "description": "Vehicle speed", "response": lambda: responses.get_vehicle_speed()},
          {"id": 0x2F, "description": "Fuel tank level input", "response": lambda: responses.get_fuel_level()},
-         {"id": 0x51, "description": "Fuel type", "response": lambda: FUEL_TYPE}
+         {"id": 0x51, "description": "Fuel type", "response": lambda: responses.get_fuel_type()}
      ]},
-    {"id": 0x03, "description": "Show DTCs", "response": lambda: DTCs},
+    {"id": 0x03, "description": "Show DTCs", "response": lambda: responses.get_dtcs()},
     {"id": 0x09, "description": "Request vehicle information", "response": lambda: None,
      "pids": [
-         {"id": 0x02, "description": "Vehicle Identification Number(VIN)", "response": lambda: VIN},
-         {"id": 0x0A, "description": "ECU name", "response": lambda: ECU_NAME}
+         {"id": 0x02, "description": "Vehicle Identification Number(VIN)", "response": lambda: responses.get_vin()},
+         {"id": 0x0A, "description": "ECU name", "response": lambda: responses.get_ecu_name()}
      ]}
 ]
 

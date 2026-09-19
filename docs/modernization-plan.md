@@ -111,8 +111,9 @@ src/ecu_simulator/
   config/   vehicle/   dtc/   scenario/   faults/   ecu/
   protocols/base.py  protocols/obd/  protocols/uds/
   transport/messages.py  transport/base.py  transport/socketcan/
+  profiles/ice_default.yaml
 tests/unit  tests/integration  tests/hardware  tests/characterization
-profiles/   scripts/   docs/   .github/workflows/ci.yml
+scripts/   docs/   .github/workflows/ci.yml
 ```
 
 ## 3. Release mapping
@@ -190,6 +191,11 @@ no response is ever filtered out after a protocol has produced it. The `suppress
 `vehicle/`, `clock.py`, Pydantic schema, YAML loader, `validate-config`, per-ECU DIDs and
 DTCs in config, `profiles/ice_default.yaml`. Legacy JSON config, `ecu_config.py`, and
 `addresses.py` deleted. No wire change. Risk M.
+
+Deviation, Phase 4: the default profile ships inside the package, at
+`src/ecu_simulator/profiles/ice_default.yaml` rather than in a top-level `profiles/`
+directory, so the installed console script can find it without packaging a data directory
+outside the package. `--profile` takes any path.
 
 ### Phase 5 — Legacy OBD refactor and PID expansion (V1.0)
 

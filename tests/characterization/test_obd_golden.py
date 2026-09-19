@@ -5,6 +5,7 @@ the shipped ecu_config.json (VIN TESTVIN0123456789, ECU name ECU_SIMULATOR, fuel
 50, fuel type 1, DTCs B1477 and P0001). Plain tests pin today's bytes; tests marked
 xfail(strict=True) assert the corrected behavior for a known deviation.
 """
+import dataclasses
 import random
 
 import pytest
@@ -210,12 +211,15 @@ def test_vin_shorter_than_17_is_left_nul_padded():
 
 
 def test_vin_longer_than_17_falls_back_to_default(monkeypatch):
-    monkeypatch.setattr(responses.ecu_config, "get_vin", lambda: "X" * 18)
+    # Unreachable from configuration since DEV-14: the schema rejects such a VIN at load
+    # (tests/unit/test_config_schema.py). The frozen module keeps its fallback until Phase 5.
+    monkeypatch.setattr(responses, "source", dataclasses.replace(responses.source, vin="X" * 18))
     assert responses.get_vin() == b"\x00" + VIN_BYTES
 
 
 def test_ecu_name_longer_than_20_falls_back_to_default(monkeypatch):
-    monkeypatch.setattr(responses.ecu_config, "get_ecu_name", lambda: "N" * 21)
+    # Unreachable from configuration since DEV-14; the schema caps the ECU name at 20.
+    monkeypatch.setattr(responses, "source", dataclasses.replace(responses.source, ecu_name="N" * 21))
     assert responses.get_ecu_name() == b"\x00" * 7 + b"ECU_SIMULATOR"
 
 
@@ -226,8 +230,9 @@ def test_fuel_level_validation_silently_substitutes_default_and_accepts_negative
 
 
 def test_negative_fuel_level_in_config_raises_at_request_time(monkeypatch):
-    # DEV-14: -5 * 2.55 -> -12, which cannot be encoded as an unsigned byte.
-    monkeypatch.setattr(responses.ecu_config, "get_fuel_level", lambda: -5)
+    # DEV-14: -5 * 2.55 -> -12, which cannot be encoded as an unsigned byte. Unreachable
+    # from configuration since the schema rejects a negative fuel level at load.
+    monkeypatch.setattr(responses, "source", dataclasses.replace(responses.source, fuel_level=-5))
     with pytest.raises(OverflowError):
         responses.get_fuel_level()
 

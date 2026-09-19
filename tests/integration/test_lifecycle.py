@@ -7,6 +7,8 @@ import signal
 import pytest
 
 from ecu_simulator import app
+from ecu_simulator.cli import default_profile_path
+from ecu_simulator.config import load_profile
 from tests.integration.conftest import Simulator
 
 
@@ -36,7 +38,7 @@ def test_missing_interface_fails_fast_with_exit_code_2(vcan, tmp_path):
 
 @pytest.mark.asyncio
 async def test_in_process_run_leaks_no_file_descriptors(vcan):
-    config = app.config_from_legacy(vcan)
+    config = app.RuntimeConfig.build(load_profile(default_profile_path()), vcan)
     before = len(os.listdir("/proc/self/fd"))
     stop = asyncio.Event()
 
