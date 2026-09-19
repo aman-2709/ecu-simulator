@@ -82,13 +82,26 @@ The simulator no longer configures interfaces, loads kernel modules or needs roo
 
 ### Addressing on the wire
 
-All three addresses belong to one simulated ECU, `engine`, which dispatches by service id: OBD modes `0x01`..`0x0A` and UDS services `0x10`, `0x11`, `0x19` are served on whichever of its addresses a request arrives on.
+All three addresses belong to one simulated ECU, `engine`. Each address enables a set of
+protocols, and a protocol that is not enabled on the address a request arrives on never
+sees that request.
 
-* Functional requests on `0x7DF` and physical requests on `0x7E0` are answered on `0x7E8`, padded to 8-byte frames (pad byte `0x00`). The tester's flow control for multi-frame responses is expected on `0x7E0`, as ISO 15765-4 testers and ELM327 adapters send it.
-* Physical requests on `0x7E1` are answered on `0x7E9`, unpadded.
-* A service id no protocol implements gets `7F <SID> 11` (serviceNotSupported) on a physical address. No negative response of any kind is sent to a functionally addressed request, so a malformed request on `0x7DF` stays silent. Modes `0x01`..`0x0A` that the legacy OBD layer does not implement still get no response (DEV-11).
+| Address | Enables | Answers on | Unknown service |
+|---|---|---|---|
+| `0x7DF` functional | OBD | `0x7E8`, padded to 8-byte frames (pad byte `0x00`) | no response |
+| `0x7E0` physical | OBD, UDS | `0x7E8`, padded | `7F <SID> 11` |
+| `0x7E1` physical | OBD, UDS | `0x7E9`, unpadded | `7F <SID> 11` |
 
-Addresses still come from `ecu_config.json` inside the package (`obd_broadcast_address`, `obd_ecu_address`, `uds_ecu_address`; response id = request id + 8) until the YAML profile configuration lands, which will also make the ECU list explicit.
+* A UDS request on `0x7DF` reaches no protocol, so nothing is transmitted. The shipped
+  configuration records that the UDS module does not use functional addressing.
+* A response an enabled protocol produces is transmitted unchanged, including a negative
+  response. Nothing is filtered out after the fact.
+* The tester's flow control for multi-frame responses is expected on `0x7E0`, as
+  ISO 15765-4 testers and ELM327 adapters send it.
+* OBD modes `0x01` to `0x0A` that the legacy OBD layer does not implement still get no
+  response (DEV-11).
+
+Addresses still come from `ecu_config.json` inside the package (`obd_broadcast_address`, `obd_ecu_address`, `uds_ecu_address`; response id = request id + 8) until the YAML profile configuration lands, which will also make the ECU list and the per-address protocol sets explicit.
 
 ## Logging
 

@@ -176,8 +176,10 @@ logger context. Wire change: NRC 0x11 for unsupported SIDs on a physical address
 DoD: `Ecu` never receives a socket; the router never inspects payloads. Risk L.
 
 Decided 2026-09-18: one implicit ECU named `engine` is derived from the legacy JSON so
-Phase 4 can make the ECU list explicit without an architecture change; every registered
-SID is served on each of the ECU's addresses. The `suppressPosRspMsgIndicationBit` fix
+Phase 4 can make the ECU list explicit without an architecture change. Each address is a
+route carrying the protocols enabled there and the policy for a service identifier none
+of them claims; a protocol that is not enabled on a route never receives the request, and
+no response is ever filtered out after a protocol has produced it. The `suppressPosRspMsgIndicationBit` fix
 (DEV-07) is protocol semantics, not routing, and moves to the UDS behavior work
 (Phase 6/7 with 0x3E, or Phase 11 with session handling).
 
