@@ -326,17 +326,27 @@ a competing version table.
 |---|---|---|---|---|
 | ISO 15765-2 | not checked | Implemented by the kernel | None in-repo | — |
 | ISO 15765-4 | not checked | Licensed; conventions public | Conventions implemented, labelled | — |
-| SAE J1979 | `J1979_202505`, reaffirmed 2025-05-23; last technical revision Feb 2017 | Licensed, **text unavailable** | Listed PIDs implemented, labelled | Phase 5 |
-| SAE J1979-DA | `J1979DA_202607`, revised 2026-07-16 (supersedes `J1979DA_202508`) | Licensed, **text unavailable** | Would settle the service 09 field layouts; DEV-03 deferred for want of it | Phase 5 |
-| SAE J2012 | not checked | Licensed; encoding public | Existing encoder retained | — |
-| ISO 14229-1 | not checked | Licensed; formats public | V1 services implemented, labelled | — |
+| SAE J1979 | `J1979_202505`, reaffirmed 2025-05-23; last technical revision Feb 2017 | Licensed, **text unavailable** | Listed PIDs implemented, labelled; also the only source for the service 03/04/07 framing and the service 01 PID 01 layout | Phases 5, 6 |
+| SAE J1979-DA | `J1979DA_202607`, revised 2026-07-16 (supersedes `J1979DA_202508`) | Licensed, **text unavailable** | Would settle the service 09 field layouts and the service 01 PID 01 monitor bits; DEV-03 and PID 0x01 deferred for want of it | Phases 5, 6 |
+| SAE J2012 | `J2012_202509`, revised 2025-09-01 (supersedes `J2012_201612`) | Licensed, **text unavailable** | Existing two-byte encoder retained; the third byte of the UDS DTC number stays frozen at 0x01 for want of the failure-type definition | Phase 6 |
+| SAE J2012-DA | Current revision **not established**: the publisher index returns `J2012DA_202403` as the latest catalogued entry and a 2025 edition appears in reseller listings. No `J2012DA_202607` exists; that identifier is J1979-DA's | Licensed, **text unavailable** | None. This project encodes whatever codes a profile declares and depends on no standardized code meaning | Phase 6, found not applicable |
+| ISO 14229-1 | **`ISO 14229-1:2026`, Edition 4, published 2026-06-05**; cancels and replaces `ISO 14229-1:2020` and its `Amd 1:2022` | Licensed, **text unavailable** | V1 services implemented, labelled; 0x14, 0x19/02, the DTC status byte and the availability mask rest on corroborating public material only | Phase 6 |
 | SAE J1979-2, J1979-3 | not checked | Licensed, not public | Nothing implemented | — |
 | ISO 13400-2 | not checked | Licensed; layouts public | Experimental only | — |
-| ELM327 datasheet | ELM327DSJ | Public | Tester side; supplied the service 09 and service 01 captures behind the Phase 5 decisions | Phase 5 |
+| ELM327 datasheet | ELM327DSJ | Public | Tester side; supplied the service 09 and service 01 captures behind the Phase 5 decisions, and the service 03 CAN framing, service 04 response and PID 01 first byte behind the Phase 6 ones | Phases 5, 6 |
+| AUTOSAR CP R24-11 SWS Diagnostic Event Manager | R24-11, document ID 19 | **Public** | Corroborates the UDS DTC status byte bit layout and the post-clear state. Not ISO 14229-1 and never a conformance claim | Phase 6 |
+| AUTOSAR CP R24-11 SWS Diagnostic Communication Manager | R24-11, document ID 18 | **Public** | Corroborates the 0x14 and 0x19/02 request and response shapes and the status-mask AND rule. Not ISO 14229-1 and never a conformance claim | Phase 6 |
 
-No specification in this table has been reviewed against its text by this project, and for
-those marked **text unavailable** an attempt was made and the document is paywalled.
+No **specification** in this table has been reviewed against its text by this project, and
+for those marked **text unavailable** an attempt was made and the document is paywalled.
 Nothing is `standards validated`. Per-phase evidence reviews live in `docs/decisions/`.
+
+The two AUTOSAR rows are the one exception to "text unavailable": those documents are
+public and were read. They are official specifications of another standards organisation
+that normatively reference ISO 14229-1, so they corroborate strongly, but they are not
+ISO 14229-1 and reading them upgrades nothing to `standards validated`. Under
+[section 11.2](#112-source-priority) they rank below the applicable specification and
+above open-source implementations.
 
 ### 7.2 Runtime and development dependencies
 
