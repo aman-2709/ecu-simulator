@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from ecu_simulator.dtc import DtcStore, code_number, is_valid
+from ecu_simulator.dtc import DtcState, DtcStore, code_number, is_valid
 from ecu_simulator.protocols.uds.providers import DtcRecord
 
 # The third byte of the three-byte DTC number. In the J2012 three-byte form this is the
@@ -27,10 +27,6 @@ from ecu_simulator.protocols.uds.providers import DtcRecord
 # because no evidence supports any value, including this one; DEV-16 keeps that half open.
 # docs/decisions/0004-phase-6-dtc-evidence.md, W9.
 FAILURE_TYPE_BYTE = 0x01
-
-# Carried over unchanged from the legacy encoder. Replaced by a value derived from the
-# store in the commit that fixes the status half of DEV-16.
-FIXED_STATUS = 0x2F
 
 # Every status bit, as the AUTOSAR Dem specification names them and as udsoncan and Scapy
 # both encode them. Listed in full so that the bits this project does not model are
@@ -43,6 +39,34 @@ TEST_NOT_COMPLETED_SINCE_LAST_CLEAR = 0x10
 TEST_FAILED_SINCE_LAST_CLEAR = 0x20
 TEST_NOT_COMPLETED_THIS_OPERATION_CYCLE = 0x40
 WARNING_INDICATOR_REQUESTED = 0x80
+
+# The bits this simulator can set, and therefore the DTCStatusAvailabilityMask it
+# advertises: pending, confirmed and warningIndicatorRequested, which is 0x8C. Derived
+# from the three constants rather than written as a literal so it cannot drift away from
+# what status_byte() below can produce.
+#
+# The five bits left out need an operation-cycle and monitor-completion model this project
+# does not have. Advertising them would claim state the simulator cannot express, and a
+# tester asking for, say, testFailed would get an empty answer that looked like "no faults"
+# rather than "not supported". The value itself is a property of this server, not something
+# any specification fixes.
+AVAILABILITY_MASK = PENDING_DTC | CONFIRMED_DTC | WARNING_INDICATOR_REQUESTED
+
+
+def status_byte(state: DtcState) -> int:
+    """The UDS status byte for one trouble code, from the state this project models.
+
+    Bit 2 pendingDTC, bit 3 confirmedDTC, bit 7 warningIndicatorRequested. Nothing else is
+    ever set: see :data:`AVAILABILITY_MASK`.
+    """
+    byte = 0
+    if state.pending:
+        byte |= PENDING_DTC
+    if state.confirmed:
+        byte |= CONFIRMED_DTC
+    if state.indicator_requested:
+        byte |= WARNING_INDICATOR_REQUESTED
+    return byte
 
 
 class DtcStoreProvider:
@@ -60,4 +84,4 @@ class DtcStoreProvider:
         for state in self.store:
             if not is_valid(state.code):  # pragma: no cover - the schema rejects these at load
                 continue
-            yield DtcRecord((code_number(state.code) << 8) | FAILURE_TYPE_BYTE, FIXED_STATUS)
+            yield DtcRecord((code_number(state.code) << 8) | FAILURE_TYPE_BYTE, status_byte(state))

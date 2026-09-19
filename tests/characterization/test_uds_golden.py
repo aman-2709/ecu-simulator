@@ -97,10 +97,12 @@ def test_0x11_suppress_positive_response_bit_corrected():
 
 
 def test_0x19_02_with_a_status_mask_returns_the_matching_dtcs():
-    # DEV-05 corrected in Phase 6: the three-byte form is the request shape, and the mask
-    # is applied. Before, this was answered 7F 19 13. DEV-16 still fixes the third byte at
-    # 0x01 and the status at 0x2F at this point.
-    assert uds("1902ff").hex() == "5902ff" + "9477012f" + "0001012f"
+    # DEV-05 corrected in Phase 6: the three-byte form is the request shape and the mask is
+    # applied; before, this was answered 7F 19 13. DEV-16's status half is corrected too:
+    # the availability mask is 8C rather than FF, and each status is derived from the
+    # store rather than the constant 2F. The shipped codes are pending and confirmed, so
+    # each carries 0x0C. The third byte of each number stays the frozen 0x01.
+    assert uds("1902ff").hex() == "59028c" + "9477010c" + "0001010c"
 
 
 def test_0x19_02_without_a_status_mask_is_now_a_length_error():
@@ -113,8 +115,9 @@ def test_0x19_02_with_more_than_a_status_mask_is_a_length_error():
     assert uds("1902ff00").hex() == "7f1913"
 
 
-def test_0x19_02_with_a_mask_matching_nothing_returns_the_header_alone():
-    assert uds("190200").hex() == "5902ff"
+@pytest.mark.parametrize("mask", ["00", "40", "80"])
+def test_0x19_02_with_a_mask_matching_nothing_returns_the_header_alone(mask):
+    assert uds("1902" + mask).hex() == "59028c"
 
 
 @pytest.mark.parametrize(
@@ -142,7 +145,7 @@ def test_0x19_02_with_empty_dtc_list_returns_header_only():
 
     providers = DtcRegistry()
     providers.register(DtcStoreProvider("engine", DtcStore()))
-    assert UdsProtocol(dtc_providers=providers).handle(ServiceRequest(b"\x19\x02\xff")).hex() == "5902ff"
+    assert UdsProtocol(dtc_providers=providers).handle(ServiceRequest(b"\x19\x02\xff")).hex() == "59028c"
 
 
 # --- Unsupported services and malformed input ------------------------------------------------

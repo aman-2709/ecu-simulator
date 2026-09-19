@@ -123,14 +123,14 @@ def test_uds_read_dtc_by_status_mask_on_the_wire(uds):
     # DEV-05 corrected in Phase 6: 19 02 FF was answered 7F 19 13 and is now answered
     # with the matching records; the two-byte form is now the malformed one.
     uds.send(b"\x19\x02\xff")
-    assert uds.recv() == bytes.fromhex("5902ff" + "9477012f" + "0001012f")
+    assert uds.recv() == bytes.fromhex("59028c" + "9477010c" + "0001010c")
     uds.send(b"\x19\x02")
     assert uds.recv() == bytes.fromhex("7f1913")
 
 
 def test_uds_read_dtc_with_a_mask_matching_nothing_returns_the_header_alone(uds):
     uds.send(b"\x19\x02\x40")
-    assert uds.recv() == bytes.fromhex("5902ff")
+    assert uds.recv() == bytes.fromhex("59028c")
 
 
 def test_physical_request_is_answered(physical):

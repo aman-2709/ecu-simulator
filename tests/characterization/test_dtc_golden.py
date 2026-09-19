@@ -6,9 +6,9 @@ modules that now produce the bytes: the code-to-number arithmetic both protocols
 the OBD service 03 framing and the UDS record framing. Every expectation is carried over
 unchanged.
 
-The UDS third byte 0x01 and the fixed status 0x2F are DEV-16. Phase 6 derives the status
-from the shared store in a later commit; the third byte stays frozen, because no evidence
-supports any value for it, including that one. What used to be DEV-13, malformed strings
+The UDS third byte 0x01 and the fixed status 0x2F were both DEV-16. Phase 6 derives the
+status from the shared store; the third byte stays frozen, because no evidence supports
+any value for it, including that one. What used to be DEV-13, malformed strings
 silently skipped, has been configuration-load validation since Phase 4; these tests keep
 pinning what the encoder itself accepts.
 """
@@ -28,8 +28,10 @@ def obd_bytes(*codes):
 
 
 def uds_records(*codes):
+    """Records for codes in the state a bare configured code starts in: pending, confirmed."""
     providers = DtcRegistry()
-    providers.register(DtcStoreProvider("engine", DtcStore(DtcState(code) for code in codes)))
+    store = DtcStore(DtcState(code, pending=True, confirmed=True) for code in codes)
+    providers.register(DtcStoreProvider("engine", store))
     return b"".join(record.to_bytes() for record in providers.read(0xFF))
 
 
@@ -67,9 +69,11 @@ def test_mixed_valid_and_malformed_list_keeps_only_valid_entries():
     assert obd_bytes(*dtcs).hex() == "000152349477ffff"
 
 
-def test_uds_encoding_appends_fixed_third_byte_and_status():
-    # DEV-16: third byte is always 0x01 and status is always 0x2F at this point.
-    assert uds_records("B1477", "P0001").hex() == "9477012f" + "0001012f"
+def test_uds_encoding_appends_the_frozen_third_byte_and_the_derived_status():
+    # DEV-16 in Phase 6: the third byte is still the frozen 0x01, but the status is now
+    # derived from the store. It was the constant 0x2F; a pending and confirmed code is
+    # 0x0C.
+    assert uds_records("B1477", "P0001").hex() == "9477010c" + "0001010c"
 
 
 def test_uds_encoding_of_empty_list_is_empty():
@@ -86,6 +90,5 @@ def test_group_and_type_bit_tables():
     assert code_number("P3000") == 0x3000
 
 
-def test_the_fixed_uds_bytes_are_named_constants_so_the_freeze_is_visible():
+def test_the_frozen_third_byte_is_a_named_constant_so_the_freeze_is_visible():
     assert uds_dtc.FAILURE_TYPE_BYTE == 0x01
-    assert uds_dtc.FIXED_STATUS == 0x2F

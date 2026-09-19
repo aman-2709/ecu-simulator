@@ -27,6 +27,7 @@ from ecu_simulator.protocols.base import (
     negative_response,
     positive_response_sid,
 )
+from ecu_simulator.protocols.uds.dtc import AVAILABILITY_MASK
 from ecu_simulator.protocols.uds.providers import DtcRegistry
 
 logger = logging.getLogger(__name__)
@@ -47,10 +48,6 @@ RESET_ENABLE_RAPID_POWER_SHUT_DOWN = 0x04
 RESET_POWER_DOWN_TIME = 0x0F
 
 REPORT_DTC_BY_STATUS_MASK = 0x02
-
-# Carried over unchanged; replaced by a mask derived from the modelled status bits in the
-# commit that fixes the status half of DEV-16.
-STATUS_AVAILABILITY_MASK = 0xFF
 
 
 class UdsProtocol:
@@ -119,6 +116,12 @@ class UdsProtocol:
         (DEV-05). A record is reported when ``(status & DTCStatusMask) != 0``; when
         nothing matches, the response is the header alone.
 
+        The DTCStatusAvailabilityMask that opens the response is the set of status bits
+        this server can actually set, which is what the AUTOSAR Dem describes that value
+        as; here it is 0x8C (DEV-16). Because every status byte only ever contains those
+        bits, filtering against the client's raw mask already restricts the comparison to
+        supported bits.
+
         The request shape and the filter rule are corroborated by the AUTOSAR Dcm
         specification, which states the rule in those words, and by two independent
         open-source implementations that both treat the mask as mandatory. ISO 14229-1
@@ -132,7 +135,7 @@ class UdsProtocol:
         if len(payload) != 3:
             return self._nrc(READ_DTC_INFORMATION, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
         status_mask = payload[2]
-        header = bytes([positive_response_sid(READ_DTC_INFORMATION), report_type, STATUS_AVAILABILITY_MASK])
+        header = bytes([positive_response_sid(READ_DTC_INFORMATION), report_type, AVAILABILITY_MASK])
         records = self.dtc_providers.read(status_mask)
         return header + b"".join(record.to_bytes() for record in records)
 

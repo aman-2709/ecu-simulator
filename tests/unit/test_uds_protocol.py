@@ -85,9 +85,10 @@ def test_0x11_suppress_positive_response_bit_is_still_not_masked():
 # --- 0x19 ReadDTCInformation --------------------------------------------------------------------
 
 
-def test_0x19_02_answers_the_configured_codes_with_the_fixed_status():
-    # DEV-16 still fixes the third byte at 01 and the status at 2F at this step.
-    assert ask("1902ff").hex() == "5902ff" + "9477012f" + "0001012f"
+def test_0x19_02_answers_the_matching_codes_with_their_derived_status():
+    # B1477 is pending and confirmed (0x0C); P0001 is pending only (0x04). The third byte
+    # of each number stays the frozen 0x01 (DEV-16).
+    assert ask("1902ff").hex() == "59028c" + "9477010c" + "00010104"
 
 
 def test_0x19_02_requires_a_status_mask():
@@ -96,14 +97,19 @@ def test_0x19_02_requires_a_status_mask():
     assert ask("1902ff00").hex() == "7f1913"
 
 
-@pytest.mark.parametrize("mask", ["00", "40", "10"])
+@pytest.mark.parametrize("mask", ["00", "40", "10", "01", "02", "20", "80"])
 def test_0x19_02_omits_every_record_a_mask_matches_no_bit_of(mask):
-    # (status & mask) != 0 is the filter. 0x2F has neither bit 6 nor bit 4.
-    assert ask("1902" + mask).hex() == "5902ff"
+    # (status & mask) != 0 is the filter. Neither code sets any of these bits, and five of
+    # them are outside the advertised availability mask altogether.
+    assert ask("1902" + mask).hex() == "59028c"
 
 
-def test_0x19_02_keeps_a_record_a_mask_shares_one_bit_with():
-    assert ask("190201").hex() == "5902ff" + "9477012f" + "0001012f"
+def test_0x19_02_filtering_on_confirmed_keeps_only_the_confirmed_code():
+    assert ask("190208").hex() == "59028c" + "9477010c"
+
+
+def test_0x19_02_filtering_on_pending_keeps_both():
+    assert ask("190204").hex() == "59028c" + "9477010c" + "00010104"
 
 
 @pytest.mark.parametrize(
@@ -124,16 +130,15 @@ def test_0x19_without_a_subfunction_is_a_length_error():
 
 def test_0x19_02_with_no_configured_codes_answers_the_header_alone():
     proto, _ = protocol(())
-    assert proto.handle(ServiceRequest(b"\x19\x02\xff")).hex() == "5902ff"
+    assert proto.handle(ServiceRequest(b"\x19\x02\xff")).hex() == "59028c"
 
 
 def test_0x19_02_reads_through_the_registry_so_it_follows_the_store():
     proto, store = protocol()
-    assert proto.handle(ServiceRequest(b"\x19\x02\xff")).hex() == "5902ff" + "9477012f" + "0001012f"
+    assert proto.handle(ServiceRequest(b"\x19\x02\xff")).hex() == "59028c" + "9477010c" + "00010104"
     store.clear()
-    # The status byte is still fixed at this step, so clearing does not yet remove a
-    # record; it is the store that is read, not a copy taken at construction.
-    assert proto.handle(ServiceRequest(b"\x19\x02\xff")).hex() == "5902ff" + "9477012f" + "0001012f"
+    # Every flag is off, so every status byte is zero and no mask matches anything.
+    assert proto.handle(ServiceRequest(b"\x19\x02\xff")).hex() == "59028c"
 
 
 # --- unsupported and malformed -------------------------------------------------------------------
