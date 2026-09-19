@@ -322,19 +322,21 @@ a competing version table.
 
 ### 7.1 Specifications
 
-| Specification | Availability | Consequence |
-|---|---|---|
-| ISO 15765-2 | Implemented by the kernel | None in-repo |
-| ISO 15765-4 | Licensed; conventions public | Conventions implemented, labelled |
-| SAE J1979 | Licensed; formulas public | Listed PIDs implemented, labelled |
-| SAE J2012 | Licensed; encoding public | Existing encoder retained |
-| ISO 14229-1 | Licensed; formats public | V1 services implemented, labelled |
-| SAE J1979-2, J1979-3 | Licensed, not public | Nothing implemented |
-| ISO 13400-2 | Licensed; layouts public | Experimental only |
-| ELM327 datasheet | Public | Tester side; informs padding and timeouts |
+| Specification | Revision checked | Availability | Consequence | Reviewed |
+|---|---|---|---|---|
+| ISO 15765-2 | not checked | Implemented by the kernel | None in-repo | — |
+| ISO 15765-4 | not checked | Licensed; conventions public | Conventions implemented, labelled | — |
+| SAE J1979 | `J1979_202505`, reaffirmed 2025-05-23; last technical revision Feb 2017 | Licensed, **text unavailable** | Listed PIDs implemented, labelled | Phase 5 |
+| SAE J1979-DA | `J1979DA_202508`, revised 2025-08-18 | Licensed, **text unavailable** | Would settle the service 09 field layouts; DEV-03 deferred for want of it | Phase 5 |
+| SAE J2012 | not checked | Licensed; encoding public | Existing encoder retained | — |
+| ISO 14229-1 | not checked | Licensed; formats public | V1 services implemented, labelled | — |
+| SAE J1979-2, J1979-3 | not checked | Licensed, not public | Nothing implemented | — |
+| ISO 13400-2 | not checked | Licensed; layouts public | Experimental only | — |
+| ELM327 datasheet | ELM327DSJ | Public | Tester side; supplied the service 09 and service 01 captures behind the Phase 5 decisions | Phase 5 |
 
-No specification in this table has been reviewed against its text by this project. Nothing
-is `standards validated`.
+No specification in this table has been reviewed against its text by this project, and for
+those marked **text unavailable** an attempt was made and the document is paywalled.
+Nothing is `standards validated`. Per-phase evidence reviews live in `docs/decisions/`.
 
 ### 7.2 Runtime and development dependencies
 
