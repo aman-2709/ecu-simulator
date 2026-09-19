@@ -9,7 +9,11 @@ The fork is being actively modernized into a testbench-grade vehicle diagnostic 
 The project is **not yet production-ready**. Known protocol deviations of the current implementation still exist and are tracked; the sections below describe the legacy behavior until the corresponding phase replaces it.
 
 * Roadmap, architecture and release plan: [docs/modernization-plan.md](docs/modernization-plan.md)
+* What is implemented and how far it is verified: [docs/conformance.md](docs/conformance.md)
 * Known protocol and implementation deviations: [docs/known-deviations.md](docs/known-deviations.md)
+
+Nothing in this project is standards validated. The applicable SAE and ISO documents are
+licensed and have not been reviewed against this implementation.
 
 This Python tool simulates some vehicle diagnostic services. It can be used to test OBD-II dongles or tester tools that support the UDS (ISO 14229) and ISO-TP (ISO 15765-2) protocols. 
 

@@ -138,7 +138,9 @@ compliance. Real session timing is V1.1.
 Each phase leaves the repository runnable. Behavioral wire changes are one commit each,
 preceded by a characterization test that pins the old behavior. From Phase 3 onward every
 phase must also pass the phase completion gate in section 10 before it is declared
-complete; each phase's Definition of Done below is in addition to that gate.
+complete, and any phase depending on an external standard, interface, library or tool must
+first pass the documentation and standards verification gate in section 11. Each phase's
+Definition of Done below is in addition to those gates.
 
 ### Phase 0 — Baseline and characterization (V1.0)
 
@@ -281,13 +283,38 @@ Physical bench on `can0`, recorded with:
 
 ## 6. Conformance vocabulary
 
-`docs/conformance.md` carries one row per service and PID with five columns:
-implemented, unit tested, integration tested on vcan, hardware validated (adapter and
-firmware named), standards validated. The last column stays empty until someone with the
-specification reviews the behavior and cites the clause. Hardware interoperability never
-fills it. The README links to this table instead of listing supported services.
+`docs/conformance.md` carries one row per service and PID with five status dimensions,
+and these five are the only status vocabulary used anywhere in the project:
 
-## 7. Standards dependencies
+| Dimension | Meaning |
+|---|---|
+| implemented | the behavior exists in this codebase |
+| unit tested | pinned by a unit or characterization test |
+| integration tested | exercised over the real kernel ISO-TP path on a vcan interface |
+| hardware validated | exercised on physical CAN with named hardware and firmware |
+| standards validated | checked against the applicable specification revision, with the clause cited |
+
+The last column stays empty until someone with the specification reviews the behavior and
+cites the clause. Hardware interoperability never fills it, and neither does agreement
+with vehicle captures or open-source implementations.
+
+Interoperability is deliberately not a sixth dimension. Where interoperability evidence is
+useful it is recorded as free text on the row it supports, for example
+"Interoperability evidence: exercised with can-utils isotpsend and isotprecv" or
+"Interoperability evidence: validated with a named ELM327 adapter". This keeps one
+authoritative status vocabulary while preserving the evidence.
+
+The README links to this table instead of listing supported services. The table is created
+in Phase 4, seeded with the behavior that exists at that point, and extended as each later
+phase changes behavior.
+
+## 7. Dependency and standards inventory
+
+The single authoritative inventory of external material this project relies on. Every
+phase's source report under section 11 updates or references this section; no phase starts
+a competing version table.
+
+### 7.1 Specifications
 
 | Specification | Availability | Consequence |
 |---|---|---|
@@ -299,6 +326,24 @@ fills it. The README links to this table instead of listing supported services.
 | SAE J1979-2, J1979-3 | Licensed, not public | Nothing implemented |
 | ISO 13400-2 | Licensed; layouts public | Experimental only |
 | ELM327 datasheet | Public | Tester side; informs padding and timeouts |
+
+No specification in this table has been reviewed against its text by this project. Nothing
+is `standards validated`.
+
+### 7.2 Runtime and development dependencies
+
+Versions recorded when the phase named in the last column reviewed them.
+
+| Item | Version in use | Current release | Source | Reviewed |
+|---|---|---|---|---|
+| Python | 3.12 and 3.13 supported; 3.12.12 in the venv | n/a | project configuration | Phase 4 |
+| can-isotp | 2.0.7, pinned `>=2.0,<3` | 2.0.7 (2025-05-14) | PyPI metadata, project source | Phases 2, 2A |
+| pydantic | 2.13.5, pinned `>=2.13,<3` | 2.13.5 (2026-08-28) | PyPI metadata, official docs | Phase 4 |
+| ruamel.yaml | 0.19.1, pinned `>=0.19,<0.20` | 0.19.1 (2026-01-02) | PyPI metadata, experiment | Phase 4 |
+| pytest | 9.1.1, pinned `>=8.0` | 9.1.1 (2026-06-19) | PyPI metadata | Phase 4 |
+| mypy | 2.3.1, pinned `>=1.11` | 2.3.1 (2026-08-15) | PyPI metadata | Phase 4 |
+| ruff | 0.16.8, pinned `>=0.6` | 0.16.8 (2026-09-16) | PyPI metadata | Phase 4 |
+| Linux CAN_ISOTP | in-tree, kernel 6.8 and 6.17 observed | n/a | kernel source and experiments | Phases 2, 2A |
 
 ## 8. Non-goals for V1.0
 
@@ -388,6 +433,8 @@ on their own. Targeted verification of the phase's actual behavior is mandatory.
 
 ### Required before declaring a phase complete
 
+- Complete the documentation and standards verification gate in section 11 first, where
+  the phase depends on an external standard, interface, library or tool.
 - Add or update tests for every new or intentionally changed behavior.
 - Run targeted tests for the functionality implemented in that phase.
 - Run regression tests for adjacent behavior that could reasonably have been affected.
@@ -437,3 +484,85 @@ The report at each phase boundary states, explicitly:
 - anything that could not be tested, and why;
 - new defects or unexpected behavior discovered;
 - local HEAD SHA, remote HEAD SHA, and the final `git status`.
+
+## 11. Documentation and standards verification gate
+
+Standing requirement, added 2026-09-18. It applies before implementing any phase that
+depends on an external protocol, standard, operating-system interface, library or tool,
+and it is a precondition of the phase completion gate in section 10: a standards-dependent
+phase has no complete acceptance criteria until this review has been done.
+
+Implementation never starts from model knowledge, the existing code, old README content,
+blog posts or remembered protocol behavior. The current authoritative documentation for
+the material the phase actually touches is identified and reviewed first.
+
+### 11.1 Applicable versions
+
+For every external specification or dependency the phase touches, identify the document or
+library name, its current version or revision, its publication or release date where
+available, whether a revision this project relies on has been superseded, whether the
+specification text is actually accessible, and which source was used. The revision the
+original repository used is never assumed to still be current.
+
+### 11.2 Source priority
+
+1. The applicable SAE or ISO specification, when legally available here.
+2. Official standards-publisher information for revision and status.
+3. Official Linux kernel documentation.
+4. Official library or project documentation and source.
+5. Well-maintained open-source implementations, as interoperability cross-checks only.
+6. Secondary technical references, only where necessary.
+
+Blogs, forum posts, question-and-answer sites, arbitrary repositories and generated
+summaries are never treated as normative. An open-source implementation can demonstrate
+interoperability; it never demonstrates standards compliance.
+
+### 11.3 Licensed or unavailable standards
+
+Where the applicable specification is not available, the report says so explicitly and
+names the exact document and revision that would be needed. Normative behavior is not
+reconstructed from memory, and missing requirements are not inferred from unrelated
+implementations. Only behavior supported by sufficiently reliable accessible material is
+implemented, and it is labelled `implemented`, `unit tested`, `integration tested` or
+`experimental`, never `standards validated`. A feature that cannot be implemented
+confidently without the specification is stopped rather than guessed; unrelated work that
+does not depend on the missing material continues.
+
+### 11.4 Existing behavior against current documentation
+
+Before any wire-level change, record the current behavior, the proposed behavior, the
+source supporting the proposal, the applicable revision, the DEV identifier where one
+exists, and the tests that will prove the change. Wire behavior is never changed merely
+because another open-source implementation differs.
+
+### 11.5 Software and library interfaces
+
+Dependencies are verified against the exact major version in use, not against remembered
+API shapes. Where the behavior matters, it is also confirmed experimentally, and the
+report keeps observed implementation behavior distinct from normative requirements.
+
+### 11.6 Pre-implementation source report
+
+Each standards-dependent or dependency-dependent phase produces a short report covering
+only the items that phase touches, in the form:
+
+| Item | Version/revision | Source type | Full text available? | Relevant to this phase |
+|---|---|---|---|---|
+
+The report updates or references the inventory in section 7; it never starts a competing
+version table. Standards that appear only on the long-term roadmap are not researched.
+
+### 11.7 Recording decisions
+
+A documentation review that changes an architectural or protocol decision is recorded in
+`docs/decisions/`. Implementation status belongs in `docs/conformance.md`.
+
+### 11.8 Status vocabulary
+
+The five status dimensions in section 6 are the only status vocabulary. Interoperability
+is not a sixth dimension: it is recorded as evidence text on the row it supports, for
+example "Interoperability evidence: exercised with can-utils isotpsend and isotprecv".
+`standards validated` is used only where the implementation has actually been checked
+against the applicable specification revision with sufficient evidence. Hardware
+interoperability alone is never standards validation, and agreement with vehicle captures
+or open-source implementations never upgrades it.
