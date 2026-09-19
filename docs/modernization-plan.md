@@ -229,6 +229,23 @@ Both standing gates apply to it independently: section 11 before implementation,
 and UDS 0x14 and 0x19/02 with the status-mask fix; protocol encoders in
 `protocols/*/dtc.py`. Legacy `uds/` deleted. Risk M.
 
+Decided 2026-09-19, from the evidence review in
+[decisions/0004-phase-6-dtc-evidence.md](decisions/0004-phase-6-dtc-evidence.md) and
+approved before implementation. Two narrowings of the sentence above:
+
+- **Three flags, not four.** `stored` is folded into `confirmed`; service 03 reports the
+  confirmed view. The evidence distinguishes no third state, and nothing on the wire could
+  tell them apart. This is a modeling decision for the behavior this project serves, not a
+  claim that SAE or ISO define the two as equivalent.
+- **OBD Mode 07 is deferred**, and DEV-11 is split so Mode 04 can be fixed while Mode 07
+  stays open. Its `47` + count framing rests on two open-source implementations with no
+  public worked example, which section 11 does not accept for new wire behavior. The
+  generic `pending` state it would report is implemented and tested.
+
+Also deferred out of Phase 6, each for a stated reason: Mode 01 PID 0x01, the third byte
+of the UDS DTC number, status bits needing an operation-cycle model, `0x19` sub-functions
+`0x01` and `0x0A`, `MemorySelection`, `0x3E`, DEV-07, DEV-15 and DEV-17.
+
 ### Phase 7 — Deterministic scenario engine and minimal 0x3E (V1.0)
 
 Generators constant, ramp, sine, stepped, sequence, timeline as pure functions of `t`;
@@ -446,9 +463,19 @@ Phase 5.1
 
 Phase 6
 38. `feat(dtc): DtcStore with a single clear operation`
-39. `fix(uds): 0x19 0x02 requires and honours DTCStatusMask`
-40. `feat(uds): 0x14 ClearDiagnosticInformation via DtcStore.clear`
-41. `refactor: delete legacy uds package`
+38a. `refactor(obd): read stored DTCs from the shared store`
+38b. `feat(obd): Mode 04 clears the shared DTC store`
+38c. `refactor(uds): replace the legacy UDS module with a store-backed protocol`
+38d. `test(uds): pin the 0x19 length-before-subfunction check`
+39a. `fix(uds): validate the 0x19 sub-function before the request length`
+39b. `fix(uds): require and apply the status mask for 0x19/0x02 (DEV-05)`
+39c. `fix(uds): derive the DTC status byte and availability mask (DEV-16)`
+40. `feat(uds): 0x14 ClearDiagnosticInformation via DtcStore.clear (DEV-23)`
+41. `docs: Phase 6 conformance, deviations and README`
+
+Commit 41 replaces the planned `refactor: delete legacy uds package`: the deletion
+happened in 38c, because the replacement and the removal of what it replaces have to be
+one bisectable step for the differential comparison to mean anything.
 
 Phase 7
 42. `feat(clock): Clock protocol with monotonic and simulated implementations`

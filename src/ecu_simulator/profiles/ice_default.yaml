@@ -43,6 +43,13 @@ vehicle:
 ecus:
   engine:
     name: ECU_SIMULATOR
+    # A bare code is pending and confirmed and asks for no indicator, which is what
+    # service 03 and 0x19/02 report until something clears it. The long form names the
+    # state instead:
+    #   - code: P0002
+    #     pending: true
+    #     confirmed: false
+    #     indicator_requested: false
     dtcs:
       - B1477
       - P0001

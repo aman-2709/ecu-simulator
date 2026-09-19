@@ -67,8 +67,9 @@ usage as it is publicly described. The specification text has not been reviewed.
 ## OBD-II services
 
 Served by the parameter table in `protocols/obd/pids.py`, which reads vehicle state
-through signal paths. Modes `0x01` to `0x0A` are accepted as valid service identifiers;
-those not listed below produce no response (DEV-11).
+through signal paths, and by the shared DTC store for services 03 and 04. Modes `0x01` to
+`0x0A` are accepted as valid service identifiers; those not listed below produce no
+response, Mode 07 among them (DEV-11, deferred).
 
 `standards validated` is `no` for every row: SAE J1979 (`J1979_202505`) and its Digital
 Annex (`J1979DA_202607`) are licensed and have not been read by this project. The evidence
@@ -77,7 +78,7 @@ column records what each encoding actually rests on.
 | Service | PID | Description | Implemented | Unit tested | Integration tested | Hardware validated | Standards validated | Evidence |
 |---|---|---|---|---|---|---|---|---|
 | 0x01 | 0x00/0x20/0x40 | supported parameters | yes | yes | yes | no | no | derived from the table; continuation behavior from a two-ECU capture in the ELM327 datasheet |
-| 0x01 | 0x01 | monitor status | **no** | yes (absence) | yes (absence) | n/a | no | deferred: DTC-store semantics belong to Phase 6 and the monitor bits are not corroborated |
+| 0x01 | 0x01 | monitor status | **no** | yes (absence) | yes (absence) | n/a | no | **still deferred after Phase 6**: the store now exists, but the ELM327 datasheet describes only the first byte and refers the other three to J1979 |
 | 0x01 | 0x04 | calculated engine load | yes | yes | no | no | no | ELM327 datasheet capture (`04 3F`) |
 | 0x01 | 0x05 | engine coolant temperature | yes | yes | no | no | no | ELM327 datasheet capture (`05 44`) |
 | 0x01 | 0x06/0x07 | short and long term fuel trim, bank 1 | yes | yes | no | no | no | consistent public description; no competing formula |
@@ -95,9 +96,9 @@ column records what each encoding actually rests on.
 | 0x01 | 0x46 | ambient air temperature | yes | yes | no | no | no | consistent public description |
 | 0x01 | 0x51 | fuel type | yes | yes | yes | no | no | consistent public description |
 | 0x01 | several | several parameters in one request | yes | yes | yes | no | no | two worked CAN captures in the ELM327 datasheet, reproduced byte for byte (DEV-18) |
-| 0x03 | - | stored DTCs | yes | yes | no | no | no | unchanged since ce46b87 |
-| 0x04 | - | clear DTCs | **no** | yes (absence) | no | n/a | no | deferred to Phase 6: needs mutable DTC-store semantics (DEV-11) |
-| 0x07 | - | pending DTCs | **no** | yes (absence) | no | n/a | no | deferred to Phase 6: needs a pending/confirmed distinction (DEV-11) |
+| 0x03 | - | stored DTCs | yes | yes | yes | no | no | bytes unchanged since ce46b87; the list is now the confirmed view of the shared DTC store |
+| 0x04 | - | clear DTCs | **yes** | yes | yes | no | no | `44` stated verbatim in the ELM327 datasheet; clears the store OBD and UDS share (DEV-11) |
+| 0x07 | - | pending DTCs | **no** | yes (absence) | no | n/a | no | **deferred**: the `47` + count framing has no public worked example, only two open-source implementations (DEV-11) |
 | 0x09 | 0x00 | supported parameters | yes | yes | no | no | no | derived from the table |
 | 0x09 | 0x02 | VIN | yes | yes | yes | no | no | three independent captures agree on the item count byte (DEV-02) |
 | 0x09 | 0x0A | ECU name | yes | yes | no | no | no | **byte layout unresolved (DEV-03, deferred)**; current bytes frozen by test |
@@ -118,20 +119,28 @@ nothing varies over time until the Phase 7 scenario engine.
 |---|---|---|---|---|---|---|---|
 | 0x10 | 0x01-0x04 | DiagnosticSessionControl | yes | yes | yes | no | no |
 | 0x11 | 0x01-0x05 | ECUReset | yes | yes | yes | no | no |
-| 0x14 | - | ClearDiagnosticInformation | no | yes (DEV-23) | no | n/a | no |
-| 0x19 | 0x02 | reportDTCByStatusMask | yes | yes | no | no | no |
+| 0x14 | - | ClearDiagnosticInformation, groupOfDTC `FFFFFF` only | **yes** | yes | **yes** | no | no |
+| 0x19 | 0x02 | reportDTCByStatusMask, mask required and applied | yes | yes | **yes** | no | no |
 | 0x19 | 0x01, 0x0A | other report types | no | yes | no | n/a | no |
 | 0x22 | - | ReadDataByIdentifier | no | yes | yes | n/a | no |
 | 0x3E | - | TesterPresent | no | yes (DEV-23) | no | n/a | no |
 | - | - | NRC 0x11 for a service no enabled protocol serves | yes | yes | yes | no | no |
 | - | - | `suppressPosRspMsgIndicationBit` honoured | no | yes (DEV-07) | no | n/a | no |
 
-The session parameter record, DTC status bytes and session state behavior are known to be
-placeholders: DEV-05, DEV-07, DEV-16, DEV-17 and DEV-23. No session state is kept.
+The session parameter record and session state behavior are still placeholders: DEV-07,
+DEV-17 and the 0x3E half of DEV-23. No session state is kept.
 
-The positive path of `0x19` sub-function `0x02` is pinned by unit tests only. The
-integration suite exercises the three-byte form `19 02 <mask>`, which is rejected today
-(DEV-05), not the two-byte form that returns DTCs.
+Phase 6 corrected DEV-05 and the status half of DEV-16. `19 02 <mask>` is the request
+shape and the mask is applied; the two-byte form is now a length error. The
+DTCStatusAvailabilityMask is `0x8C`, the three status bits this project models -- bit 2
+pendingDTC, bit 3 confirmedDTC, bit 7 warningIndicatorRequested -- and each record's
+status is derived from the shared DTC store rather than fixed at `0x2F`. The third byte
+of the DTC number stays frozen at `0x01`: it is the J2012 failure-type byte and nothing
+supports any value for it. Sub-functions `0x01` and `0x0A` remain Phase 11.
+
+Interoperability evidence: `19 02 <mask>`, a mask matching nothing, `14 FF FF FF`, an
+unsupported group, and clearing in both directions between the OBD and UDS channels were
+all exercised over the kernel ISO-TP path on a vcan interface.
 
 The NRC 0x11 row is DEV-06, corrected in Phase 3. The value `0x11` and the
 `7F <SID> <NRC>` framing are taken from the public description of ISO 14229-1. The
@@ -150,11 +159,19 @@ specification text has not been reviewed, so the row is not `standards validated
 | `validate-config` checks a profile without opening a socket | yes | yes | no | n/a | n/a |
 | Malformed profile rejected with the path to every problem | yes | yes | no | n/a | n/a |
 | Vehicle state addressed by dotted signal path | yes | yes | no | n/a | n/a |
+| DTC state shared by OBD and UDS, one clear operation | yes | yes | yes | n/a | n/a |
+| DTC status byte and availability mask derived from the modelled state | yes | yes | yes | no | no |
+| A clear keeps the configured trouble codes so they can be raised again | yes | yes | yes | n/a | n/a |
 | Diagnostic reads observe state without advancing it | yes | yes | yes | n/a | n/a |
 | Supported parameters derived from the configured vehicle | yes | yes | yes | n/a | n/a |
 
 The runtime rows describe project behavior, not protocol behavior, so `standards
-validated` does not apply to them. Configuration validation in particular is project input
+validated` does not apply to them, with one exception: the derived status byte and
+availability mask are visible on the wire, so that row carries `no` like any other
+protocol row. The post-clear state is deliberately narrower than either the OBD or the
+UDS description of a clear, and is
+[documented as a simulator transition](decisions/0004-phase-6-dtc-evidence.md) rather than
+as SAE or ISO behavior. Configuration validation in particular is project input
 validation: it rejects profiles this simulator cannot serve faithfully and makes no claim
 about SAE J2012 trouble-code format or any other specification. See
 [decisions/0002-configuration-format-and-validation.md](decisions/0002-configuration-format-and-validation.md).

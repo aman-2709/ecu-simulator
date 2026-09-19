@@ -1,6 +1,7 @@
 # 0004 — Phase 6 evidence review: shared DTC state, OBD modes 03/04/07, UDS 0x14 and 0x19/02
 
-Status: proposed 2026-09-19, before any Phase 6 wire change.
+Status: accepted 2026-09-19, before any Phase 6 wire change, with the decisions recorded
+in section 12. Implemented in Phase 6.
 
 Produced under the documentation and standards verification gate
 ([modernization-plan.md section 11](../modernization-plan.md)). It covers only the wire
@@ -505,3 +506,31 @@ behavior, `standards validated` not applicable to the first and `no` for the sec
 | UDS DTC third byte (DEV-16) | **Freeze** | unchanged |
 | 0x10, 0x11 rewrite | No wire change, proved by a differential run | unchanged |
 | DEV-18 multi-PID | **Raised for decision**, not absorbed | — |
+
+## 12. Decisions taken on this review
+
+Recorded 2026-09-19, when this review was accepted, so the record says what was decided
+and not only what was proposed.
+
+| Question this review raised | Decision |
+|---|---|
+| Fold "stored" into `confirmed`? | **Yes.** Three flags: `pending`, `confirmed`, `indicator_requested`. Documented in `dtc/store.py` as a project-domain modeling decision for the behavior currently needed, explicitly **not** a claim that SAE or ISO define the two concepts as equivalent |
+| Ship OBD Mode 07 on two-implementation evidence? | **No, defer.** Two open-source implementations and no sufficiently independent public worked wire example is below the bar section 11 sets for new wire behavior. The generic `pending` state is implemented and tested, because it is useful domain state; the Mode 07 response handler is not. DEV-11 is split so Mode 04 reads fixed while Mode 07 reads deferred, and the register names what would unblock it |
+| Where does DEV-18 go? | **Phase 5.1**, its own gated phase, completed before Phase 6 began. It belongs to the Mode 01 request parser and has no relationship to DTC state. See [0005](0005-phase-5-1-multi-pid-evidence.md) |
+| What does `clear()` leave behind? | Configured identity remains; `pending`, `confirmed` and `indicator_requested` all false. Every protocol view then reports nothing. Documented as a deliberately limited simulator transition supported by the modelled subset, not a universal SAE or ISO post-clear state. The AUTOSAR post-clear byte `0x50` is **not** reproduced: bits 4 and 6 are outside the advertised availability mask, and modelling them only to reproduce a byte the simulator cannot otherwise express would be inventing state |
+| Availability mask | Derived from the modelled bits, `0x8C`, not hard-coded `0xFF`. A test asserts no producible status byte sets a bit outside it |
+| UDS DTC third byte | **Frozen** at `0x01`, exactly as characterized |
+| DEV-05 as one commit or two? | **Three**, because they separated cleanly: the sub-function/length ordering first, on its own, with `19 82 FF` pinned before and after; then the mask requirement and filtering; then the derived status byte. Each has distinct tests and its own before-and-after record |
+| 0x14 group handling | `FFFFFF` only. Any other group is `7F 14 31` and clears nothing; any other length, including the five-byte `MemorySelection` form, is `7F 14 13`. Both paths tested |
+
+### Discovered during implementation
+
+Two things this review did not anticipate, both recorded here because they are consequences
+of making ECU state mutable for the first time:
+
+- `DtcStore` must **copy** the states it is constructed from. It mutates them, so aliasing
+  one would let two stores built from a shared list clear each other. Found by a test that
+  passed alone and failed in the suite.
+- The integration suite's simulator subprocess is module-scoped, which cost nothing while
+  every request was a read. A test that clears now decides what the tests after it see, so
+  a `mutating` fixture restarts the process for those tests.

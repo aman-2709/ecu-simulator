@@ -45,7 +45,8 @@ I created this project to learn more about the OBD and UDS protocols. I did my b
 | 0x01    | 0x46   | Ambient air temperature |
 | 0x01    | 0x51   | Fuel type |
 | 0x01    | several | Up to six parameters in one request, answered in one response |
-| 0x03    | -      | Request stored DTCs |
+| 0x03    | -      | Request stored DTCs (the confirmed codes in the ECU's DTC store) |
+| 0x04    | -      | Clear DTCs; the same clear as UDS 0x14 |
 | 0x09    | 0x00   | Supported parameters in service 0x09 |
 | 0x09    | 0x02   | Vehicle Identification Number (VIN) |
 | 0x09    | 0x0A   | ECU name |
@@ -65,7 +66,8 @@ evidence its encoding rests on. Nothing is standards validated.
 |:----------:|:-------------------------|:------------------------|:-----------------|
 | 0x10       | DiagnosticSessionControl | **session types** <br> <br> 0x01 default <br> 0x02 programming <br> 0x03 extended <br> 0x04 safety | |
 | 0x11       | ECUReset                 | **reset types** <br> <br> 0x01 hardReset <br> 0x02 keyOffOnReset <br> 0x03 softReset <br> 0x04 enableRapidPowerShutDown <br> 0x05 disableRapidPowerShutDown | 0x0F powerDownTime |
-| 0x19       | ReadDTCInformation       | **report types** <br> <br> 0x02 reportDTCByStatusMask | <br> 0xFF DTCStatusAvailabilityMask <br> 0x2F statusOfDTC  | 
+| 0x14       | ClearDiagnosticInformation | groupOfDTC `FFFFFF` only; any other group gets NRC 0x31 | |
+| 0x19       | ReadDTCInformation       | **report types** <br> <br> 0x02 reportDTCByStatusMask, mask required | <br> 0x8C DTCStatusAvailabilityMask <br> statusOfDTC derived from the store: 0x04 pending, 0x08 confirmed, 0x80 indicator requested |
  
 ## Requirements
 
