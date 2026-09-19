@@ -205,6 +205,24 @@ counts; dynamic supported masks. Wire changes, one commit each: continuation bit
 item count, ECU-name encoding, multi-PID requests. Formulas from public references,
 labelled "not standards-validated"; PID 0x01 layout flagged experimental. Risk M.
 
+### Phase 5.1 — Several Mode 01 parameters in one request (V1.0)
+
+Added 2026-09-19. A follow-up to Phase 5, not a new stage of the roadmap: Phase 5 was
+assigned DEV-18 and did not implement it, and the correction belongs to the Mode 01
+request parser rather than to the DTC state model Phase 6 builds. It is separated so that
+an OBD parser change is not folded into a DTC phase.
+
+Scope, and nothing beyond it: several Mode 01 parameters answered in one response;
+byte-exact tests built from the two worked CAN captures in the ELM327 datasheet;
+single-parameter behavior preserved; malformed and unsupported-parameter behavior tested
+explicitly; the DEV-18 strict xfail transition; conformance and deviation updates. No
+unrelated OBD refactoring. Evidence review in
+[decisions/0005-phase-5-1-multi-pid-evidence.md](decisions/0005-phase-5-1-multi-pid-evidence.md).
+Risk L.
+
+Both standing gates apply to it independently: section 11 before implementation, section
+10 before it is declared complete.
+
 ### Phase 6 — DTC state management (V1.0)
 
 `DtcStore` (pending, confirmed, stored, MIL) with one `clear()` operation; OBD 03/04/07
@@ -420,6 +438,11 @@ Phase 5
 35. `feat(obd): Mode 04 and Mode 07`
 36. `feat(obd): multi-PID Mode 01 requests`
 37. `refactor: delete legacy obd package`
+
+Phase 5.1
+37a. `docs(decisions): Phase 5.1 multi-parameter evidence review`
+37b. `test(obd): characterize the first-parameter-only Mode 01 request`
+37c. `feat(obd): answer several Mode 01 parameters in one request`
 
 Phase 6
 38. `feat(dtc): DtcStore with a single clear operation`
