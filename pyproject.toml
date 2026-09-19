@@ -27,6 +27,10 @@ classifiers = [
 # It is the only runtime dependency; raw CAN capture is left to candump.
 dependencies = [
     "can-isotp>=2.0,<3",
+    # Profile schema validation. See docs/decisions/0002-configuration-format-and-validation.md.
+    "pydantic>=2.13,<3",
+    # YAML 1.2 safe loading; rejects duplicate keys instead of silently keeping the last.
+    "ruamel.yaml>=0.19,<0.20",
 ]
 
 [project.optional-dependencies]
@@ -48,7 +52,7 @@ Homepage = "https://github.com/lbenthins/ecu-simulator"
 packages = ["src/ecu_simulator"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "docs", "scripts", "setup_can.sh", "setup_vcan.sh", "README.md", "LICENSE"]
+include = ["src", "tests", "docs", "scripts", "profiles", "setup_can.sh", "setup_vcan.sh", "README.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -92,6 +96,8 @@ module = [
     "ecu_simulator.transport",
     "ecu_simulator.vehicle",
     "ecu_simulator.vehicle.*",
+    "ecu_simulator.config",
+    "ecu_simulator.config.*",
     "ecu_simulator.clock",
     "ecu_simulator.transport.*",
     "ecu_simulator.ecu",

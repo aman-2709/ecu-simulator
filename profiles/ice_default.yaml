@@ -1,0 +1,57 @@
+# Default single-ECU internal-combustion profile.
+#
+# Reproduces the addresses and vehicle data the package's ecu_config.json carried before
+# Phase 4, so the bytes on the wire are unchanged. The schema is multi-ECU: `ecus:` is a
+# mapping and a second ECU is added by adding a second key.
+#
+# Validated by src/ecu_simulator/config/schema.py. A malformed profile is rejected with a
+# path-qualified message before any socket is opened; see docs/decisions/
+# 0002-configuration-format-and-validation.md for what that validation does and does not
+# claim.
+
+version: 1
+
+transport:
+  # Overridden by --interface on the command line.
+  interface: vcan0
+
+vehicle:
+  vin: TESTVIN0123456789
+  type: ice
+  engine:
+    fuel_level: 50      # per cent
+    fuel_type: 1        # SAE J1979 fuel type coding; 1 is gasoline
+
+ecus:
+  engine:
+    name: ECU_SIMULATOR
+    dtcs:
+      - B1477
+      - P0001
+    dids: {}
+    endpoints:
+      # ISO 15765-4 OBD broadcast. OBD only: a UDS request here reaches no protocol.
+      - name: obd_functional
+        rx: 0x7DF
+        tx: 0x7E8
+        addressing: functional
+        protocols: [obd]
+        answer_unsupported: false
+        tx_padding: true
+        pad_byte: 0x00
+        # Multi-frame replies leave through the physical socket, where the tester sends
+        # its flow control.
+        reply_via: obd_physical
+      - name: obd_physical
+        rx: 0x7E0
+        tx: 0x7E8
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: true
+        pad_byte: 0x00
+      - name: uds_physical
+        rx: 0x7E1
+        tx: 0x7E9
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: false
