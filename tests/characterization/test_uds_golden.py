@@ -120,16 +120,16 @@ def test_0x19_negative_responses(request_hex, expected):
     assert uds(request_hex).hex() == expected
 
 
-def test_0x19_a_three_byte_request_today_is_rejected_for_its_length_before_its_subfunction():
-    # The length check runs first, so an unknown sub-function in a three-byte request is
-    # never reached and the answer is 0x13 rather than 0x12. Correcting DEV-05 requires
-    # three-byte requests to reach the sub-function check, which moves this response.
-    assert uds("1982ff").hex() == "7f1913"
-
-
-@xfail_deviation("NRC ordering", "the 0x19 length check runs before the sub-function check")
 def test_0x19_an_unknown_subfunction_is_rejected_as_a_subfunction_whatever_the_length():
+    # Corrected in Phase 6: the sub-function is checked before the length that sub-function
+    # requires, so 19 82 FF is answered 7F 19 12 where it was answered 7F 19 13. The
+    # ordering is a project choice; no accessible source states the ISO order.
     assert uds("1982ff").hex() == "7f1912"
+
+
+@pytest.mark.parametrize("request_hex", ["1901ff", "190aff", "1900ff0000"])
+def test_0x19_an_unsupported_subfunction_is_0x12_at_any_length(request_hex):
+    assert uds(request_hex).hex() == "7f1912"
 
 
 def test_0x19_02_with_empty_dtc_list_returns_header_only():

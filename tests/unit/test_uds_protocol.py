@@ -104,6 +104,15 @@ def test_0x19_negative_responses(request_hex, expected):
     assert ask(request_hex).hex() == expected
 
 
+@pytest.mark.parametrize("request_hex", ["1901", "1901ff", "190a", "190aff", "1982", "1982ff", "19ff00000000"])
+def test_0x19_an_unsupported_subfunction_is_rejected_as_one_at_any_length(request_hex):
+    assert ask(request_hex).hex() == "7f1912"
+
+
+def test_0x19_without_a_subfunction_is_a_length_error():
+    assert ask("19").hex() == "7f1913"
+
+
 def test_0x19_02_with_no_configured_codes_answers_the_header_alone():
     proto, _ = protocol(())
     assert proto.handle(ServiceRequest(b"\x19\x02")).hex() == "5902ff"

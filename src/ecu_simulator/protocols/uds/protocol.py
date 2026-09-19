@@ -101,12 +101,29 @@ class UdsProtocol:
     # -- 0x19 ------------------------------------------------------------------------------------
 
     def _read_dtc_information(self, payload: bytes) -> bytes:
-        """DEV-05 preserved at this step: sub-function 0x02 still requires exactly two bytes."""
-        if len(payload) != 2:
+        """Sub-function first, then the length that sub-function requires.
+
+        A 0x19 request needs at least a sub-function byte; without one there is nothing
+        to dispatch on and the answer is a length error. With one, the sub-function
+        decides whether the service is supported at all, and only then does its own
+        length rule apply. The order matters because sub-functions take different numbers
+        of parameters, and checking one global length first hides an unsupported
+        sub-function behind a length error.
+
+        **The order is a project choice.** ISO 14229-1:2026 is licensed and unread, and no
+        accessible source states the order in which a server checks service, sub-function
+        and length. This one is chosen to keep every currently pinned negative response
+        unchanged except where correcting DEV-05 forces a change.
+
+        DEV-05 preserved at this step: sub-function 0x02 still requires exactly two bytes.
+        """
+        if len(payload) < 2:
             return self._nrc(READ_DTC_INFORMATION, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
         report_type = payload[1]
         if report_type != REPORT_DTC_BY_STATUS_MASK:
             return self._nrc(READ_DTC_INFORMATION, NRC_SUB_FUNCTION_NOT_SUPPORTED)
+        if len(payload) != 2:
+            return self._nrc(READ_DTC_INFORMATION, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
         header = bytes([positive_response_sid(READ_DTC_INFORMATION), report_type, STATUS_AVAILABILITY_MASK])
         records = self.dtc_providers.read(STATUS_AVAILABILITY_MASK)
         return header + b"".join(record.to_bytes() for record in records)
