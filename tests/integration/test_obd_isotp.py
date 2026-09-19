@@ -48,6 +48,28 @@ def test_functional_fuel_level(functional):
     assert functional.recv() == b"\x41\x2f\x7f"
 
 
+def test_functional_multi_parameter_request(functional):
+    # DEV-18 corrected in Phase 5.1: four parameters, one response, over the real ISO-TP
+    # path. Before, this answered 41 05 82 alone.
+    functional.send(bytes.fromhex("01050c2f51"))
+    assert functional.recv() == bytes.fromhex("410582" "0c0c80" "2f7f" "5101")
+
+
+def test_functional_six_parameter_response_is_multi_frame(vcan, functional):
+    # Six parameters make the response longer than one CAN frame, so the kernel segments
+    # it and the tester's flow control carries the rest.
+    capture = RawCapture(vcan)
+    functional.send(bytes.fromhex("01" "04050b0c0d0e"))
+    assert functional.recv() == bytes.fromhex("4104" "38" "05" "82" "0b" "21" "0c" "0c80" "0d" "00" "0e" "94")
+    frames = capture.collect(0.2)
+    capture.close()
+    pcis = [f.data[0] >> 4 for f in frames if f.can_id == 0x7E8]
+    assert pcis[:2] == [1, 2], (
+        f"expected a first frame then a consecutive frame from 0x7E8, saw "
+        f"{[hex(f.can_id) + ':' + f.data.hex() for f in frames]}"
+    )
+
+
 def test_functional_vin_is_multi_frame(vcan, functional):
     capture = RawCapture(vcan)
     functional.send(b"\x09\x02")

@@ -112,22 +112,19 @@ def test_mode01_without_pid_gets_no_response():
     assert obd(0x01, None) is None
 
 
-def test_mode01_multi_parameter_request_today_answers_only_the_first():
-    # DEV-18: every parameter after the first is discarded.
-    assert obd_raw("01052f51").hex() == "410582"
-    assert obd_raw("010d0c").hex() == "410d00"
-    assert obd_raw("01000c").hex() == "41001e3f8013"
-
-
-def test_mode01_multi_parameter_request_today_ignores_an_unsupported_trailing_parameter():
-    # DEV-18: the answer depends only on the first parameter, supported or not.
-    assert obd_raw("0105ff").hex() == "410582"
-    assert obd_raw("01ff05") is None
-
-
-@xfail_deviation("DEV-18", "only the first Mode 01 parameter of a request is answered")
-def test_mode01_multi_parameter_request_corrected_answers_every_parameter():
+def test_mode01_multi_parameter_request_answers_every_parameter():
+    # DEV-18 corrected in Phase 5.1. Before, everything after the first parameter was
+    # discarded and these three answered 410582, 410d00 and 41001e3f8013.
     assert obd_raw("01052f51").hex() == "410582" + "2f7f" + "5101"
+    assert obd_raw("010d0c").hex() == "410d00" + "0c0c80"
+    assert obd_raw("01000c").hex() == "41001e3f8013" + "0c0c80"
+
+
+def test_mode01_multi_parameter_request_omits_an_unsupported_parameter():
+    # DEV-18 corrected: the request is no longer judged by its first parameter alone, so
+    # 01 FF 05 now answers the coolant temperature where before it answered nothing.
+    assert obd_raw("0105ff").hex() == "410582"
+    assert obd_raw("01ff05").hex() == "410582"
 
 
 # --- Mode 03 / 04 / 07 -------------------------------------------------------------------

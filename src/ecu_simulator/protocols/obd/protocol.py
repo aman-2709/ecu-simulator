@@ -10,7 +10,8 @@ this phase, each tracked by its DEV identifier:
 
 * modes 0x01 to 0x0A are all claimed, and a mode with no implementation answers with
   silence rather than a negative response (DEV-11);
-* only the first two request bytes are examined (DEV-18);
+* outside Mode 01, only the first two request bytes are examined; Mode 01 answers
+  several parameters in one response (DEV-18, corrected in Phase 5.1);
 * a Mode 03 request carrying a trailing byte echoes it after the service identifier
   (DEV-15);
 * Mode 09 PID 0A keeps its exact bytes, including the absent count byte and the leading
@@ -41,6 +42,10 @@ MODE_VEHICLE_INFO = 0x09
 # wire change.
 CLAIMED_SERVICE_IDS = frozenset(range(0x01, 0x0B))
 
+# DEV-18: the ELM327 datasheet states the limit, and it is why it exists -- the service
+# identifier plus six parameters is seven bytes, exactly one CAN single frame.
+MAX_MODE01_PARAMETERS = 6
+
 VIN_LENGTH = 17
 VIN_ITEM_COUNT = 1  # DEV-02: one VIN per vehicle
 ECU_NAME_LENGTH = 20
@@ -48,6 +53,23 @@ MAX_DTCS_IN_RESPONSE = 255
 
 INFO_VIN = 0x02
 INFO_ECU_NAME = 0x0A
+
+
+def _parameters_to_answer(requested: bytes) -> list[int]:
+    """The Mode 01 parameters to answer, in request order.
+
+    Anything past the sixth byte is ignored, which is the six-parameter limit the ELM327
+    datasheet states; before Phase 5.1 the cut-off was one rather than six, and nothing
+    else about how surplus bytes are treated has changed. A parameter repeated inside the
+    request is answered once, in the position of its first occurrence, so ``01 0C 0C``
+    still answers ``41 0C <rpm>``. Both rules are project choices: the evidence settles
+    neither. See docs/decisions/0005-phase-5-1-multi-pid-evidence.md.
+    """
+    answered: list[int] = []
+    for pid in requested[:MAX_MODE01_PARAMETERS]:
+        if pid not in answered:
+            answered.append(pid)
+    return answered
 
 
 class ObdProtocol:
@@ -79,13 +101,13 @@ class ObdProtocol:
     def handle(self, request: ServiceRequest) -> bytes | None:
         payload = request.payload
         sid = payload[0]
-        pid = payload[1] if len(payload) >= 2 else None  # DEV-18: later bytes are ignored
         if sid not in CLAIMED_SERVICE_IDS:
             return None
-        if pid is not None and not 0 <= pid <= 0xFF:
-            return None
         if sid == MODE_CURRENT_DATA:
-            return self._mode01(pid)
+            return self._mode01(payload[1:])
+        # Every other mode still reads one parameter byte: the datasheet's multi-parameter
+        # rule is service 01 only, and Mode 03's trailing-byte echo is DEV-15, still frozen.
+        pid = payload[1] if len(payload) >= 2 else None
         if sid == MODE_STORED_DTCS:
             return self._mode03(pid)
         if sid == MODE_VEHICLE_INFO:
@@ -95,21 +117,43 @@ class ObdProtocol:
 
     # -- modes -------------------------------------------------------------------------------
 
-    def _mode01(self, pid: int | None) -> bytes | None:
-        if pid is None:
+    def _mode01(self, requested: bytes) -> bytes | None:
+        """One response carrying every requested parameter this vehicle can answer.
+
+        The service identifier appears once; each parameter identifier is echoed
+        immediately before its own data. Both worked CAN captures in the ELM327
+        datasheet's "Multiple PID Requests" section have this shape, and they are
+        reproduced byte for byte by tests/unit/test_obd_protocol.py. Evidence and the
+        choices the evidence does not settle are in
+        docs/decisions/0005-phase-5-1-multi-pid-evidence.md; not standards validated.
+
+        A parameter this vehicle cannot answer is left out rather than refusing the whole
+        request, so a request whose only parameter is unsupported still answers with
+        silence, exactly as it did before Phase 5.1.
+        """
+        body = bytearray()
+        for pid in _parameters_to_answer(requested):
+            data = self._mode01_parameter(pid)
+            if data is not None:
+                body += bytes([pid]) + data
+        if not body:
             return None
+        return bytes([MODE_CURRENT_DATA + POSITIVE_RESPONSE_OFFSET]) + bytes(body)
+
+    def _mode01_parameter(self, pid: int) -> bytes | None:
+        """The data bytes for one parameter, or ``None`` when this vehicle has no answer."""
         if masks.is_range_request(pid):
             supported = self.supported_mode01_pids
             if not masks.is_advertised_range(pid, supported):
                 # Not advertised, so not answered: DEV-04 keeps the two in agreement.
                 logger.info("OBD range 0x%02X is not advertised by this vehicle; no response", pid)
                 return None
-            return self._prefix(MODE_CURRENT_DATA, pid, masks.supported_mask(pid, supported))
+            return masks.supported_mask(pid, supported)
         definition = self.definition(pid)
         if definition is None:
             logger.info("OBD PID 0x%02X is not supported by this vehicle; no response", pid)
             return None
-        return self._prefix(MODE_CURRENT_DATA, pid, definition.read(self.vehicle))
+        return definition.read(self.vehicle)
 
     def _mode03(self, pid: int | None) -> bytes:
         encoded = dtc_utils.encode_obd_dtcs(self.dtcs)

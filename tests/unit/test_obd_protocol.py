@@ -55,9 +55,63 @@ def test_mode_01_without_a_parameter_gets_no_response():
     assert ask(protocol(), "01") is None
 
 
-def test_only_the_first_parameter_byte_is_read():
-    # DEV-18: a multi-parameter request answers the first only.
-    assert ask(protocol(), "01052f51") == b"\x41\x05\x82"
+# --- mode 01, several parameters in one request (DEV-18) ----------------------------------
+#
+# The two captures below are the worked CAN examples published in the ELM327 datasheet,
+# "Multiple PID Requests". The test vehicle is configured to the physical values those
+# captures encode, so the assertions are the datasheet's bytes and not our own arithmetic
+# repeated back. See docs/decisions/0005-phase-5-1-multi-pid-evidence.md.
+
+
+def datasheet_vehicle():
+    """Engine load 0x3F, coolant 0x44, manifold pressure 0x21, 1518 rpm = 0x17B8."""
+    return protocol(engine_load=24.8, coolant_temp=28.0, map=33, rpm=1518)
+
+
+def test_the_datasheet_capture_is_reproduced_byte_for_byte():
+    assert ask(datasheet_vehicle(), "0104050b0c").hex() == "4104" "3f" "05" "44" "0b" "21" "0c" "17b8"
+
+
+def test_the_datasheet_capture_in_a_different_order_answers_in_that_order():
+    # The datasheet says the response order need not match the request order; it answers
+    # in request order in its own capture, and so does this simulator.
+    assert ask(datasheet_vehicle(), "010b040c05").hex() == "410b" "21" "04" "3f" "0c" "17b8" "05" "44"
+
+
+def test_a_single_parameter_request_is_unchanged():
+    assert ask(protocol(), "0105") == b"\x41\x05\x82"
+    assert ask(protocol(), "012f") == b"\x41\x2f\x7f"
+
+
+def test_at_most_six_parameters_are_answered():
+    # Project choice: the parser ignored everything after the first parameter; it now
+    # ignores everything after the sixth. Seven are requested, six are answered, and the
+    # intake temperature asked for in seventh place is absent.
+    response = ask(datasheet_vehicle(), "01" + "04050b0c0d0e0f")
+    assert response.hex() == "4104" "3f" "05" "44" "0b" "21" "0c" "17b8" "0d" "00" "0e" "80"
+
+
+def test_an_unsupported_parameter_is_omitted_and_the_rest_are_answered():
+    assert ask(protocol(), "0105ff2f").hex() == "4105" "82" "2f" "7f"
+
+
+def test_a_request_of_only_unsupported_parameters_gets_no_response():
+    assert ask(protocol(), "01ff99") is None
+
+
+def test_a_repeated_parameter_is_answered_once_in_its_first_position():
+    assert ask(datasheet_vehicle(), "010c0c").hex() == "410c17b8"
+    assert ask(datasheet_vehicle(), "012f052f").hex() == "412f" "7f" "05" "44"
+
+
+def test_a_range_identifier_may_be_requested_alongside_data_parameters():
+    assert ask(datasheet_vehicle(), "01000c").hex() == "4100" "1e3f8013" "0c" "17b8"
+
+
+def test_an_unadvertised_range_identifier_is_omitted_like_any_unsupported_parameter():
+    # DEV-04: the chain never reaches 0x60, so it is not answered here either.
+    assert ask(datasheet_vehicle(), "0160") is None
+    assert ask(datasheet_vehicle(), "01600c").hex() == "410c17b8"
 
 
 def test_a_range_request_is_answered_with_the_computed_mask():
