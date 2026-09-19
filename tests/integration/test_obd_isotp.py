@@ -39,7 +39,7 @@ uds = _physical_fixture(rx_id=0x7E9, tx_id=0x7E1)
 
 def test_functional_supported_pids(functional):
     functional.send(b"\x01\x00")
-    assert functional.recv() == bytes.fromhex("410008080001")
+    assert functional.recv() == bytes.fromhex("41001e3f8013")
 
 
 def test_functional_fuel_level(functional):
@@ -61,9 +61,16 @@ def test_functional_vin_is_multi_frame(vcan, functional):
 
 
 def test_unsupported_pid_gets_no_response(functional):
-    functional.send(b"\x01\x0c")
+    # PID 0x01 monitor status is deferred (Phase 6 DTC store), so nothing answers it.
+    functional.send(b"\x01\x01")
     with pytest.raises(TimeoutError):
         functional.recv()
+
+
+def test_engine_rpm_is_answered_on_the_wire(functional):
+    # DEV-12 corrected in Phase 5: the shipped profile idles at 800 rpm -> 800 * 4.
+    functional.send(b"\x01\x0c")
+    assert functional.recv() == bytes.fromhex("410c0c80")
 
 
 def test_uds_session_control_and_negative_response(uds):

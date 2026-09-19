@@ -148,3 +148,90 @@ def test_the_last_range_never_claims_a_successor():
 def test_range_requests_are_recognised():
     assert [p for p in range(0x100) if masks.is_range_request(p)] == list(range(0x00, 0x100, 0x20))
     assert masks.range_bases() == (0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xE0)
+
+
+# --- boundary values, one case set per parameter ---------------------------------------------
+#
+# Each row is (signal, physical value, expected bytes). Evidence for each formula is
+# recorded on its definition in pids.py; none is standards validated.
+
+BOUNDARIES = [
+    # Calculated engine load, A * 100 / 255
+    (0x04, "engine.engine_load", 0.0, "00"),
+    (0x04, "engine.engine_load", 22.0, "38"),
+    (0x04, "engine.engine_load", 100.0, "ff"),
+    # Engine coolant temperature, A - 40
+    (0x05, "engine.coolant_temp", -40.0, "00"),
+    (0x05, "engine.coolant_temp", 90.0, "82"),
+    (0x05, "engine.coolant_temp", 215.0, "ff"),
+    # Fuel trims, (A - 128) * 100 / 128
+    (0x06, "engine.short_fuel_trim", -100.0, "00"),
+    (0x06, "engine.short_fuel_trim", 0.0, "80"),
+    (0x07, "engine.long_fuel_trim", 99.2, "fe"),
+    (0x07, "engine.long_fuel_trim", 99.21875, "ff"),  # the largest representable trim
+    # Intake manifold absolute pressure, A kPa
+    (0x0B, "engine.map", 0, "00"),
+    (0x0B, "engine.map", 33, "21"),
+    (0x0B, "engine.map", 255, "ff"),
+    # Engine speed, (256A + B) / 4
+    (0x0C, "engine.rpm", 0, "0000"),
+    (0x0C, "engine.rpm", 800, "0c80"),
+    (0x0C, "engine.rpm", 16383, "fffc"),
+    # Vehicle speed, A km/h
+    (0x0D, "vehicle.speed", 0, "00"),
+    (0x0D, "vehicle.speed", 255, "ff"),
+    # Timing advance, A / 2 - 64
+    (0x0E, "engine.timing_advance", -64.0, "00"),
+    (0x0E, "engine.timing_advance", 0.0, "80"),
+    (0x0E, "engine.timing_advance", 10.0, "94"),
+    (0x0E, "engine.timing_advance", 63.5, "ff"),
+    # Intake air temperature, A - 40
+    (0x0F, "engine.intake_temp", -40.0, "00"),
+    (0x0F, "engine.intake_temp", 25.0, "41"),
+    # Mass air flow rate, (256A + B) / 100
+    (0x10, "engine.maf", 0.0, "0000"),
+    (0x10, "engine.maf", 3.5, "015e"),
+    (0x10, "engine.maf", 655.35, "ffff"),
+    # Throttle position, A * 100 / 255
+    (0x11, "engine.throttle", 0.0, "00"),
+    (0x11, "engine.throttle", 14.0, "23"),
+    (0x11, "engine.throttle", 100.0, "ff"),
+    # OBD standards, coded
+    (0x1C, "vehicle.obd_standard", 1, "01"),
+    (0x1C, "vehicle.obd_standard", 11, "0b"),
+    # Run time since engine start, 256A + B seconds
+    (0x1F, "engine.runtime", 0, "0000"),
+    (0x1F, "engine.runtime", 600, "0258"),
+    (0x1F, "engine.runtime", 65535, "ffff"),
+    # Fuel tank level input, A * 100 / 255
+    (0x2F, "engine.fuel_level", 0, "00"),
+    (0x2F, "engine.fuel_level", 50, "7f"),
+    (0x2F, "engine.fuel_level", 100, "ff"),
+    # Control module voltage, (256A + B) / 1000
+    (0x42, "vehicle.battery_voltage", 0.0, "0000"),
+    (0x42, "vehicle.battery_voltage", 12.6, "3138"),
+    (0x42, "vehicle.battery_voltage", 14.1, "3714"),
+    # Ambient air temperature, A - 40
+    (0x46, "vehicle.ambient_temp", -40.0, "00"),
+    (0x46, "vehicle.ambient_temp", 20.0, "3c"),
+    # Fuel type, coded
+    (0x51, "engine.fuel_type", 1, "01"),
+    (0x51, "engine.fuel_type", 23, "17"),
+]
+
+
+@pytest.mark.parametrize("pid, signal, value, expected", BOUNDARIES)
+def test_parameter_boundary_encodings(pid, signal, value, expected):
+    vehicle = ice()
+    vehicle.set(signal, value)
+    assert MODE01_PIDS[pid].read(vehicle).hex() == expected
+
+
+def test_every_defined_parameter_has_boundary_coverage():
+    covered = {pid for pid, *_ in BOUNDARIES}
+    assert covered == set(MODE01_PIDS), f"missing boundary tests for {sorted(set(MODE01_PIDS) - covered)}"
+
+
+@pytest.mark.parametrize("pid", sorted(MODE01_PIDS))
+def test_every_parameter_encodes_to_its_declared_length(pid):
+    assert len(MODE01_PIDS[pid].read(ice())) == MODE01_PIDS[pid].length

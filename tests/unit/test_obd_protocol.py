@@ -48,6 +48,7 @@ def test_a_supported_parameter_is_answered_with_its_encoded_value():
 
 def test_an_unsupported_parameter_gets_no_response():
     assert ask(protocol(), "0199") is None
+    assert ask(protocol(), "0101") is None  # monitor status, deferred
 
 
 def test_mode_01_without_a_parameter_gets_no_response():
@@ -60,7 +61,8 @@ def test_only_the_first_parameter_byte_is_read():
 
 
 def test_a_range_request_is_answered_with_the_computed_mask():
-    assert ask(protocol(), "0100") == bytes.fromhex("410008080001")
+    # 04-07, 0B-11, 1C and 1F are supported on a fully specified ICE vehicle.
+    assert ask(protocol(), "0100") == bytes.fromhex("41001e3f8013")
 
 
 def test_reading_the_same_parameter_twice_gives_the_same_answer():

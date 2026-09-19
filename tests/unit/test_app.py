@@ -213,7 +213,9 @@ def test_dispatcher_answers_by_sid_on_every_enabled_route():
     assert dispatcher(DiagnosticRequest(b"\x01\x0d", 0x7E1, context=uds)) == speed
     # 0x7DF enables OBD only, so UDS is never reached there.
     assert dispatcher(DiagnosticRequest(b"\x10\x03", 0x7DF, functional=True, context=obd)) is None
-    assert dispatcher(DiagnosticRequest(b"\x01\x0c", 0x7DF, functional=True, context=obd)) is None
+    # 0x01 monitor status is deferred, so it is a genuinely unsupported parameter.
+    assert dispatcher(DiagnosticRequest(b"\x01\x01", 0x7DF, functional=True, context=obd)) is None
+    assert dispatcher(DiagnosticRequest(b"\x01\x0c", 0x7DF, functional=True, context=obd)).payload.hex() == "410c0c80"
 
 
 def test_dispatcher_drops_requests_on_unrouted_addresses(caplog):

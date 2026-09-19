@@ -43,9 +43,10 @@ def obd(sid, pid=None):
 @pytest.mark.parametrize(
     "pid, expected",
     [
-        (0x00, "410008080001"),  # PIDs 05, 0D supported; bit 0 claims 0x20 range (0x2F exists)
-        (0x20, "412000020001"),  # PID 2F supported; bit 0 claims 0x40 range (0x51 exists)
-        (0x40, "414000008001"),  # PID 51 supported; bit 0 claims 0x60 range (nothing there, DEV-04)
+        # Phase 5 widened the parameter set, so the masks now advertise more.
+        (0x00, "41001e3f8013"),  # 04-07, 0B-11, 1C, 1F; bit 0 claims 0x20 (0x2F exists)
+        (0x20, "412000020001"),  # PID 2F; bit 0 claims 0x40 range (0x42, 0x46, 0x51 exist)
+        (0x40, "414044008001"),  # PIDs 42, 46, 51; bit 0 claims 0x60 (nothing there, DEV-04)
         (0x60, "416000000001"),  # DEV-04
         (0x80, "418000000001"),  # DEV-04
         (0xA0, "41a000000001"),  # DEV-04
@@ -61,7 +62,7 @@ def test_mode01_supported_pid_masks_today(pid, expected):
 @pytest.mark.parametrize(
     "pid, expected",
     [
-        (0x40, "414000008000"),
+        (0x40, "414044008000"),
         (0x60, "416000000000"),
         (0x80, "418000000000"),
     ],
@@ -96,18 +97,21 @@ def test_mode01_pid51_fuel_type_gasoline():
     assert obd(0x01, 0x51).hex() == "415101"
 
 
-@pytest.mark.parametrize(
-    "pid", [0x01, 0x04, 0x06, 0x07, 0x0B, 0x0C, 0x0E, 0x0F, 0x10, 0x11, 0x1C, 0x1F, 0x42, 0x46, 0xFF]
-)
+@pytest.mark.parametrize("pid", [0x01, 0x02, 0x03, 0x08, 0x12, 0x21, 0x50, 0xFF])
 def test_mode01_unsupported_pids_get_no_response(pid):
     assert obd(0x01, pid) is None
 
 
-@xfail_deviation("DEV-12", "Mode 01 PID 0C engine RPM is not implemented")
 def test_mode01_pid0c_rpm_is_answered():
+    # DEV-12 corrected in Phase 5: 800 rpm encodes as 800 * 4 = 0x0C80.
     response = obd(0x01, 0x0C)
-    assert response is not None
-    assert response[:2] == b"\x41\x0c" and len(response) == 4
+    assert response == bytes.fromhex("410c0c80")
+
+
+def test_mode01_pid01_monitor_status_is_still_absent():
+    # Deferred deliberately: its first byte carries DTC-store semantics that belong to
+    # Phase 6, and its monitor bits are not corroborated. See pids.DEFERRED_MODE01_PIDS.
+    assert obd(0x01, 0x01) is None
 
 
 def test_mode01_without_pid_gets_no_response():

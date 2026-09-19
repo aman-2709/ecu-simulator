@@ -18,14 +18,27 @@ transport:
 vehicle:
   vin: TESTVIN0123456789
   type: ice
+  speed: 0                  # km/h
+  ambient_temp: 20          # degrees Celsius
+  battery_voltage: 14.1     # V, the control-module supply
+  obd_standard: 1           # coded value reported by PID 0x1C
   engine:
     # A warm engine idling. Values are physical quantities; the OBD encoders alone turn
     # them into wire bytes. Nothing changes them at runtime until the scenario engine
     # arrives in Phase 7, so every read returns the same answer.
     rpm: 800
-    coolant_temp: 90    # degrees Celsius
-    fuel_level: 50      # per cent
-    fuel_type: 1        # SAE J1979 fuel type coding; 1 is gasoline
+    coolant_temp: 90        # degrees Celsius
+    intake_temp: 25         # degrees Celsius
+    engine_load: 22.0       # per cent
+    throttle: 14.0          # per cent
+    maf: 3.5                # g/s
+    map: 33                 # kPa, intake manifold absolute pressure
+    timing_advance: 10.0    # degrees before top dead centre
+    short_fuel_trim: 0.0    # per cent
+    long_fuel_trim: 1.5     # per cent
+    runtime: 600            # seconds since engine start
+    fuel_level: 50          # per cent
+    fuel_type: 1            # SAE J1979 fuel type coding; 1 is gasoline
 
 ecus:
   engine:

@@ -88,15 +88,31 @@ def build_router(config: RuntimeConfig) -> AddressRouter:
 def build_vehicle(config: RuntimeConfig) -> VehicleState:
     """The composed vehicle state the profile describes."""
     vehicle = config.profile.vehicle
-    common = CommonState(vin=vehicle.vin, speed=vehicle.speed, ambient_temp=vehicle.ambient_temp)
+    common = CommonState(
+        vin=vehicle.vin,
+        speed=vehicle.speed,
+        ambient_temp=vehicle.ambient_temp,
+        battery_voltage=vehicle.battery_voltage,
+        obd_standard=vehicle.obd_standard,
+    )
     powertrain_type = POWERTRAINS[vehicle.type]
     fields: dict[str, object] = {}
     if vehicle.engine is not None and powertrain_type is not POWERTRAINS["bev"]:
+        engine = vehicle.engine
         fields["engine"] = IceState(
-            rpm=vehicle.engine.rpm,
-            coolant_temp=vehicle.engine.coolant_temp,
-            fuel_level=vehicle.engine.fuel_level,
-            fuel_type=vehicle.engine.fuel_type,
+            rpm=engine.rpm,
+            coolant_temp=engine.coolant_temp,
+            intake_temp=engine.intake_temp,
+            engine_load=engine.engine_load,
+            throttle=engine.throttle,
+            maf=engine.maf,
+            map=engine.map,
+            timing_advance=engine.timing_advance,
+            short_fuel_trim=engine.short_fuel_trim,
+            long_fuel_trim=engine.long_fuel_trim,
+            runtime=engine.runtime,
+            fuel_level=engine.fuel_level,
+            fuel_type=engine.fuel_type,
         )
     if vehicle.battery is not None and powertrain_type is not POWERTRAINS["ice"]:
         fields["battery"] = TractionBattery(

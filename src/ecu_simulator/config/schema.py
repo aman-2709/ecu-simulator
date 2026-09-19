@@ -59,6 +59,16 @@ class EngineConfig(Base):
     fuel_type: Annotated[int, Field(ge=1, le=FUEL_TYPE_MAX)] = 1
     rpm: Annotated[int, Field(ge=0, le=20000)] = 0
     coolant_temp: float = 20.0
+    intake_temp: float = 20.0
+    engine_load: Annotated[float, Field(ge=0.0, le=100.0)] = 0.0
+    throttle: Annotated[float, Field(ge=0.0, le=100.0)] = 0.0
+    maf: Annotated[float, Field(ge=0.0, le=655.35)] = 0.0
+    map: Annotated[int, Field(ge=0, le=255)] = 100
+    timing_advance: Annotated[float, Field(ge=-64.0, le=63.5)] = 0.0  # A / 2 - 64
+    # -100 and 99.21875 are exactly the ends of the byte field: (A - 128) * 100 / 128.
+    short_fuel_trim: Annotated[float, Field(ge=-100.0, le=99.21875)] = 0.0
+    long_fuel_trim: Annotated[float, Field(ge=-100.0, le=99.21875)] = 0.0
+    runtime: Annotated[int, Field(ge=0, le=65535)] = 0
 
 
 class BatteryConfig(Base):
@@ -74,6 +84,8 @@ class VehicleConfig(Base):
     battery: BatteryConfig | None = None
     speed: Annotated[int, Field(ge=0, le=255)] = 0
     ambient_temp: float = 20.0
+    battery_voltage: Annotated[float, Field(ge=0.0, le=65.535)] = 12.6
+    obd_standard: Annotated[int, Field(ge=1, le=255)] = 1
 
     @field_validator("vin")
     @classmethod
