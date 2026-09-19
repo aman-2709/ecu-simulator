@@ -122,11 +122,11 @@ def test_dtc_registry_rejects_duplicate_names_and_bad_masks():
 
 def test_ecu_owns_one_registry_of_each_kind():
     ecu = Ecu("engine")
-    assert isinstance(ecu.dids, DidRegistry) and isinstance(ecu.dtcs, DtcRegistry)
+    assert isinstance(ecu.dids, DidRegistry) and isinstance(ecu.dtc_providers, DtcRegistry)
     assert Ecu("tcm").dids is not ecu.dids
 
 
 def test_ecu_accepts_injected_registries():
-    dids, dtcs = DidRegistry(), DtcRegistry()
-    ecu = Ecu("engine", dids=dids, dtcs=dtcs)
-    assert ecu.dids is dids and ecu.dtcs is dtcs
+    dids, providers = DidRegistry(), DtcRegistry()
+    ecu = Ecu("engine", dids=dids, dtc_providers=providers)
+    assert ecu.dids is dids and ecu.dtc_providers is providers

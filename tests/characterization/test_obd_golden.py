@@ -29,7 +29,7 @@ VIN_BYTES = b"TESTVIN0123456789"
 def protocol():
     config = app.RuntimeConfig.build(load_profile(default_profile_path()))
     ecu = config.profile.ecus["engine"]
-    return ObdProtocol(app.build_vehicle(config), ecu_name=ecu.name, dtcs=ecu.dtcs)
+    return ObdProtocol(app.build_vehicle(config), ecu_name=ecu.name, dtcs=[d.code for d in ecu.dtcs])
 
 
 def obd(sid, pid=None):

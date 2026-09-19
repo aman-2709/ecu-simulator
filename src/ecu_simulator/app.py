@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from ecu_simulator.config import Profile
 from ecu_simulator.config.legacy import legacy_data
 from ecu_simulator.config.schema import EcuConfig, EndpointConfigModel
+from ecu_simulator.dtc import DtcState, DtcStore
 from ecu_simulator.ecu import AddressRouter, Dispatcher, Ecu
 from ecu_simulator.protocols.obd import ObdProtocol
 from ecu_simulator.protocols.uds import LegacyUdsProtocol
@@ -121,6 +122,23 @@ def build_vehicle(config: RuntimeConfig) -> VehicleState:
     return VehicleState(common, powertrain_type(**fields))  # type: ignore[arg-type]
 
 
+def build_dtc_store(ecu_config: EcuConfig) -> DtcStore:
+    """The trouble codes this ECU starts with, in the order the profile lists them.
+
+    Domain state only. The OBD and UDS views encode it; neither owns it, and both clear
+    it through the one :meth:`~ecu_simulator.dtc.DtcStore.clear` (plan rule 7).
+    """
+    return DtcStore(
+        DtcState(
+            code=dtc.code,
+            pending=dtc.pending,
+            confirmed=dtc.confirmed,
+            indicator_requested=dtc.indicator_requested,
+        )
+        for dtc in ecu_config.dtcs
+    )
+
+
 def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None) -> list[Ecu]:
     """One Ecu per profile entry, with the protocols its endpoints reference registered.
 
@@ -129,10 +147,10 @@ def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None) -> li
     vehicle = build_vehicle(config) if vehicle is None else vehicle
     ecus: list[Ecu] = []
     for ecu_name, ecu_config in config.profile.ecus.items():
-        ecu = Ecu(ecu_name)
+        ecu = Ecu(ecu_name, dtc_store=build_dtc_store(ecu_config))
         for protocol_name in sorted({p for endpoint in ecu_config.endpoints for p in endpoint.protocols}):
             if protocol_name == ObdProtocol.name:
-                ecu.register(ObdProtocol(vehicle, ecu_name=ecu_config.name, dtcs=ecu_config.dtcs))
+                ecu.register(ObdProtocol(vehicle, ecu_name=ecu_config.name, dtcs=[d.code for d in ecu_config.dtcs]))
             elif protocol_name == LegacyUdsProtocol.name:
                 ecu.register(LegacyUdsProtocol())
             else:  # pragma: no cover - the schema rejects unknown protocol names

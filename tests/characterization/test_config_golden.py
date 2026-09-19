@@ -26,7 +26,11 @@ def test_shipped_config_values():
     assert engine.name == "ECU_SIMULATOR"
     assert profile.vehicle.engine.fuel_level == 50
     assert profile.vehicle.engine.fuel_type == 1
-    assert engine.dtcs == ["B1477", "P0001"]
+    # Phase 6 gave each configured trouble code a state, so the entries are records
+    # rather than strings. The codes, their order and the bytes they produce are
+    # unchanged; a bare string still means pending and confirmed.
+    assert [d.code for d in engine.dtcs] == ["B1477", "P0001"]
+    assert all(d.pending and d.confirmed and not d.indicator_requested for d in engine.dtcs)
     assert profile.transport.interface == "vcan0"
 
 

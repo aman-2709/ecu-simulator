@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from types import MappingProxyType
 
+from ecu_simulator.dtc import DtcStore
 from ecu_simulator.ecu.router import Route
 from ecu_simulator.logging import log_context
 from ecu_simulator.protocols.base import (
@@ -30,14 +31,25 @@ class ServiceConflictError(ValueError):
 
 
 class Ecu:
-    def __init__(self, name: str, *, dids: DidRegistry | None = None, dtcs: DtcRegistry | None = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        *,
+        dids: DidRegistry | None = None,
+        dtc_providers: DtcRegistry | None = None,
+        dtc_store: DtcStore | None = None,
+    ) -> None:
         if not isinstance(name, str) or not name:
             raise ValueError(f"ECU name must be a non-empty string, got {name!r}")
         self.name = name
         # Extension points for UDS data services (plan rule 6); protocols that need them
         # receive them at construction.
         self.dids = dids if dids is not None else DidRegistry()
-        self.dtcs = dtcs if dtcs is not None else DtcRegistry()
+        self.dtc_providers = dtc_providers if dtc_providers is not None else DtcRegistry()
+        # Domain state, shared by every protocol on this ECU. dtc_providers above is the
+        # UDS-side registry that encodes a view of it; the two are deliberately distinct,
+        # and the store holds no encoded bytes (plan rule 7).
+        self.dtc_store = dtc_store if dtc_store is not None else DtcStore()
         self._protocols: dict[str, DiagnosticProtocol] = {}
         self._by_sid: dict[int, DiagnosticProtocol] = {}
 

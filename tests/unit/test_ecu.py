@@ -196,3 +196,21 @@ def test_ecu_logs_request_and_response(caplog):
     with caplog.at_level(logging.INFO):
         ecu.handle(physical(b"\x10\x01"), route("uds"))
     assert "0x7E1" in caplog.text and "1001" in caplog.text and "5001" in caplog.text
+
+
+# --- DTC state (Phase 6) --------------------------------------------------------------------
+
+
+def test_an_ecu_has_an_empty_dtc_store_by_default():
+    from ecu_simulator.dtc import DtcStore
+
+    ecu = Ecu("engine")
+    assert isinstance(ecu.dtc_store, DtcStore)
+    assert ecu.dtc_store.codes == ()
+
+
+def test_an_ecu_takes_the_dtc_store_it_is_given():
+    from ecu_simulator.dtc import DtcState, DtcStore
+
+    store = DtcStore([DtcState("P0001", confirmed=True)])
+    assert Ecu("engine", dtc_store=store).dtc_store is store

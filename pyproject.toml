@@ -101,6 +101,8 @@ module = [
     "ecu_simulator.config",
     "ecu_simulator.config.*",
     "ecu_simulator.clock",
+    "ecu_simulator.dtc",
+    "ecu_simulator.dtc.*",
     "ecu_simulator.transport.*",
     "ecu_simulator.ecu",
     "ecu_simulator.ecu.*",

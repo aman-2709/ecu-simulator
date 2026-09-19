@@ -65,5 +65,5 @@ def legacy_data(profile: Profile, ecu: EcuConfig) -> LegacyData:
         ecu_name=ecu.name,
         fuel_level=engine.fuel_level if engine is not None else DEFAULT_DATA.fuel_level,
         fuel_type=engine.fuel_type if engine is not None else DEFAULT_DATA.fuel_type,
-        dtcs=list(ecu.dtcs),
+        dtcs=[dtc.code for dtc in ecu.dtcs],
     )

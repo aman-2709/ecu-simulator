@@ -297,3 +297,11 @@ async def test_run_rejects_inconsistent_routes_before_opening_sockets(monkeypatc
     with pytest.raises(ValueError):
         await asyncio.wait_for(coro, timeout=2.0)
     assert RecordingTransport.instances == [], "no socket may be opened when the routes are inconsistent"
+
+
+def test_each_ecu_gets_a_dtc_store_built_from_its_profile_entry():
+    store = app.build_ecus(shipped())[0].dtc_store
+    assert store.codes == ("B1477", "P0001")
+    assert tuple(s.code for s in store.confirmed) == ("B1477", "P0001")
+    assert tuple(s.code for s in store.pending) == ("B1477", "P0001")
+    assert store.indicator_on is False

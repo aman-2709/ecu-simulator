@@ -142,23 +142,49 @@ class EndpointConfigModel(Base):
         return not self.functional
 
 
+class DtcConfigModel(Base):
+    """One configured trouble code and the state the simulator starts it in.
+
+    A bare string is the shorthand for a code that is pending and confirmed and asks for
+    no indicator, which is the state that makes service 03 answer exactly the bytes it
+    answered before Phase 6. The long form names the flags the shared DtcStore models; it
+    models no others, because no others are state this project can produce honestly. See
+    docs/decisions/0004-phase-6-dtc-evidence.md.
+    """
+
+    code: str
+    pending: bool = True
+    confirmed: bool = True
+    indicator_requested: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_a_bare_code(cls, value: Any) -> Any:
+        return {"code": value} if isinstance(value, str) else value
+
+    @field_validator("code")
+    @classmethod
+    def code_is_encodable(cls, value: str) -> str:
+        if not _is_encodable_dtc(value):
+            raise ValueError(
+                f"dtc {value!r} cannot be encoded: expected a group letter "
+                f"{list(DTC_GROUPS)}, a type digit {list(DTC_TYPES)}, then three "
+                "uppercase hexadecimal digits, for example 'P0001'"
+            )
+        return value
+
+
 class EcuConfig(Base):
     name: str = Field(min_length=1, max_length=ECU_NAME_MAX_LENGTH)
     endpoints: list[EndpointConfigModel] = Field(min_length=1)
-    dtcs: list[str] = Field(default_factory=list, max_length=MAX_DTCS)
+    dtcs: list[DtcConfigModel] = Field(default_factory=list, max_length=MAX_DTCS)
     dids: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("dtcs")
     @classmethod
-    def dtcs_are_encodable(cls, value: list[str]) -> list[str]:
-        for dtc in value:
-            if not _is_encodable_dtc(dtc):
-                raise ValueError(
-                    f"dtc {dtc!r} cannot be encoded: expected a group letter "
-                    f"{list(DTC_GROUPS)}, a type digit {list(DTC_TYPES)}, then three "
-                    "uppercase hexadecimal digits, for example 'P0001'"
-                )
-        duplicates = sorted({d for d in value if value.count(d) > 1})
+    def dtc_codes_are_unique(cls, value: list[DtcConfigModel]) -> list[DtcConfigModel]:
+        codes = [entry.code for entry in value]
+        duplicates = sorted({code for code in codes if codes.count(code) > 1})
         if duplicates:
             raise ValueError(f"duplicate dtc(s) {duplicates}")
         return value

@@ -89,7 +89,7 @@ def test_the_valid_profile_parses():
     assert list(config.ecus) == ["engine"]
     engine = config.ecus["engine"]
     assert engine.name == "ECU_SIMULATOR"
-    assert engine.dtcs == ["B1477", "P0001"]
+    assert [d.code for d in engine.dtcs] == ["B1477", "P0001"]
     assert [e.name for e in engine.endpoints] == ["obd_functional", "obd_physical", "uds_physical"]
     assert engine.endpoints[0].protocols == ["obd"]
     # answer_unsupported is the raw key; answers_unsupported is the resolved policy, which
@@ -166,7 +166,7 @@ def test_malformed_dtcs_are_rejected_at_load(dtc):
 @pytest.mark.parametrize("dtc", ["P0001", "C1234", "B1477", "U3FFF", "P0000"])
 def test_every_dtc_the_encoder_accepts_is_accepted(dtc):
     config = parse_profile(profile(**{"ecus.engine.dtcs": [dtc]}))
-    assert config.ecus["engine"].dtcs == [dtc]
+    assert [d.code for d in config.ecus["engine"].dtcs] == [dtc]
 
 
 def test_more_than_255_dtcs_is_rejected():
@@ -175,6 +175,45 @@ def test_more_than_255_dtcs_is_rejected():
 
 def test_duplicate_dtcs_are_rejected():
     rejects("duplicate", **{"ecus.engine.dtcs": ["P0001", "P0001"]})
+
+
+def test_a_bare_trouble_code_is_pending_and_confirmed():
+    # The shorthand preserves the bytes Mode 03 answered before Phase 6: a configured code
+    # is both pending and confirmed, and asks for no indicator.
+    entry = parse_profile(profile(**{"ecus.engine.dtcs": ["P0001"]})).ecus["engine"].dtcs[0]
+    assert (entry.code, entry.pending, entry.confirmed, entry.indicator_requested) == ("P0001", True, True, False)
+
+
+def test_a_trouble_code_may_name_its_state():
+    entry = (
+        parse_profile(
+            profile(**{"ecus.engine.dtcs": [{"code": "P0002", "pending": True, "confirmed": False}]})
+        )
+        .ecus["engine"]
+        .dtcs[0]
+    )
+    assert (entry.code, entry.pending, entry.confirmed, entry.indicator_requested) == ("P0002", True, False, False)
+
+
+def test_a_trouble_code_may_request_the_indicator():
+    entry = (
+        parse_profile(profile(**{"ecus.engine.dtcs": [{"code": "P0003", "indicator_requested": True}]}))
+        .ecus["engine"]
+        .dtcs[0]
+    )
+    assert entry.indicator_requested is True
+
+
+def test_the_long_form_validates_its_code_like_the_short_one():
+    rejects("dtc", **{"ecus.engine.dtcs": [{"code": "B9477"}]})
+
+
+def test_duplicate_dtcs_are_rejected_across_both_forms():
+    rejects("duplicate", **{"ecus.engine.dtcs": ["P0001", {"code": "P0001"}]})
+
+
+def test_an_unknown_key_on_a_trouble_code_is_rejected():
+    rejects("nonsense", **{"ecus.engine.dtcs": [{"code": "P0001", "nonsense": True}]})
 
 
 # --- addressing --------------------------------------------------------------------------------
