@@ -34,6 +34,16 @@ def test_a_duplicate_code_is_rejected():
         DtcStore([DtcState("P0001"), DtcState("P0001")])
 
 
+def test_the_store_does_not_alias_the_states_it_is_given():
+    # Otherwise a caller that reuses a template, or two ECUs built from one list, would
+    # silently share flags and a clear on one would clear the other.
+    template = DtcState("P0001", pending=True, confirmed=True)
+    one, two = DtcStore([template]), DtcStore([template])
+    one.clear()
+    assert two.state("P0001").confirmed is True
+    assert template.confirmed is True
+
+
 def test_a_state_defaults_to_no_flags_set():
     state = DtcState("P0001")
     assert (state.pending, state.confirmed, state.indicator_requested) == (False, False, False)

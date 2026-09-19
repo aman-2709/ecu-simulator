@@ -155,7 +155,7 @@ def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None) -> li
             if protocol_name == ObdProtocol.name:
                 ecu.register(ObdProtocol(vehicle, ecu_name=ecu_config.name, dtcs=ecu.dtc_store))
             elif protocol_name == UdsProtocol.name:
-                ecu.register(UdsProtocol(dtc_providers=ecu.dtc_providers))
+                ecu.register(UdsProtocol(dtc_providers=ecu.dtc_providers, dtcs=ecu.dtc_store))
             else:  # pragma: no cover - the schema rejects unknown protocol names
                 raise ValueError(f"no protocol implementation named {protocol_name!r}")
         ecus.append(ecu)

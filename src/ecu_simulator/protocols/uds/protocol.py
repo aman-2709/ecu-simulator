@@ -1,8 +1,8 @@
 """UDS (ISO 14229-1) services this simulator answers.
 
-Replaces the frozen legacy module. The services it carries over -- 0x10
-DiagnosticSessionControl, 0x11 ECUReset and 0x19 ReadDTCInformation -- answer byte for
-byte what that module answered, including its known-wrong behavior: the fixed session
+Replaces the frozen legacy module. The services carried over from it -- 0x10
+DiagnosticSessionControl, 0x11 ECUReset and 0x19 ReadDTCInformation -- answered byte for
+byte what that module answered when it was replaced, including its known-wrong behavior: the fixed session
 parameter record (DEV-17) and the unmasked ``suppressPosRspMsgIndicationBit`` (DEV-07)
 are both out of Phase 6's scope and are preserved deliberately, each pinned by a test.
 
@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import logging
 
+from ecu_simulator.dtc import DtcStore
 from ecu_simulator.protocols.base import (
     NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT,
+    NRC_REQUEST_OUT_OF_RANGE,
     NRC_SUB_FUNCTION_NOT_SUPPORTED,
     ServiceRequest,
     negative_response,
@@ -34,9 +36,12 @@ logger = logging.getLogger(__name__)
 
 DIAGNOSTIC_SESSION_CONTROL = 0x10
 ECU_RESET = 0x11
+CLEAR_DIAGNOSTIC_INFORMATION = 0x14
 READ_DTC_INFORMATION = 0x19
 
-SERVICE_IDS = frozenset({DIAGNOSTIC_SESSION_CONTROL, ECU_RESET, READ_DTC_INFORMATION})
+SERVICE_IDS = frozenset(
+    {DIAGNOSTIC_SESSION_CONTROL, ECU_RESET, CLEAR_DIAGNOSTIC_INFORMATION, READ_DTC_INFORMATION}
+)
 
 # DEV-17, preserved: P2 = 0x001E (30 ms), P2* = 0x0BB8. No session state is kept and no
 # timer is touched; session handling is Phase 11.
@@ -49,6 +54,12 @@ RESET_POWER_DOWN_TIME = 0x0F
 
 REPORT_DTC_BY_STATUS_MASK = 0x02
 
+# The only groupOfDTC this simulator serves: all of them. Anything else is answered
+# requestOutOfRange rather than guessed at, because this project has no evidence for which
+# codes belong to which group and the profile does not say. docs/decisions/0004, W5.
+GROUP_OF_DTC_ALL = 0xFFFFFF
+CLEAR_REQUEST_LENGTH = 4
+
 
 class UdsProtocol:
     """Serves UDS 0x10, 0x11 and 0x19 for one ECU."""
@@ -56,8 +67,11 @@ class UdsProtocol:
     name = "uds"
     service_ids = SERVICE_IDS
 
-    def __init__(self, *, dtc_providers: DtcRegistry | None = None) -> None:
+    def __init__(self, *, dtc_providers: DtcRegistry | None = None, dtcs: DtcStore | None = None) -> None:
+        # Reads go through the provider registry (plan rule 6); the clear goes straight to
+        # the shared store, which is the same object OBD Mode 04 clears (plan rule 7).
         self.dtc_providers = dtc_providers if dtc_providers is not None else DtcRegistry()
+        self.dtcs = dtcs if dtcs is not None else DtcStore()
 
     def handle(self, request: ServiceRequest) -> bytes | None:
         payload = request.payload
@@ -66,6 +80,8 @@ class UdsProtocol:
             return self._session_control(payload)
         if sid == ECU_RESET:
             return self._ecu_reset(payload)
+        if sid == CLEAR_DIAGNOSTIC_INFORMATION:
+            return self._clear_diagnostic_information(payload)
         if sid == READ_DTC_INFORMATION:
             return self._read_dtc_information(payload)
         return None  # pragma: no cover - the ECU only routes claimed SIDs here
@@ -94,6 +110,36 @@ class UdsProtocol:
         if reset_type == RESET_ENABLE_RAPID_POWER_SHUT_DOWN:
             return response + bytes([RESET_POWER_DOWN_TIME])
         return response
+
+    # -- 0x14 ------------------------------------------------------------------------------------
+
+    def _clear_diagnostic_information(self, payload: bytes) -> bytes:
+        """Clear the shared store for groupOfDTC 0xFFFFFF; answer 0x54 with no data.
+
+        The request is the service identifier and a three-byte groupOfDTC. Only "all DTCs"
+        is served: which trouble codes belong to any narrower group is not something this
+        project can determine, so a different group is answered requestOutOfRange rather
+        than guessed at or silently treated as "all". The five-byte MemorySelection form
+        introduced in ISO 14229-1:2020 is refused on length for the same reason -- this
+        simulator has one fault memory, and accepting a selector it cannot honour would be
+        worse than refusing it.
+
+        The clear itself is DtcStore.clear(), the same operation OBD Mode 04 calls; what
+        that transition is, and why it is narrower than either protocol's description of a
+        clear, is in docs/decisions/0004-phase-6-dtc-evidence.md. Request shape, empty
+        positive response and the 0x31 choice are each corroborated by the AUTOSAR Dcm
+        specification and two independent open-source implementations. ISO 14229-1 is
+        unread, so none of it is standards validated.
+        """
+        if len(payload) != CLEAR_REQUEST_LENGTH:
+            return self._nrc(CLEAR_DIAGNOSTIC_INFORMATION, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
+        group = int.from_bytes(payload[1:4], "big")
+        if group != GROUP_OF_DTC_ALL:
+            logger.info("UDS 0x14: groupOfDTC 0x%06X is not served by this simulator", group)
+            return self._nrc(CLEAR_DIAGNOSTIC_INFORMATION, NRC_REQUEST_OUT_OF_RANGE)
+        self.dtcs.clear()
+        logger.info("UDS 0x14: diagnostic trouble code state cleared")
+        return bytes([positive_response_sid(CLEAR_DIAGNOSTIC_INFORMATION)])
 
     # -- 0x19 ------------------------------------------------------------------------------------
 

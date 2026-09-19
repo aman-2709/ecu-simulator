@@ -22,7 +22,7 @@ the state and from the advertised status availability mask alike.
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(slots=True)
@@ -50,11 +50,16 @@ class DtcStore:
     """The trouble codes one ECU knows about, in configuration order."""
 
     def __init__(self, entries: Iterable[DtcState] = ()) -> None:
+        """Takes a copy of each entry, so the store owns the state it is asked to hold.
+
+        A :class:`DtcState` is mutable and the store mutates it; aliasing one would let a
+        reused template, or two ECUs built from one list, share flags and clear each other.
+        """
         self._entries: dict[str, DtcState] = {}
         for entry in entries:
             if entry.code in self._entries:
                 raise ValueError(f"duplicate trouble code {entry.code!r} in the DTC store")
-            self._entries[entry.code] = entry
+            self._entries[entry.code] = replace(entry)
 
     def __repr__(self) -> str:
         return f"DtcStore({list(self._entries)})"

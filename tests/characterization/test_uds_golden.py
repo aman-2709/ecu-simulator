@@ -151,7 +151,7 @@ def test_0x19_02_with_empty_dtc_list_returns_header_only():
 # --- Unsupported services and malformed input ------------------------------------------------
 
 
-@pytest.mark.parametrize("request_hex", ["22f190", "3e00", "3e80", "14ffffff", "2701", "2e", "3101", "7f", "50", "ff"])
+@pytest.mark.parametrize("request_hex", ["22f190", "3e00", "3e80", "2701", "2e", "3101", "7f", "50", "ff"])
 def test_the_uds_protocol_does_not_claim_these_service_identifiers(request_hex):
     # Since DEV-06 these never reach a protocol at all: the route's unsupported-service
     # policy answers them (see below). The protocol must not start claiming them.
@@ -170,9 +170,29 @@ def test_0x3e_tester_present_corrected():
     assert uds("3e00").hex() == "7e00"
 
 
-@xfail_deviation("DEV-23", "0x14 ClearDiagnosticInformation is not implemented")
-def test_0x14_clear_diagnostic_information_corrected():
+def test_0x14_clear_diagnostic_information_is_acknowledged():
+    # DEV-23, 0x14 half, fixed in Phase 6. Before, no protocol claimed 0x14 and the
+    # route's unsupported-service policy answered 7F 14 11 on a physical address.
     assert uds("14ffffff") == b"\x54"
+
+
+def test_0x14_for_an_unsupported_group_is_out_of_range():
+    assert uds("14ffff33").hex() == "7f1431"
+
+
+def test_0x14_clears_what_mode_03_and_0x19_report():
+    config = app.RuntimeConfig.build(load_profile(default_profile_path()))
+    dispatcher = app.build_dispatcher(config)
+
+    def ask(hex_request, address):
+        response = dispatcher(DiagnosticRequest(bytes.fromhex(hex_request), address))
+        return response.payload.hex() if response is not None else None
+
+    assert ask("03", 0x7E0) == "430294770001"
+    assert ask("1902ff", 0x7E1) == "59028c" + "9477010c" + "0001010c"
+    assert ask("14ffffff", 0x7E1) == "54"
+    assert ask("03", 0x7E0) == "4300"
+    assert ask("1902ff", 0x7E1) == "59028c"
 
 
 def test_an_empty_request_never_reaches_a_protocol():

@@ -175,6 +175,12 @@ class Simulator:
 
     def __init__(self, interface: str, workdir: str, log_level: str = "INFO") -> None:
         self.interface = interface
+        self.workdir = workdir
+        self.log_level = log_level
+        self._start()
+
+    def _start(self) -> None:
+        interface, workdir, log_level = self.interface, self.workdir, self.log_level
         self.proc = subprocess.Popen(
             [sys.executable, "-m", "ecu_simulator", "--interface", interface, "--log-level", log_level],
             cwd=workdir,
@@ -225,6 +231,12 @@ class Simulator:
             self.proc.wait(timeout=5)
         self._reader.join(1)
 
+    def restart(self) -> None:
+        """Stop the process and start a fresh one, discarding the ECU state it accumulated."""
+        self.terminate()
+        self._start()
+        self.wait_ready()
+
 
 @pytest.fixture(scope="module")
 def simulator(vcan: str, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Simulator]:
@@ -234,3 +246,18 @@ def simulator(vcan: str, tmp_path_factory: pytest.TempPathFactory) -> Iterator[S
         yield sim
     finally:
         sim.terminate()
+
+
+@pytest.fixture
+def mutating(simulator: Simulator) -> Iterator[Simulator]:
+    """For a test that changes ECU state, restarting the simulator afterwards.
+
+    ``simulator`` is module-scoped, which cost nothing while every request was a read.
+    Since Phase 6, OBD Mode 04 and UDS 0x14 clear the shared DTC store, so a test that
+    clears would decide what the tests after it see. Any test that mutates state asks for
+    this fixture as well, and the process is replaced once it is done. Only one simulator
+    can own the CAN identifiers on the interface at a time, so this restarts the shared
+    one rather than starting a second.
+    """
+    yield simulator
+    simulator.restart()

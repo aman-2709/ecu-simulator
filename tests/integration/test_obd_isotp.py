@@ -133,6 +133,35 @@ def test_uds_read_dtc_with_a_mask_matching_nothing_returns_the_header_alone(uds)
     assert uds.recv() == bytes.fromhex("59028c")
 
 
+def test_clearing_over_uds_is_visible_to_obd_on_the_wire(mutating, functional, uds):
+    # DEV-23 and plan rule 7: 0x14 and Mode 04 clear one shared store, so a clear sent on
+    # the UDS channel changes what the OBD channel reports. Before Phase 6, 0x14 was
+    # answered 7F 14 11.
+    functional.send(b"\x03")
+    assert functional.recv() == bytes.fromhex("430294770001")
+    uds.send(b"\x14\xff\xff\xff")
+    assert uds.recv() == b"\x54"
+    functional.send(b"\x03")
+    assert functional.recv() == bytes.fromhex("4300")
+    uds.send(b"\x19\x02\xff")
+    assert uds.recv() == bytes.fromhex("59028c")
+
+
+def test_clearing_over_obd_is_visible_to_uds_on_the_wire(mutating, functional, uds):
+    # The other direction: Mode 04 clears the same store 0x19 reads.
+    uds.send(b"\x19\x02\xff")
+    assert uds.recv() == bytes.fromhex("59028c" + "9477010c" + "0001010c")
+    functional.send(b"\x04")
+    assert functional.recv() == b"\x44"
+    uds.send(b"\x19\x02\xff")
+    assert uds.recv() == bytes.fromhex("59028c")
+
+
+def test_uds_clear_of_an_unsupported_group_is_out_of_range_on_the_wire(uds):
+    uds.send(b"\x14\xff\xff\x33")
+    assert uds.recv() == bytes.fromhex("7f1431")
+
+
 def test_physical_request_is_answered(physical):
     # DEV-01 corrected: a request on 0x7E0 is answered on 0x7E8.
     physical.send(b"\x01\x2f")

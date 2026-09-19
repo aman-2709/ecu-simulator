@@ -20,7 +20,7 @@ def protocol(entries=DEFAULT):
     store = DtcStore(entries)
     providers = DtcRegistry()
     providers.register(DtcStoreProvider("engine", store))
-    return UdsProtocol(dtc_providers=providers), store
+    return UdsProtocol(dtc_providers=providers, dtcs=store), store
 
 
 def ask(hex_request):
@@ -34,7 +34,7 @@ def ask(hex_request):
 def test_the_protocol_claims_the_services_the_legacy_table_claimed():
     proto, _ = protocol()
     assert proto.name == "uds"
-    assert proto.service_ids == frozenset({0x10, 0x11, 0x19})
+    assert proto.service_ids == frozenset({0x10, 0x11, 0x14, 0x19})
 
 
 # --- 0x10 DiagnosticSessionControl ------------------------------------------------------------
@@ -141,10 +141,55 @@ def test_0x19_02_reads_through_the_registry_so_it_follows_the_store():
     assert proto.handle(ServiceRequest(b"\x19\x02\xff")).hex() == "59028c"
 
 
+# --- 0x14 ClearDiagnosticInformation ---------------------------------------------------------
+
+
+def test_0x14_for_all_dtcs_is_acknowledged_with_a_bare_service_byte():
+    assert ask("14ffffff") == b"\x54"
+
+
+def test_0x14_clears_the_shared_store():
+    proto, store = protocol()
+    assert proto.handle(ServiceRequest(b"\x14\xff\xff\xff")) == b"\x54"
+    assert store.confirmed == () and store.pending == () and store.indicator_on is False
+
+
+def test_0x14_keeps_the_configured_codes():
+    proto, store = protocol()
+    proto.handle(ServiceRequest(b"\x14\xff\xff\xff"))
+    assert store.codes == ("B1477", "P0001")
+
+
+def test_0x19_reports_nothing_after_0x14():
+    proto, _ = protocol()
+    assert proto.handle(ServiceRequest(b"\x19\x02\xff")).hex() == "59028c" + "9477010c" + "00010104"
+    proto.handle(ServiceRequest(b"\x14\xff\xff\xff"))
+    assert proto.handle(ServiceRequest(b"\x19\x02\xff")).hex() == "59028c"
+
+
+@pytest.mark.parametrize("group", ["000000", "ffff33", "123456", "fffffe"])
+def test_0x14_for_any_other_group_is_out_of_range_and_clears_nothing(group):
+    proto, store = protocol()
+    assert proto.handle(ServiceRequest(bytes.fromhex("14" + group))).hex() == "7f1431"
+    assert tuple(s.code for s in store.confirmed) == ("B1477",)
+
+
+@pytest.mark.parametrize("request_hex", ["14", "14ff", "14ffff", "14ffffffff", "14ffffff00"])
+def test_0x14_with_the_wrong_length_is_a_length_error(request_hex):
+    # The five-byte MemorySelection form of ISO 14229-1:2020 and later is refused rather
+    # than half-implemented: this simulator has one fault memory.
+    assert ask(request_hex).hex() == "7f1413"
+
+
+def test_0x14_on_an_empty_store_still_acknowledges():
+    proto, _ = protocol(())
+    assert proto.handle(ServiceRequest(b"\x14\xff\xff\xff")) == b"\x54"
+
+
 # --- unsupported and malformed -------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("request_hex", ["22f190", "3e00", "14ffffff", "2701", "3101"])
+@pytest.mark.parametrize("request_hex", ["22f190", "3e00", "2701", "3101"])
 def test_services_this_protocol_does_not_claim_are_not_answered(request_hex):
     # The ECU's route policy answers these, not the protocol; it must not claim them.
     proto, _ = protocol()
