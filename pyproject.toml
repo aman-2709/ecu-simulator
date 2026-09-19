@@ -77,20 +77,16 @@ select = ["E", "F", "W", "I", "B", "UP"]
 [tool.ruff.lint.per-file-ignores]
 # Characterization tests are frozen at their Phase 0 form; long parametrize lines are deliberate.
 "tests/**" = ["E501"]
-# Legacy modules are frozen until the phase that rewrites them; only import paths were
-# touched by the package move. Remove each entry when its module is replaced.
-"src/ecu_simulator/ecu_config.py" = ["UP015"]
-"src/ecu_simulator/obd/services.py" = ["E501"]
-"src/ecu_simulator/uds/services.py" = ["E501"]
+# The last legacy module went with Phase 6; no production file needs an exemption.
 
 [tool.mypy]
 python_version = "3.12"
 files = ["src"]
 ignore_missing_imports = true
 warn_unused_configs = true
-# Lenient baseline for the untyped legacy modules. Tightened per phase as
-# modules are rewritten with type hints: new modules must pass the strict
-# overrides below.
+# The lenient baseline existed for the untyped legacy modules, the last of which went
+# with Phase 6. Every production package is covered by the strict overrides below; this
+# stays as the default for anything added outside them until it is listed there too.
 check_untyped_defs = false
 
 [[tool.mypy.overrides]]

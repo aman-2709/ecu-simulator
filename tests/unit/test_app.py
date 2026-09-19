@@ -169,18 +169,15 @@ def test_a_bev_profile_composes_a_battery_powertrain():
     assert not vehicle.has("engine.rpm")
 
 
-def test_the_legacy_uds_module_is_configured_from_the_profile(tmp_path):
-    from ecu_simulator.uds import services
-
+def test_uds_dtc_records_come_from_the_profile_without_any_module_global(tmp_path):
+    # Phase 6 deleted the legacy module and the config/legacy.py seam that fed its
+    # globals; the records now come from the ECU's own store.
     text = cli.default_profile_path().read_text().replace("- B1477", "- P0100")
     path = tmp_path / "p.yaml"
     path.write_text(text)
-    saved_source, saved_dtcs = services.source, services.DTCS
-    try:
-        app.configure_legacy_modules(app.RuntimeConfig.build(load_profile(path)))
-        assert services.DTCS == bytes.fromhex("0100012f" + "0001012f")
-    finally:
-        services.source, services.DTCS = saved_source, saved_dtcs
+    dispatcher = app.build_dispatcher(app.RuntimeConfig.build(load_profile(path)))
+    response = dispatcher(DiagnosticRequest(b"\x19\x02", 0x7E1))
+    assert response.payload.hex() == "5902ff" + "0100012f" + "0001012f"
 
 
 def test_obd_reads_the_profile_vehicle_without_any_module_global(tmp_path):

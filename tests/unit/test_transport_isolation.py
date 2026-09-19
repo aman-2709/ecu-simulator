@@ -9,14 +9,13 @@ import subprocess
 import sys
 
 DOMAIN_PREFIXES = (
-    "ecu_simulator.uds",
+    "ecu_simulator.dtc",
     "ecu_simulator.ecu",
     "ecu_simulator.protocols",
     "ecu_simulator.vehicle",
     "ecu_simulator.config",
     "ecu_simulator.clock",
     "ecu_simulator.logging",
-    "ecu_simulator.dtc_utils",
     "ecu_simulator.loggers",
     "ecu_simulator.app",
     "ecu_simulator.cli",

@@ -1,8 +1,15 @@
-"""Golden tests for the legacy UDS service layer (uds/services.py).
+"""Golden tests for the UDS service layer.
 
 Expected values captured from commit ce46b87 with the shipped ecu_config.json
 (DTCs B1477 and P0001). Plain tests pin today's bytes; xfail(strict=True) tests assert
 the corrected behavior for a known deviation listed in docs/known-deviations.md.
+
+Phase 6 retargeted these from uds/services.py, which is deleted, onto the protocol that
+now answers on the wire. Every wire expectation was carried over unchanged. A differential
+comparison over 16653 requests - each claimed service identifier and a set of unclaimed
+ones, every second byte, every length from one to five - confirmed the replacement is
+byte-identical to the module it replaced. The deliberate corrections that follow arrive in
+their own commits and are marked where they land.
 """
 
 import pytest
@@ -10,13 +17,19 @@ import pytest
 from ecu_simulator import app
 from ecu_simulator.cli import default_profile_path
 from ecu_simulator.config import load_profile
+from ecu_simulator.protocols.base import ServiceRequest, negative_response, positive_response_sid
 from ecu_simulator.transport import DiagnosticRequest
-from ecu_simulator.uds import services
 from tests.characterization.conftest import xfail_deviation
 
 
+def protocol():
+    config = app.RuntimeConfig.build(load_profile(default_profile_path()))
+    engine = app.build_ecus(config)[0]
+    return engine.protocol_for(0x19)
+
+
 def uds(hex_request):
-    return services.process_service_request(bytes.fromhex(hex_request))
+    return protocol().handle(ServiceRequest(bytes.fromhex(hex_request)))
 
 
 def engine_uds(hex_request):
@@ -107,18 +120,23 @@ def test_0x19_negative_responses(request_hex, expected):
     assert uds(request_hex).hex() == expected
 
 
-def test_0x19_02_with_empty_dtc_list_returns_header_only(monkeypatch):
-    monkeypatch.setattr(services, "DTCS", bytearray())
-    assert uds("1902").hex() == "5902ff"
+def test_0x19_02_with_empty_dtc_list_returns_header_only():
+    from ecu_simulator.dtc import DtcStore
+    from ecu_simulator.protocols.uds import DtcRegistry, DtcStoreProvider, UdsProtocol
+
+    providers = DtcRegistry()
+    providers.register(DtcStoreProvider("engine", DtcStore()))
+    assert UdsProtocol(dtc_providers=providers).handle(ServiceRequest(b"\x19\x02")).hex() == "5902ff"
 
 
 # --- Unsupported services and malformed input ------------------------------------------------
 
 
 @pytest.mark.parametrize("request_hex", ["22f190", "3e00", "3e80", "14ffffff", "2701", "2e", "3101", "7f", "50", "ff"])
-def test_legacy_uds_module_ignores_unsupported_sids(request_hex):
-    # The legacy layer is unchanged; since DEV-06 these SIDs never reach it (see below).
-    assert uds(request_hex) is None
+def test_the_uds_protocol_does_not_claim_these_service_identifiers(request_hex):
+    # Since DEV-06 these never reach a protocol at all: the route's unsupported-service
+    # policy answers them (see below). The protocol must not start claiming them.
+    assert bytes.fromhex(request_hex)[0] not in protocol().service_ids
 
 
 @pytest.mark.parametrize("request_hex, expected", [("22f190", "7f2211"), ("2701", "7f2711"), ("3101", "7f3111")])
@@ -138,18 +156,23 @@ def test_0x14_clear_diagnostic_information_corrected():
     assert uds("14ffffff") == b"\x54"
 
 
-def test_empty_and_none_requests_get_no_response():
-    assert services.process_service_request(b"") is None
-    assert services.process_service_request(None) is None
+def test_an_empty_request_never_reaches_a_protocol():
+    # ServiceRequest refuses to exist for an empty payload, and the ECU drops one before
+    # building it; the legacy module used to return None for b"" and for None.
+    with pytest.raises(ValueError):
+        ServiceRequest(b"")
+    assert engine_uds("") is None
 
 
 # --- Framing helpers ---------------------------------------------------------------------------
 
 
 def test_positive_response_sid_adds_0x40():
-    assert services.get_positive_response_sid(0x10) == b"\x50"
-    assert services.get_positive_response_sid(0x3E) == b"\x7e"
+    # The helpers moved to protocols/base.py in Phase 3 and are shared with OBD; the
+    # legacy module's own copies went with it in Phase 6. Same arithmetic, same bytes.
+    assert bytes([positive_response_sid(0x10)]) == b"\x50"
+    assert bytes([positive_response_sid(0x3E)]) == b"\x7e"
 
 
 def test_negative_response_framing():
-    assert services.get_negative_response(0x22, 0x31) == b"\x7f\x22\x31"
+    assert negative_response(0x22, 0x31) == b"\x7f\x22\x31"

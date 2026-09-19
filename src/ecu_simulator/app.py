@@ -19,12 +19,12 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from ecu_simulator.config import Profile
-from ecu_simulator.config.legacy import legacy_data
 from ecu_simulator.config.schema import EcuConfig, EndpointConfigModel
 from ecu_simulator.dtc import DtcState, DtcStore
 from ecu_simulator.ecu import AddressRouter, Dispatcher, Ecu
 from ecu_simulator.protocols.obd import ObdProtocol
-from ecu_simulator.protocols.uds import LegacyUdsProtocol
+from ecu_simulator.protocols.uds import UdsProtocol
+from ecu_simulator.protocols.uds.dtc import DtcStoreProvider
 from ecu_simulator.transport import TransportError
 from ecu_simulator.transport.socketcan import EndpointConfig, IsoTpAddress, IsoTpOptions, IsoTpTransport
 from ecu_simulator.vehicle import POWERTRAINS, CommonState, IceState, TractionBattery, VehicleState
@@ -148,33 +148,21 @@ def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None) -> li
     ecus: list[Ecu] = []
     for ecu_name, ecu_config in config.profile.ecus.items():
         ecu = Ecu(ecu_name, dtc_store=build_dtc_store(ecu_config))
+        # The UDS view of this ECU's DTC state, registered on the provider registry UDS
+        # data services read through (plan rule 6). OBD reads the same store directly.
+        ecu.dtc_providers.register(DtcStoreProvider(ecu_name, ecu.dtc_store))
         for protocol_name in sorted({p for endpoint in ecu_config.endpoints for p in endpoint.protocols}):
             if protocol_name == ObdProtocol.name:
                 ecu.register(ObdProtocol(vehicle, ecu_name=ecu_config.name, dtcs=ecu.dtc_store))
-            elif protocol_name == LegacyUdsProtocol.name:
-                ecu.register(LegacyUdsProtocol())
+            elif protocol_name == UdsProtocol.name:
+                ecu.register(UdsProtocol(dtc_providers=ecu.dtc_providers))
             else:  # pragma: no cover - the schema rejects unknown protocol names
                 raise ValueError(f"no protocol implementation named {protocol_name!r}")
         ecus.append(ecu)
     return ecus
 
 
-def configure_legacy_modules(config: RuntimeConfig) -> None:
-    """Point the frozen legacy UDS module at the profile's data.
-
-    Temporary: it keeps its data in globals, so one process serves one ECU's trouble
-    codes. Phase 6 replaces it. OBD no longer needs this: ObdProtocol reads the vehicle
-    state and its ECU's configuration directly. See config/legacy.py.
-    """
-    from ecu_simulator.uds import services
-
-    ecu_name, ecu = next(iter(config.profile.ecus.items()))
-    services.configure(legacy_data(config.profile, ecu))
-    logger.debug("legacy UDS module configured from ECU %r", ecu_name)
-
-
 def build_dispatcher(config: RuntimeConfig) -> Dispatcher:
-    configure_legacy_modules(config)
     return Dispatcher(build_router(config), build_ecus(config))
 
 
@@ -221,7 +209,6 @@ async def run(
     endpoints = build_endpoints(config)
     router = build_router(config)
     check_routes(router, endpoints)  # before any socket is opened
-    configure_legacy_modules(config)
     dispatcher = Dispatcher(router, build_ecus(config))
     transport = transport_factory(config.interface, endpoints)
     stop = stop or asyncio.Event()
