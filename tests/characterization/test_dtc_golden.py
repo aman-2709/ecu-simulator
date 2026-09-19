@@ -4,6 +4,7 @@ The SAE J2012 two-byte encoding here is believed correct and is preserved throug
 modernization. The UDS three-byte-plus-status layout and the silent skipping of malformed
 strings are recorded as DEV-16 and DEV-13 in docs/known-deviations.md.
 """
+
 import pytest
 
 from ecu_simulator import dtc_utils

@@ -26,6 +26,9 @@ class CommonState:
     ambient_temp: float = 20.0  # degrees Celsius
     odometer: int = 0  # km
     battery_voltage: float = 12.6  # V, the control-module supply, not a traction battery
+    # Which OBD standard the vehicle reports conforming to. A coded value, not a claim
+    # this project makes about itself; 1 is the value commonly reported for OBD-II.
+    obd_standard: int = 1
 
 
 @dataclass(slots=True)
@@ -40,6 +43,10 @@ class IceState:
     engine_load: float = 0.0  # per cent
     throttle: float = 0.0  # per cent
     maf: float = 0.0  # g/s
+    map: int = 100  # intake manifold absolute pressure, kPa
+    timing_advance: float = 0.0  # degrees before top dead centre
+    short_fuel_trim: float = 0.0  # per cent
+    long_fuel_trim: float = 0.0  # per cent
     runtime: int = 0  # seconds since engine start
     fuel_level: int = 50  # per cent
     fuel_type: int = 1  # SAE J1979 fuel type coding; 1 is gasoline

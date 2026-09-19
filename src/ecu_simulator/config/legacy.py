@@ -1,11 +1,11 @@
-"""The data the frozen legacy OBD and UDS modules read.
+"""The data the frozen legacy UDS module reads.
 
-A temporary seam. Those modules were written around a module-global configuration loaded
-at import; rather than rewrite them in this phase, they read a :class:`LegacyData` whose
+A temporary seam. That module was written around a module-global configuration loaded at
+import; rather than rewrite it in this phase, it reads a :class:`LegacyData` whose
 accessors have the same names the old configuration module had, and the runtime replaces
-it from the profile at startup. Phase 5 deletes the legacy OBD package and Phase 6 the UDS
-package, and their replacements read :class:`~ecu_simulator.vehicle.VehicleState` and the
-per-ECU configuration directly; this module goes with them.
+it from the profile at startup. Phase 5 deleted the legacy OBD package, whose replacement
+reads :class:`~ecu_simulator.vehicle.VehicleState` and the per-ECU configuration directly.
+Phase 6 does the same for UDS and this module goes with it.
 
 Because the legacy modules keep the data in globals, one process serves one ECU's vehicle
 data. That is true of V1.0 anyway, and the profile schema is already multi-ECU for the

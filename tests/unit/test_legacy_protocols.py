@@ -1,43 +1,24 @@
-"""The legacy service layers wrapped as registered protocols: identical bytes, explicit SIDs."""
+"""The legacy UDS service layer wrapped as a registered protocol: identical bytes, explicit SIDs.
+
+The OBD half of this file went with the legacy OBD package in Phase 5; ObdProtocol is
+covered by tests/unit/test_obd_protocol.py and the characterization suite.
+"""
 
 import pytest
 
 from ecu_simulator.ecu import Ecu, Route
-from ecu_simulator.obd import responses
 from ecu_simulator.protocols.base import DiagnosticProtocol, ServiceRequest
-from ecu_simulator.protocols.obd import LegacyObdProtocol
 from ecu_simulator.protocols.uds import LegacyUdsProtocol
 from ecu_simulator.transport import DiagnosticRequest, DiagnosticResponse
 
 
-@pytest.fixture
-def reset_speed(monkeypatch):
-    monkeypatch.setattr(responses, "vehicle_speed", 0)
-
-
-def test_wrappers_satisfy_the_protocol_contract():
-    assert isinstance(LegacyObdProtocol(), DiagnosticProtocol)
+def test_the_wrapper_satisfies_the_protocol_contract():
     assert isinstance(LegacyUdsProtocol(), DiagnosticProtocol)
-    assert (LegacyObdProtocol().name, LegacyUdsProtocol().name) == ("obd", "uds")
-
-
-def test_obd_wrapper_claims_every_sid_the_legacy_layer_accepts():
-    # Legacy obd.services.is_sid_valid accepts 0x01..0x0A, answering unimplemented modes
-    # with silence (DEV-11). Claiming the same set keeps that silence in place.
-    assert LegacyObdProtocol().service_ids == frozenset(range(0x01, 0x0B))
+    assert LegacyUdsProtocol().name == "uds"
 
 
 def test_uds_wrapper_claims_exactly_the_legacy_service_table():
     assert LegacyUdsProtocol().service_ids == frozenset({0x10, 0x11, 0x19})
-
-
-def test_obd_wrapper_reproduces_legacy_bytes(reset_speed):
-    obd = LegacyObdProtocol()
-    assert obd.handle(ServiceRequest(b"\x01\x0d", functional=True)) == b"\x41\x0d\x00"
-    assert obd.handle(ServiceRequest(b"\x09\x02")) == b"\x49\x02\x00TESTVIN0123456789"
-    assert obd.handle(ServiceRequest(b"\x01\x0d\x2f\x51")) == b"\x41\x0d\x01"  # DEV-18 preserved
-    assert obd.handle(ServiceRequest(b"\x01\x0c")) is None
-    assert obd.handle(ServiceRequest(b"\x04")) is None  # DEV-11 preserved
 
 
 def test_uds_wrapper_reproduces_legacy_bytes():
@@ -47,14 +28,17 @@ def test_uds_wrapper_reproduces_legacy_bytes():
     assert uds.handle(ServiceRequest(b"\x10\x83")) == b"\x7f\x10\x12"  # DEV-07 preserved
 
 
-def test_both_wrappers_register_on_one_ecu_without_conflict(reset_speed):
+@pytest.mark.parametrize("payload", [b"", b"\x22\xf1\x90", b"\x3e\x00"])
+def test_uds_wrapper_sends_nothing_for_empty_or_unsupported(payload):
+    if not payload:
+        with pytest.raises(ValueError):
+            ServiceRequest(payload)
+        return
+    assert LegacyUdsProtocol().handle(ServiceRequest(payload)) is None
+
+
+def test_the_wrapper_registers_on_an_ecu_and_answers():
     engine = Ecu("engine")
-    engine.register(LegacyObdProtocol())
     engine.register(LegacyUdsProtocol())
-    broadcast = Route("engine", frozenset({"obd"}), answer_unsupported=False)
-    direct = Route("engine", frozenset({"obd", "uds"}))
-    fuel = DiagnosticResponse(b"\x41\x2f\x7f")
-    assert engine.handle(DiagnosticRequest(b"\x01\x2f", 0x7DF, functional=True), broadcast) == fuel
+    direct = Route("engine", frozenset({"uds"}))
     assert engine.handle(DiagnosticRequest(b"\x11\x01", 0x7E1), direct) == DiagnosticResponse(b"\x51\x01")
-    # UDS is not enabled on the broadcast route, so the UDS wrapper is never reached there.
-    assert engine.handle(DiagnosticRequest(b"\x11\x01", 0x7DF, functional=True), broadcast) is None

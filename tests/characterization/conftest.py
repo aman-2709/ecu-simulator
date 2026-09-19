@@ -4,21 +4,8 @@ These tests pin the behavior of the legacy implementation byte for byte. They ex
 that every later wire-level change is deliberate. See docs/known-deviations.md for the
 DEV-xx identifiers referenced in xfail reasons.
 """
+
 import pytest
-
-from ecu_simulator.obd import responses
-
-
-@pytest.fixture
-def reset_speed(monkeypatch):
-    """Reset the module-global speed counter and restore it afterwards.
-
-    The legacy implementation keeps vehicle speed in a module global that increments on
-    every read (DEV-09). Without this fixture the characterization tests would perturb
-    the legacy order-dependent test in tests/test_obd/test_responses.py.
-    """
-    monkeypatch.setattr(responses, "vehicle_speed", 0)
-    yield
 
 
 def xfail_deviation(dev_id: str, summary: str):

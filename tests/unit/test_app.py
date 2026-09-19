@@ -169,30 +169,36 @@ def test_a_bev_profile_composes_a_battery_powertrain():
     assert not vehicle.has("engine.rpm")
 
 
-def test_the_legacy_modules_are_configured_from_the_profile(tmp_path):
-    from ecu_simulator.obd import responses
+def test_the_legacy_uds_module_is_configured_from_the_profile(tmp_path):
     from ecu_simulator.uds import services
 
+    text = cli.default_profile_path().read_text().replace("- B1477", "- P0100")
+    path = tmp_path / "p.yaml"
+    path.write_text(text)
+    saved_source, saved_dtcs = services.source, services.DTCS
+    try:
+        app.configure_legacy_modules(app.RuntimeConfig.build(load_profile(path)))
+        assert services.DTCS == bytes.fromhex("0100012f" + "0001012f")
+    finally:
+        services.source, services.DTCS = saved_source, saved_dtcs
+
+
+def test_obd_reads_the_profile_vehicle_without_any_module_global(tmp_path):
     text = cli.default_profile_path().read_text().replace("vin: TESTVIN0123456789", "vin: PROFILEVIN123456")
     path = tmp_path / "p.yaml"
     path.write_text(text)
-    saved_obd, saved_uds, saved_dtcs = responses.source, services.source, services.DTCS
-    try:
-        app.configure_legacy_modules(app.RuntimeConfig.build(load_profile(path)))
-        assert responses.source.get_vin() == "PROFILEVIN123456"
-        assert responses.get_vin() == b"\x00" + b"\x00" + b"PROFILEVIN123456"
-        assert services.DTCS == bytes.fromhex("9477012f" + "0001012f")
-    finally:
-        responses.source, services.source, services.DTCS = saved_obd, saved_uds, saved_dtcs
+    dispatcher = app.build_dispatcher(app.RuntimeConfig.build(load_profile(path)))
+    response = dispatcher(DiagnosticRequest(b"\x09\x02", 0x7E0))
+    assert response.payload == b"\x49\x02\x00" + b"\x00" + b"PROFILEVIN123456"
+    # The shipped profile is unaffected: no global was mutated.
+    other = app.build_dispatcher(shipped())
+    assert other(DiagnosticRequest(b"\x09\x02", 0x7E0)).payload.endswith(b"TESTVIN0123456789")
 
 
 # --- dispatch -----------------------------------------------------------------------------------
 
 
-def test_dispatcher_answers_by_sid_on_every_enabled_route(monkeypatch):
-    from ecu_simulator.obd import responses
-
-    monkeypatch.setattr(responses, "vehicle_speed", 0)
+def test_dispatcher_answers_by_sid_on_every_enabled_route():
     config = shipped()
     endpoints = {e.name: e for e in app.build_endpoints(config)}
     dispatcher = app.build_dispatcher(config)
@@ -203,7 +209,8 @@ def test_dispatcher_answers_by_sid_on_every_enabled_route(monkeypatch):
     assert dispatcher(DiagnosticRequest(b"\x10\x03", 0x7E1, context=uds)) == session
     # Both physical routes enable OBD and UDS, so a UDS request on 0x7E0 is answered.
     assert dispatcher(DiagnosticRequest(b"\x10\x03", 0x7E0, context=physical)) == session
-    assert dispatcher(DiagnosticRequest(b"\x01\x0d", 0x7E1, context=uds)) == DiagnosticResponse(b"\x41\x0d\x01")
+    # Reading twice gives the same answer: a diagnostic read observes state (DEV-09).
+    assert dispatcher(DiagnosticRequest(b"\x01\x0d", 0x7E1, context=uds)) == speed
     # 0x7DF enables OBD only, so UDS is never reached there.
     assert dispatcher(DiagnosticRequest(b"\x10\x03", 0x7DF, functional=True, context=obd)) is None
     assert dispatcher(DiagnosticRequest(b"\x01\x0c", 0x7DF, functional=True, context=obd)) is None

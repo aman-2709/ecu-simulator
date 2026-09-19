@@ -22,18 +22,13 @@ from ecu_simulator.config import Profile
 from ecu_simulator.config.legacy import legacy_data
 from ecu_simulator.config.schema import EcuConfig, EndpointConfigModel
 from ecu_simulator.ecu import AddressRouter, Dispatcher, Ecu
-from ecu_simulator.protocols.obd import LegacyObdProtocol
+from ecu_simulator.protocols.obd import ObdProtocol
 from ecu_simulator.protocols.uds import LegacyUdsProtocol
 from ecu_simulator.transport import TransportError
 from ecu_simulator.transport.socketcan import EndpointConfig, IsoTpAddress, IsoTpOptions, IsoTpTransport
 from ecu_simulator.vehicle import POWERTRAINS, CommonState, IceState, TractionBattery, VehicleState
 
 logger = logging.getLogger(__name__)
-
-PROTOCOL_FACTORIES: dict[str, Callable[[], object]] = {
-    LegacyObdProtocol.name: LegacyObdProtocol,
-    LegacyUdsProtocol.name: LegacyUdsProtocol,
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,31 +105,38 @@ def build_vehicle(config: RuntimeConfig) -> VehicleState:
     return VehicleState(common, powertrain_type(**fields))  # type: ignore[arg-type]
 
 
-def build_ecus(config: RuntimeConfig) -> list[Ecu]:
-    """One Ecu per profile entry, with the protocols its endpoints reference registered."""
+def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None) -> list[Ecu]:
+    """One Ecu per profile entry, with the protocols its endpoints reference registered.
+
+    Every ECU observes the same vehicle, so two ECUs report the same speed.
+    """
+    vehicle = build_vehicle(config) if vehicle is None else vehicle
     ecus: list[Ecu] = []
     for ecu_name, ecu_config in config.profile.ecus.items():
         ecu = Ecu(ecu_name)
         for protocol_name in sorted({p for endpoint in ecu_config.endpoints for p in endpoint.protocols}):
-            ecu.register(PROTOCOL_FACTORIES[protocol_name]())  # type: ignore[arg-type]
+            if protocol_name == ObdProtocol.name:
+                ecu.register(ObdProtocol(vehicle, ecu_name=ecu_config.name, dtcs=ecu_config.dtcs))
+            elif protocol_name == LegacyUdsProtocol.name:
+                ecu.register(LegacyUdsProtocol())
+            else:  # pragma: no cover - the schema rejects unknown protocol names
+                raise ValueError(f"no protocol implementation named {protocol_name!r}")
         ecus.append(ecu)
     return ecus
 
 
 def configure_legacy_modules(config: RuntimeConfig) -> None:
-    """Point the frozen legacy OBD and UDS modules at the profile's data.
+    """Point the frozen legacy UDS module at the profile's data.
 
-    Temporary: those modules keep their data in globals, so one process serves one ECU's
-    vehicle data. Phases 5 and 6 replace them. See config/legacy.py.
+    Temporary: it keeps its data in globals, so one process serves one ECU's trouble
+    codes. Phase 6 replaces it. OBD no longer needs this: ObdProtocol reads the vehicle
+    state and its ECU's configuration directly. See config/legacy.py.
     """
-    from ecu_simulator.obd import responses
     from ecu_simulator.uds import services
 
     ecu_name, ecu = next(iter(config.profile.ecus.items()))
-    data = legacy_data(config.profile, ecu)
-    responses.configure(data)
-    services.configure(data)
-    logger.debug("legacy modules configured from ECU %r", ecu_name)
+    services.configure(legacy_data(config.profile, ecu))
+    logger.debug("legacy UDS module configured from ECU %r", ecu_name)
 
 
 def build_dispatcher(config: RuntimeConfig) -> Dispatcher:

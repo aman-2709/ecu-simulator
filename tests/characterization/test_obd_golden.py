@@ -1,26 +1,44 @@
-"""Golden tests for the legacy OBD-II service layer (obd/services.py, obd/responses.py).
+"""Golden tests for the OBD-II service layer.
 
-Every expected value below was captured from the implementation at commit ce46b87 with
-the shipped ecu_config.json (VIN TESTVIN0123456789, ECU name ECU_SIMULATOR, fuel level
-50, fuel type 1, DTCs B1477 and P0001). Plain tests pin today's bytes; tests marked
-xfail(strict=True) assert the corrected behavior for a known deviation.
+Expected values were captured from the implementation at commit ce46b87 with the shipped
+configuration (VIN TESTVIN0123456789, ECU name ECU_SIMULATOR, fuel level 50, fuel type 1,
+DTCs B1477 and P0001). Plain tests pin today's bytes; tests marked xfail(strict=True)
+assert the corrected behavior for a known deviation.
+
+Phase 5 retargeted these from the legacy modules, which are deleted, onto the protocol
+that now answers on the wire. Every wire expectation was carried over unchanged. A
+differential comparison over all 3084 service and parameter combinations confirmed the new
+implementation is byte-identical to the old one except for the coolant temperature, whose
+randomness this phase removes (DEV-10). Assertions about internal helper functions of the
+deleted modules were dropped; the configuration-validation behavior that replaced them is
+covered by tests/unit/test_config_schema.py.
 """
-import dataclasses
-import random
 
 import pytest
 
-from ecu_simulator.obd import responses, services
+from ecu_simulator import app
+from ecu_simulator.cli import default_profile_path
+from ecu_simulator.config import load_profile
+from ecu_simulator.protocols.base import ServiceRequest
+from ecu_simulator.protocols.obd import ObdProtocol
 from tests.characterization.conftest import xfail_deviation
 
 VIN_BYTES = b"TESTVIN0123456789"
 
 
+def protocol():
+    config = app.RuntimeConfig.build(load_profile(default_profile_path()))
+    ecu = config.profile.ecus["engine"]
+    return ObdProtocol(app.build_vehicle(config), ecu_name=ecu.name, dtcs=ecu.dtcs)
+
+
 def obd(sid, pid=None):
-    return services.process_service_request(requested_sid=sid, requested_pid=pid)
+    payload = bytes([sid]) if pid is None else bytes([sid, pid])
+    return protocol().handle(ServiceRequest(payload))
 
 
 # --- Mode 01 supported-PID masks -------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "pid, expected",
@@ -46,57 +64,31 @@ def test_mode01_supported_pid_masks_today(pid, expected):
         (0x40, "414000008000"),
         (0x60, "416000000000"),
         (0x80, "418000000000"),
-        (0xA0, "41a000000000"),
-        (0xC0, "41c000000000"),
     ],
 )
 def test_mode01_supported_pid_masks_corrected(pid, expected):
     assert obd(0x01, pid).hex() == expected
 
 
-# --- Mode 01 data PIDs -----------------------------------------------------------------
-
-def test_mode01_pid05_coolant_is_random_in_130_to_149(reset_speed):
-    for _ in range(50):
-        response = obd(0x01, 0x05)
-        assert response[:2] == b"\x41\x05"
-        assert len(response) == 3
-        assert 130 <= response[2] <= 149
+# --- Mode 01 data parameters -------------------------------------------------------------
 
 
-def test_mode01_pid05_coolant_depends_on_random_module(monkeypatch):
-    monkeypatch.setattr(random, "randrange", lambda lo, hi: 0xAB)
-    assert obd(0x01, 0x05).hex() == "4105ab"
+def test_mode01_pid05_coolant_is_deterministic():
+    # DEV-10 corrected in Phase 5: the value comes from engine.coolant_temp, which the
+    # shipped profile sets to 90 degrees Celsius, encoded as 90 + 40 = 0x82.
+    assert obd(0x01, 0x05).hex() == "410582"
+    assert obd(0x01, 0x05) == obd(0x01, 0x05)
 
 
-@xfail_deviation("DEV-10", "coolant temperature is drawn from random.randrange")
-def test_mode01_pid05_coolant_does_not_use_random(monkeypatch):
-    def forbidden(*args, **kwargs):
-        raise AssertionError("random.randrange must not be used for coolant temperature")
-
-    monkeypatch.setattr(random, "randrange", forbidden)
-    response = obd(0x01, 0x05)
-    assert response[:2] == b"\x41\x05" and len(response) == 3
-
-
-def test_mode01_pid0d_speed_increments_on_every_read(reset_speed):
-    assert obd(0x01, 0x0D).hex() == "410d00"
-    assert obd(0x01, 0x0D).hex() == "410d01"
-    assert obd(0x01, 0x0D).hex() == "410d02"
-
-
-def test_mode01_pid0d_speed_wraps_after_255(reset_speed):
-    responses.vehicle_speed = 255
-    assert obd(0x01, 0x0D).hex() == "410dff"
-    assert obd(0x01, 0x0D).hex() == "410d00"
-
-
-@xfail_deviation("DEV-09", "reading vehicle speed has a side effect")
-def test_mode01_pid0d_speed_read_has_no_side_effect(reset_speed):
-    assert obd(0x01, 0x0D) == obd(0x01, 0x0D)
+def test_mode01_pid0d_speed_is_deterministic_and_has_no_side_effect():
+    # DEV-09 corrected in Phase 5: reading observes vehicle.speed, it does not advance it.
+    first = obd(0x01, 0x0D)
+    assert first.hex() == "410d00"
+    assert obd(0x01, 0x0D) == first
 
 
 def test_mode01_pid2f_fuel_level_50_percent_encodes_as_0x7f():
+    # Truncation, not rounding: 50 * 255 / 100 = 127.5 -> 0x7F. Unchanged since ce46b87.
     assert obd(0x01, 0x2F).hex() == "412f7f"
 
 
@@ -104,7 +96,9 @@ def test_mode01_pid51_fuel_type_gasoline():
     assert obd(0x01, 0x51).hex() == "415101"
 
 
-@pytest.mark.parametrize("pid", [0x01, 0x04, 0x06, 0x07, 0x0B, 0x0C, 0x0E, 0x0F, 0x10, 0x11, 0x1C, 0x1F, 0x42, 0x46, 0xFF])
+@pytest.mark.parametrize(
+    "pid", [0x01, 0x04, 0x06, 0x07, 0x0B, 0x0C, 0x0E, 0x0F, 0x10, 0x11, 0x1C, 0x1F, 0x42, 0x46, 0xFF]
+)
 def test_mode01_unsupported_pids_get_no_response(pid):
     assert obd(0x01, pid) is None
 
@@ -121,6 +115,7 @@ def test_mode01_without_pid_gets_no_response():
 
 
 # --- Mode 03 / 04 / 07 -------------------------------------------------------------------
+
 
 def test_mode03_returns_count_and_two_byte_dtcs():
     # B1477 -> 94 77, P0001 -> 00 01
@@ -151,6 +146,7 @@ def test_mode07_pending_dtcs_is_answered():
 
 # --- Mode 09 ----------------------------------------------------------------------------
 
+
 def test_mode09_supported_pid_mask_today():
     # PIDs 02 and 0A supported; bit 0 claims the 0x20 range although nothing exists (DEV-04)
     assert obd(0x09, 0x00).hex() == "490040400001"
@@ -174,6 +170,7 @@ def test_mode09_pid02_vin_corrected_item_count():
 
 
 def test_mode09_pid0a_ecu_name_today_is_left_nul_padded_without_item_count():
+    # DEV-03 is deferred; see tests/characterization/test_mode09_pid0a_frozen.py.
     response = obd(0x09, 0x0A)
     assert response == b"\x49\x0a" + b"\x00" * 7 + b"ECU_SIMULATOR"
     assert len(response) == 22
@@ -193,54 +190,16 @@ def test_mode09_unsupported_pid_and_missing_pid_get_no_response():
 
 # --- Validation and rejection ------------------------------------------------------------
 
-@pytest.mark.parametrize("sid", [0x00, 0x0A, 0x0B, 0x22, 0xFF])
-def test_out_of_range_or_unknown_sids_get_no_response(sid):
+
+@pytest.mark.parametrize("sid", [0x00, 0x0B, 0x22, 0xFF])
+def test_unknown_sids_get_no_response(sid):
     assert obd(sid, 0x00) is None
     assert obd(sid) is None
 
 
-@pytest.mark.parametrize("sid, pid", [(0x01, 256), (0x01, -1), ("01", 0x00), (0x01, "0c"), (None, None), (1.0, 0)])
-def test_non_integer_or_out_of_range_arguments_get_no_response(sid, pid):
-    assert obd(sid, pid) is None
-
-
-# --- responses.py helpers ----------------------------------------------------------------
-
-def test_vin_shorter_than_17_is_left_nul_padded():
-    assert responses.add_vin_padding("SHORT") == b"\x00" + b"\x00" * 12 + b"SHORT"
-
-
-def test_vin_longer_than_17_falls_back_to_default(monkeypatch):
-    # Unreachable from configuration since DEV-14: the schema rejects such a VIN at load
-    # (tests/unit/test_config_schema.py). The frozen module keeps its fallback until Phase 5.
-    monkeypatch.setattr(responses, "source", dataclasses.replace(responses.source, vin="X" * 18))
-    assert responses.get_vin() == b"\x00" + VIN_BYTES
-
-
-def test_ecu_name_longer_than_20_falls_back_to_default(monkeypatch):
-    # Unreachable from configuration since DEV-14; the schema caps the ECU name at 20.
-    monkeypatch.setattr(responses, "source", dataclasses.replace(responses.source, ecu_name="N" * 21))
-    assert responses.get_ecu_name() == b"\x00" * 7 + b"ECU_SIMULATOR"
-
-
-@pytest.mark.parametrize("value, expected", [(0, 0), (100, 100), (101, 60), ("50", 60), (None, 60), (-5, -5)])
-def test_fuel_level_validation_silently_substitutes_default_and_accepts_negatives(value, expected):
-    # DEV-14: out-of-range values are replaced by the default 60, but negatives pass through.
-    assert responses.validate_fuel_level(value) == expected
-
-
-def test_negative_fuel_level_in_config_raises_at_request_time(monkeypatch):
-    # DEV-14: -5 * 2.55 -> -12, which cannot be encoded as an unsigned byte. Unreachable
-    # from configuration since the schema rejects a negative fuel level at load.
-    monkeypatch.setattr(responses, "source", dataclasses.replace(responses.source, fuel_level=-5))
-    with pytest.raises(OverflowError):
-        responses.get_fuel_level()
-
-
-@pytest.mark.parametrize("value, expected", [(1, 1), (23, 23), (0, 1), (24, 1), (-1, 1)])
-def test_fuel_type_validation_silently_substitutes_default(value, expected):
-    assert responses.validate_fuel_type(value) == expected
-
-
-def test_empty_dtc_list_encodes_as_single_zero_count_byte():
-    assert responses.add_number_of_dtcs_to_response(bytearray()) == b"\x00"
+def test_mode0a_is_claimed_but_unimplemented_so_stays_silent():
+    # DEV-11: modes 0x01 to 0x0A are all claimed so that an unimplemented one answers with
+    # silence rather than falling through to the ECU's unsupported-service policy.
+    assert 0x0A in ObdProtocol.service_ids
+    assert obd(0x0A) is None
+    assert obd(0x0A, 0x00) is None

@@ -23,14 +23,24 @@ def encode_uds_dtcs(dtcs):
     dtcs_bytes = bytearray()
     for dtc in dtcs:
         if is_dtc_valid(dtc):
-            dtcs_bytes += get_dtc_first_byte(dtc) + get_dtc_second_byte(dtc) + bytes([UDS_DTC_HIGH_BYTE]) + \
-                          bytes([UDS_DTC_DEFAULT_STATUS])
+            dtcs_bytes += (
+                get_dtc_first_byte(dtc)
+                + get_dtc_second_byte(dtc)
+                + bytes([UDS_DTC_HIGH_BYTE])
+                + bytes([UDS_DTC_DEFAULT_STATUS])
+            )
     return dtcs_bytes
 
 
 def is_dtc_valid(dtc):
-    return len(dtc) == DTC_LENGTH and DTC_GROUP.get(dtc[0]) is not None and DTC_TYPE.get(dtc[1]) is not None \
-           and is_hex_value(dtc[2]) and is_hex_value(dtc[3]) and is_hex_value(dtc[4])
+    return (
+        len(dtc) == DTC_LENGTH
+        and DTC_GROUP.get(dtc[0]) is not None
+        and DTC_TYPE.get(dtc[1]) is not None
+        and is_hex_value(dtc[2])
+        and is_hex_value(dtc[3])
+        and is_hex_value(dtc[4])
+    )
 
 
 def get_dtc_first_byte(dtc):

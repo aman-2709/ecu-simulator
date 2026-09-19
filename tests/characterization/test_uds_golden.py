@@ -4,6 +4,7 @@ Expected values captured from commit ce46b87 with the shipped ecu_config.json
 (DTCs B1477 and P0001). Plain tests pin today's bytes; xfail(strict=True) tests assert
 the corrected behavior for a known deviation listed in docs/known-deviations.md.
 """
+
 import pytest
 
 from ecu_simulator import app
@@ -28,13 +29,16 @@ def engine_uds(hex_request):
 
 # --- 0x10 DiagnosticSessionControl ---------------------------------------------------------
 
+
 @pytest.mark.parametrize("session", ["01", "02", "03", "04"])
 def test_0x10_positive_response_with_fixed_session_parameter_record(session):
     # DEV-17: P2 = 0x001E (30 ms), P2* = 0x0BB8 (3000 x 10 ms); no session state is kept.
     assert uds("10" + session).hex() == "50" + session + "001e0bb8"
 
 
-@pytest.mark.parametrize("request_hex, expected", [("1005", "7f1012"), ("1000", "7f1012"), ("10", "7f1013"), ("100100", "7f1013")])
+@pytest.mark.parametrize(
+    "request_hex, expected", [("1005", "7f1012"), ("1000", "7f1012"), ("10", "7f1013"), ("100100", "7f1013")]
+)
 def test_0x10_negative_responses(request_hex, expected):
     assert uds(request_hex).hex() == expected
 
@@ -50,6 +54,7 @@ def test_0x10_suppress_positive_response_bit_corrected():
 
 # --- 0x11 ECUReset -----------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("reset_type", ["01", "02", "03", "05"])
 def test_0x11_positive_response_echoes_reset_type(reset_type):
     assert uds("11" + reset_type).hex() == "51" + reset_type
@@ -59,7 +64,9 @@ def test_0x11_enable_rapid_power_shutdown_appends_power_down_time():
     assert uds("1104").hex() == "51040f"
 
 
-@pytest.mark.parametrize("request_hex, expected", [("1106", "7f1112"), ("1100", "7f1112"), ("11", "7f1113"), ("110100", "7f1113")])
+@pytest.mark.parametrize(
+    "request_hex, expected", [("1106", "7f1112"), ("1100", "7f1112"), ("11", "7f1113"), ("110100", "7f1113")]
+)
 def test_0x11_negative_responses(request_hex, expected):
     assert uds(request_hex).hex() == expected
 
@@ -74,6 +81,7 @@ def test_0x11_suppress_positive_response_bit_corrected():
 
 
 # --- 0x19 ReadDTCInformation ----------------------------------------------------------------
+
 
 def test_0x19_02_without_status_mask_returns_all_dtcs_with_fixed_status():
     # DEV-05 and DEV-16: 59 02 FF, then per DTC: 2-byte J2012 code, 0x01, status 0x2F.
@@ -92,7 +100,9 @@ def test_0x19_02_with_status_mask_corrected_is_answered_positively():
     assert response[:2] == b"\x59\x02"
 
 
-@pytest.mark.parametrize("request_hex, expected", [("1901", "7f1912"), ("190a", "7f1912"), ("1900", "7f1912"), ("19", "7f1913")])
+@pytest.mark.parametrize(
+    "request_hex, expected", [("1901", "7f1912"), ("190a", "7f1912"), ("1900", "7f1912"), ("19", "7f1913")]
+)
 def test_0x19_negative_responses(request_hex, expected):
     assert uds(request_hex).hex() == expected
 
@@ -103,6 +113,7 @@ def test_0x19_02_with_empty_dtc_list_returns_header_only(monkeypatch):
 
 
 # --- Unsupported services and malformed input ------------------------------------------------
+
 
 @pytest.mark.parametrize("request_hex", ["22f190", "3e00", "3e80", "14ffffff", "2701", "2e", "3101", "7f", "50", "ff"])
 def test_legacy_uds_module_ignores_unsupported_sids(request_hex):
@@ -133,6 +144,7 @@ def test_empty_and_none_requests_get_no_response():
 
 
 # --- Framing helpers ---------------------------------------------------------------------------
+
 
 def test_positive_response_sid_adds_0x40():
     assert services.get_positive_response_sid(0x10) == b"\x50"

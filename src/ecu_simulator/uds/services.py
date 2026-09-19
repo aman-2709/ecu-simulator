@@ -32,6 +32,7 @@ def configure(data):
     source = data
     DTCS = dtc_utils.encode_uds_dtcs(data.get_dtcs())
 
+
 POSITIVE_RESPONSE_SID_MASK = 0x40
 
 NEGATIVE_RESPONSE_SID = 0x7F
@@ -43,8 +44,16 @@ NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT = 0x13
 
 SERVICES = [
     {"id": ECU_RESET_SID, "description": "ECUReset", "response": lambda request: get_0x11_response(request)},
-    {"id": READ_DTC_INFO_SID, "description": "ReadDTCInformation", "response": lambda request: get_0x19_response(request)},
-    {"id": DIAGNOSTIC_SESSION_CONTROL_SID, "description": "DiagnosticSessionControl", "response": lambda request: get_0x10_response(request)}
+    {
+        "id": READ_DTC_INFO_SID,
+        "description": "ReadDTCInformation",
+        "response": lambda request: get_0x19_response(request),
+    },
+    {
+        "id": DIAGNOSTIC_SESSION_CONTROL_SID,
+        "description": "DiagnosticSessionControl",
+        "response": lambda request: get_0x10_response(request),
+    },
 ]
 
 
@@ -65,10 +74,13 @@ def get_0x10_response(request):
     if len(request) == 2:
         session_type = request[1]
         if session_type in DIAGNOSTIC_SESSION_TYPES:
-            return get_positive_response_sid(DIAGNOSTIC_SESSION_CONTROL_SID) + bytes([session_type]) \
-                   + bytes(DIAGNOSTIC_SESSION_PARAMETER_RECORD)
-        return get_negative_response(DIAGNOSTIC_SESSION_CONTROL_SID,  NRC_SUB_FUNCTION_NOT_SUPPORTED)
-    return get_negative_response(DIAGNOSTIC_SESSION_CONTROL_SID,  NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
+            return (
+                get_positive_response_sid(DIAGNOSTIC_SESSION_CONTROL_SID)
+                + bytes([session_type])
+                + bytes(DIAGNOSTIC_SESSION_PARAMETER_RECORD)
+            )
+        return get_negative_response(DIAGNOSTIC_SESSION_CONTROL_SID, NRC_SUB_FUNCTION_NOT_SUPPORTED)
+    return get_negative_response(DIAGNOSTIC_SESSION_CONTROL_SID, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
 
 
 def get_0x11_response(request):
@@ -79,16 +91,19 @@ def get_0x11_response(request):
             if reset_type == ECU_RESET_ENABLE_RAPID_POWER_SHUT_DOWN:
                 return positive_response + bytes([ECU_RESET_POWER_DOWN_TIME])
             return positive_response
-        return get_negative_response(ECU_RESET_SID,  NRC_SUB_FUNCTION_NOT_SUPPORTED)
-    return get_negative_response(ECU_RESET_SID,  NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
+        return get_negative_response(ECU_RESET_SID, NRC_SUB_FUNCTION_NOT_SUPPORTED)
+    return get_negative_response(ECU_RESET_SID, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
 
 
 def get_0x19_response(request):
     if len(request) == 2:
         report_type = request[1]
         if report_type == READ_DTC_INFO_BY_STATUS_MASK:
-            positive_response = get_positive_response_sid(READ_DTC_INFO_SID) + bytes([report_type]) \
-                                + bytes([READ_DTC_STATUS_AVAILABILITY_MASK])
+            positive_response = (
+                get_positive_response_sid(READ_DTC_INFO_SID)
+                + bytes([report_type])
+                + bytes([READ_DTC_STATUS_AVAILABILITY_MASK])
+            )
             return add_dtcs_to_response(positive_response)
         return get_negative_response(READ_DTC_INFO_SID, NRC_SUB_FUNCTION_NOT_SUPPORTED)
     return get_negative_response(READ_DTC_INFO_SID, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
@@ -111,5 +126,3 @@ def get_positive_response_sid(requested_sid):
 def get_negative_response(sid, nrc):
     logger.warning("Negative response for SID " + hex(sid) + " will be sent")
     return bytes([NEGATIVE_RESPONSE_SID]) + bytes([sid]) + bytes([nrc])
-
-

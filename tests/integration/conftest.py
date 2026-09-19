@@ -38,12 +38,16 @@ def _isotp_skip_reason() -> str | None:
         socket.socket(socket.AF_CAN, socket.SOCK_DGRAM, socket.CAN_ISOTP).close()
     except OSError as error:
         if error.errno in (errno.EPROTONOSUPPORT, errno.ESOCKTNOSUPPORT, errno.EAFNOSUPPORT):
-            return "kernel cannot create CAN_ISOTP sockets (CONFIG_CAN_ISOTP not built, e.g. GitHub-hosted Azure kernels)"
+            return (
+                "kernel cannot create CAN_ISOTP sockets (CONFIG_CAN_ISOTP not built, e.g. GitHub-hosted Azure kernels)"
+            )
         return f"cannot create CAN_ISOTP socket: {error}"
     try:
         iface_mod.interface_index(INTERFACE)
     except Exception:
-        return f"CAN interface {INTERFACE!r} does not exist: run scripts/setup_vcan.sh or scripts/run_integration_tests.sh"
+        return (
+            f"CAN interface {INTERFACE!r} does not exist: run scripts/setup_vcan.sh or scripts/run_integration_tests.sh"
+        )
     if not iface_mod.is_interface_up(INTERFACE):
         return f"CAN interface {INTERFACE!r} is down: sudo ip link set up {INTERFACE}"
     return None

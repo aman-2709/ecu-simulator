@@ -19,6 +19,11 @@ vehicle:
   vin: TESTVIN0123456789
   type: ice
   engine:
+    # A warm engine idling. Values are physical quantities; the OBD encoders alone turn
+    # them into wire bytes. Nothing changes them at runtime until the scenario engine
+    # arrives in Phase 7, so every read returns the same answer.
+    rpm: 800
+    coolant_temp: 90    # degrees Celsius
     fuel_level: 50      # per cent
     fuel_type: 1        # SAE J1979 fuel type coding; 1 is gasoline
 

@@ -54,7 +54,9 @@ def test_functional_vin_is_multi_frame(vcan, functional):
     frames = capture.collect(0.2)
     capture.close()
     pcis = [f.data[0] >> 4 for f in frames if f.can_id == 0x7E8]
-    assert pcis[:3] == [1, 2, 2], f"expected FF + 2 CF from 0x7E8, saw {[hex(f.can_id) + ':' + f.data.hex() for f in frames]}"
+    assert pcis[:3] == [1, 2, 2], (
+        f"expected FF + 2 CF from 0x7E8, saw {[hex(f.can_id) + ':' + f.data.hex() for f in frames]}"
+    )
     assert any(f.can_id == 0x7E0 and f.data[0] >> 4 == 3 for f in frames), "tester flow control on 0x7E0 missing"
 
 
@@ -101,7 +103,9 @@ def test_obd_response_frames_are_padded_to_dlc_8(vcan, functional):
     frames = capture.collect(0.2)
     capture.close()
     response_frames = [f for f in frames if f.can_id == 0x7E8]
-    assert len(response_frames) >= 4, f"expected SF + FF + 2 CF from 0x7E8, saw {[f.data.hex() for f in response_frames]}"
+    assert len(response_frames) >= 4, (
+        f"expected SF + FF + 2 CF from 0x7E8, saw {[f.data.hex() for f in response_frames]}"
+    )
     assert {f.dlc for f in response_frames} == {8}, [f.dlc for f in response_frames]
     single = response_frames[0]
     assert single.data == b"\x03\x41\x2f\x7f\x00\x00\x00\x00"
