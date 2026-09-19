@@ -56,6 +56,28 @@ def test_resolution_ignores_the_payload():
     assert router.resolve(physical(0x7E0, b"\xff" * 4095)) == ("engine",)
 
 
+class PayloadTrap:
+    """A request whose payload cannot be read: proves the router never looks at it."""
+
+    def __init__(self, target_address, functional=False):
+        self.target_address = target_address
+        self.functional = functional
+
+    @property
+    def payload(self):
+        raise AssertionError("the router inspected the payload")
+
+
+def test_router_never_touches_the_payload_at_all():
+    # Definition of Done for Phase 3: the router routes on addressing metadata only.
+    router = AddressRouter()
+    router.add_physical(0x7E0, "engine")
+    router.add_functional(0x7DF, "engine")
+    assert router.resolve(PayloadTrap(0x7E0)) == ("engine",)
+    assert router.resolve(PayloadTrap(0x7DF, functional=True)) == ("engine",)
+    assert router.resolve(PayloadTrap(0x7E5)) == ()
+
+
 def test_same_physical_address_twice_for_the_same_ecu_is_idempotent():
     router = AddressRouter()
     router.add_physical(0x7E0, "engine")

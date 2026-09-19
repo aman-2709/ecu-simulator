@@ -1,6 +1,8 @@
 """Dispatcher: the handler a transport calls. Router picks the ECU, the ECU answers."""
 
+import dataclasses
 import logging
+import socket
 
 import pytest
 
@@ -58,6 +60,24 @@ def test_the_ecu_never_sees_the_transport_context():
     router.add_physical(0x7E0, "engine")
     Dispatcher(router, ecus)(DiagnosticRequest(b"\x3e\x00", 0x7E0, context=object()))
     assert engine.requests[0].context is None
+
+
+def test_a_real_socket_in_the_transport_context_never_reaches_the_ecu():
+    # Definition of Done for Phase 3: an Ecu never receives a socket. The transport puts
+    # its endpoint (which owns the socket) in context; the dispatcher must strip it.
+    left, right = socket.socketpair()
+    try:
+        engine = Recording("engine")
+        router, ecus = build(engine)
+        router.add_physical(0x7E0, "engine")
+        Dispatcher(router, ecus)(DiagnosticRequest(b"\x3e\x00", 0x7E0, context=left))
+        (received,) = engine.requests
+        held = [getattr(received, f.name) for f in dataclasses.fields(received)]
+        assert not any(isinstance(v, socket.socket) for v in held), held
+        assert not any(hasattr(v, "fileno") for v in held), held
+    finally:
+        left.close()
+        right.close()
 
 
 def test_unrouted_address_is_logged_and_dropped(caplog):
