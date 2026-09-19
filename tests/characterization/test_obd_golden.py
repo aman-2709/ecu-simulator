@@ -146,15 +146,11 @@ def test_mode09_supported_pid_mask():
     assert obd(0x09, 0x20) is None
 
 
-def test_mode09_pid02_vin_today_has_item_count_zero():
+def test_mode09_pid02_vin_has_item_count_one():
+    # DEV-02 corrected in Phase 5. The length is unchanged at 20 bytes.
     response = obd(0x09, 0x02)
-    assert response == b"\x49\x02\x00" + VIN_BYTES
+    assert response == b"\x49\x02\x01" + VIN_BYTES
     assert len(response) == 20
-
-
-@xfail_deviation("DEV-02", "VIN item-count byte is 0x00 instead of 0x01")
-def test_mode09_pid02_vin_corrected_item_count():
-    assert obd(0x09, 0x02) == b"\x49\x02\x01" + VIN_BYTES
 
 
 def test_mode09_pid0a_ecu_name_today_is_left_nul_padded_without_item_count():

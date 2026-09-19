@@ -42,6 +42,7 @@ MODE_VEHICLE_INFO = 0x09
 CLAIMED_SERVICE_IDS = frozenset(range(0x01, 0x0B))
 
 VIN_LENGTH = 17
+VIN_ITEM_COUNT = 1  # DEV-02: one VIN per vehicle
 ECU_NAME_LENGTH = 20
 MAX_DTCS_IN_RESPONSE = 255
 
@@ -135,13 +136,14 @@ class ObdProtocol:
     # -- mode 09 fields ------------------------------------------------------------------------
 
     def _vin(self) -> bytes:
-        """Count byte then the VIN, left-padded with NULs when shorter than 17 bytes.
+        """Number of data items, then the VIN, left-padded with NULs when short.
 
-        The count byte is 0x00 here; DEV-02 corrects it separately so that the change is
-        one reviewed byte in one commit.
+        The count is 1: a vehicle has one VIN (DEV-02). The response stays 20 bytes, so
+        the multi-frame path and the tester's flow control are unaffected. Evidence in
+        docs/decisions/0003-phase-5-obd-evidence.md; not standards validated.
         """
         vin = str(self.vehicle.get("vehicle.vin")).encode()[:VIN_LENGTH]
-        return bytes(1) + bytes(VIN_LENGTH - len(vin)) + vin
+        return bytes([VIN_ITEM_COUNT]) + bytes(VIN_LENGTH - len(vin)) + vin
 
     def _ecu_name_field(self) -> bytes:
         """DEV-03, frozen. No count byte, and the name is left-padded with NULs.

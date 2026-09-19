@@ -9,7 +9,8 @@ import pytest
 
 from tests.integration.conftest import FunctionalTester, RawCapture, Simulator, open_tester_socket
 
-VIN_RESPONSE = b"\x49\x02\x00TESTVIN0123456789"
+# DEV-02 corrected: the third byte is the number of data items, one VIN.
+VIN_RESPONSE = b"\x49\x02\x01TESTVIN0123456789"
 
 
 @pytest.fixture

@@ -189,7 +189,7 @@ def test_obd_reads_the_profile_vehicle_without_any_module_global(tmp_path):
     path.write_text(text)
     dispatcher = app.build_dispatcher(app.RuntimeConfig.build(load_profile(path)))
     response = dispatcher(DiagnosticRequest(b"\x09\x02", 0x7E0))
-    assert response.payload == b"\x49\x02\x00" + b"\x00" + b"PROFILEVIN123456"
+    assert response.payload == b"\x49\x02\x01" + b"\x00" + b"PROFILEVIN123456"
     # The shipped profile is unaffected: no global was mutated.
     other = app.build_dispatcher(shipped())
     assert other(DiagnosticRequest(b"\x09\x02", 0x7E0)).payload.endswith(b"TESTVIN0123456789")

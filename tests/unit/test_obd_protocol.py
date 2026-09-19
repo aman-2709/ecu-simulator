@@ -103,14 +103,22 @@ def test_dtcs_come_from_this_ecu_not_a_global():
 
 
 def test_vin_comes_from_the_vehicle_state():
-    assert ask(protocol(), "0902") == b"\x49\x02\x00" + b"TESTVIN0123456789"
+    assert ask(protocol(), "0902") == b"\x49\x02\x01" + b"TESTVIN0123456789"
+
+
+def test_the_vin_item_count_is_one_and_the_length_is_unchanged():
+    # DEV-02: only the third byte changed; the response is still 20 bytes.
+    response = ask(protocol(), "0902")
+    assert response[:3] == b"\x49\x02\x01"
+    assert response[2] == 1
+    assert len(response) == 20
 
 
 def test_a_short_vin_is_left_padded_to_seventeen_bytes():
     proto = protocol()
     proto.vehicle.set("vehicle.vin", "SHORT")
     response = ask(proto, "0902")
-    assert response == b"\x49\x02\x00" + bytes(12) + b"SHORT"
+    assert response == b"\x49\x02\x01" + bytes(12) + b"SHORT"
     assert len(response) == 20
 
 
