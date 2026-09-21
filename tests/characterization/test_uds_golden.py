@@ -165,6 +165,22 @@ def test_unsupported_sids_on_the_physical_address_get_nrc_0x11(request_hex, expe
     assert engine_uds(request_hex).hex() == expected
 
 
+@pytest.mark.parametrize("request_hex", ["3e00", "3e80", "3e", "3e0000", "3e01", "3e81"])
+def test_0x3e_today_is_answered_by_the_routes_unsupported_service_policy(request_hex):
+    # Pinned before Phase 7 claims the service identifier, the way Phase 6 pinned
+    # 19 82 FF before changing it. No protocol claims 0x3E today, so every form of the
+    # request -- the valid one, the suppressed one, the truncated one, the over-long one
+    # and unsupported sub-functions -- gets the same 7F 3E 11 from the route policy that
+    # DEV-06 introduced. Each of these is about to mean something different.
+    assert engine_uds(request_hex).hex() == "7f3e11"
+
+
+def test_0x3e_reaches_no_protocol_today():
+    # The other half of the pin: the response above comes from the route, not from a
+    # handler that happens to return the same bytes.
+    assert protocol().handle(ServiceRequest(b"\x3e\x00")) is None
+
+
 @xfail_deviation("DEV-23", "0x3E TesterPresent is not implemented")
 def test_0x3e_tester_present_corrected():
     assert uds("3e00").hex() == "7e00"
