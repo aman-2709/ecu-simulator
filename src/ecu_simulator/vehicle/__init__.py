@@ -13,6 +13,7 @@ from ecu_simulator.vehicle.state import (
     Powertrain,
     TractionBattery,
     VehicleState,
+    signal_types,
 )
 
 __all__ = [
@@ -29,4 +30,5 @@ __all__ = [
     "UnknownSignalError",
     "VehicleState",
     "signal_paths",
+    "signal_types",
 ]

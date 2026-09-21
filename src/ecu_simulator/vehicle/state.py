@@ -120,6 +120,22 @@ POWERTRAINS: dict[str, type[IcePowertrain] | type[HevPowertrain] | type[BevPower
 }
 
 
+def signal_types(kind: str) -> dict[str, type]:
+    """Every signal path a vehicle of this powertrain kind has, mapped to its type.
+
+    A query over the model, answerable without a configured vehicle, so configuration can
+    reject a scenario that names a signal this vehicle does not have -- or one it has but
+    that no generator could drive, like a VIN -- before anything is built.
+    """
+    powertrain = POWERTRAINS[kind]()
+    components = (CommonState(vin=""), *powertrain.components())
+    return {
+        f"{component.namespace}.{f.name}": type(getattr(component, f.name))
+        for component in components
+        for f in dataclasses.fields(component)
+    }
+
+
 class VehicleState:
     """The composed state, addressed by dotted signal path."""
 

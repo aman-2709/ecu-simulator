@@ -16,11 +16,15 @@ by adding a key under `ecus`.
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from ecu_simulator.config.errors import ConfigError
+from ecu_simulator.scenario.events import DtcEvent
+from ecu_simulator.scenario.generators import SignalScenario
+from ecu_simulator.vehicle import signal_types
 
 SCHEMA_VERSION = 1
 
@@ -174,10 +178,29 @@ class DtcConfigModel(Base):
         return value
 
 
+class ScenarioConfig(Base):
+    """How the vehicle's signals change over time. Absent means today's behavior exactly.
+
+    A scenario changes physical state and nothing else. It cannot drop a response, delay
+    one, force a negative one or reach a protocol in any way -- that is fault injection,
+    which is a later phase. `extra="forbid"` is what keeps that true of the file as well
+    as of the code, so a scenario stays a pure function of time.
+    """
+
+    # How often the runtime brings the scenario up to date on its own. Signals are also
+    # refreshed before every request, so this period only bounds how late a timed DTC
+    # event can be when no tester is asking anything. One second is responsive enough for
+    # a fault that a tester then goes looking for, and cheap.
+    tick: float = Field(default=1.0, gt=0)
+    signals: list[SignalScenario] = Field(default_factory=list)
+
+
 class EcuConfig(Base):
     name: str = Field(min_length=1, max_length=ECU_NAME_MAX_LENGTH)
     endpoints: list[EndpointConfigModel] = Field(min_length=1)
     dtcs: list[DtcConfigModel] = Field(default_factory=list, max_length=MAX_DTCS)
+    # Timed changes to this ECU's trouble-code state, beside the codes they act on.
+    dtc_events: list[DtcEvent] = Field(default_factory=list)
     dids: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("dtcs")
@@ -218,12 +241,67 @@ class EcuConfig(Base):
                 )
         return self
 
+    @model_validator(mode="after")
+    def events_name_codes_this_ecu_carries(self) -> EcuConfig:
+        """A scenario may not invent a trouble code.
+
+        ``DtcStore.update`` raises for a code the profile did not declare, by design: this
+        simulator reports the codes its configuration accounts for. So an event naming one
+        is a configuration error, reported here with its path, rather than an exception at
+        the instant the event would have fired.
+        """
+        configured = {entry.code for entry in self.dtcs}
+        problems = [
+            f"dtc_events.{index}.code: trouble code {event.code!r} is not configured on this ECU; "
+            f"configured: {sorted(configured)}"
+            for index, event in enumerate(self.dtc_events)
+            if event.code is not None and event.code not in configured
+        ]
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
 
 class Profile(Base):
     version: Literal[1]
     transport: TransportConfig
     vehicle: VehicleConfig
+    scenario: ScenarioConfig = Field(default_factory=ScenarioConfig)
     ecus: dict[str, EcuConfig] = Field(min_length=1)
+
+    @property
+    def has_scenario(self) -> bool:
+        """Whether anything in this profile changes over time."""
+        return bool(self.scenario.signals) or any(ecu.dtc_events for ecu in self.ecus.values())
+
+    @model_validator(mode="after")
+    def scenario_signals_exist_on_this_vehicle(self) -> Profile:
+        """Every driven signal must exist on the configured vehicle and be a number.
+
+        The powertrain decides which signals exist, so a scenario that ramps `battery.soc`
+        on an internal-combustion vehicle is refused here rather than at the first request.
+        A signal that exists but is not numeric -- the VIN -- is refused too: a generator
+        produces numbers, and there is no honest way to ramp a string.
+        """
+        available = signal_types(self.vehicle.type)
+        problems: list[str] = []
+        seen: set[str] = set()
+        for index, signal in enumerate(self.scenario.signals):
+            where = f"scenario.signals.{index}.path"
+            kind = available.get(signal.path)
+            if kind is None:
+                problems.append(
+                    f"{where}: {signal.path!r} is not a signal on an {self.vehicle.type!r} vehicle; "
+                    f"available: {sorted(available)}"
+                )
+            elif kind is bool or not issubclass(kind, int | float):
+                problems.append(f"{where}: {signal.path!r} is not a numeric signal, so no generator can drive it")
+            elif signal.path in seen:
+                problems.append(f"{where}: {signal.path!r} is driven by more than one generator")
+            seen.add(signal.path)
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
 
     @model_validator(mode="after")
     def receive_addresses_are_unique_across_ecus(self) -> Profile:
@@ -263,6 +341,28 @@ def _format(error: ValidationError, source: str | None) -> str:
     where = f"profile {source}" if source else "profile"
     lines = [f"{where} is invalid ({error.error_count()} problem(s)):"]
     for detail in error.errors():
-        path = ".".join(str(part) for part in detail["loc"]) or "(root)"
-        lines.append(f"  {path}: {detail['msg']}")
+        path = ".".join(str(part) for part in detail["loc"])
+        for problem in _split_problems(str(detail["msg"])):
+            lines.append(f"  {_join(path, problem)}")
     return "\n".join(lines)
+
+
+# A field's own error names one field, so Pydantic's location is the whole path. A model
+# validator sees several fields at once, so its location is the model and the path to the
+# offending item is only known to the validator itself. One that knows it says so, by
+# starting its message with the sub-path and a colon, and both halves are joined here.
+_SUB_PATH = re.compile(r"^[a-z_][a-z0-9_]*(\.[A-Za-z0-9_]+)*$")
+
+
+def _split_problems(message: str) -> list[str]:
+    """One validator may report several problems, joined with '; ', so the file is fixed once."""
+    message = message.removeprefix("Value error, ")
+    return message.split("; ") if "; " in message and ": " in message else [message]
+
+
+def _join(path: str, problem: str) -> str:
+    prefix, separator, rest = problem.partition(": ")
+    if separator and _SUB_PATH.match(prefix):
+        path = f"{path}.{prefix}" if path else prefix
+        problem = rest
+    return f"{path or '(root)'}: {problem}"
