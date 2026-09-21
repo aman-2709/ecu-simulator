@@ -12,6 +12,7 @@ from ecu_simulator.dtc import DtcState, DtcStore
 from ecu_simulator.protocols.base import ServiceRequest
 from ecu_simulator.protocols.uds import DtcRegistry, UdsProtocol
 from ecu_simulator.protocols.uds.dtc import DtcStoreProvider
+from ecu_simulator.protocols.uds.protocol import READ_DTC_INFORMATION
 
 DEFAULT = (DtcState("B1477", pending=True, confirmed=True), DtcState("P0001", pending=True))
 
@@ -127,8 +128,12 @@ def test_0x19_negative_responses(request_hex, expected):
     assert ask(request_hex).hex() == expected
 
 
-@pytest.mark.parametrize("request_hex", ["1901", "1901ff", "190a", "190aff", "1982", "1982ff", "19ff00000000"])
+@pytest.mark.parametrize("request_hex", ["1901", "1901ff", "190a", "190aff", "19ff00000000"])
 def test_0x19_an_unsupported_subfunction_is_rejected_as_one_at_any_length(request_hex):
+    # 1982 and 1982ff left this list in Phase 7: 0x82 is report type 0x02 with the
+    # suppressPosRspMsgIndicationBit, not an unsupported report type. Both are asserted
+    # in their own tests below. 19 FF 00 00 00 00 stays: 0xFF masks to 0x7F, which this
+    # server does not support either.
     assert ask(request_hex).hex() == "7f1912"
 
 
@@ -264,7 +269,7 @@ def test_0x3e_does_not_disturb_the_dtc_store():
 def test_the_services_declared_to_have_a_subfunction_are_listed_explicitly():
     from ecu_simulator.protocols.uds.protocol import SUB_FUNCTION_SERVICES
 
-    assert SUB_FUNCTION_SERVICES == frozenset({0x10, 0x11, 0x3E})
+    assert SUB_FUNCTION_SERVICES == frozenset({0x10, 0x11, 0x19, 0x3E})
 
 
 @pytest.mark.parametrize("session", ["01", "02", "03", "04"])
@@ -335,3 +340,66 @@ def test_the_groupofdtc_is_not_masked_on_its_way_to_the_service():
     # would arrive as 0x7FFFFF and be refused as out of range.
     proto, _ = protocol()
     assert proto.handle(ServiceRequest(b"\x14\xff\xff\xff")) == b"\x54"
+
+
+# --- the suppress bit reaches 0x19 too -----------------------------------------------------------
+#
+# 0x19 ReadDTCInformation has a sub-function -- the report type -- so the rule above
+# applies to it exactly as it applies to 0x10, 0x11 and 0x3E. Phase 6 answered 19 82 FF
+# with 7F 19 12, treating 0x82 as a report type it does not support; that predates the
+# generic handling and this phase corrects it. The alternative was to declare 0x19 as
+# having no sub-function, which would have kept Phase 6's bytes by writing something into
+# the table that is not true of the service.
+
+
+def test_0x19_is_declared_as_a_subfunction_service():
+    from ecu_simulator.protocols.uds.protocol import SERVICE_IDS, SUB_FUNCTION_SERVICES
+
+    assert READ_DTC_INFORMATION in SUB_FUNCTION_SERVICES
+    # 0x14 is the only service this protocol serves that has no sub-function.
+    assert SERVICE_IDS - SUB_FUNCTION_SERVICES == frozenset({0x14})
+
+
+def test_0x19_02_is_unchanged_by_any_of_this():
+    assert ask("1902ff").hex() == "59028c" + "9477010c" + "00010104"
+
+
+def test_0x19_82_runs_the_same_read_and_withholds_its_positive_response():
+    assert ask("1982ff") is None
+
+
+def test_0x19_82_selects_report_type_0x02_and_then_its_own_length_rule():
+    # The proof that 0x82 is masked to 0x02 and dispatched as 0x02, rather than the
+    # response being dropped: 0x02 requires a status mask, so the two-byte form fails
+    # 0x02's length rule and the four-byte form does too. A negative response is never
+    # withheld, so both are visible.
+    assert ask("1982").hex() == "7f1913"
+    assert ask("1982ff00").hex() == "7f1913"
+
+
+@pytest.mark.parametrize("report_type", ["81", "8a", "80", "ff"])
+def test_0x19_with_the_suppress_bit_on_a_report_type_this_server_lacks_is_still_refused(report_type):
+    # 0x81, 0x8A, 0x80 and 0xFF mask to 0x01, 0x0A, 0x00 and 0x7F, none of which this
+    # server supports. Each keeps the 0x12 it has always had.
+    assert ask("19" + report_type).hex() == "7f1912"
+
+
+@pytest.mark.parametrize("report_type", ["01", "0a", "00", "7f"])
+def test_0x19_without_the_suppress_bit_refuses_the_same_report_types(report_type):
+    # The same four values with bit 7 clear, answered identically. The bit changes
+    # whether a positive response is sent; it never changes which sub-function was asked
+    # for or what a refusal says.
+    assert ask("19" + report_type).hex() == "7f1912"
+
+
+def test_the_status_mask_is_not_masked_on_its_way_to_the_service():
+    # Only the sub-function byte has bit 7 removed. The status mask is 0x19/0x02's own
+    # parameter and keeps all eight bits: 0x80 is the "indicator requested" bit, and a
+    # request filtering on it must still match a code that has it set.
+    proto, _ = protocol((DtcState("B1477", indicator_requested=True),))
+    assert proto.handle(ServiceRequest(b"\x19\x02\x80")).hex() == "59028c" + "94770180"
+    assert proto.handle(ServiceRequest(b"\x19\x82\x80")) is None
+
+
+def test_0x19_without_a_subfunction_is_still_a_length_error():
+    assert ask("19").hex() == "7f1913"

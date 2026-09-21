@@ -143,11 +143,29 @@ def test_0x19_negative_responses(request_hex, expected):
     assert uds(request_hex).hex() == expected
 
 
-def test_0x19_an_unknown_subfunction_is_rejected_as_a_subfunction_whatever_the_length():
-    # Corrected in Phase 6: the sub-function is checked before the length that sub-function
-    # requires, so 19 82 FF is answered 7F 19 12 where it was answered 7F 19 13. The
-    # ordering is a project choice; no accessible source states the ISO order.
-    assert uds("1982ff").hex() == "7f1912"
+def test_0x19_82_is_report_type_0x02_with_its_positive_response_suppressed():
+    # A deliberate transition of what Phase 6 established. Phase 6 read 0x82 as a report
+    # type this server does not support and answered 7F 19 12, which was right for a
+    # server with no generic sub-function framing; Phase 7 has one, and 0x19 has a
+    # sub-function, so 0x82 is report type 0x02 with the suppressPosRspMsgIndicationBit
+    # set. The read runs and its positive response is withheld.
+    assert uds("1902ff").hex() == "59028c" + "9477010c" + "0001010c"
+    assert uds("1982ff") is None
+
+
+def test_0x19_82_without_a_status_mask_fails_report_type_0x02s_length_rule():
+    # The other transition, and the evidence that 0x82 is dispatched as 0x02 rather than
+    # discarded: 0x02 requires a status mask, so the two-byte form is a length error where
+    # Phase 6 answered 7F 19 12. Negative responses are never withheld.
+    assert uds("1982").hex() == "7f1913"
+
+
+def test_0x19_a_report_type_this_server_lacks_is_still_refused_with_or_without_the_bit():
+    # The Phase 6 ordering rule is untouched: the sub-function is still checked before the
+    # length it requires, and an unsupported one is still 0x12 at any length.
+    assert uds("1981").hex() == "7f1912"
+    assert uds("1901").hex() == "7f1912"
+    assert uds("198aff").hex() == "7f1912"
 
 
 @pytest.mark.parametrize("request_hex", ["1901ff", "190aff", "1900ff0000"])

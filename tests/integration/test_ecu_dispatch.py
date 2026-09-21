@@ -159,6 +159,21 @@ def test_a_suppressed_request_does_not_hide_a_negative_response(uds_physical):
     assert uds_physical.recv() == b"\x7f\x11\x12"
 
 
+def test_reading_dtcs_can_be_asked_for_silently(uds_physical):
+    # 0x19 has a sub-function, so it takes part in the same rule. This is a deliberate
+    # change to what Phase 6 put on the wire for 19 82 FF, which was 7F 19 12.
+    uds_physical.send(b"\x19\x02\xff")
+    assert uds_physical.recv() == bytes.fromhex("59028c9477010c0001010c")
+    uds_physical.send(b"\x19\x82\xff")
+    with pytest.raises(TimeoutError):
+        uds_physical.recv()
+
+
+def test_a_suppressed_read_without_a_status_mask_still_reports_its_length_error(uds_physical):
+    uds_physical.send(b"\x19\x82")
+    assert uds_physical.recv() == b"\x7f\x19\x13"
+
+
 def test_clearing_dtcs_is_not_mistaken_for_a_suppressed_request(uds_physical):
     # 0x14 has no sub-function, and the second byte of its only served groupOfDTC is 0xFF.
     # Nothing masks it and nothing withholds the acknowledgement.

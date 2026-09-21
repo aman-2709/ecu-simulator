@@ -75,8 +75,13 @@ CLEAR_REQUEST_LENGTH = 4
 # subfunctions, suppressPosRspMsgIndicationBit is available". This table is that
 # configuration. It is never inferred from the shape of a payload, because a payload byte
 # in bit-7 position is not evidence of anything -- 0x14's groupOfDTC 0xFFFFFF has bit 7
-# set in exactly that position and must not be touched.
-SUB_FUNCTION_SERVICES = frozenset({DIAGNOSTIC_SESSION_CONTROL, ECU_RESET, TESTER_PRESENT})
+# set in exactly that position and must not be touched. 0x19 is here because
+# ReadDTCInformation does have a sub-function, the report type, whatever Phase 6 answered
+# for 19 82 FF before this rule existed; declaring it otherwise would keep those bytes by
+# recording something untrue about the service.
+SUB_FUNCTION_SERVICES = frozenset(
+    {DIAGNOSTIC_SESSION_CONTROL, ECU_RESET, READ_DTC_INFORMATION, TESTER_PRESENT}
+)
 
 # Bit 7 of the sub-function byte: "do not send me a positive response".
 SUPPRESS_POS_RSP_MSG_INDICATION_BIT = 0x80
