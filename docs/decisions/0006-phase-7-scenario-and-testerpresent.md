@@ -566,6 +566,40 @@ available" — which is exactly the explicit-metadata mechanism the ruling requi
   Validating generator ranges against every encoder was not attempted; the demonstration
   profile says so in a comment instead.
 
+### Differential evidence for the shipped profile
+
+The method Phases 5 and 6 used before deleting anything, applied here to prove that the
+default configuration changed only where it was meant to. Every response the shipped
+profile gives was dumped at `01eeca9`, the commit before this phase, and again at the end
+of it, and the two compared: **56,064 request/address combinations** -- all three addresses
+(`0x7DF`, `0x7E0`, `0x7E1`), every first byte `0x00` to `0xFF`, lengths one to five, and a
+chosen set of eighteen second-byte values covering each supported and unsupported
+sub-function, the suppress-bit form of each, and the boundaries `0x00`, `0x7F`, `0x80` and
+`0xFF`.
+
+**172 combinations differ, and every one of them is an intended change of this phase:**
+
+| Group | Change |
+|---|---|
+| `3E ...` on `0x7E0` and `0x7E1`, every form | `7F 3E 11` becomes `7E 00`, silence, `7F 3E 12` or `7F 3E 13` as the service now defines |
+| `10 81`–`10 84` | `7F 10 12` becomes silence |
+| `11 81`–`11 85` | `7F 11 12` becomes silence |
+| `19 82`, `19 82 82 82`, `19 82 82 82 82` | `7F 19 12` becomes `7F 19 13` |
+| `19 82 82` | `7F 19 12` becomes silence |
+
+Nothing else moved. Four results are worth naming because they are what the design
+predicts and an accident would not produce:
+
+- **No OBD response changed at all**, at any address or length.
+- **Nothing on `0x7DF` changed.** UDS is not enabled on the broadcast route, so claiming
+  0x3E did not make it answerable there.
+- **`10 80`, `11 86` and `19 81` are absent from the diff.** Each masks to a sub-function
+  the server does not support, so each keeps the `0x12` it always had. A response dropped
+  because bit 7 was set, rather than the bit being masked and the sub-function then
+  matched, would have made all three silent.
+- **`14 FF FF FF` is absent.** The one service here with no sub-function, and the one whose
+  second byte has bit 7 set, is untouched.
+
 ### Delivered
 
 Eight commits: the `7F 3E 11` pin; stateless 0x3E; generic suppress-bit handling; the 0x19
