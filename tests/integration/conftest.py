@@ -173,16 +173,23 @@ class Simulator:
 
     READY_MARKER = "ecu-simulator ready on"
 
-    def __init__(self, interface: str, workdir: str, log_level: str = "INFO") -> None:
+    def __init__(
+        self, interface: str, workdir: str, log_level: str = "INFO", profile: str | None = None
+    ) -> None:
         self.interface = interface
         self.workdir = workdir
         self.log_level = log_level
+        # None means the packaged ice_default.yaml, which is what almost every test wants.
+        self.profile = profile
         self._start()
 
     def _start(self) -> None:
         interface, workdir, log_level = self.interface, self.workdir, self.log_level
+        command = [sys.executable, "-m", "ecu_simulator", "--interface", interface, "--log-level", log_level]
+        if self.profile is not None:
+            command += ["--profile", self.profile]
         self.proc = subprocess.Popen(
-            [sys.executable, "-m", "ecu_simulator", "--interface", interface, "--log-level", log_level],
+            command,
             cwd=workdir,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,

@@ -1,0 +1,170 @@
+# Demonstration profile: the same ECU as ice_default.yaml, with a scenario driving it.
+#
+# ice_default.yaml deliberately has no scenario. Every golden byte in the test suite, and
+# the V1.0 acceptance bench, rest on its values standing still, so the feature is shown
+# here instead:
+#
+#   ecu-simulator --profile src/ecu_simulator/profiles/ice_scenario.yaml --interface vcan0
+#
+# Watch it with any OBD tool, or by hand:
+#
+#   isotprecv -s 7E0 -d 7E8 vcan0 &     # then, repeatedly:
+#   echo "01 0D" | isotpsend -s 7E0 -d 7E8 vcan0
+#
+# A scenario changes what the vehicle *is*. It cannot drop a response, delay one, force a
+# negative one, or touch a protocol in any way -- that is fault injection, which is a
+# later phase. Every generator below is a pure function of the seconds elapsed since the
+# simulator started, so the run is reproducible: restart the process and it begins again
+# from the same place.
+#
+# Values outside what a wire field can hold are clamped by the encoder, not rejected here,
+# because clamping is what the encoders have always done with an out-of-range profile
+# value. Keep a generator inside the physical range of its signal if you want to read the
+# number you wrote.
+
+version: 1
+
+transport:
+  interface: vcan0
+
+vehicle:
+  vin: TESTVIN0123456789
+  type: ice
+  # The initial values. Any signal a scenario drives is overwritten the first time the
+  # scenario is applied; the rest stay exactly as written here, for the whole run.
+  speed: 0
+  ambient_temp: 20
+  battery_voltage: 14.1
+  obd_standard: 1
+  engine:
+    rpm: 800
+    coolant_temp: 20          # cold: the scenario warms it up
+    intake_temp: 20
+    engine_load: 15.0
+    throttle: 0.0
+    maf: 2.0
+    map: 33
+    timing_advance: 10.0
+    short_fuel_trim: 0.0
+    long_fuel_trim: 1.5
+    runtime: 0
+    fuel_level: 62
+    fuel_type: 1
+
+# A two-minute drive: idle, accelerate, cruise, slow for a junction, accelerate again,
+# come to a stop. The engine warms up throughout and the thermostat fault below appears
+# while it is still cold, which is roughly when a real one would.
+scenario:
+  # How often the runtime applies the scenario on its own. Every request applies it too,
+  # so this only decides how promptly a timed trouble code appears on an idle bus.
+  tick: 0.5
+
+  signals:
+    - path: vehicle.speed
+      type: timeline
+      points:
+        - {at: 0,   value: 0}
+        - {at: 10,  value: 0}
+        - {at: 20,  value: 30}
+        - {at: 30,  value: 55}
+        - {at: 45,  value: 80}
+        - {at: 70,  value: 80}
+        - {at: 80,  value: 40}
+        - {at: 90,  value: 0}
+        - {at: 100, value: 45}
+        - {at: 115, value: 70}
+        - {at: 120, value: 0}
+
+    # Engine speed rises and falls with road speed, but never drops below idle.
+    - path: engine.rpm
+      type: timeline
+      points:
+        - {at: 0,   value: 800}
+        - {at: 10,  value: 850}
+        - {at: 20,  value: 1600}
+        - {at: 30,  value: 1900}
+        - {at: 45,  value: 2300}
+        - {at: 70,  value: 2100}
+        - {at: 80,  value: 1400}
+        - {at: 90,  value: 800}
+        - {at: 100, value: 2000}
+        - {at: 115, value: 2400}
+        - {at: 120, value: 800}
+
+    # A cold start warming to operating temperature over the first minute, then held.
+    - path: engine.coolant_temp
+      type: ramp
+      from: 20
+      to: 92
+      over: 60
+
+    # Load breathes around a cruise value. `sine` is the one generator that goes through
+    # libm, so it is used for something nobody asserts a byte of.
+    - path: engine.engine_load
+      type: sine
+      centre: 38
+      amplitude: 22
+      period: 25
+
+    - path: engine.throttle
+      type: stepped
+      values: [8, 24, 41, 24]
+      interval: 12
+
+    # A slow steady drain, so a tool polling PID 0x2F sees the number move.
+    - path: engine.fuel_level
+      type: ramp
+      from: 62
+      to: 58
+      over: 120
+
+ecus:
+  engine:
+    name: ECU_SIMULATOR
+    # Three codes are declared, and all three start clear: a scenario may only change the
+    # state of a code the profile already accounts for, never invent one. P0128 is the
+    # thermostat code the events below raise; the other two are left for a tester to
+    # watch stay absent.
+    dtcs:
+      - code: P0128
+        pending: false
+        confirmed: false
+      - code: P0171
+        pending: false
+        confirmed: false
+      - code: B1477
+        pending: false
+        confirmed: false
+
+    # One fault, appearing the way a real one does: pending first, confirmed on the next
+    # drive cycle, and then the malfunction indicator. Clear it over OBD Mode 04 or UDS
+    # 0x14 and it stays cleared -- an event fires once and is not replayed.
+    dtc_events:
+      - {at: 40, action: raise_pending,     code: P0128}
+      - {at: 75, action: raise_confirmed,   code: P0128}
+      - {at: 75, action: request_indicator, code: P0128}
+
+    dids: {}
+    endpoints:
+      - name: obd_functional
+        rx: 0x7DF
+        tx: 0x7E8
+        addressing: functional
+        protocols: [obd]
+        answer_unsupported: false
+        tx_padding: true
+        pad_byte: 0x00
+        reply_via: obd_physical
+      - name: obd_physical
+        rx: 0x7E0
+        tx: 0x7E8
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: true
+        pad_byte: 0x00
+      - name: uds_physical
+        rx: 0x7E1
+        tx: 0x7E9
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: false
