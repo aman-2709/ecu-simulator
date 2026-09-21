@@ -13,11 +13,13 @@ routes the router resolves are built from the same per-ECU endpoint list, and
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import signal
-from collections.abc import Callable, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass
 
+from ecu_simulator.clock import Clock, MonotonicClock
 from ecu_simulator.config import Profile
 from ecu_simulator.config.schema import EcuConfig, EndpointConfigModel
 from ecu_simulator.dtc import DtcState, DtcStore
@@ -25,6 +27,7 @@ from ecu_simulator.ecu import AddressRouter, Dispatcher, Ecu
 from ecu_simulator.protocols.obd import ObdProtocol
 from ecu_simulator.protocols.uds import UdsProtocol
 from ecu_simulator.protocols.uds.dtc import DtcStoreProvider
+from ecu_simulator.scenario import Scenario, ScenarioRunner, ScenarioSync
 from ecu_simulator.transport import TransportError
 from ecu_simulator.transport.socketcan import EndpointConfig, IsoTpAddress, IsoTpOptions, IsoTpTransport
 from ecu_simulator.vehicle import POWERTRAINS, CommonState, IceState, TractionBattery, VehicleState
@@ -162,8 +165,113 @@ def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None) -> li
     return ecus
 
 
+def build_scenario(config: RuntimeConfig) -> Scenario:
+    """The profile's scenario: vehicle-wide signals, plus each ECU's timed events.
+
+    Events keep the order the profile lists them in, per ECU and then across ECUs, which
+    is the tie-break for two events sharing a time. Everything here was validated at load:
+    every signal exists on this vehicle and every event names a code its ECU carries.
+    """
+    profile = config.profile
+    events = tuple(
+        (ecu_name, event) for ecu_name, ecu in profile.ecus.items() for event in ecu.dtc_events
+    )
+    return Scenario(signals=tuple(profile.scenario.signals), events=events)
+
+
+def build_runner(config: RuntimeConfig, vehicle: VehicleState, ecus: Iterable[Ecu]) -> ScenarioRunner | None:
+    """The scenario writer, or ``None`` when the profile configures no scenario.
+
+    ``None`` is not an optimisation. A profile without a scenario gets no runner, no tick
+    and no clock reading on the request path, so its behavior is what it was before this
+    phase by construction rather than by a generator that happens to return a constant.
+    """
+    if not config.profile.has_scenario:
+        return None
+    return ScenarioRunner(build_scenario(config), vehicle, {ecu.name: ecu.dtc_store for ecu in ecus})
+
+
+@dataclass(frozen=True, slots=True)
+class Runtime:
+    """Everything a running simulator is made of, assembled once from a profile.
+
+    The composition root. It exists so that the clock has exactly one owner, the scenario
+    runner exactly one instance, and a test exactly one seam: the request path and the
+    periodic tick call the same ``sync``, which is what makes a timed event impossible to
+    apply twice whichever of them reaches it first.
+    """
+
+    config: RuntimeConfig
+    clock: Clock
+    vehicle: VehicleState
+    ecus: tuple[Ecu, ...]
+    router: AddressRouter
+    dispatcher: Dispatcher
+    runner: ScenarioRunner | None
+    sync: ScenarioSync | None
+
+
+def build_runtime(config: RuntimeConfig, clock: Clock | None = None) -> Runtime:
+    """Assemble the runtime. ``clock`` defaults to real monotonic time; tests pass their own."""
+    clock = MonotonicClock() if clock is None else clock
+    vehicle = build_vehicle(config)
+    ecus = tuple(build_ecus(config, vehicle))
+    runner = build_runner(config, vehicle, ecus)
+    # The origin is read here, once, so scenario time starts at zero however the clock is
+    # counting. A profile with no scenario never reads the clock at all.
+    sync = ScenarioSync(runner, clock) if runner is not None else None
+    router = build_router(config)
+    return Runtime(
+        config=config,
+        clock=clock,
+        vehicle=vehicle,
+        ecus=ecus,
+        router=router,
+        dispatcher=Dispatcher(router, ecus, sync=sync),
+        runner=runner,
+        sync=sync,
+    )
+
+
 def build_dispatcher(config: RuntimeConfig) -> Dispatcher:
-    return Dispatcher(build_router(config), build_ecus(config))
+    return build_runtime(config).dispatcher
+
+
+@contextlib.asynccontextmanager
+async def scenario_tick(sync: Callable[[], None] | None, period: float) -> AsyncIterator[None]:
+    """Run ``sync`` every ``period`` seconds for as long as the block lasts.
+
+    The tick exists for one reason: a timed trouble-code event has to arrive even when no
+    tester is asking anything. Signals need no tick, because every request synchronises
+    before it is answered; the period only bounds how late an event can be on an idle bus.
+
+    ``sync`` is called for its effect on domain state and never produces bytes, so a
+    failure inside it is logged and the tick carries on. Losing the scenario is bad;
+    losing it silently and stopping the simulator with it would be worse.
+
+    The task is cancelled and awaited when the block exits, which the Phase 2 lifecycle
+    tests then observe as a clean SIGINT and SIGTERM shutdown with nothing left running.
+    """
+    if sync is None:
+        yield
+        return
+
+    async def tick() -> None:
+        while True:
+            await asyncio.sleep(period)
+            try:
+                sync()
+            except Exception:  # noqa: BLE001 - the simulator keeps serving; see above
+                logger.exception("scenario tick failed; the simulator continues")
+
+    task = asyncio.create_task(tick(), name="scenario-tick")
+    logger.info("scenario tick every %.3gs", period)
+    try:
+        yield
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
 def check_routes(router: AddressRouter, endpoints: Iterable[EndpointConfig]) -> None:
@@ -201,29 +309,30 @@ async def run(
     stop: asyncio.Event | None = None,
     install_signal_handlers: bool = True,
     transport_factory: Callable[..., IsoTpTransport] = IsoTpTransport,
+    clock: Clock | None = None,
 ) -> None:
     """Start the transport, wait for ``stop`` (or SIGINT/SIGTERM), then shut down.
 
     Raises :class:`TransportError` if the transport cannot start; the caller reports it.
     """
     endpoints = build_endpoints(config)
-    router = build_router(config)
-    check_routes(router, endpoints)  # before any socket is opened
-    dispatcher = Dispatcher(router, build_ecus(config))
+    runtime = build_runtime(config, clock)
+    check_routes(runtime.router, endpoints)  # before any socket is opened
     transport = transport_factory(config.interface, endpoints)
     stop = stop or asyncio.Event()
     loop = asyncio.get_running_loop()
     installed: list[signal.Signals] = []
     started = False
     try:
-        await transport.start(dispatcher)
+        await transport.start(runtime.dispatcher)
         started = True
         if install_signal_handlers:
             for sig in (signal.SIGINT, signal.SIGTERM):
                 loop.add_signal_handler(sig, _request_stop, stop, sig)
                 installed.append(sig)
         logger.info("ecu-simulator ready on %s", config.interface)
-        await stop.wait()
+        async with scenario_tick(runtime.sync, config.profile.scenario.tick):
+            await stop.wait()
     finally:
         for sig in installed:
             loop.remove_signal_handler(sig)

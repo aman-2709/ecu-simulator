@@ -13,6 +13,7 @@ is a later phase and deliberately not a scenario feature.
 
 from pydantic import TypeAdapter
 
+from ecu_simulator.scenario.events import DtcEvent
 from ecu_simulator.scenario.generators import (
     ConstantSignal,
     RampSignal,
@@ -22,10 +23,16 @@ from ecu_simulator.scenario.generators import (
     SteppedSignal,
     TimelineSignal,
 )
+from ecu_simulator.scenario.runner import Scenario, ScenarioRunner
+from ecu_simulator.scenario.sync import ScenarioSync
 
 __all__ = [
     "ConstantSignal",
+    "DtcEvent",
     "RampSignal",
+    "Scenario",
+    "ScenarioRunner",
+    "ScenarioSync",
     "SequenceSignal",
     "SignalScenario",
     "SineSignal",

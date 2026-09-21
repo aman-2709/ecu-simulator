@@ -381,7 +381,10 @@ def test_the_runner_writes_only_through_the_domain_apis():
 def test_a_scenario_never_moves_the_clock():
     # Nothing in this project advances time. The runner does not even import a clock: it
     # is told what `t` is, which is what makes a SimulatedClock enough to reproduce a
-    # whole run and what stops a request from becoming a source of time.
-    from tests.unit.test_transport_isolation import loaded_modules
+    # whole run and what stops a request from becoming a source of time. Turning a clock
+    # reading into scenario time is ScenarioSync's one job, in its own module.
+    import sys
 
-    assert "ecu_simulator.clock" not in loaded_modules("ecu_simulator.scenario.runner")
+    source = inspect.getsource(sys.modules[ScenarioRunner.__module__])
+    assert "ecu_simulator.clock" not in source
+    assert "import time" not in source

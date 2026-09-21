@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from types import MappingProxyType
 
 from ecu_simulator.ecu.ecu import Ecu
@@ -21,7 +21,25 @@ logger = logging.getLogger(__name__)
 
 
 class Dispatcher:
-    def __init__(self, router: AddressRouter, ecus: Iterable[Ecu]) -> None:
+    def __init__(
+        self,
+        router: AddressRouter,
+        ecus: Iterable[Ecu],
+        *,
+        sync: Callable[[], None] | None = None,
+    ) -> None:
+        """``sync``, if given, is called once before each request is dispatched.
+
+        It is a plain callable and this layer never learns what it does, so the dispatcher
+        stays what it was: resolve the route, hand the request to the ECU. What it does in
+        practice is bring domain state up to the time that has already passed, before the
+        protocol reads that state -- which is where "lazy evaluation on read" is resolved,
+        deliberately above VehicleState rather than inside it, so the protocols go on
+        reading a number instead of asking a scenario for one.
+
+        It is called once per request, before dispatch, and it advances nothing: two
+        requests arriving at one instant leave identical state and get identical bytes.
+        """
         by_name: dict[str, Ecu] = {}
         for ecu in ecus:
             if ecu.name in by_name:
@@ -42,6 +60,7 @@ class Dispatcher:
             _reject_fan_out(address, routes)
         self._router = router
         self._ecus = by_name
+        self._sync = sync
 
     @property
     def router(self) -> AddressRouter:
@@ -51,7 +70,13 @@ class Dispatcher:
     def ecus(self) -> MappingProxyType[str, Ecu]:
         return MappingProxyType(self._ecus)
 
+    @property
+    def sync(self) -> Callable[[], None] | None:
+        return self._sync
+
     def __call__(self, request: DiagnosticRequest) -> DiagnosticResponse | None:
+        if self._sync is not None:
+            self._sync()
         routes = self._router.resolve(request)
         if not routes:
             logger.warning(
