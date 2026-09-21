@@ -269,6 +269,11 @@ def test_scenario_time_starts_at_zero_whatever_the_clock_reads():
     assert built.vehicle.get("vehicle.speed") == 100
 
 
+def test_the_sync_says_where_scenario_time_started_when_printed():
+    built = runtime(with_scenario(RAMP), SimulatedClock(start=42.5))
+    assert repr(built.sync) == "ScenarioSync(origin=42.5)"
+
+
 def test_production_takes_a_monotonic_clock_by_default():
     assert isinstance(runtime(shipped()).clock, MonotonicClock)
 

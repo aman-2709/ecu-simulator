@@ -123,12 +123,29 @@ nothing varies over time until the Phase 7 scenario engine.
 | 0x19 | 0x02 | reportDTCByStatusMask, mask required and applied | yes | yes | **yes** | no | no |
 | 0x19 | 0x01, 0x0A | other report types | no | yes | no | n/a | no |
 | 0x22 | - | ReadDataByIdentifier | no | yes | yes | n/a | no |
-| 0x3E | - | TesterPresent | no | yes (DEV-23) | no | n/a | no |
+| 0x3E | 0x00 | TesterPresent, stateless | **yes** | yes | **yes** | no | no |
+| 0x3E | other | subFunctionNotSupported, `7F 3E 12` | **yes** | yes | **yes** | no | no |
 | - | - | NRC 0x11 for a service no enabled protocol serves | yes | yes | yes | no | no |
-| - | - | `suppressPosRspMsgIndicationBit` honoured | no | yes (DEV-07) | no | n/a | no |
+| - | - | `suppressPosRspMsgIndicationBit` honoured for every sub-function service | **yes** | yes | **yes** | no | no |
 
-The session parameter record and session state behavior are still placeholders: DEV-07,
-DEV-17 and the 0x3E half of DEV-23. No session state is kept.
+The session parameter record is still a placeholder: DEV-17. No session state is kept, and
+0x3E keeps none either -- it starts, reads and resets no timer, and claims no ISO 14229
+session compliance. S3, TesterPresent timing, the session state machine and Concurrent
+TesterPresent are Phase 11.
+
+Phase 7 closed DEV-23 and DEV-07. `3E 00` is answered `7E 00`; a sub-function this server
+does not support is `7F 3E 12`; a request that is not two bytes is `7F 3E 13`. The
+suppress bit is handled once, in the UDS service-dispatch layer, for every service an
+explicit table declares to have a sub-function -- today 0x10, 0x11, 0x19 and 0x3E, with
+0x14 deliberately absent. Bit 7 is read, masked off before the service sees the
+sub-function, and the response withheld only if it turned out positive. A negative
+response is never withheld: `11 85` is silent and `11 86` still answers `7F 11 12`.
+
+Two behaviors Phase 6 established changed as a consequence, deliberately and in their own
+commit, and are recorded as DEV-24: `19 82 FF` is now silence rather than `7F 19 12`, and
+`19 82` is `7F 19 13` rather than `7F 19 12`. ReadDTCInformation has a sub-function, so it
+takes part in the rule; the alternative was to record in that table something untrue about
+the service.
 
 Phase 6 corrected DEV-05 and the status half of DEV-16. `19 02 <mask>` is the request
 shape and the mask is applied; the two-byte form is now a length error. The
@@ -140,7 +157,18 @@ supports any value for it. Sub-functions `0x01` and `0x0A` remain Phase 11.
 
 Interoperability evidence: `19 02 <mask>`, a mask matching nothing, `14 FF FF FF`, an
 unsupported group, and clearing in both directions between the OBD and UDS channels were
-all exercised over the kernel ISO-TP path on a vcan interface.
+all exercised over the kernel ISO-TP path on a vcan interface. So were `3E 00`, a
+suppressed `3E 80` producing nothing at all, `10 83` and `11 81` doing the same, a
+suppressed read of the trouble codes, and `11 86` proving a refusal still goes out.
+
+For 0x3E the request and response shapes are corroborated by the AUTOSAR Dcm specification
+(`[SWS_Dcm_00251]`, which names 0x00 and 0x80 as its only sub-function values) and,
+independently, by what udsoncan builds and what Scapy parses. The suppress-bit rule rests
+on `[SWS_Dcm_00200]`, `[SWS_Dcm_00201]`, `[SWS_Dcm_00204]` and `[ECUC_Dcm_00737]`, all
+re-verified against AUTOSAR CP R25-11. **That row has no interoperability evidence**:
+both client libraries set the bit and expect nothing back, so neither has anything to
+parse. ISO 14229-1:2026 clause 6.5 is the normative home of the rule and is licensed and
+unread, so none of this is `standards validated`.
 
 The NRC 0x11 row is DEV-06, corrected in Phase 3. The value `0x11` and the
 `7F <SID> <NRC>` framing are taken from the public description of ISO 14229-1. The
@@ -164,6 +192,13 @@ specification text has not been reviewed, so the row is not `standards validated
 | A clear keeps the configured trouble codes so they can be raised again | yes | yes | yes | n/a | n/a |
 | Diagnostic reads observe state without advancing it | yes | yes | yes | n/a | n/a |
 | Supported parameters derived from the configured vehicle | yes | yes | yes | n/a | n/a |
+| Time taken from an injectable `Clock`; monotonic in production | **yes** | yes | yes | n/a | n/a |
+| Six deterministic generators as pure functions of elapsed time | **yes** | yes | yes | n/a | n/a |
+| Scenario applied before each request and by a periodic tick | **yes** | yes | yes | n/a | n/a |
+| A timed trouble-code event is applied exactly once, ever | **yes** | yes | yes | n/a | n/a |
+| Backward scenario time refused rather than reinterpreted | **yes** | yes | no | n/a | n/a |
+| Scenario configuration validated before any socket opens | **yes** | yes | no | n/a | n/a |
+| Clean shutdown with the periodic tick running | **yes** | yes | **yes** | no | n/a |
 
 The runtime rows describe project behavior, not protocol behavior, so `standards
 validated` does not apply to them, with one exception: the derived status byte and
@@ -175,3 +210,16 @@ as SAE or ISO behavior. Configuration validation in particular is project input
 validation: it rejects profiles this simulator cannot serve faithfully and makes no claim
 about SAE J2012 trouble-code format or any other specification. See
 [decisions/0002-configuration-format-and-validation.md](decisions/0002-configuration-format-and-validation.md).
+
+The Phase 7 runtime rows describe simulation, not protocol. A scenario changes what the
+vehicle *is* -- physical values and trouble-code state, through `VehicleState.set`,
+`DtcStore.update` and `DtcStore.clear` and nothing else -- and the encoders go on encoding
+whatever they find, unchanged. Nothing in a scenario can drop a response, delay one, force
+a negative one or reach a protocol; that is fault injection, which is Phase 10. There is
+no randomness anywhere, seeded or otherwise.
+
+**The shipped `ice_default.yaml` has no scenario**, so the default configuration answers
+exactly what it answered before Phase 7, and a profile without a scenario builds no runner,
+starts no tick and never reads the clock at all. The feature is demonstrated by
+`profiles/ice_scenario.yaml`. See
+[decisions/0006-phase-7-scenario-and-testerpresent.md](decisions/0006-phase-7-scenario-and-testerpresent.md).

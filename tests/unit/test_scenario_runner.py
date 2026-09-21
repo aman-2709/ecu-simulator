@@ -251,6 +251,14 @@ def test_a_clock_that_does_not_advance_produces_no_second_application():
     assert stores["engine"].confirmed == ()
 
 
+def test_a_runner_says_what_it_is_carrying_when_printed():
+    run, _, _ = runner(
+        [{"path": "vehicle.speed", "type": "constant", "value": 1}],
+        [("engine", event(1, "raise_pending", "P0001"))],
+    )
+    assert repr(run) == "ScenarioRunner(signals=1, events=1)"
+
+
 def test_the_runner_reports_which_events_it_has_consumed():
     # The marker is inspectable, so a test can say "this event has been applied" rather
     # than inferring it from state that a clear may have undone.

@@ -68,7 +68,17 @@ evidence its encoding rests on. Nothing is standards validated.
 | 0x11       | ECUReset                 | **reset types** <br> <br> 0x01 hardReset <br> 0x02 keyOffOnReset <br> 0x03 softReset <br> 0x04 enableRapidPowerShutDown <br> 0x05 disableRapidPowerShutDown | 0x0F powerDownTime |
 | 0x14       | ClearDiagnosticInformation | groupOfDTC `FFFFFF` only; any other group gets NRC 0x31 | |
 | 0x19       | ReadDTCInformation       | **report types** <br> <br> 0x02 reportDTCByStatusMask, mask required | <br> 0x8C DTCStatusAvailabilityMask <br> statusOfDTC derived from the store: 0x04 pending, 0x08 confirmed, 0x80 indicator requested |
- 
+| 0x3E       | TesterPresent            | 0x00 zeroSubFunction; anything else gets NRC 0x12 | `7E 00`. Stateless: no S3 timer, no session state, no ISO 14229 session-compliance claim |
+
+Every service above that has a sub-function honours the `suppressPosRspMsgIndicationBit`,
+bit 7 of the sub-function byte. It is handled once at the dispatch layer, not inside any
+handler: the bit is masked off before the service sees the sub-function, the service runs
+normally, and only a *positive* response is withheld. `3E 80`, `10 83` and `19 82 FF` send
+nothing; `3E 81`, `10 85` and `19 81` still get their negative response, because a tester
+that suppressed the answer asked for silence on success, not for its errors to be hidden.
+Services without a sub-function, such as 0x14, are unaffected.
+
+
 ## Requirements
 
 * Linux with SocketCAN and the in-tree ISO-TP kernel module (`CONFIG_CAN_ISOTP`, Linux 5.10 or newer; Ubuntu 24.04 ships it and loads `can_isotp` on demand). GitHub-hosted Azure kernels do not build it.
@@ -117,6 +127,46 @@ ecu-simulator validate-config --profile my_profile.yaml
 Addresses, vehicle data and per-ECU trouble codes come from a YAML profile, validated before anything runs. The shipped default is `src/ecu_simulator/profiles/ice_default.yaml`; copy it and pass `--profile`. Each ECU lists its endpoints, and each endpoint carries its receive and transmit CAN identifiers, whether it is physically or functionally addressed, which protocols it enables, and its padding. The schema is multi-ECU: a second ECU is a second key under `ecus`.
 
 A malformed profile is rejected at load with the dotted path to every problem at once, rather than being silently corrected or failing later (DEV-13, DEV-14). This is project input validation and is not a standards conformance claim.
+
+### Scenarios: state that changes over time
+
+A profile may add a `scenario:` section, and each ECU may add `dtc_events:` beside its
+`dtcs:`. Signals are then driven by generators that are pure functions of the seconds
+elapsed since the simulator started -- `constant`, `ramp`, `sine`, `stepped`, `sequence`
+and `timeline` -- and trouble codes can be raised or cleared at scheduled times:
+
+```yaml
+scenario:
+  tick: 0.5                 # how often the scenario is applied on an idle bus
+  signals:
+    - {path: vehicle.speed, type: ramp, from: 0, to: 120, over: 60}
+    - {path: engine.coolant_temp, type: timeline, points: [{at: 0, value: 20}, {at: 90, value: 92}]}
+
+ecus:
+  engine:
+    dtcs:
+      - {code: P0128, pending: false, confirmed: false}
+    dtc_events:
+      - {at: 40, action: raise_pending, code: P0128}
+```
+
+Everything is deterministic and reproducible: the same elapsed time always gives the same
+answer, there is no randomness of any kind, a read never advances anything, and restarting
+the process replays the scenario from the beginning. A timed event fires exactly once --
+clear it with OBD Mode 04 or UDS 0x14 and it stays cleared.
+
+A scenario changes what the vehicle *is*. It cannot drop, delay, corrupt or override a
+response; fault injection is a later phase. It also cannot invent a trouble code: an event
+may only act on a code the profile already declares, and a scenario naming an unknown
+signal, an unknown code or a nonsensical parameter is rejected at load with its path.
+
+The shipped `ice_default.yaml` deliberately has **no** scenario, so the default
+configuration answers the same bytes it always has. A worked demonstration --- a
+two-minute drive with a warm-up ramp and a thermostat fault --- ships beside it:
+
+```bash
+ecu-simulator --profile src/ecu_simulator/profiles/ice_scenario.yaml --interface vcan0
+```
 
 The simulator no longer configures interfaces, loads kernel modules or needs root; the old `sudo python3 ecu_simulator.py` workflow is gone, and so are `ecu_config.json`, `ecu_config.py` and `addresses.py`.
 

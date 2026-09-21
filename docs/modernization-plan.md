@@ -265,6 +265,29 @@ Deviation in scope: **DEV-23**, its 0x3E half. **DEV-07** is not taken as assign
 forces a decision on where the `suppressPosRspMsgIndicationBit` rule lives, and section
 7.6 of that record puts the options to the user rather than deciding.
 
+**Completed 2026-09-20.** The user ruled on every open question before implementation:
+option B for the suppress bit (handled once for every sub-function service, closing
+DEV-07); the `Dispatcher` applies the scenario before each request; explicit per-event
+idempotence markers rather than arithmetic on a previous timestamp; and the AUTOSAR
+revision check, done first and recorded in section 7.1.
+
+One thing the review had not found came up during implementation and was put back to the
+user before it was written: **0x19 also has a sub-function**, so applying the rule
+honestly changes two behaviors Phase 6 established and pinned. The ruling was to include
+it, with its transition in its own reviewable commit, rather than declare 0x19 as having
+no sub-function and keep the Phase 6 bytes by recording something untrue in the table the
+rule reads from. That correction is **DEV-24**. Phase 6's decision record is unchanged and
+still says what Phase 6 established at that checkpoint.
+
+Delivered: the six generators; `ScenarioRunner` as the only writer; the first production
+use of the `Clock` seam; request-side synchronisation in the `Dispatcher`; a cancellable
+periodic tick; scenario validation at load; stateless 0x3E; generic suppress-bit handling.
+Closed: **DEV-23**, **DEV-07**, **DEV-24**. Corrected without behavior change: the
+fix-phase column of **DEV-09** and **DEV-10**, which said 7 and should have said 5.
+`ice_default.yaml` gained no scenario; `profiles/ice_scenario.yaml` demonstrates the
+feature. **DEV-03**, **DEV-11 Mode 07** and **DEV-15** remain open and evidence-blocked;
+none was pulled into this phase.
+
 Out of this phase, and named because a scenario engine invites them: fault injection of
 every kind (Phase 10), session state, S3 and TesterPresent timing (Phase 11), scenario
 conditions or branching (not planned), and randomness (not needed). The shipped profile
@@ -525,6 +548,18 @@ Phase 7
 42. `feat(clock): Clock protocol with monotonic and simulated implementations`
 43. `feat(scenario): deterministic generators replace speed counter and random coolant`
 44. `feat(uds): stateless 0x3E TesterPresent`
+
+Delivered as eight commits rather than three, in this order, because 42 and half of 43
+were already done and because each wire-visible change was pinned before it moved:
+
+- `test(uds): pin the unsupported-service response for 0x3E`
+- `feat(uds): stateless 0x3E TesterPresent (DEV-23)`
+- `fix(uds): honour suppressPosRspMsgIndicationBit for sub-function services (DEV-07)`
+- `fix(uds): apply suppressPosRspMsgIndicationBit to ReadDTCInformation` (DEV-24)
+- `feat(scenario): deterministic generators and the scenario runner`
+- `feat(app): wire the clock, the dispatcher refresh and the periodic tick`
+- `feat(profiles): a demonstration scenario profile`
+- `docs: Phase 7 conformance, deviations, plan and decision outcome`
 
 Phase 8
 45. `docs: conformance table, hardware testbench, README rewrite`

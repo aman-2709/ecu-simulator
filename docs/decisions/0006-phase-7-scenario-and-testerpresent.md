@@ -1,6 +1,7 @@
 # 0006 — Phase 7 evidence and design review: deterministic scenario engine and minimal 0x3E
 
-Status: proposed 2026-09-19, before any Phase 7 code.
+Status: proposed 2026-09-19, before any Phase 7 code. **Approved with rulings and
+implemented 2026-09-20; see "Outcome of the review" at the end.**
 
 Produced under the documentation and standards verification gate
 ([modernization-plan.md section 11](../modernization-plan.md)). It covers only what Phase 7
@@ -501,3 +502,80 @@ was re-checked against R25-11 and is present, with the load-bearing texts identi
 evidence, the recommendations and the implemented behavior are unaffected; read every
 "R24-11" below as "R25-11, unchanged from R24-11 in every respect this record relies on".
 See section 7.1 of the plan.
+
+
+## Outcome of the review, 2026-09-20
+
+Approved. The user ruled on every open question before implementation began, one further
+question arose during it and was put back before it was written, and all of it is
+implemented. The record above is left as it was written, so that what was known before
+implementation stays distinguishable from what was learned during it.
+
+### The rulings
+
+| Question | Ruling |
+|---|---|
+| Section 7.6, where the suppress-bit rule lives | **Option B.** Handled once, at the UDS service-dispatch layer, for every service explicitly declared to have a sub-function. Not a 0x3E special case. **DEV-07 closes.** Which services have a sub-function must be explicit metadata, never inferred from the shape of a payload |
+| Section 6, lazy evaluation | **Approved as proposed.** `Dispatcher` applies the scenario before dispatching; not `VehicleState.get()`, not tick-only. A request must not advance the clock or derive state from a request count. `apply(t)` deterministic and idempotent for a fixed `t` |
+| Section 5.2, event idempotence | **Strengthened.** An explicit per-event applied-marker, not arithmetic on a previous timestamp, with the tick and the request path sharing one consumption state. Directly tested, including replay after a diagnostic clear |
+| Section 6, concurrency | `apply()` stays serialized and synchronous; the no-await invariant is documented *and* tested. No threads |
+| Section 6, backward time | Never silently reinterpreted. The simpler of the two options: `SimulatedClock` was already monotonic at the source, so the runner refuses a backward `t` with a warning. No rewind or replay semantics |
+| Section 5, scope | Exactly the six generators, pure functions of `t`. No conditions, branching, triggers, randomness, fault injection, protocol-byte actions or sleeps in handlers. Shipped profile stays static |
+| Sections 2 and 3, AUTOSAR revision | Check R25-11 before implementing. Done first; see the revision-check note above and section 7.1 of the plan. No requirement changed, so no evidence row moved. ISO 14229-1:2026 is still unavailable, so `standards validated` stays **no** |
+
+### What the review missed: 0x19 also has a sub-function
+
+Section 7.6 weighs option B entirely in terms of 0x10 and 0x11, because DEV-07 names those
+two. It does not observe that **`UdsProtocol` serves a third sub-function service**:
+0x19 ReadDTCInformation, whose sub-function is the report type. Applying option B honestly
+therefore reaches 0x19 as well, and changes two behaviors Phase 6 established deliberately
+and pinned in two files:
+
+| Request | Phase 6 | After the rule |
+|---|---|---|
+| `19 82 FF` | `7F 19 12` | silence: report type `0x02` runs and its positive response is withheld |
+| `19 82` | `7F 19 12` | `7F 19 13`: report type `0x02` requires a status mask |
+
+Put to the user before any of it was written, with three options: exclude 0x19 by declaring
+it as having no sub-function; include it and fold the change into the DEV-07 commit; or
+include it in a commit of its own. **The ruling was the third.** Declaring 0x19 as having
+no sub-function would have preserved the Phase 6 bytes by recording something untrue in the
+very table the rule reads from, which is worse than a documented wire change.
+
+It is tracked as **DEV-24** rather than folded into DEV-07, whose text names only 0x10 and
+0x11, and [0004](0004-phase-6-dtc-evidence.md) is not rewritten: it still says what Phase 6
+established at that checkpoint.
+
+The evidence that makes this a correction rather than a guess is `19 82` becoming a *length*
+error. If the response were being dropped because bit 7 was set, `19 82` would be silent
+too; it is `7F 19 13` because the bit is masked off first and report type `0x02` is then
+dispatched, failing `0x02`'s own length rule. Supporting material, all re-verified against
+AUTOSAR CP R25-11: `[SWS_Dcm_00204]` scopes the handling to services that have a
+sub-function, and `[ECUC_Dcm_00737] DcmDsdSidTabSubfuncAvail` makes that per-service
+configuration — "true - service has subfunctions, suppressPosRspMsgIndicationBit is
+available" — which is exactly the explicit-metadata mechanism the ruling required.
+
+### Two small design choices worth recording
+
+- **One action sets one flag.** `raise_confirmed` sets `confirmed` alone, not `confirmed`
+  and `pending`. The store models three flags and each is addressable, so a scenario that
+  wants two says so with two events rather than having one action decide. The profile's
+  bare-code shorthand is the *initial* state and is unaffected.
+- **A scenario value outside a wire field is clamped, not rejected.** The encoders have
+  clamped since Phase 5, and an out-of-range profile value has always behaved this way.
+  Validating generator ranges against every encoder was not attempted; the demonstration
+  profile says so in a comment instead.
+
+### Delivered
+
+Eight commits: the `7F 3E 11` pin; stateless 0x3E; generic suppress-bit handling; the 0x19
+transition; generators and runner; the clock, dispatcher refresh and tick; the
+demonstration profile; this documentation. Every wire-visible change was pinned in a
+commit before the one that changed it.
+
+Closed: **DEV-23**, **DEV-07**, **DEV-24**. Corrected without behavior change: the
+fix-phase column of **DEV-09** and **DEV-10**, from 7 to 5. Still open and still
+evidence-blocked, none pulled into this phase: **DEV-03**, **DEV-11 Mode 07**, **DEV-15**,
+**DEV-12**, **DEV-16**'s remaining halves, **DEV-17**.
+
+Nothing in this phase is `standards validated`.

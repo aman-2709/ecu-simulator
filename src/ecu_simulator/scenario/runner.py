@@ -56,17 +56,6 @@ class Scenario:
     signals: tuple[SignalScenario, ...] = ()
     events: tuple[tuple[str, DtcEvent], ...] = ()
 
-    @property
-    def is_empty(self) -> bool:
-        return not self.signals and not self.events
-
-    def value_at(self, path: str, t: float) -> float | None:
-        """The value this scenario gives ``path`` at ``t``, or ``None`` if it drives none."""
-        for signal in self.signals:
-            if signal.path == path:
-                return signal.value_at(t)
-        return None
-
 
 @dataclass(slots=True)
 class _Event:
