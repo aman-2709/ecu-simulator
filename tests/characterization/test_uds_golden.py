@@ -151,7 +151,7 @@ def test_0x19_02_with_empty_dtc_list_returns_header_only():
 # --- Unsupported services and malformed input ------------------------------------------------
 
 
-@pytest.mark.parametrize("request_hex", ["22f190", "3e00", "3e80", "2701", "2e", "3101", "7f", "50", "ff"])
+@pytest.mark.parametrize("request_hex", ["22f190", "2701", "2e", "3101", "7f", "50", "ff"])
 def test_the_uds_protocol_does_not_claim_these_service_identifiers(request_hex):
     # Since DEV-06 these never reach a protocol at all: the route's unsupported-service
     # policy answers them (see below). The protocol must not start claiming them.
@@ -165,24 +165,37 @@ def test_unsupported_sids_on_the_physical_address_get_nrc_0x11(request_hex, expe
     assert engine_uds(request_hex).hex() == expected
 
 
-@pytest.mark.parametrize("request_hex", ["3e00", "3e80", "3e", "3e0000", "3e01", "3e81"])
-def test_0x3e_today_is_answered_by_the_routes_unsupported_service_policy(request_hex):
-    # Pinned before Phase 7 claims the service identifier, the way Phase 6 pinned
-    # 19 82 FF before changing it. No protocol claims 0x3E today, so every form of the
-    # request -- the valid one, the suppressed one, the truncated one, the over-long one
-    # and unsupported sub-functions -- gets the same 7F 3E 11 from the route policy that
-    # DEV-06 introduced. Each of these is about to mean something different.
-    assert engine_uds(request_hex).hex() == "7f3e11"
+@pytest.mark.parametrize(
+    "request_hex, expected",
+    [
+        ("3e00", "7e00"),
+        ("3e80", "7f3e12"),
+        ("3e", "7f3e13"),
+        ("3e0000", "7f3e13"),
+        ("3e01", "7f3e12"),
+        ("3e81", "7f3e12"),
+    ],
+)
+def test_0x3e_is_answered_by_the_uds_protocol(request_hex, expected):
+    # The transition of the pin added in the commit before this one. Every one of these
+    # six was 7F 3E 11 from the route's unsupported-service policy; UdsProtocol now claims
+    # the service identifier and each request means something of its own.
+    #
+    # 3E 80 is the one line here that is not final: the suppressPosRspMsgIndicationBit is
+    # a framing rule about sub-functions rather than a sub-function of 0x3E, so it is not
+    # this service's business and arrives in its own commit. Until it does, 0x80 is simply
+    # a sub-function 0x3E does not support. DEV-07 records the same gap for 0x10 and 0x11.
+    assert engine_uds(request_hex).hex() == expected
 
 
-def test_0x3e_reaches_no_protocol_today():
-    # The other half of the pin: the response above comes from the route, not from a
-    # handler that happens to return the same bytes.
-    assert protocol().handle(ServiceRequest(b"\x3e\x00")) is None
+def test_0x3e_now_reaches_the_protocol():
+    # The other half of the transition: the bytes come from a handler, not from the route.
+    assert protocol().handle(ServiceRequest(b"\x3e\x00")).hex() == "7e00"
 
 
-@xfail_deviation("DEV-23", "0x3E TesterPresent is not implemented")
 def test_0x3e_tester_present_corrected():
+    # DEV-23, second half, fixed in Phase 7; the strict xfail this test carried since
+    # Phase 0 is removed in the commit that makes it pass.
     assert uds("3e00").hex() == "7e00"
 
 

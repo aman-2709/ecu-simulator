@@ -34,7 +34,14 @@ def ask(hex_request):
 def test_the_protocol_claims_the_services_the_legacy_table_claimed():
     proto, _ = protocol()
     assert proto.name == "uds"
-    assert proto.service_ids == frozenset({0x10, 0x11, 0x14, 0x19})
+    assert frozenset({0x10, 0x11, 0x14, 0x19}) <= proto.service_ids
+
+
+def test_the_protocol_also_claims_tester_present():
+    # Phase 7, DEV-23: 0x3E was answered by the route's unsupported-service policy until
+    # this phase. Nothing else was added, and nothing the legacy table claimed was dropped.
+    proto, _ = protocol()
+    assert proto.service_ids == frozenset({0x10, 0x11, 0x14, 0x19, 0x3E})
 
 
 # --- 0x10 DiagnosticSessionControl ------------------------------------------------------------
@@ -189,8 +196,51 @@ def test_0x14_on_an_empty_store_still_acknowledges():
 # --- unsupported and malformed -------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("request_hex", ["22f190", "3e00", "2701", "3101"])
+@pytest.mark.parametrize("request_hex", ["22f190", "2701", "3101"])
 def test_services_this_protocol_does_not_claim_are_not_answered(request_hex):
     # The ECU's route policy answers these, not the protocol; it must not claim them.
     proto, _ = protocol()
     assert bytes.fromhex(request_hex)[0] not in proto.service_ids
+
+
+# --- 0x3E TesterPresent -----------------------------------------------------------------------
+#
+# Phase 7, DEV-23's remaining half. Stateless by construction: no timer is started, read
+# or reset, no session state is created or consulted, and nothing here claims ISO 14229
+# session compliance. S3 and session timing are Phase 11. Evidence in
+# docs/decisions/0006-phase-7-scenario-and-testerpresent.md, rows W1, W3 and W4.
+
+
+def test_0x3e_zero_subfunction_is_acknowledged():
+    assert ask("3e00").hex() == "7e00"
+
+
+@pytest.mark.parametrize("request_hex", ["3e01", "3e02", "3e7f", "3eff", "3e81"])
+def test_0x3e_any_other_subfunction_is_not_supported(request_hex):
+    assert ask(request_hex).hex() == "7f3e12"
+
+
+@pytest.mark.parametrize("request_hex", ["3e", "3e0000", "3e000000"])
+def test_0x3e_a_request_that_is_not_two_bytes_is_a_length_error(request_hex):
+    assert ask(request_hex).hex() == "7f3e13"
+
+
+def test_0x3e_checks_the_subfunction_before_the_length_like_0x19():
+    # 3E 01 00 is both an unsupported sub-function and the wrong length. The sub-function
+    # decides, which is the ordering Phase 6 chose for 0x19; one global length check first
+    # would hide an unsupported sub-function behind a length error.
+    assert ask("3e0100").hex() == "7f3e12"
+
+
+def test_0x3e_answers_the_same_bytes_however_often_it_is_asked():
+    # Statelessness, asserted rather than described: no counter, no session, no timer.
+    proto, _ = protocol()
+    answers = [proto.handle(ServiceRequest(b"\x3e\x00")) for _ in range(5)]
+    assert answers == [b"\x7e\x00"] * 5
+
+
+def test_0x3e_does_not_disturb_the_dtc_store():
+    proto, store = protocol()
+    proto.handle(ServiceRequest(b"\x3e\x00"))
+    assert tuple(s.code for s in store.confirmed) == ("B1477",)
+    assert tuple(s.code for s in store.pending) == ("B1477", "P0001")

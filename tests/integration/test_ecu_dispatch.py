@@ -97,3 +97,34 @@ def test_unknown_service_on_a_physical_address_gets_nrc_0x11(uds_physical):
     # DEV-06 corrected, from the route's unsupported-service policy.
     uds_physical.send(b"\x22\xf1\x90")
     assert uds_physical.recv() == b"\x7f\x22\x11"
+
+
+def test_tester_present_is_answered_on_the_wire(uds_physical):
+    # DEV-23, second half, Phase 7. Until this phase 0x3E was answered 7F 3E 11 by the
+    # same unsupported-service policy as the request above.
+    uds_physical.send(b"\x3e\x00")
+    assert uds_physical.recv() == b"\x7e\x00"
+
+
+def test_tester_present_changes_nothing_a_later_request_can_see(uds_physical):
+    # Stateless on the wire, not just in the handler: the service is asked several times
+    # between two reads of the same data and the second read is byte-identical.
+    uds_physical.send(b"\x19\x02\xff")
+    before = uds_physical.recv()
+    for _ in range(3):
+        uds_physical.send(b"\x3e\x00")
+        assert uds_physical.recv() == b"\x7e\x00"
+    uds_physical.send(b"\x19\x02\xff")
+    assert uds_physical.recv() == before
+
+
+def test_a_tester_present_subfunction_this_server_does_not_support_is_refused(uds_physical):
+    uds_physical.send(b"\x3e\x01")
+    assert uds_physical.recv() == b"\x7f\x3e\x12"
+
+
+def test_tester_present_on_the_obd_broadcast_address_reaches_no_protocol(functional):
+    # UDS is not enabled on 0x7DF, so claiming 0x3E does not make it answerable there.
+    functional.send(b"\x3e\x00")
+    with pytest.raises(TimeoutError):
+        functional.recv()

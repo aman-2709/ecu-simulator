@@ -38,9 +38,16 @@ DIAGNOSTIC_SESSION_CONTROL = 0x10
 ECU_RESET = 0x11
 CLEAR_DIAGNOSTIC_INFORMATION = 0x14
 READ_DTC_INFORMATION = 0x19
+TESTER_PRESENT = 0x3E
 
 SERVICE_IDS = frozenset(
-    {DIAGNOSTIC_SESSION_CONTROL, ECU_RESET, CLEAR_DIAGNOSTIC_INFORMATION, READ_DTC_INFORMATION}
+    {
+        DIAGNOSTIC_SESSION_CONTROL,
+        ECU_RESET,
+        CLEAR_DIAGNOSTIC_INFORMATION,
+        READ_DTC_INFORMATION,
+        TESTER_PRESENT,
+    }
 )
 
 # DEV-17, preserved: P2 = 0x001E (30 ms), P2* = 0x0BB8. No session state is kept and no
@@ -60,9 +67,16 @@ REPORT_DTC_BY_STATUS_MASK = 0x02
 GROUP_OF_DTC_ALL = 0xFFFFFF
 CLEAR_REQUEST_LENGTH = 4
 
+# 0x3E's only sub-function. AUTOSAR [SWS_Dcm_00251] names 0x00 and 0x80 as the service's
+# two values; 0x80 is 0x00 with the suppressPosRspMsgIndicationBit set, which is a framing
+# rule about sub-functions rather than a second sub-function, and is handled before this
+# service sees the byte. Nothing here needs to know about it.
+ZERO_SUB_FUNCTION = 0x00
+TESTER_PRESENT_REQUEST_LENGTH = 2
+
 
 class UdsProtocol:
-    """Serves UDS 0x10, 0x11 and 0x19 for one ECU."""
+    """Serves UDS 0x10, 0x11, 0x14, 0x19 and 0x3E for one ECU."""
 
     name = "uds"
     service_ids = SERVICE_IDS
@@ -84,6 +98,8 @@ class UdsProtocol:
             return self._clear_diagnostic_information(payload)
         if sid == READ_DTC_INFORMATION:
             return self._read_dtc_information(payload)
+        if sid == TESTER_PRESENT:
+            return self._tester_present(payload)
         return None  # pragma: no cover - the ECU only routes claimed SIDs here
 
     # -- 0x10 ------------------------------------------------------------------------------------
@@ -184,6 +200,35 @@ class UdsProtocol:
         header = bytes([positive_response_sid(READ_DTC_INFORMATION), report_type, AVAILABILITY_MASK])
         records = self.dtc_providers.read(status_mask)
         return header + b"".join(record.to_bytes() for record in records)
+
+    # -- 0x3E ------------------------------------------------------------------------------------
+
+    def _tester_present(self, payload: bytes) -> bytes:
+        """``3E 00`` is answered ``7E 00``. Stateless: no timer, no session, no counter.
+
+        TesterPresent exists in ISO 14229 to keep a non-default session alive by resetting
+        the S3 timer. This simulator has no session state and no timer, so the service is
+        implemented as what it is on the wire and nothing more: the request is validated,
+        the sub-function is echoed back, and the server's state is exactly what it was
+        before. S3, session timing and Concurrent TesterPresent are Phase 11.
+
+        The sub-function is checked before the length that sub-function requires, which is
+        the ordering Phase 6 chose for 0x19. A one-byte request carries no sub-function to
+        dispatch on at all, so that is a length error.
+
+        ISO 14229-1:2026 is licensed and unread. The request and response shapes are
+        corroborated by the AUTOSAR Dcm specification and, independently, by what udsoncan
+        builds and what Scapy parses; nothing here is standards validated. See
+        docs/decisions/0006-phase-7-scenario-and-testerpresent.md, rows W1, W3 and W4.
+        """
+        if len(payload) < TESTER_PRESENT_REQUEST_LENGTH:
+            return self._nrc(TESTER_PRESENT, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
+        sub_function = payload[1]
+        if sub_function != ZERO_SUB_FUNCTION:
+            return self._nrc(TESTER_PRESENT, NRC_SUB_FUNCTION_NOT_SUPPORTED)
+        if len(payload) != TESTER_PRESENT_REQUEST_LENGTH:
+            return self._nrc(TESTER_PRESENT, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
+        return bytes([positive_response_sid(TESTER_PRESENT), sub_function])
 
     # -- framing ---------------------------------------------------------------------------------
 
