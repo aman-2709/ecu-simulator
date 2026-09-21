@@ -19,7 +19,6 @@ from ecu_simulator.cli import default_profile_path
 from ecu_simulator.config import load_profile
 from ecu_simulator.protocols.base import ServiceRequest, negative_response, positive_response_sid
 from ecu_simulator.transport import DiagnosticRequest
-from tests.characterization.conftest import xfail_deviation
 
 
 def protocol():
@@ -56,13 +55,24 @@ def test_0x10_negative_responses(request_hex, expected):
     assert uds(request_hex).hex() == expected
 
 
-def test_0x10_suppress_positive_response_bit_today_is_rejected():
-    assert uds("1083").hex() == "7f1012"
-
-
-@xfail_deviation("DEV-07", "suppressPosRspMsgIndicationBit is not masked")
 def test_0x10_suppress_positive_response_bit_corrected():
+    # DEV-07, fixed in Phase 7. The plain pin that asserted 7F 10 12 here is replaced by
+    # its own correction, and the strict xfail marker is removed in the commit that makes
+    # this pass. 0x83 masks to extendedDiagnosticSession, which this server supports, so
+    # the service runs and its positive response is withheld.
     assert uds("1083") is None
+
+
+@pytest.mark.parametrize("session", ["81", "82", "83", "84"])
+def test_0x10_every_supported_session_can_be_asked_for_silently(session):
+    assert uds("10" + session) is None
+
+
+@pytest.mark.parametrize("session", ["80", "85", "ff"])
+def test_0x10_a_suppressed_request_for_an_unsupported_session_is_still_refused(session):
+    # A negative response is never withheld. This is also what proves the bit was masked
+    # off and the sub-function then matched on its value.
+    assert uds("10" + session).hex() == "7f1012"
 
 
 # --- 0x11 ECUReset -----------------------------------------------------------------------
@@ -84,13 +94,19 @@ def test_0x11_negative_responses(request_hex, expected):
     assert uds(request_hex).hex() == expected
 
 
-def test_0x11_suppress_positive_response_bit_today_is_rejected():
-    assert uds("1181").hex() == "7f1112"
-
-
-@xfail_deviation("DEV-07", "suppressPosRspMsgIndicationBit is not masked")
 def test_0x11_suppress_positive_response_bit_corrected():
+    # DEV-07, the other half, fixed in the same commit.
     assert uds("1181") is None
+
+
+@pytest.mark.parametrize("reset_type", ["81", "82", "83", "84", "85"])
+def test_0x11_every_supported_reset_can_be_asked_for_silently(reset_type):
+    assert uds("11" + reset_type) is None
+
+
+@pytest.mark.parametrize("reset_type", ["80", "86", "ff"])
+def test_0x11_a_suppressed_request_for_an_unsupported_reset_is_still_refused(reset_type):
+    assert uds("11" + reset_type).hex() == "7f1112"
 
 
 # --- 0x19 ReadDTCInformation ----------------------------------------------------------------
@@ -169,7 +185,7 @@ def test_unsupported_sids_on_the_physical_address_get_nrc_0x11(request_hex, expe
     "request_hex, expected",
     [
         ("3e00", "7e00"),
-        ("3e80", "7f3e12"),
+        ("3e80", None),
         ("3e", "7f3e13"),
         ("3e0000", "7f3e13"),
         ("3e01", "7f3e12"),
@@ -181,11 +197,12 @@ def test_0x3e_is_answered_by_the_uds_protocol(request_hex, expected):
     # six was 7F 3E 11 from the route's unsupported-service policy; UdsProtocol now claims
     # the service identifier and each request means something of its own.
     #
-    # 3E 80 is the one line here that is not final: the suppressPosRspMsgIndicationBit is
-    # a framing rule about sub-functions rather than a sub-function of 0x3E, so it is not
-    # this service's business and arrives in its own commit. Until it does, 0x80 is simply
-    # a sub-function 0x3E does not support. DEV-07 records the same gap for 0x10 and 0x11.
-    assert engine_uds(request_hex).hex() == expected
+    # 3E 80 became silence in the commit after this table was written, when the
+    # suppressPosRspMsgIndicationBit gained its own generic handling; 3E 81 did not,
+    # because its sub-function is still unsupported once the bit is masked off and a
+    # negative response is never withheld.
+    response = engine_uds(request_hex)
+    assert (response.hex() if response is not None else None) == expected
 
 
 def test_0x3e_now_reaches_the_protocol():

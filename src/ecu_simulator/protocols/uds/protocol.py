@@ -22,6 +22,7 @@ import logging
 
 from ecu_simulator.dtc import DtcStore
 from ecu_simulator.protocols.base import (
+    NEGATIVE_RESPONSE_SID,
     NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT,
     NRC_REQUEST_OUT_OF_RANGE,
     NRC_SUB_FUNCTION_NOT_SUPPORTED,
@@ -67,6 +68,20 @@ REPORT_DTC_BY_STATUS_MASK = 0x02
 GROUP_OF_DTC_ALL = 0xFFFFFF
 CLEAR_REQUEST_LENGTH = 4
 
+# Which services have a sub-function, and therefore for which of them the
+# suppressPosRspMsgIndicationBit exists at all. AUTOSAR gates the whole handling on this
+# ([SWS_Dcm_00204]) and makes it per-service configuration rather than something derived
+# from the request: [ECUC_Dcm_00737] DcmDsdSidTabSubfuncAvail, "true - service has
+# subfunctions, suppressPosRspMsgIndicationBit is available". This table is that
+# configuration. It is never inferred from the shape of a payload, because a payload byte
+# in bit-7 position is not evidence of anything -- 0x14's groupOfDTC 0xFFFFFF has bit 7
+# set in exactly that position and must not be touched.
+SUB_FUNCTION_SERVICES = frozenset({DIAGNOSTIC_SESSION_CONTROL, ECU_RESET, TESTER_PRESENT})
+
+# Bit 7 of the sub-function byte: "do not send me a positive response".
+SUPPRESS_POS_RSP_MSG_INDICATION_BIT = 0x80
+SUB_FUNCTION_VALUE_MASK = 0x7F
+
 # 0x3E's only sub-function. AUTOSAR [SWS_Dcm_00251] names 0x00 and 0x80 as the service's
 # two values; 0x80 is 0x00 with the suppressPosRspMsgIndicationBit set, which is a framing
 # rule about sub-functions rather than a second sub-function, and is handled before this
@@ -88,8 +103,45 @@ class UdsProtocol:
         self.dtcs = dtcs if dtcs is not None else DtcStore()
 
     def handle(self, request: ServiceRequest) -> bytes | None:
+        """Apply the sub-function framing rules, run the service, then decide what goes out.
+
+        The suppressPosRspMsgIndicationBit is bit 7 of the sub-function byte and is not a
+        sub-function value. It is handled here, once, for every service the table above
+        declares to have a sub-function, so that no service handler contains a copy of the
+        rule and no handler can disagree with another about it. The order matters and is
+        AUTOSAR's:
+
+        1. does this service have a sub-function at all? If not, nothing below happens and
+           the payload reaches the service untouched ([SWS_Dcm_00204]);
+        2. read the suppression intent from bit 7, and remember it;
+        3. mask the bit off before the service sees the byte ([SWS_Dcm_00201]), so a
+           sub-function is matched on its value and a service never learns about the bit;
+        4. run the service normally, whatever it is;
+        5. withhold the response only if it is a positive one ([SWS_Dcm_00200]).
+
+        Step 5 is the part that is easy to get wrong. A response is not withheld because
+        bit 7 was set; it is withheld because bit 7 was set *and* the service succeeded.
+        A sub-function this server does not support, or a malformed request, still gets
+        its negative response -- a tester that suppressed the positive answer is asking
+        for silence on success, not for its errors to be hidden.
+
+        ISO 14229-1:2026 clause 6.5 is the normative home of this rule and is licensed and
+        unread; the rule above is taken from three named AUTOSAR requirements, which is
+        documentary evidence and not a conformance claim. See docs/decisions/0006, row W2.
+        """
         payload = request.payload
         sid = payload[0]
+        suppress = False
+        if sid in SUB_FUNCTION_SERVICES and len(payload) > 1:
+            suppress = bool(payload[1] & SUPPRESS_POS_RSP_MSG_INDICATION_BIT)
+            payload = bytes([sid, payload[1] & SUB_FUNCTION_VALUE_MASK]) + payload[2:]
+        response = self._serve(sid, payload)
+        if suppress and response is not None and response[0] != NEGATIVE_RESPONSE_SID:
+            logger.info("UDS SID 0x%02X: positive response suppressed at the tester's request", sid)
+            return None
+        return response
+
+    def _serve(self, sid: int, payload: bytes) -> bytes | None:
         if sid == DIAGNOSTIC_SESSION_CONTROL:
             return self._session_control(payload)
         if sid == ECU_RESET:

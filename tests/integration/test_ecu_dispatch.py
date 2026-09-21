@@ -123,6 +123,49 @@ def test_a_tester_present_subfunction_this_server_does_not_support_is_refused(ud
     assert uds_physical.recv() == b"\x7f\x3e\x12"
 
 
+def test_a_suppressed_positive_response_is_not_transmitted(uds_physical):
+    # DEV-07, Phase 7, on the wire rather than in the handler: nothing at all is put on
+    # the bus, so a tester that asked for silence waits for its own timeout.
+    uds_physical.send(b"\x3e\x80")
+    with pytest.raises(TimeoutError):
+        uds_physical.recv()
+
+
+def test_the_channel_still_works_after_a_suppressed_response(uds_physical):
+    # The suppression withholds one response; it does not wedge the socket or leave a
+    # half-sent frame behind for the next request to trip over.
+    uds_physical.send(b"\x3e\x80")
+    with pytest.raises(TimeoutError):
+        uds_physical.recv()
+    uds_physical.send(b"\x3e\x00")
+    assert uds_physical.recv() == b"\x7e\x00"
+
+
+@pytest.mark.parametrize("request_hex", ["1083", "1181"], ids=["session", "reset"])
+def test_a_suppressed_service_that_is_not_tester_present_is_silent_too(uds_physical, request_hex):
+    # The rule is generic, and the wire proves it for the two services DEV-07 named.
+    uds_physical.send(bytes.fromhex(request_hex))
+    with pytest.raises(TimeoutError):
+        uds_physical.recv()
+
+
+def test_a_suppressed_request_does_not_hide_a_negative_response(uds_physical):
+    # 0x85 masks to reset type 0x05, which is supported, so it is silent; 0x86 masks to
+    # 0x06, which is not, so its refusal goes out.
+    uds_physical.send(b"\x11\x85")
+    with pytest.raises(TimeoutError):
+        uds_physical.recv()
+    uds_physical.send(b"\x11\x86")
+    assert uds_physical.recv() == b"\x7f\x11\x12"
+
+
+def test_clearing_dtcs_is_not_mistaken_for_a_suppressed_request(uds_physical):
+    # 0x14 has no sub-function, and the second byte of its only served groupOfDTC is 0xFF.
+    # Nothing masks it and nothing withholds the acknowledgement.
+    uds_physical.send(b"\x14\xff\xff\xff")
+    assert uds_physical.recv() == b"\x54"
+
+
 def test_tester_present_on_the_obd_broadcast_address_reaches_no_protocol(functional):
     # UDS is not enabled on 0x7DF, so claiming 0x3E does not make it answerable there.
     functional.send(b"\x3e\x00")
