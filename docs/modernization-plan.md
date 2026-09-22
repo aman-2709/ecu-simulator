@@ -299,6 +299,26 @@ today.
 `setup_can.sh` bitrate handling, `--bitrate` guidance, `tests/hardware` opt-in suite,
 `docs/hardware-testbench.md` with exact hardware and firmware, troubleshooting. Risk M.
 
+Reviewed 2026-09-22 before implementation:
+[decisions/0007-phase-8-hardware-validation.md](decisions/0007-phase-8-hardware-validation.md).
+**Not started.** The review establishes the scope, the bench by capability, the
+`setup_can.sh` gaps that a physical bus exposes and a virtual one never does, a
+nineteen-point ELM327 acceptance list, the rules the opt-in suite must obey, and fifteen
+acceptance criteria. It deliberately names no specific adapter: a bench that does not
+exist has no exact hardware, and section 11 exists to stop plausible values being invented.
+
+Two findings worth carrying forward. The ELM327 datasheet revision **ELM327DSJ** was
+re-checked against the manufacturer's canonical URL and is current, so no inventory row
+changes. And from firmware 2.1 the ELM327 measures the bus frequency and refuses to
+transmit when it does not match the selected protocol, so a bitrate mismatch on the bench
+presents as **silence** rather than as an error -- which is why the review asks for a
+bitrate warning at setup time.
+
+Phase 8 is the **V1.0 gate**, and it is the only phase that can put a `yes` in the
+`hardware validated` column. Six questions are open for the user, the first being whether
+hardware is available at all; if none is, the documentation-and-script half is deliverable
+on its own and the phase is reported **partially complete**, never complete.
+
 ### Phase 9 — Multi-ECU (V1.1)
 
 `profiles/multi_ecu.yaml`, functional fan-out integration test, `list-ecus`, 29-bit
