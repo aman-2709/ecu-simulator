@@ -218,6 +218,14 @@ whatever they find, unchanged. Nothing in a scenario can drop a response, delay 
 a negative one or reach a protocol; that is fault injection, which is Phase 10. There is
 no randomness anywhere, seeded or otherwise.
 
+Phase 7's behavior was also accepted by hand at `c81d3e8`, independently of the automated
+suites: ten UDS requests on the default profile and a twenty-one-point run of the
+demonstration scenario, each checked against the simulator's logs and an independent
+`candump` trace. That run confirms the tables above rather than extending them -- it names
+no physical adapter, so no row gained `hardware validated`, and agreement with a reader is
+not specification text, so no row gained `standards validated`. It is recorded in
+[decisions/0006](decisions/0006-phase-7-scenario-and-testerpresent.md).
+
 **The shipped `ice_default.yaml` has no scenario**, so the default configuration answers
 exactly what it answered before Phase 7, and a profile without a scenario builds no runner,
 starts no tick and never reads the clock at all. The feature is demonstrated by

@@ -600,6 +600,40 @@ predicts and an accident would not produce:
 - **`14 FF FF FF` is absent.** The one service here with no sub-function, and the one whose
   second byte has bit 7 set, is untouched.
 
+### Independent manual acceptance, 2026-09-22
+
+Run by the user against `c81d3e8`, independently of the automated suites, and reported as
+passing in full. Recorded here because the phase completion gate asks for evidence rather
+than assertions, and because a hand-driven run exercises the one thing the test suites
+cannot: a person reading the bytes on the bus and deciding whether they are right.
+
+**UDS behavior, default profile — 10 requests, all as expected**, confirmed against both
+the simulator's own logs and an independent `candump` trace: TesterPresent, suppression of
+positive responses, preservation of negative responses, and the new `0x19` suppress-bit
+behavior.
+
+**The demonstration scenario, `ice_scenario.yaml` — 21 checks, all passing:**
+
+| Check | Result |
+|---|---|
+| Speed, engine speed and coolant follow the configured generators | as configured |
+| Repeated speed reads do not advance the scenario | confirmed; a read observes |
+| `P0128` pending at 40 s | as configured |
+| `P0128` confirmed with the indicator requested at 75 s | as configured |
+| OBD Mode 04 clears the fault in both the OBD and the UDS view | confirmed |
+| The fault is still cleared at 125 s and was not replayed | confirmed |
+| Clean shutdown, exit status 0 | confirmed |
+
+The CAN trace independently confirms the expected response bytes. No manual-test failure
+remains open.
+
+**This changes no status column.** In particular it does not make anything
+`hardware validated`: that column requires physical CAN with a named adapter and firmware
+revision, which is Phase 8's subject, and this run named none. Nor does it make anything
+`standards validated` — a person agreeing with the bytes is not the specification text.
+What it is, is independent confirmation that the behavior this phase implemented is the
+behavior that reaches a tester.
+
 ### Delivered
 
 Eight commits: the `7F 3E 11` pin; stateless 0x3E; generic suppress-bit handling; the 0x19
