@@ -285,7 +285,9 @@ periodic tick; scenario validation at load; stateless 0x3E; generic suppress-bit
 Closed: **DEV-23**, **DEV-07**, **DEV-24**. Corrected without behavior change: the
 fix-phase column of **DEV-09** and **DEV-10**, which said 7 and should have said 5.
 `ice_default.yaml` gained no scenario; `profiles/ice_scenario.yaml` demonstrates the
-feature. **DEV-03**, **DEV-11 Mode 07** and **DEV-15** remain open and evidence-blocked;
+feature. Independent manual acceptance passed on 2026-09-22, 10/10 on UDS and 21/21 on the
+scenario; the full verification and acceptance report, with CAN traces, is
+[validation/phase-7-acceptance.md](validation/phase-7-acceptance.md). **DEV-03**, **DEV-11 Mode 07** and **DEV-15** remain open and evidence-blocked;
 none was pulled into this phase.
 
 Out of this phase, and named because a scenario engine invites them: fault injection of

@@ -224,7 +224,9 @@ demonstration scenario, each checked against the simulator's logs and an indepen
 `candump` trace. That run confirms the tables above rather than extending them -- it names
 no physical adapter, so no row gained `hardware validated`, and agreement with a reader is
 not specification text, so no row gained `standards validated`. It is recorded in
-[decisions/0006](decisions/0006-phase-7-scenario-and-testerpresent.md).
+[decisions/0006](decisions/0006-phase-7-scenario-and-testerpresent.md), and reported in full,
+with CAN traces and the automated results, in
+[validation/phase-7-acceptance.md](validation/phase-7-acceptance.md).
 
 **The shipped `ice_default.yaml` has no scenario**, so the default configuration answers
 exactly what it answered before Phase 7, and a profile without a scenario builds no runner,
