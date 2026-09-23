@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Phase 7 scenario acceptance: drive ice_scenario.yaml on a real bus and check the bytes.
 
-**Provenance.** This script was written in the documentation session of 2026-09-22 to make
-the manual Phase 7 acceptance reproducible. It is *not* the script the reviewer ran by
-hand; that one was not kept. It checks the same behaviors at the same checkpoints, and its
-own results are recorded in docs/validation/phase-7-acceptance.md as a separate,
-independently produced run. Where the two agree, the report says so; nothing here is
-presented as the reviewer's evidence.
+**Status.** This is the official Phase 7 acceptance script for this repository, so
+designated by the reviewer on 2026-09-22.
+
+**Provenance, which the status does not change.** It was written in the documentation
+session of 2026-09-22 to make the manual Phase 7 acceptance reproducible. It is *not* the
+script the reviewer ran by hand; that one was not kept, and no attempt has been made to
+reconstruct it. This script checks the same behaviors at the same checkpoints and was run
+independently: 23 checks, all passing, against a reviewer run of 21 checks, all passing.
+docs/validation/phase-7-acceptance.md reports the two as two runs that agree, never as
+one, and nothing here is presented as the reviewer's evidence.
 
 It runs in real time against a real ISO-TP socket, so the whole run takes just over two
 minutes. That is the point: the unit suite already proves the scenario logic against a

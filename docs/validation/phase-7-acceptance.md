@@ -25,7 +25,7 @@ This report draws on **three separate sources of evidence**, and they are never 
 | Source | Who produced it | How it is marked |
 |---|---|---|
 | **Manual acceptance** | The reviewer, by hand, on 2026-09-22 | "reported by the reviewer". Their values, their run |
-| **Scripted re-run** | Written and executed while producing this report, 2026-09-22 | "scripted re-run". A second, independent run |
+| **Scripted re-run** | Written and executed while producing this report, 2026-09-22; since designated the repository's official Phase 7 acceptance script | "scripted re-run". A second, independent run |
 | **Automated suites** | `pytest` at `08698d2` | Section 6 |
 
 Two limits follow, and both matter more than the convenience of a tidier document:
@@ -35,9 +35,20 @@ Two limits follow, and both matter more than the convenience of a tidier documen
   was written for this report, checks the same behaviors at the same checkpoints, and was
   run; its results are reported as its own. Nothing in this document reconstructs the
   reviewer's script or presents anything as its output.
+
+  On **2026-09-22 the reviewer designated that script the official Phase 7 acceptance
+  script** for this repository, on the grounds that it reproduced the behavior their
+  21-check run verified and that a second, largely duplicate script would earn nothing.
+  **Being the official script does not make it the reviewer's script**, and this report
+  does not treat the two runs as one. Its 23 checks are the repeatable form of the
+  acceptance; their 21 checks are the independent human verification that it agrees with.
 - **Every CAN trace in section 5 is from the scripted re-run**, captured with `candump`
   during runs performed while writing this report. No trace from the manual session was
   available, and none has been invented.
+
+  The complete captures and the machine-readable results are retained in
+  [phase-7-evidence/](phase-7-evidence/), so the excerpts quoted below can be checked
+  against the whole capture rather than taken on trust.
 
 Where the two runs agree, section 4 says so explicitly. That agreement is itself the
 useful finding: two independently constructed runs of the same scenario produced the same
@@ -224,10 +235,19 @@ Command: `scripts/acceptance/run_phase7_acceptance.sh`. It uses 23 checks rather
 because two of the reviewer's checkpoints are expressed here as two assertions each. **No
 disagreement with the reviewer's reported values was found at any checkpoint.**
 
+The per-check record, with each check's configured and actual timestamp, request, expected
+bytes, observed bytes and verdict, is retained at
+[phase-7-evidence/scenario-run-results.json](phase-7-evidence/scenario-run-results.json).
+
 ## 5. CAN / ISO-TP traces
 
 Captured with `candump -L` during the runs described above, in a private namespace.
-Timestamps are relative to the first frame; `vcan0` omitted for width.
+Timestamps are relative to the first frame; `vcan0` omitted for width. The unedited
+captures are retained at
+[phase-7-evidence/uds-default-profile.candump.log](phase-7-evidence/uds-default-profile.candump.log)
+and
+[phase-7-evidence/scenario-run.candump.log](phase-7-evidence/scenario-run.candump.log);
+the excerpts below are selections from them, annotated.
 
 ### 5.1 UDS on the default profile — suppression and flow control
 
@@ -567,7 +587,7 @@ Stated plainly, because a report that omits them overstates what was achieved.
 |---|---|
 | Manual UDS verification | **10 / 10 passed**, as reported by the reviewer |
 | Manual scenario acceptance | **21 / 21 passed**, as reported by the reviewer |
-| Scripted re-run of the scenario | **23 / 23 passed**, clean exit; no disagreement with the reviewer at any checkpoint |
+| Scripted re-run of the scenario | **23 / 23 passed**, clean exit; no disagreement with the reviewer at any checkpoint. Now the repository's official Phase 7 acceptance script |
 | Unit and characterization | **837 passed**, 2 expected failures |
 | Integration (`vcan`, namespaced) | **53 passed** |
 | Coverage | **97%** overall; **100%** on all five scenario modules and on the UDS protocol |
