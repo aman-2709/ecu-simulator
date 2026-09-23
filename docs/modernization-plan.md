@@ -120,7 +120,7 @@ scripts/   docs/   .github/workflows/ci.yml
 
 | Release | Content | Phases |
 |---|---|---|
-| V1.0 | Python 3.12+, package, lifecycle, kernel ISO-TP, Classical CAN on vcan0 and can0, transport/protocol separation, router, multi-ECU schema with single-ECU profile, configurable CAN IDs, OBD Modes 01 (common PIDs), 03, 04, 07, 09 with VIN, mutable vehicle state, DTC store, deterministic scenarios, UDS 0x10, 0x11, 0x14, 0x19/02, stateless 0x3E, unit + vcan tests, CI, ELM327 USB/Bluetooth acceptance | 0 to 8 |
+| V1.0 | Python 3.12+, package, lifecycle, kernel ISO-TP, Classical CAN on vcan0 and can0, transport/protocol separation, router, multi-ECU schema with single-ECU profile, configurable CAN IDs, OBD Modes 01 (common PIDs), 03, 04, 07, 09 with VIN, mutable vehicle state, DTC store, deterministic scenarios, UDS 0x10, 0x11, 0x14, 0x19/02, stateless 0x3E, unit + vcan tests, CI, **ELM327 USB acceptance** (Bluetooth optional, separately reported) | 0 to 8b |
 | V1.1 | Multi-ECU profile and functional fan-out, fault injection, 29-bit addressing, UDS session state machine, S3, TesterPresent timing, 0x22, 0x19/01 and /0A | 9 to 11 |
 | V1.2 | 0x2E, mock 0x27, richer ICE/HEV/BEV profiles, additional UDS behavior | 12 |
 | V2 | CAN FD, DoIP (experimental only), gateway simulation | 13 to 15 |
@@ -298,28 +298,56 @@ today.
 
 ### Phase 8 — Physical CAN and ELM327 validation (V1.0 gate)
 
-`setup_can.sh` bitrate handling, `--bitrate` guidance, `tests/hardware` opt-in suite,
-`docs/hardware-testbench.md` with exact hardware and firmware, troubleshooting. Risk M.
-
 Reviewed 2026-09-22 before implementation:
 [decisions/0007-phase-8-hardware-validation.md](decisions/0007-phase-8-hardware-validation.md).
-**Not started.** The review establishes the scope, the bench by capability, the
-`setup_can.sh` gaps that a physical bus exposes and a virtual one never does, a
-nineteen-point ELM327 acceptance list, the rules the opt-in suite must obey, and fifteen
-acceptance criteria. It deliberately names no specific adapter: a bench that does not
-exist has no exact hardware, and section 11 exists to stop plausible values being invented.
+The review establishes the scope, the bench by capability, the `setup_can.sh` gaps that a
+physical bus exposes and a virtual one never does, a nineteen-point ELM327 acceptance
+list, the rules the opt-in suite must obey, and fifteen acceptance criteria. It
+deliberately names no specific adapter: a bench that does not exist has no exact hardware,
+and section 11 exists to stop plausible values being invented.
 
-Two findings worth carrying forward. The ELM327 datasheet revision **ELM327DSJ** was
-re-checked against the manufacturer's canonical URL and is current, so no inventory row
-changes. And from firmware 2.1 the ELM327 measures the bus frequency and refuses to
-transmit when it does not match the selected protocol, so a bitrate mismatch on the bench
-presents as **silence** rather than as an error -- which is why the review asks for a
-bitrate warning at setup time.
+**Split on 2026-09-23 into 8a and 8b**, with the six open questions resolved in
+[decisions/0008-phase-8-question-resolutions.md](decisions/0008-phase-8-question-resolutions.md).
+The development machine has no connected CAN interface, so the half of the phase that
+needs no bench is separated from the half that does, rather than holding both open. The
+ELM327 datasheet revision **ELM327DSJ** was re-checked twice against the manufacturer's
+canonical URL and is current, so no inventory row changes.
 
-Phase 8 is the **V1.0 gate**, and it is the only phase that can put a `yes` in the
-`hardware validated` column. Six questions are open for the user, the first being whether
-hardware is available at all; if none is, the documentation-and-script half is deliverable
-on its own and the phase is reported **partially complete**, never complete.
+Phase 8 remains the **V1.0 gate** and is still the only phase that can put a `yes` in the
+`hardware validated` column. **That gate is 8b, not 8a.**
+
+#### Phase 8a — Hardware-test preparation, no bench required (V1.0)
+
+`setup_can.sh` gaps 1, 2, 3 and 5 from the review; `--bitrate` guidance across README,
+script usage and testbench document; `docs/hardware-testbench.md` as a template with every
+field present and explicitly unrecorded; troubleshooting documentation; the `tests/hardware`
+opt-in suite with its exclusion and bench-isolation machinery; the ELM327 serial driver and
+response parser behind a `pyserial` `[hardware]` extra; and three corrections to the
+existing integration suite that a partly manual bench run would otherwise expose. Risk L.
+
+Plan: [plans/phase-8a-implementation.md](plans/phase-8a-implementation.md).
+
+DoD, in addition to the standing gates: acceptance criteria 1 to 7, 14 and 15 of the
+review are met and verified without hardware; a default `pytest` collects exactly the
+same number of tests as before; `tests/hardware` refuses to run without an explicit
+opt-in naming both devices, and refuses a `vcan*` interface; the ELM327 parser is tested
+byte for byte against exchanges recorded in ELM327DSJ; and the completion report states
+plainly that **no conformance row gained `hardware validated` and V1.0 is not tagged.**
+
+#### Phase 8b — Physical CAN and ELM327 acceptance (V1.0 gate)
+
+The bench run itself: the nineteen-point ELM327 acceptance list, the physical re-run of
+the vcan integration suite against `can0`, independent `candump` capture, and the first
+`hardware validated: yes` entries, for exercised rows only. Risk M.
+
+**Open until a bench exists and these tests have actually passed.** Acceptance criteria 8
+to 13. The V1.0 bench requires a SocketCAN adapter, a working physical bus with a second
+node, and a real **USB** ELM327 whose identity and `AT I` output are recorded; **Bluetooth
+is optional and separately reported**, marked `not verified` when untested and never
+inferred from the USB result.
+
+Phases 9 to 11 may proceed while 8b is open, provided nothing misrepresents the
+hardware-validation status. **V1.0 is not tagged without 8b's evidence.**
 
 ### Phase 9 — Multi-ECU (V1.1)
 
@@ -378,12 +406,22 @@ Software, in CI on two consecutive runs:
 - Mode 01, Mode 03, Mode 04 followed by Mode 03, Mode 07, Mode 09
 - malformed-configuration suite covering every validation rule
 
-Physical bench on `can0`, recorded with:
+Physical bench on `can0` — **Phase 8b**, recorded with:
 
-- exact CAN interface hardware
+- exact CAN interface hardware, and its `ip -details -statistics link show` output before
+  and after the run
 - exact USB ELM327 adapter and its `ATI` output
-- exact Bluetooth ELM327 adapter and its `ATI` output
 - results for `0100`, `010C`, `010D`, `03`, `04` followed by `03`, `0902`
+
+Optional, separately reported, and **never inferred from the USB result**:
+
+- exact Bluetooth ELM327 adapter and its `ATI` output. Amended 2026-09-23: this was a
+  required bench record, which conflicted with
+  [decisions/0007](decisions/0007-phase-8-hardware-validation.md) §6.4 treating a missing
+  dongle as `not verified`, and so blocked the V1.0 tag on owning a second dongle. It is
+  now optional for the initial V1.0 release. When untested it is marked **not verified**
+  with its reason. See
+  [decisions/0008](decisions/0008-phase-8-question-resolutions.md) §3
 
 ## 6. Conformance vocabulary
 
@@ -474,6 +512,7 @@ Versions recorded when the phase named in the last column reviewed them.
 | ruff | 0.16.8, pinned `>=0.6` | 0.16.8 (2026-09-16) | PyPI metadata | Phase 4 |
 | Linux CAN_ISOTP | in-tree, kernel 6.8 and 6.17 observed | n/a | kernel source and experiments | Phases 2, 2A |
 | Python `asyncio` periodic task | stdlib 3.12.12 | n/a | stdlib; cancellation confirmed experimentally | Phase 7 |
+| pyserial | **not installed.** Decided 2026-09-23 as an optional `[hardware]` extra; the version in use is recorded here when Phase 8a installs it | 3.5 (current release on PyPI, 2026-09-23) | PyPI metadata; driven over a pty experimentally | Phase 8a |
 
 Two findings recorded at the version in use, because they constrain how a phase may be
 built rather than merely which version it was checked against:
@@ -583,10 +622,28 @@ were already done and because each wire-visible change was pinned before it move
 - `feat(profiles): a demonstration scenario profile`
 - `docs: Phase 7 conformance, deviations, plan and decision outcome`
 
-Phase 8
-45. `docs: conformance table, hardware testbench, README rewrite`
-46. `test(hardware): ELM327 acceptance suite, opt-in`
-47. `release: v1.0.0`
+Phase 8a — split from Phase 8 on 2026-09-23; the original three commits below became the
+sequence in [plans/phase-8a-implementation.md](plans/phase-8a-implementation.md)
+
+45. `docs(decisions): Phase 8 question resolutions and the 8a/8b split`
+46. `test(integration): make the DTC-clearing test independently runnable`
+47. `test(integration): prove silence with a known-good follow-up request`
+48. `feat(scripts): restart-ms and link statistics in setup_can.sh`
+49. `feat(scripts): guarded termination configuration in setup_can.sh`
+50. `feat(scripts): warn on a non-OBD bitrate without rejecting it`
+51. `test(hardware): opt-in collection and bench isolation for tests/hardware`
+52. `build: pyserial as an optional hardware extra`
+53. `test(hardware): ELM327 response parser from datasheet-recorded exchanges`
+54. `test(hardware): ELM327 serial driver with read-until-prompt`
+55. `test(hardware): ELM327 acceptance tests against a simulated dongle`
+56. `docs: hardware testbench template, troubleshooting and bitrate guidance`
+57. `docs: Phase 8a conformance, plan and completion report`
+
+Phase 8b — needs a bench; not started
+
+58. `test(hardware): record the bench and its acceptance results`
+59. `docs: first hardware-validated conformance rows, for exercised rows only`
+60. `release: v1.0.0`
 
 V1.1 and later commits follow the phase list above with numbering continued.
 

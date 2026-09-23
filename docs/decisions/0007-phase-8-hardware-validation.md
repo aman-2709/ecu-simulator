@@ -3,6 +3,15 @@
 Status: proposed 2026-09-22, before any Phase 8 code. **Review only. No production change
 has been made, and nothing in this project is `hardware validated`.**
 
+**Amended 2026-09-23.** The six questions in §10.2 were answered by the project owner and
+Phase 8 was split into 8a and 8b; the rulings live in
+[0008](0008-phase-8-question-resolutions.md). This document is otherwise left as the
+review it was on 2026-09-22 — it records what was established at that checkpoint, the same
+treatment Phase 6's record received when Phase 7 changed two of its bytes. Three places
+carry a dated amendment because a later reading changed the conclusion rather than merely
+adding to it: **§6.3** (the frequency-matching mechanism is narrower than stated), **§6.4
+and criterion 9** (Bluetooth is optional for V1.0), and **§10.2** (all six resolved).
+
 Produced under the documentation and standards verification gate
 ([modernization-plan.md section 11](../modernization-plan.md)). It covers only what Phase 8
 touches. [0006](0006-phase-7-scenario-and-testerpresent.md) is the shape it follows.
@@ -324,6 +333,17 @@ matching test will also bypassed". That belongs in the troubleshooting section a
 This is also the argument for gap 5 in section 5.1: warning at setup time is cheaper than
 discovering it through silence.
 
+**Amended 2026-09-23 — the mechanism is narrower than this section states, and silence is
+not the only symptom.** Read in full, page 62 says the frequency check "is only used while
+searching for a valid protocol", so a bench that selects protocol 6 with `AT SP 6` rather
+than searching is not in this path; and a send is allowed "if the input signal frequency
+matches the CAN setting (250 or 500 kbps), **or if there appears to be no signal**". A
+bitrate mismatch can also surface as an error: page 87 gives `CAN ERROR` for "a baud rate
+that does not match the actual data rate", and `NO DATA` when the `AT ST` timer expires.
+The ruling on gap 5 is unaffected — the warning is still cheap and the diagnosis still
+expensive — but **the troubleshooting section must list three symptoms, not one**: silence,
+`NO DATA` and `CAN ERROR`. See [0008 §6](0008-phase-8-question-resolutions.md).
+
 ### 6.4 Bluetooth
 
 The same AT sequence over a different serial transport. It tests the pairing and the
@@ -333,6 +353,16 @@ subset — bring-up plus a handful from each group — rather than all nineteen.
 **If no Bluetooth adapter is available, the row is reported `not verified` with the
 reason**, per the acceptance-criterion traceability rule in section 10 of the plan. It is
 never inferred from the USB result.
+
+**Amended 2026-09-23 — Bluetooth is optional for the initial V1.0 release.** This section
+and [section 5 of the plan](../modernization-plan.md) disagreed: section 5 listed a
+Bluetooth adapter's `ATI` output as a required bench record, so a missing dongle blocked
+the V1.0 tag however honestly this section reported it. Neither document acknowledged the
+other. The ruling is that the V1.0 bench requires a SocketCAN adapter, a physical bus with
+a second node, and a real **USB** ELM327; Bluetooth is a separately reported, optional
+acceptance test, marked **not verified** when untested and never inferred from the USB
+result. Section 5 of the plan is amended to match. See
+[0008 §3](0008-phase-8-question-resolutions.md).
 
 ### 6.5 250 kbaud
 
@@ -399,7 +429,7 @@ will be reported `not verified` with its reason until it is actually performed.*
 | 6 | `docs/hardware-testbench.md` exists and carries every field in 4.4 | Documentation review |
 | 7 | Troubleshooting section covers the six cases in section 8 | Documentation review |
 | 8 | **Every test in 6.2 passes against a real ELM327 over physical CAN** | **A bench run. Not verifiable otherwise** |
-| 9 | Bluetooth acceptance (6.4) | **A bench run**, or `not verified` with the reason |
+| 9 | Bluetooth acceptance (6.4). **Optional for V1.0 as of 2026-09-23**, separately reported | **A bench run**, or `not verified` with the reason. It never blocks the V1.0 tag and is never inferred from the USB result |
 | 10 | 250 kbaud (6.5) | **A bench run**, or `not attempted` |
 | 11 | `candump` capture confirms the bytes independently for a representative subset | **A bench run**; captures archived |
 | 12 | Conformance rows exercised on hardware gain `hardware validated: yes`, **and no others do** | Row-by-row review against the bench log |
@@ -432,6 +462,19 @@ unless the manual part is recorded with the same detail as an automated one.
 | Scope creep into Phase 9 | 29-bit and multi-ECU are Phase 9 and the plan says they do not gate this bench |
 
 ### 10.2 Questions for the user
+
+**All six were resolved on 2026-09-23, together with a seventh conflict this section did
+not ask about (Bluetooth versus the plan's section 5). The rulings and their reasoning are
+in [0008](0008-phase-8-question-resolutions.md); the questions are left below as asked.**
+
+| # | Ruling, in one line |
+|---|---|
+| 1 | No connected bench. Proceed on that assumption; buy nothing; claim no hardware validation. Unplugged equipment is a separate inventory exercise |
+| 2 | **A** — `pyserial` as an optional `[hardware]` extra; configurable port and baud; read-until-prompt; independently tested parser |
+| 3 | Yes. No runtime `--bitrate`; bitrate stays with `setup_can.sh` and its documentation |
+| 4 | Gaps **1+2 together**, **3 guarded**, **5 as a non-rejecting warning**. Gap 4 becomes troubleshooting documentation. Gap 6 deferred |
+| 5 | Split into **8a** (deliverable now) and **8b** (stays open). V1.0 is not tagged without 8b |
+| 6 | Confirmed out of scope: the simulator never transmits on a live vehicle bus. Passive listen-only capture may be considered separately, with its own safety review |
 
 1. **Is hardware available, and which?** This determines whether Phase 8 can close the
    V1.0 gate or only prepare for it. If a specific adapter and ELM327 are already to hand,
