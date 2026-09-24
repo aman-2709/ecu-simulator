@@ -117,12 +117,45 @@ def test_restart_ms_is_configurable(tmp_path):
     assert any("type can restart-ms 250" in c for c in ip_calls(tmp_path))
 
 
-def test_restart_ms_zero_skips_the_setting_entirely(tmp_path):
-    # 0 means "leave the kernel default", which is off. The script must not send
-    # `restart-ms 0` and present the absence of a choice as a choice.
+# An interface that already has automatic recovery armed. restart-ms is a persistent link
+# property: nothing in this script, including `ip link set <iface> down`, clears it.
+ALREADY_ARMED = """\
+15: cantest9: <NOARP,UP,LOWER_UP,ECHO> mtu 16 qdisc pfifo_fast state UP qlen 10
+    link/can
+    can state ERROR-ACTIVE restart-ms 100
+    bitrate 500000 sample-point 0.875
+"""
+
+
+def test_restart_ms_zero_explicitly_disables_recovery(tmp_path):
+    # Regression, found in review of Task 3. The first implementation omitted the command
+    # entirely for 0, reasoning that 0 meant "leave the kernel default". That conflates the
+    # default on a freshly loaded driver with whatever the interface is currently set to.
+    # On an interface previously configured with restart-ms 100, omitting the command
+    # leaves recovery armed -- the opposite of what was asked for.
+    bin_dir = fake_ip_bin(tmp_path, details=ALREADY_ARMED)
+    result = run_setup_can(bin_dir, TEST_IFACE, "500000", env={"CAN_RESTART_MS": "0"})
+    assert result.returncode == 0, result.stderr
+    assert any("type can restart-ms 0" in c for c in ip_calls(tmp_path)), ip_calls(tmp_path)
+
+
+def test_restart_ms_zero_disables_recovery_on_a_fresh_interface_too(tmp_path):
+    # The script cannot know the prior state and must not have to. It always states the
+    # value it wants, so the outcome does not depend on what ran before it.
     bin_dir = fake_ip_bin(tmp_path)
     run_setup_can(bin_dir, TEST_IFACE, "500000", env={"CAN_RESTART_MS": "0"})
-    assert not any("restart-ms" in c for c in ip_calls(tmp_path)), ip_calls(tmp_path)
+    assert any("type can restart-ms 0" in c for c in ip_calls(tmp_path)), ip_calls(tmp_path)
+
+
+def test_restart_ms_is_always_stated_whatever_the_value(tmp_path):
+    # The property this fix establishes: after setup_can.sh, restart-ms is whatever the
+    # operator asked for, never whatever a previous run happened to leave behind.
+    for value, expected in (("0", "restart-ms 0"), ("100", "restart-ms 100"), ("500", "restart-ms 500")):
+        run_dir = tmp_path / f"case{value}"
+        run_dir.mkdir()
+        bin_dir = fake_ip_bin(run_dir, details=ALREADY_ARMED)
+        run_setup_can(bin_dir, TEST_IFACE, "500000", env={"CAN_RESTART_MS": value})
+        assert any(f"type can {expected}" in c for c in ip_calls(run_dir)), (value, ip_calls(run_dir))
 
 
 def test_a_non_numeric_restart_ms_is_refused(tmp_path):

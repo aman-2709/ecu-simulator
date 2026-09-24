@@ -39,12 +39,18 @@ ip link set "$IFACE" type can bitrate "$BITRATE" || die "cannot set bitrate $BIT
 # as "the simulator stopped responding" rather than as a bus fault. What keeps automatic
 # recovery honest is the `re-started` counter printed below: restarting on a loop through a
 # persistent fault would otherwise make a broken bus look healthy.
+#
+# The value is always stated, including 0. restart-ms is a persistent link property and
+# nothing here clears it -- not `ip link set <iface> down`, not setting the bitrate -- so
+# omitting the command for 0 would leave whatever a previous run had armed. An operator who
+# asks for recovery off while troubleshooting must get it off, not inherit 100 ms from the
+# last time somebody ran this script.
+ip link set "$IFACE" type can restart-ms "$RESTART_MS" \
+    || die "cannot set restart-ms $RESTART_MS on $IFACE"
 if [[ "$RESTART_MS" != "0" ]]; then
-    ip link set "$IFACE" type can restart-ms "$RESTART_MS" \
-        || die "cannot set restart-ms $RESTART_MS on $IFACE"
     echo "setup_can.sh: automatic bus-off recovery armed, restart-ms $RESTART_MS (check the 're-started' counter below)" >&2
 else
-    echo "setup_can.sh: automatic bus-off recovery left off (CAN_RESTART_MS=0); a bus-off will leave $IFACE down until you run 'ip link set $IFACE type can restart'" >&2
+    echo "setup_can.sh: automatic bus-off recovery explicitly disabled (CAN_RESTART_MS=0); a bus-off will leave $IFACE down until you run 'ip link set $IFACE type can restart'" >&2
 fi
 
 ip link set up "$IFACE" || die "cannot bring $IFACE up"
