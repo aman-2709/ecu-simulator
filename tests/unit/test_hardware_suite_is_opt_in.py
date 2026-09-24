@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import pathlib
 import subprocess
+import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
@@ -25,7 +26,10 @@ def collect(*args: str, env: dict[str, str] | None = None) -> subprocess.Complet
     environment = {k: v for k, v in os.environ.items() if not k.startswith("ECU_SIM_HW_")}
     environment.update(env or {})
     return subprocess.run(
-        [str(REPO / ".venv/bin/python"), "-m", "pytest", "--collect-only", "-q", *args],
+        # sys.executable, never a hardcoded .venv path: CI installs with
+        # actions/setup-python and has no .venv, so a hardcoded path passes on a developer
+        # machine and fails everywhere else.
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", *args],
         cwd=REPO,
         capture_output=True,
         text=True,
