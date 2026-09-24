@@ -293,3 +293,72 @@ def test_termination_zero_is_honoured_as_a_deliberate_choice(tmp_path):
     bin_dir = fake_ip_bin(tmp_path, details=TERMINATION_SUPPORTED)
     run_setup_can(bin_dir, TEST_IFACE, "500000", env={"CAN_TERMINATION": "0"})
     assert any("type can termination 0" in c for c in ip_calls(tmp_path)), ip_calls(tmp_path)
+
+
+# --- gap 5: a bitrate warning that never rejects ---------------------------------------------
+
+
+@pytest.mark.parametrize("bitrate", ["500000", "250000"])
+def test_an_obd_bitrate_produces_no_warning(tmp_path, bitrate):
+    bin_dir = fake_ip_bin(tmp_path)
+    result = run_setup_can(bin_dir, TEST_IFACE, bitrate)
+    assert result.returncode == 0, result.stderr
+    assert "warning" not in result.stderr.lower(), result.stderr
+
+
+def test_the_default_bitrate_produces_no_warning(tmp_path):
+    # The default is 500000, so the common invocation must stay quiet.
+    bin_dir = fake_ip_bin(tmp_path)
+    result = run_setup_can(bin_dir, TEST_IFACE)
+    assert "warning" not in result.stderr.lower(), result.stderr
+
+
+@pytest.mark.parametrize("bitrate", ["125000", "1000000", "800000", "33333"])
+def test_an_unusual_bitrate_warns_but_still_configures_the_link(tmp_path, bitrate):
+    # Custom bitrates must keep working: setup_can.sh is a generic CAN setup script, the
+    # kernel accepts 1..1000000, and plenty of non-OBD buses are not 250k or 500k.
+    bin_dir = fake_ip_bin(tmp_path)
+    result = run_setup_can(bin_dir, TEST_IFACE, bitrate)
+    assert result.returncode == 0, result.stderr
+    assert "warning" in result.stderr.lower()
+    assert bitrate in result.stderr
+    assert any(f"type can bitrate {bitrate}" in c for c in ip_calls(tmp_path)), ip_calls(tmp_path)
+
+
+def test_the_warning_names_all_three_symptoms_of_a_mismatch(tmp_path):
+    # Silence is only one of three presentations. ELM327DSJ page 62 shows the frequency
+    # check applies only while searching for a protocol and that a quiet bus passes it
+    # anyway; page 87 gives CAN ERROR for a baud-rate mismatch, and NO DATA when the AT ST
+    # timer expires. A hint naming only silence would misdirect an operator two times in
+    # three. See decisions/0008 section 6.
+    bin_dir = fake_ip_bin(tmp_path)
+    result = run_setup_can(bin_dir, TEST_IFACE, "125000")
+    for symptom in ("NO DATA", "CAN ERROR", "silen"):
+        assert symptom in result.stderr, f"{symptom!r} missing from: {result.stderr}"
+
+
+def test_the_warning_names_the_obd_bitrates(tmp_path):
+    bin_dir = fake_ip_bin(tmp_path)
+    result = run_setup_can(bin_dir, TEST_IFACE, "125000")
+    assert "500000" in result.stderr and "250000" in result.stderr
+
+
+def test_the_warning_does_not_stop_the_rest_of_the_script(tmp_path):
+    # It is a warning, not a refusal: the link is still configured and brought up, and the
+    # statistics are still printed.
+    bin_dir = fake_ip_bin(tmp_path)
+    result = run_setup_can(bin_dir, TEST_IFACE, "125000", env={"CAN_RESTART_MS": "100"})
+    assert result.returncode == 0
+    calls = ip_calls(tmp_path)
+    assert any("restart-ms 100" in c for c in calls), calls
+    assert any(c == f"link set up {TEST_IFACE}" for c in calls), calls
+    assert any("-statistics" in c for c in calls), calls
+
+
+def test_a_malformed_bitrate_is_still_refused_outright(tmp_path):
+    # The warning softens unusual values, not invalid ones. Validation is unchanged.
+    bin_dir = fake_ip_bin(tmp_path)
+    result = run_setup_can(bin_dir, TEST_IFACE, "500k")
+    assert result.returncode != 0
+    assert "bitrate must be an integer" in result.stderr
+    assert ip_calls(tmp_path) == []

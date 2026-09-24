@@ -30,6 +30,19 @@ command -v ip >/dev/null 2>&1 || die "'ip' (iproute2) not found"
 [[ "$IFACE" =~ ^[A-Za-z0-9_.-]{1,15}$ ]] || die "invalid interface name: '$IFACE'"
 [[ "$BITRATE" =~ ^[0-9]+$ ]] || die "bitrate must be an integer in bit/s, got '$BITRATE'"
 
+# ISO 15765-4 uses 500 kbit/s and 250 kbit/s, which an ELM327 selects as protocols 6 and 8.
+# A mismatch is not loud. Per ELM327DSJ it can present as silence, as 'NO DATA', or as
+# 'CAN ERROR' depending on whether the device is searching for a protocol -- never as an
+# obvious bitrate error -- so it gets mistaken for a dead adapter or bad wiring. Warning
+# here costs nothing and saves that hunt.
+#
+# This never rejects. setup_can.sh is a generic CAN setup script, the kernel accepts
+# 1..1000000, and plenty of non-OBD buses run at neither of these rates.
+if [[ "$BITRATE" != "500000" && "$BITRATE" != "250000" ]]; then
+    echo "setup_can.sh: warning: $BITRATE bit/s is not one of the OBD bitrates (500000 or 250000)." >&2
+    echo "setup_can.sh: warning: this is fine for non-OBD use. Against an ELM327 a bitrate mismatch does not announce itself -- it presents as silence, as 'NO DATA', or as 'CAN ERROR'. Continuing." >&2
+fi
+
 RESTART_MS="${CAN_RESTART_MS:-100}"
 [[ "$RESTART_MS" =~ ^[0-9]+$ ]] || die "CAN_RESTART_MS must be an integer in ms, got '$RESTART_MS'"
 
