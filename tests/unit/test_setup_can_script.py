@@ -209,3 +209,87 @@ def test_the_operator_is_told_what_restart_ms_was_set_to(tmp_path, value):
     bin_dir = fake_ip_bin(tmp_path)
     result = run_setup_can(bin_dir, TEST_IFACE, "500000", env={"CAN_RESTART_MS": value})
     assert value in result.stdout + result.stderr
+
+
+# --- gap 3: termination, optional and guarded ------------------------------------------------
+
+# A controller that exposes switchable termination. The kernel documentation shows the
+# available values appearing as `termination 120 [ 0, 120 ]` in `ip -details link show`.
+TERMINATION_SUPPORTED = """\
+15: cantest9: <NOARP,UP,LOWER_UP,ECHO> mtu 16 qdisc pfifo_fast state UP qlen 10
+    link/can
+    can state ERROR-ACTIVE restart-ms 100
+    bitrate 500000 sample-point 0.875
+    termination 120 [ 0, 120 ]
+"""
+
+# A controller without it. This is the shape the gs_usb CANable on this project's bench
+# actually reports: no termination line at all.
+TERMINATION_UNSUPPORTED = """\
+15: cantest9: <NOARP,UP,LOWER_UP,ECHO> mtu 16 qdisc pfifo_fast state UP qlen 10
+    link/can
+    can state ERROR-ACTIVE restart-ms 100
+    bitrate 500000 sample-point 0.875
+    gs_usb: tseg1 1..16 tseg2 1..8 sjw 1..4 brp 1..1024 brp-inc 1
+"""
+
+
+def test_termination_is_not_touched_by_default(tmp_path):
+    # Off unless asked for. An adapter and a dongle that each carry a built-in 120 ohm are
+    # already correctly terminated; a script that silently added a third would create the
+    # fault it was meant to prevent.
+    bin_dir = fake_ip_bin(tmp_path, details=TERMINATION_SUPPORTED)
+    run_setup_can(bin_dir, TEST_IFACE, "500000")
+    assert not any("termination" in c for c in ip_calls(tmp_path)), ip_calls(tmp_path)
+
+
+def test_termination_is_set_when_requested_and_supported(tmp_path):
+    bin_dir = fake_ip_bin(tmp_path, details=TERMINATION_SUPPORTED)
+    result = run_setup_can(bin_dir, TEST_IFACE, "500000", env={"CAN_TERMINATION": "120"})
+    assert result.returncode == 0, result.stderr
+    assert any("type can termination 120" in c for c in ip_calls(tmp_path)), ip_calls(tmp_path)
+
+
+def test_termination_is_skipped_with_a_warning_when_unsupported(tmp_path):
+    # The guard is mandatory, not stylistic: the command fails on a controller without
+    # switchable termination, and under `set -euo pipefail` that would abort a run which
+    # had otherwise succeeded.
+    bin_dir = fake_ip_bin(tmp_path, details=TERMINATION_UNSUPPORTED)
+    result = run_setup_can(bin_dir, TEST_IFACE, "500000", env={"CAN_TERMINATION": "120"})
+    assert result.returncode == 0, result.stderr
+    assert not any("type can termination" in c for c in ip_calls(tmp_path)), ip_calls(tmp_path)
+    assert "does not support switchable termination" in result.stderr
+
+
+def test_the_unsupported_warning_tells_the_operator_what_to_do_instead(tmp_path):
+    # Silence here would read as "termination handled". It is not: the operator has to
+    # terminate the harness physically, two 120 ohm in total.
+    bin_dir = fake_ip_bin(tmp_path, details=TERMINATION_UNSUPPORTED)
+    result = run_setup_can(bin_dir, TEST_IFACE, "500000", env={"CAN_TERMINATION": "120"})
+    assert "120" in result.stderr
+    assert "harness" in result.stderr.lower()
+
+
+def test_a_non_numeric_termination_is_refused(tmp_path):
+    bin_dir = fake_ip_bin(tmp_path, details=TERMINATION_SUPPORTED)
+    result = run_setup_can(bin_dir, TEST_IFACE, "500000", env={"CAN_TERMINATION": "120ohm"})
+    assert result.returncode != 0
+    assert "CAN_TERMINATION" in result.stderr
+
+
+def test_termination_is_set_while_the_link_is_down(tmp_path):
+    bin_dir = fake_ip_bin(tmp_path, details=TERMINATION_SUPPORTED)
+    run_setup_can(bin_dir, TEST_IFACE, "500000", env={"CAN_TERMINATION": "120"})
+    calls = ip_calls(tmp_path)
+    down = next(i for i, c in enumerate(calls) if c == f"link set {TEST_IFACE} down")
+    term = next(i for i, c in enumerate(calls) if "type can termination" in c)
+    up = next(i for i, c in enumerate(calls) if c == f"link set up {TEST_IFACE}")
+    assert down < term < up, calls
+
+
+def test_termination_zero_is_honoured_as_a_deliberate_choice(tmp_path):
+    # 0 disables the onboard resistor. Unlike restart-ms this is only sent when asked for,
+    # because "do not touch termination" is the default and a real distinct state.
+    bin_dir = fake_ip_bin(tmp_path, details=TERMINATION_SUPPORTED)
+    run_setup_can(bin_dir, TEST_IFACE, "500000", env={"CAN_TERMINATION": "0"})
+    assert any("type can termination 0" in c for c in ip_calls(tmp_path)), ip_calls(tmp_path)

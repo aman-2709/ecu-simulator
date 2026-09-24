@@ -6,8 +6,11 @@
 #
 # Environment:
 #   CAN_RESTART_MS  automatic bus-off recovery delay in milliseconds (default 100).
-#                   0 leaves the kernel default, which is off -- useful while
-#                   troubleshooting, when you want a bus-off to stay visible.
+#                   0 explicitly disables recovery -- useful while troubleshooting,
+#                   when you want a bus-off to stay visible.
+#   CAN_TERMINATION ohms for the controller's switchable termination, e.g. 120, or 0
+#                   to disable it. Unset by default, meaning termination is not touched.
+#                   Ignored with a warning on controllers that do not support it.
 #
 # Needs root or CAP_NET_ADMIN. The simulator itself runs unprivileged afterwards:
 #   ecu-simulator --interface can0
@@ -30,6 +33,10 @@ command -v ip >/dev/null 2>&1 || die "'ip' (iproute2) not found"
 RESTART_MS="${CAN_RESTART_MS:-100}"
 [[ "$RESTART_MS" =~ ^[0-9]+$ ]] || die "CAN_RESTART_MS must be an integer in ms, got '$RESTART_MS'"
 
+if [[ -n "${CAN_TERMINATION:-}" ]]; then
+    [[ "$CAN_TERMINATION" =~ ^[0-9]+$ ]] || die "CAN_TERMINATION must be an integer in ohms, got '$CAN_TERMINATION'"
+fi
+
 ip link show "$IFACE" >/dev/null 2>&1 || die "interface '$IFACE' does not exist (is the CAN adapter connected and its driver loaded?)"
 
 ip link set "$IFACE" down
@@ -51,6 +58,24 @@ if [[ "$RESTART_MS" != "0" ]]; then
     echo "setup_can.sh: automatic bus-off recovery armed, restart-ms $RESTART_MS (check the 're-started' counter below)" >&2
 else
     echo "setup_can.sh: automatic bus-off recovery explicitly disabled (CAN_RESTART_MS=0); a bus-off will leave $IFACE down until you run 'ip link set $IFACE type can restart'" >&2
+fi
+
+# Optional, and guarded. A controller without switchable termination rejects this command,
+# and under `set -euo pipefail` that would abort a run which had otherwise succeeded. The
+# kernel documentation shows the available values appearing in `ip -details link show` as
+# e.g. `termination 120 [ 0, 120 ]` when the controller has them, so ask before setting.
+#
+# Off unless requested: an adapter and a dongle that each carry a built-in 120 ohm are
+# already correctly terminated, and silently adding a third would create the fault this is
+# meant to prevent.
+if [[ -n "${CAN_TERMINATION:-}" ]]; then
+    if ip -details link show "$IFACE" 2>/dev/null | grep -q 'termination '; then
+        ip link set "$IFACE" type can termination "$CAN_TERMINATION" \
+            || die "cannot set termination $CAN_TERMINATION on $IFACE"
+        echo "setup_can.sh: controller termination set to ${CAN_TERMINATION} ohm" >&2
+    else
+        echo "setup_can.sh: $IFACE does not support switchable termination; terminate the harness physically instead (${CAN_TERMINATION} ohm at each end of the differential pair, two in total). Continuing." >&2
+    fi
 fi
 
 ip link set up "$IFACE" || die "cannot bring $IFACE up"
