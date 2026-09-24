@@ -167,18 +167,26 @@ Expected: 2 passed.
 
 Each must pass in a process of its own — that is what "independently runnable" means:
 
+Plain pytest, not the namespace wrapper — it hardcodes `tests/integration` and appends
+arguments, so a node ID would run the whole directory *and* that node, which is not a
+per-test run. Needs `vcan0` up on the host.
+
 ```bash
+fail=0
 for t in \
   tests/integration/test_ecu_dispatch.py::test_reading_dtcs_can_be_asked_for_silently \
   tests/integration/test_ecu_dispatch.py::test_clearing_dtcs_is_not_mistaken_for_a_suppressed_request \
   tests/integration/test_obd_isotp.py::test_uds_read_dtc_by_status_mask_on_the_wire \
   tests/integration/test_obd_isotp.py::test_clearing_over_uds_is_visible_to_obd_on_the_wire \
   tests/integration/test_obd_isotp.py::test_clearing_over_obd_is_visible_to_uds_on_the_wire ; do
-  scripts/run_integration_tests.sh "$t" || echo "FAILED: $t"
+  r=$(.venv/bin/python -m pytest -p no:cacheprovider "$t" -q 2>&1 | tail -1)
+  printf "%-78s %s\n" "$(basename $t)" "$r"
+  echo "$r" | grep -q "1 passed" || fail=1
 done
+[ $fail -eq 0 ] && echo "ALL INDIVIDUALLY RUNNABLE" || echo "SOME FAILED"
 ```
 
-Expected: five runs, all `1 passed`, no `FAILED:` line.
+Expected: five lines each reading `1 passed`, then `ALL INDIVIDUALLY RUNNABLE`.
 
 - [ ] **Step 5: Full integration suite, count unchanged**
 

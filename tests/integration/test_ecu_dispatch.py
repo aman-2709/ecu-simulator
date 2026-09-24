@@ -174,9 +174,14 @@ def test_a_suppressed_read_without_a_status_mask_still_reports_its_length_error(
     assert uds_physical.recv() == b"\x7f\x19\x13"
 
 
-def test_clearing_dtcs_is_not_mistaken_for_a_suppressed_request(uds_physical):
+def test_clearing_dtcs_is_not_mistaken_for_a_suppressed_request(mutating, uds_physical):
     # 0x14 has no sub-function, and the second byte of its only served groupOfDTC is 0xFF.
     # Nothing masks it and nothing withholds the acknowledgement.
+    #
+    # This clears the shared store, so it takes `mutating` and the simulator is replaced
+    # afterwards. Without it the test passed only because of where it sits in the file:
+    # every test that reads DTCs happens to run before it. A bench run is partly manual and
+    # partly out of order, which is exactly the condition that exposes the dependency.
     uds_physical.send(b"\x14\xff\xff\xff")
     assert uds_physical.recv() == b"\x54"
 
