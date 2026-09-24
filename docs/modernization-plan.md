@@ -331,8 +331,10 @@ DoD, in addition to the standing gates: acceptance criteria 1 to 7, 14 and 15 of
 review are met and verified without hardware; a default `pytest` collects exactly the
 same number of tests as before; `tests/hardware` refuses to run without an explicit
 opt-in naming both devices, and refuses a `vcan*` interface; the ELM327 parser is tested
-byte for byte against exchanges recorded in ELM327DSJ; and the completion report states
-plainly that **no conformance row gained `hardware validated` and V1.0 is not tagged.**
+byte for byte against exchanges recorded in ELM327DSJ; the ELM327 harness is exercised end
+to end against a fake dongle on vcan in an ordinary CI run, so no part of it first executes
+on bench day; and the completion report states plainly that **no conformance row gained
+`hardware validated` and V1.0 is not tagged.**
 
 #### Phase 8b — Physical CAN and ELM327 acceptance (V1.0 gate)
 
@@ -635,7 +637,7 @@ sequence in [plans/phase-8a-implementation.md](plans/phase-8a-implementation.md)
 52. `build: pyserial as an optional hardware extra`
 53. `test(hardware): ELM327 response parser from datasheet-recorded exchanges`
 54. `test(hardware): ELM327 serial driver with read-until-prompt`
-55. `test(hardware): ELM327 acceptance tests against a simulated dongle`
+55. `test(hardware): ELM327 acceptance tests, regression-tested against a fake dongle on vcan`
 56. `docs: hardware testbench template, troubleshooting and bitrate guidance`
 57. `docs: Phase 8a conformance, plan and completion report`
 
