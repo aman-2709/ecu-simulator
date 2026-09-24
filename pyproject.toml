@@ -41,6 +41,12 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
 ]
+# Only the opt-in tests/hardware suite uses this, and CI never installs it. An ELM327 is a
+# serial device whose responses end at a '>' prompt rather than at a line boundary, so the
+# driver needs read-until-with-timeout over a raw port -- exactly where hand-rolled termios
+# code goes wrong, in a suite that runs rarely enough that the bug would sit undiscovered
+# until bench day. See docs/decisions/0008 section 2, Q2.
+hardware = ["pyserial>=3.5,<4"]
 
 [project.scripts]
 ecu-simulator = "ecu_simulator.cli:main"

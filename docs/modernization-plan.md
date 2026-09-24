@@ -514,10 +514,27 @@ Versions recorded when the phase named in the last column reviewed them.
 | ruff | 0.16.8, pinned `>=0.6` | 0.16.8 (2026-09-16) | PyPI metadata | Phase 4 |
 | Linux CAN_ISOTP | in-tree, kernel 6.8 and 6.17 observed | n/a | kernel source and experiments | Phases 2, 2A |
 | Python `asyncio` periodic task | stdlib 3.12.12 | n/a | stdlib; cancellation confirmed experimentally | Phase 7 |
-| pyserial | **not installed.** Decided 2026-09-23 as an optional `[hardware]` extra; the version in use is recorded here when Phase 8a installs it | 3.5 (current release on PyPI, 2026-09-23) | PyPI metadata; driven over a pty experimentally | Phase 8a |
+| pyserial | **3.5**, optional `[hardware]` extra only, pinned `>=3.5,<4`. Not in the default install and not in `[dev]`, so CI never installs it | 3.5 — still the current release on PyPI as at 2026-09-24, published **2020-11-23** | PyPI metadata; **confirmed experimentally on both supported interpreters**, see below | Phase 8a |
 
-Two findings recorded at the version in use, because they constrain how a phase may be
+Three findings recorded at the version in use, because they constrain how a phase may be
 built rather than merely which version it was checked against:
+
+- **pyserial 3.5 makes no packaging claim about Python 3.12 or 3.13.** It was published in
+  2020, its classifiers stop at `Programming Language :: Python :: 3.8`, and
+  `requires_python` is unset. Section 11.1 asks whether a version is current — it is, there
+  is nothing newer — and section 11.5 asks for experimental confirmation where the
+  behavior matters, so the API this project actually uses was exercised on **3.12.12 and
+  3.13.11**: opening a pty at 8N1, `read_until` returning at the `>` prompt, the echoed
+  command and an injected NUL both appearing in the stream, a hex response round-tripping,
+  the timeout path returning partial data, and `close()`. All seven checks pass on both.
+  Stale classifiers are not evidence of incompatibility, and a working probe is not a
+  promise of future support; if a later Python breaks it, the `[hardware]` extra is the
+  only thing affected and CI will not notice, so the probe is worth repeating whenever the
+  supported Python range moves.
+- **The extra adds pyserial and nothing else.** Measured by installing both ways into
+  clean environments: the default install is 8 packages, `[hardware]` is those 8 plus
+  pyserial. No transitive dependency arrives with it, which is most of why it was
+  affordable to add at all.
 
 - **pydantic 2.13** forbids a `before`, `wrap` or `plain` validator on a discriminated
   union's discriminator field. A tagged configuration list therefore cannot accept a bare
