@@ -1,0 +1,82 @@
+# Default single-ECU internal-combustion profile.
+#
+# Reproduces the addresses and vehicle data the package's ecu_config.json carried before
+# Phase 4, so the bytes on the wire are unchanged. The schema is multi-ECU: `ecus:` is a
+# mapping and a second ECU is added by adding a second key.
+#
+# Validated by src/ecu_simulator/config/schema.py. A malformed profile is rejected with a
+# path-qualified message before any socket is opened; see docs/decisions/
+# 0002-configuration-format-and-validation.md for what that validation does and does not
+# claim.
+
+version: 1
+
+transport:
+  # Overridden by --interface on the command line.
+  interface: vcan0
+
+vehicle:
+  vin: TESTVIN0123456789
+  type: ice
+  speed: 0                  # km/h
+  ambient_temp: 20          # degrees Celsius
+  battery_voltage: 14.1     # V, the control-module supply
+  obd_standard: 1           # coded value reported by PID 0x1C
+  engine:
+    # A warm engine idling. Values are physical quantities; the OBD encoders alone turn
+    # them into wire bytes. Nothing changes them at runtime until the scenario engine
+    # arrives in Phase 7, so every read returns the same answer.
+    rpm: 800
+    coolant_temp: 90        # degrees Celsius
+    intake_temp: 25         # degrees Celsius
+    engine_load: 22.0       # per cent
+    throttle: 14.0          # per cent
+    maf: 3.5                # g/s
+    map: 33                 # kPa, intake manifold absolute pressure
+    timing_advance: 10.0    # degrees before top dead centre
+    short_fuel_trim: 0.0    # per cent
+    long_fuel_trim: 1.5     # per cent
+    runtime: 600            # seconds since engine start
+    fuel_level: 50          # per cent
+    fuel_type: 1            # SAE J1979 fuel type coding; 1 is gasoline
+
+ecus:
+  engine:
+    name: ECU_SIMULATOR
+    # A bare code is pending and confirmed and asks for no indicator, which is what
+    # service 03 and 0x19/02 report until something clears it. The long form names the
+    # state instead:
+    #   - code: P0002
+    #     pending: true
+    #     confirmed: false
+    #     indicator_requested: false
+    dtcs:
+      - B1477
+      - P0001
+    dids: {}
+    endpoints:
+      # ISO 15765-4 OBD broadcast. OBD only: a UDS request here reaches no protocol.
+      - name: obd_functional
+        rx: 0x7DF
+        tx: 0x7E8
+        addressing: functional
+        protocols: [obd]
+        answer_unsupported: false
+        tx_padding: true
+        pad_byte: 0x00
+        # Multi-frame replies leave through the physical socket, where the tester sends
+        # its flow control.
+        reply_via: obd_physical
+      - name: obd_physical
+        rx: 0x7E0
+        tx: 0x7E8
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: true
+        pad_byte: 0x00
+      - name: uds_physical
+        rx: 0x7E1
+        tx: 0x7E9
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: false

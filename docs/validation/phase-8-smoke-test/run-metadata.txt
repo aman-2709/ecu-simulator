@@ -1,0 +1,9 @@
+2026-09-23T18:06:53-07:00
+=== git HEAD ===
+f607d732a64567eed54fded860e661f724b978d1
+
+=== uname ===
+6.8.0-138-generic
+
+=== can-utils ===
+ii  can-utils      2020.11.0-1  amd64        SocketCAN userspace utilities and tools
