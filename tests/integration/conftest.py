@@ -134,6 +134,41 @@ class FunctionalTester:
         self.rx.close()
 
 
+def assert_silent(channel, request: bytes, probe: bytes, answer: bytes) -> None:
+    """Assert the simulator says nothing to ``request``, then prove the channel still works.
+
+    On vcan a timeout can only mean the simulator chose not to answer. On a physical bus it
+    equally matches a dead adapter, a bitrate mismatch (which ELM327DSJ page 62 shows can
+    present as silence), an unterminated bus, a bus-off interface or an unpowered dongle. A
+    bare ``pytest.raises(TimeoutError)`` therefore passes while the bench is broken, which
+    is the worst failure a test can have.
+
+    The probe goes *after* the silence, never before. A channel proved alive beforehand may
+    have died in between, and then the silence still proves nothing.
+    """
+    channel.send(request)
+    try:
+        answered = channel.recv()
+    except TimeoutError:
+        pass  # the silence we wanted; the probe below establishes what it means
+    else:
+        raise AssertionError(
+            f"expected silence after {request.hex()}, but the simulator answered {answered.hex()}"
+        )
+    channel.send(probe)
+    try:
+        observed = channel.recv()
+    except TimeoutError:
+        raise AssertionError(
+            f"the channel went dead: probe {probe.hex()} was not answered either, so the "
+            f"silence after {request.hex()} proves nothing about the simulator"
+        ) from None
+    assert observed == answer, (
+        f"probe {probe.hex()} answered {observed.hex()}, expected {answer.hex()}; "
+        f"the silence after {request.hex()} proves nothing about the simulator"
+    )
+
+
 @dataclass(frozen=True)
 class Frame:
     can_id: int

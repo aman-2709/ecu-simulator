@@ -7,7 +7,7 @@ Phase 2 corrects deliberately (DEV-01 physical addressing, DEV-08 TX padding).
 
 import pytest
 
-from tests.integration.conftest import FunctionalTester, RawCapture, Simulator, open_tester_socket
+from tests.integration.conftest import FunctionalTester, RawCapture, Simulator, assert_silent, open_tester_socket
 
 # DEV-02 corrected: the third byte is the number of data items, one VIN.
 VIN_RESPONSE = b"\x49\x02\x01TESTVIN0123456789"
@@ -94,16 +94,12 @@ def test_supported_pid_chain_terminates_on_the_wire(functional):
     last = functional.recv()
     assert last == bytes.fromhex("414044008000")
     assert last[-1] & 0x01 == 0, "the last populated range must not claim a successor"
-    functional.send(b"\x01\x60")
-    with pytest.raises(TimeoutError):
-        functional.recv()
+    assert_silent(functional, b"\x01\x60", b"\x01\x2f", b"\x41\x2f\x7f")
 
 
 def test_unsupported_pid_gets_no_response(functional):
     # PID 0x01 monitor status is deferred (Phase 6 DTC store), so nothing answers it.
-    functional.send(b"\x01\x01")
-    with pytest.raises(TimeoutError):
-        functional.recv()
+    assert_silent(functional, b"\x01\x01", b"\x01\x2f", b"\x41\x2f\x7f")
 
 
 def test_engine_rpm_is_answered_on_the_wire(functional):

@@ -18,7 +18,7 @@ import time
 
 import pytest
 
-from tests.integration.conftest import Simulator, open_tester_socket
+from tests.integration.conftest import Simulator, assert_silent, open_tester_socket
 
 PROFILE = """
 version: 1
@@ -140,9 +140,9 @@ def test_tester_present_still_works_while_a_scenario_runs(vcan, scenario_simulat
     uds = open_tester_socket(vcan, rx_id=0x7E9, tx_id=0x7E1)
     try:
         assert ask(uds, b"\x3e\x00") == b"\x7e\x00"
-        uds.send(b"\x3e\x80")
-        with pytest.raises(TimeoutError):
-            uds.recv()
+        # rpm is fixed at 800 in this profile and is not one of the driven signals, so it
+        # is a probe whose answer does not depend on when in the scenario it is asked.
+        assert_silent(uds, b"\x3e\x80", b"\x01\x0c", bytes.fromhex("410c0c80"))
     finally:
         uds.close()
 

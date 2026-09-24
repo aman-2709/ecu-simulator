@@ -9,10 +9,14 @@ too, which is the OBD convention for a broadcast.
 
 import pytest
 
-from tests.integration.conftest import FunctionalTester, Simulator, open_tester_socket
+from tests.integration.conftest import FunctionalTester, Simulator, assert_silent, open_tester_socket
 
 SESSION_RESPONSE = bytes.fromhex("5001001e0bb8")
 FUEL_RESPONSE = b"\x41\x2f\x7f"
+
+# The universal probe for assert_silent. Every route in the shipped profile answers it --
+# 0x7DF, 0x7E0 and 0x7E1 -- which the three "is_answered" tests below already pin.
+OBD_PROBE = b"\x01\x2f"
 
 
 @pytest.fixture
@@ -54,9 +58,7 @@ def test_obd_service_on_the_functional_address_is_answered(functional):
 def test_uds_service_on_the_functional_address_reaches_no_protocol(functional, request_hex):
     # UDS is not enabled on 0x7DF, so nothing is produced: neither the positive response
     # for a well-formed request nor a negative one for a malformed request.
-    functional.send(bytes.fromhex(request_hex))
-    with pytest.raises(TimeoutError):
-        functional.recv()
+    assert_silent(functional, bytes.fromhex(request_hex), OBD_PROBE, FUEL_RESPONSE)
 
 
 def test_the_functional_channel_still_serves_obd_after_an_ignored_uds_request(functional):
@@ -68,9 +70,7 @@ def test_the_functional_channel_still_serves_obd_after_an_ignored_uds_request(fu
 
 
 def test_unknown_service_on_the_functional_address_gets_no_response(functional):
-    functional.send(b"\x22\xf1\x90")
-    with pytest.raises(TimeoutError):
-        functional.recv()
+    assert_silent(functional, b"\x22\xf1\x90", OBD_PROBE, FUEL_RESPONSE)
 
 
 # --- both physical routes enable OBD and UDS ----------------------------------------------------
@@ -126,9 +126,7 @@ def test_a_tester_present_subfunction_this_server_does_not_support_is_refused(ud
 def test_a_suppressed_positive_response_is_not_transmitted(uds_physical):
     # DEV-07, Phase 7, on the wire rather than in the handler: nothing at all is put on
     # the bus, so a tester that asked for silence waits for its own timeout.
-    uds_physical.send(b"\x3e\x80")
-    with pytest.raises(TimeoutError):
-        uds_physical.recv()
+    assert_silent(uds_physical, b"\x3e\x80", OBD_PROBE, FUEL_RESPONSE)
 
 
 def test_the_channel_still_works_after_a_suppressed_response(uds_physical):
@@ -144,9 +142,7 @@ def test_the_channel_still_works_after_a_suppressed_response(uds_physical):
 @pytest.mark.parametrize("request_hex", ["1083", "1181"], ids=["session", "reset"])
 def test_a_suppressed_service_that_is_not_tester_present_is_silent_too(uds_physical, request_hex):
     # The rule is generic, and the wire proves it for the two services DEV-07 named.
-    uds_physical.send(bytes.fromhex(request_hex))
-    with pytest.raises(TimeoutError):
-        uds_physical.recv()
+    assert_silent(uds_physical, bytes.fromhex(request_hex), OBD_PROBE, FUEL_RESPONSE)
 
 
 def test_a_suppressed_request_does_not_hide_a_negative_response(uds_physical):
@@ -164,9 +160,9 @@ def test_reading_dtcs_can_be_asked_for_silently(uds_physical):
     # change to what Phase 6 put on the wire for 19 82 FF, which was 7F 19 12.
     uds_physical.send(b"\x19\x02\xff")
     assert uds_physical.recv() == bytes.fromhex("59028c9477010c0001010c")
-    uds_physical.send(b"\x19\x82\xff")
-    with pytest.raises(TimeoutError):
-        uds_physical.recv()
+    # The probe goes after the silence: the positive read above proves the channel was
+    # alive then, not that it is alive now.
+    assert_silent(uds_physical, b"\x19\x82\xff", OBD_PROBE, FUEL_RESPONSE)
 
 
 def test_a_suppressed_read_without_a_status_mask_still_reports_its_length_error(uds_physical):
@@ -188,6 +184,4 @@ def test_clearing_dtcs_is_not_mistaken_for_a_suppressed_request(mutating, uds_ph
 
 def test_tester_present_on_the_obd_broadcast_address_reaches_no_protocol(functional):
     # UDS is not enabled on 0x7DF, so claiming 0x3E does not make it answerable there.
-    functional.send(b"\x3e\x00")
-    with pytest.raises(TimeoutError):
-        functional.recv()
+    assert_silent(functional, b"\x3e\x00", OBD_PROBE, FUEL_RESPONSE)
