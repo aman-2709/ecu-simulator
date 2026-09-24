@@ -15,6 +15,10 @@
 # Needs root or CAP_NET_ADMIN. The simulator itself runs unprivileged afterwards:
 #   ecu-simulator --interface can0
 #
+# Bitrate lives here, not in the simulator: there is no `ecu-simulator --bitrate`. 500000
+# and 250000 are the OBD bitrates; anything else is accepted with a warning. Troubleshooting
+# is in docs/hardware-testbench.md.
+#
 # Bitrate and automatic bus-off recovery are set here. CAN FD parameters are not
 # configured by this script (CAN FD is a later phase). The kernel ISO-TP module
 # loads on demand.

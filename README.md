@@ -114,6 +114,23 @@ sudo scripts/setup_can.sh can0 500000
 ecu-simulator --interface can0
 ```
 
+Bitrate is a privileged link property, so it is set here and not by the simulator. There is
+no `ecu-simulator --bitrate` and there will not be: the simulator runs unprivileged, and
+`setup_can.sh` exists to keep that separation. `500000` and `250000` are the OBD bitrates
+(ISO 15765-4); any other value is accepted with a warning, which is fine for non-OBD use.
+
+`setup_can.sh` also takes two environment variables:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `CAN_RESTART_MS` | `100` | automatic bus-off recovery delay in ms. **`0` explicitly disables it** — use that while troubleshooting, so a bus-off stays visible |
+| `CAN_TERMINATION` | unset | ohms for a controller's switchable termination, e.g. `120` or `0`. Unset means termination is not touched. Ignored with a warning on controllers that do not support it |
+
+Against an ELM327 a bitrate mismatch does not announce itself: it presents as silence, as
+`NO DATA`, or as `CAN ERROR`. See
+[docs/hardware-testbench.md](docs/hardware-testbench.md) for the bench procedure and
+troubleshooting.
+
 Options: `--profile PATH` (default: the packaged `profiles/ice_default.yaml`), `--interface IFACE` (default: the profile's `transport.interface`), `--log-level {DEBUG,INFO,WARNING,ERROR}`, `--version`, `--help`. Stop with Ctrl-C or SIGTERM; the simulator closes its sockets and exits with status 0. A missing or down interface, a kernel without `CAN_ISOTP`, or an invalid profile is reported with an actionable message and exit status 2.
 
 Check a profile without opening a socket:

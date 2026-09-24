@@ -146,6 +146,12 @@ sudo scripts/setup_can.sh can0 500000     # 500000 and 250000 are the OBD bitrat
 python -m ecu_simulator --interface can0  # unprivileged
 ```
 
+Bitrate is a privileged link property and is set here, never by the simulator. **There is
+no `ecu-simulator --bitrate` and there will not be**: the simulator runs unprivileged and
+`setup_can.sh` exists to keep that separation
+([0008 §2](decisions/0008-phase-8-question-resolutions.md), Q3). Any bitrate other than
+500000 or 250000 is accepted with a warning, which is correct for non-OBD use.
+
 `setup_can.sh` arms automatic bus-off recovery at 100 ms by default. **While
 troubleshooting, disable it** so a bus-off stays visible instead of the interface quietly
 recovering underneath you:
@@ -196,10 +202,231 @@ committed.
 
 ## 6. Troubleshooting
 
-**Not yet written.** It is Phase 8a Task 11 and will cover the six cases in
-[0007 §8](decisions/0007-phase-8-hardware-validation.md) plus `listen-only`, which
-[0008 §2](decisions/0008-phase-8-question-resolutions.md) moved out of `setup_can.sh` and
-into documentation.
+The six cases in [0007 §8](decisions/0007-phase-8-hardware-validation.md), plus
+`listen-only`, which [0008 §2](decisions/0008-phase-8-question-resolutions.md) moved out of
+`setup_can.sh` and into documentation. Where a case was actually met while building this
+bench, that is said rather than left as theory.
+
+### 6.0 Start here: the three faces of "it isn't answering"
+
+These look identical from the driver's seat and have different causes. Telling them apart
+first saves most of the hunt.
+
+| What you see | Where it comes from | What it usually means |
+|---|---|---|
+| **Silence** — nothing at all, the tester waits out its own timeout | the simulator chose not to respond, **or** nothing reached the bus | a suppressed positive response is *supposed* to look like this (`3E 80`, DEV-07). Otherwise: wiring, ground, termination, or the adapter never transmitted |
+| **`NO DATA`** | the **ELM327**, after its `AT ST` timer expired with no reply | the request went out and nothing answered. The bus works well enough to transmit; the far end did not reply, or the simulator is not running |
+| **`CAN ERROR`** | the **ELM327** (ELM327DSJ p. 87) | "difficulty initializing, sending, or receiving" — including a baud rate that does not match the actual data rate, and wiring faults |
+
+The distinction matters because only the first can be a *correct* result. `NO DATA` and
+`CAN ERROR` are always the device telling you something, and
+[0008 §6](decisions/0008-phase-8-question-resolutions.md) records why naming only silence
+would misdirect an operator two times in three.
+
+**First diagnostic, every time — the interface counters:**
+
+```bash
+ip -details -statistics link show can0
+```
+
+```
+can state ERROR-ACTIVE restart-ms 100
+  bitrate 500000 sample-point 0.875
+  re-started bus-errors arbit-lost error-warn error-pass bus-off
+  0          0          0          0          0          0
+RX: bytes packets errors dropped  missed   mcast
+TX: bytes packets errors dropped carrier collsns
+```
+
+Read it in this order:
+
+1. **Controller state.** `ERROR-ACTIVE` is healthy. `ERROR-WARNING` / `ERROR-PASSIVE` /
+   `BUS-OFF` mean the controller is unhappy about the physical bus — go to 6.1 and 6.2.
+2. **`TX errors` and `TX dropped`.** Non-zero means frames did not get out. **Zero TX
+   errors with a non-zero TX packet count is the strongest single thing this bench can
+   tell you**: every frame was acknowledged, so wiring, ground, termination and bitrate all
+   carry traffic. The 2026-09-23 run transmitted 51,517 frames with zero TX errors.
+3. **`bus-errors`, `error-warn`, `error-pass`, `bus-off`.** Any of these climbing during a
+   run points at the physical layer, not at protocol logic.
+4. **`re-started`.** Non-zero means automatic recovery fired — a bus-off happened and was
+   papered over. See 6.2.
+
+Take it **before and after** every run. `ip link set up` succeeds on an adapter attached to
+nothing, so configuration alone cannot distinguish "the link is up" from "the link is up on
+a working bus".
+
+### 6.1 No frames at all
+
+Nothing on `candump`, nothing at the tester, TX errors climbing or the controller leaving
+`ERROR-ACTIVE`.
+
+```bash
+candump -e -t a 'can0,0:0,#FFFFFFFF'      # all ids, all error frames
+ip -details -statistics link show can0    # before and after
+```
+
+Check, in this order:
+
+1. **Ground.** The commonest fault, and the one this bench actually had. The CANable
+   documentation is explicit: *"Connect the CANH, CANL, and GND pins of your CANable to
+   your target CAN bus. You must connect ground for the CAN bus to function properly."* A
+   tester on its own 12 V supply and an adapter grounded through USB have **no shared
+   reference** unless a wire provides one. The failure looks exactly like a termination or
+   bitrate fault, which is why it is worth eliminating first — it costs one wire.
+2. **Termination.** Two 120 Ω across the differential pair, total. With everything powered
+   off and the adapter unplugged, CAN-H to CAN-L should read ~60 Ω for two, ~120 Ω for one,
+   open for none. The manufacturer states a completely unterminated bus "will not function
+   at all". On this bench the CANable's onboard resistor is enabled by jumper (§2.2) and
+   whether the LX also terminates is unknown, so the bus is ~120 Ω or ~60 Ω — **unmeasured**.
+3. **CAN-H / CAN-L not swapped**, and on the right pins: 6 and 14 (§2.6).
+4. **Bitrate agreement** on both ends — 6.3.
+5. **Two nodes.** A lone transmitter gets no acknowledgement and will error out. The tester
+   must be powered, not merely wired.
+
+### 6.2 The interface goes down and stays down
+
+Symptom: the simulator "stopped responding", when in fact the controller reached bus-off
+and the link is no longer passing traffic.
+
+```bash
+ip -details -statistics link show can0 | grep -E "state|bus-off|re-started"
+sudo ip link set can0 type can restart          # recover by hand
+```
+
+`setup_can.sh` arms automatic recovery at 100 ms by default, so this normally self-heals —
+and that is exactly the problem while diagnosing, because a fault that recovers silently
+is a fault you cannot see. Turn it off for troubleshooting:
+
+```bash
+sudo CAN_RESTART_MS=0 scripts/setup_can.sh can0 500000
+```
+
+`CAN_RESTART_MS=0` **explicitly disables** recovery rather than leaving whatever a previous
+run armed; `restart-ms` is a persistent link property and nothing else in the script clears
+it. Watch `re-started` afterwards: a non-zero count on a bench that "seems fine" means it
+is not.
+
+### 6.3 A silent ELM327
+
+Nothing comes back at all — no response, no `NO DATA`, no error.
+
+From ELM327DSJ, "CAN Input Frequency Matching" (p. 62): from firmware 2.1 the device
+measures the bus frequency and will not transmit unless it matches the selected protocol.
+Read in full, that check is **narrower than it first appears**, and the narrowing matters:
+
+- it applies **only while searching** for a protocol — *"Once a particular protocol is
+  considered to be active, no further frequency checks are made"*. A bench that selects
+  protocol 6 with `AT SP 6` is not in that path;
+- **a quiet bus passes it** — a send is allowed *"if the input signal frequency matches the
+  CAN setting (250 or 500 kbps), or if there appears to be no signal"*.
+
+So silence is one presentation of a bitrate mismatch, not the only one — see 6.0. Check:
+
+```bash
+ip -details link show can0 | grep bitrate       # what the adapter is set to
+```
+
+then confirm the tester's protocol (6.4). `setup_can.sh` warns when the bitrate is neither
+500000 nor 250000, which is the cheap half of this trade.
+
+`AT BI` bypasses the initiation sequence, and the datasheet notes *"this frequency matching
+test will also bypassed"*. **It is a diagnostic, not a step.** If the bench needs `AT BI`
+to talk, the bench is misconfigured and `AT BI` is hiding it.
+
+**If the tester is Bluetooth, eliminate the link first**, before suspecting CAN at all. On
+this bench that was the whole problem for a while: an OBDLink LX is **not discoverable by
+default** — it advertises only for about two minutes after its `Connect` button is pressed
+(ScanTool's own quick-start guide), so scans find nothing and the adapter looks dead. Its
+`BT` LED fast-blinks while discoverable, is solid when connected, and the `POWER` LED
+flashing every ~3 s means BatterySaver sleep. A lit power LED proves the rail, not the
+radio.
+
+### 6.4 The ELM327 reports the wrong protocol
+
+```
+AT DPN        → the protocol number, prefixed 'A' if it was reached by automatic search
+AT DP         → the same thing in words
+AT SP 6       → set ISO 15765-4 CAN, 11-bit, 500 kbaud, and save it
+```
+
+Protocol **6** is this bench's protocol; it matches the shipped profile's `0x7DF` / `0x7E0`
+/ `0x7E8` and the 500000 default. Protocol 8 is the 250 kbaud variant; 7 and 9 are their
+29-bit counterparts and are Phase 9 work.
+
+**Do not start with `AT SP 0`.** An automatic search transmits requests in other protocols
+before it reaches CAN, which makes a failure much harder to read. Set the protocol
+explicitly, get a deterministic pass, and only then test the search as its own case
+(0007 §6.2 item 4). For the record, on this bench the app's automatic search did settle on
+protocol 6 unaided once the simulator was running.
+
+### 6.5 A device that says ELM327 but behaves differently
+
+Adapters commonly report an ELM327 version string while implementing something else
+underneath — sometimes a subset, sometimes a superset.
+
+```
+AT I          → the product identification string
+AT @1         → the device description
+AT DP / DPN   → the protocol as the device understands it
+```
+
+Record all of them verbatim, plus how the device was obtained, and put them in §2.3 of this
+document. The rule from [0007 §4.3](decisions/0007-phase-8-hardware-validation.md): a test
+that fails on one adapter is an **interoperability finding naming that adapter**, never a
+defect of this simulator and never quietly dropped.
+
+This bench is a live example rather than a hypothetical. The OBDLink LX reports Product ID
+`ELM327 v1.4b` **and** Firmware ID `STN1155 v5.6.19` at the same time — an STN-based device
+implementing the ELM327 command set. It is neither "genuine" nor a "clone", and this
+project applies neither label; it records what the device says.
+
+### 6.6 The simulator's own guard messages
+
+These already name their cause and their fix, so read them literally before investigating
+further. All exit with status **2**:
+
+| Message | Meaning |
+|---|---|
+| ``CAN interface 'can0' does not exist. Create it with scripts/setup_vcan.sh (virtual) or scripts/setup_can.sh (hardware), or pass --interface.`` | the adapter is unplugged, the driver did not bind, or the name is wrong |
+| ``CAN interface 'can0' exists but is down. Bring it up with: sudo ip link set up can0`` | `setup_can.sh` was not run, or the link was taken down afterwards |
+| a kernel without `CAN_ISOTP` | the module is missing; the simulator cannot open an ISO-TP socket |
+| an invalid profile | reported by `validate-config` without opening any socket |
+
+`ecu-simulator validate-config --profile <path>` checks a profile with no bus involved at
+all, which separates configuration faults from bench faults in one step.
+
+### 6.7 Watching a bus without joining it — `listen-only`
+
+A node in listen-only mode receives but **does not transmit**, and does not even
+acknowledge. Useful for watching an established bus without becoming a participant:
+
+```bash
+sudo ip link set can0 down
+sudo ip link set can0 type can bitrate 500000 listen-only on
+sudo ip link set can0 up
+candump -e -t a 'can0,0:0,#FFFFFFFF'
+```
+
+Restore it before running the simulator:
+
+```bash
+sudo ip link set can0 down
+sudo ip link set can0 type can listen-only off
+sudo scripts/setup_can.sh can0 500000
+```
+
+**This is why `setup_can.sh` does not offer it.** An interface left in listen-only is
+itself a cause of 6.1 and 6.3: the simulator appears to start normally, transmits nothing,
+and the tester sees silence. [0008 §2](decisions/0008-phase-8-question-resolutions.md)
+keeps it in documentation for exactly that reason. If a bench is silent and everything else
+checks out, confirm `LISTEN-ONLY` is *absent* from the controller mode flags:
+
+```bash
+ip -details link show can0 | grep -o "<[A-Z,-]*>"
+```
+
+Note also that a listen-only node cannot acknowledge, so it does not count as the second
+node a transmitter needs (6.1, item 5).
 
 ## 7. Status of Phase 8b
 
