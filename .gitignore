@@ -132,3 +132,42 @@ dmypy.json
 # Tooling caches and local virtualenv
 .ruff_cache/
 .venv/
+
+# --- Project-specific rules, added 2026-09-23 alongside the Phase 8 smoke-test evidence ---
+
+# The simulator writes a rotating ecu_simulator.log to its working directory
+# (src/ecu_simulator/loggers/logger_app.py). The `*.log` rule above catches the base file
+# but NOT the rotated ecu_simulator.log.1 .. .5 siblings, which is how ~7.5 MB of them
+# ended up untracked in the working tree after a bench run.
+ecu_simulator.log*
+
+# Ad-hoc bench captures dropped in the repository root. Reviewed evidence belongs under
+# docs/validation/ and is exempted at the bottom of this file.
+/*.candump.log
+/candump-*.log
+/*.asc
+/*.blf
+
+# Evidence that has not been through a privacy review yet. Bench captures can carry
+# device serials, Bluetooth addresses of nearby third-party devices, and host paths.
+evidence-private/
+*.private.*
+
+# Credentials and keys. None are expected in this repository; these rules are a guard.
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ecdsa
+id_ed25519
+secrets.*
+*credentials*.json
+
+# Validation evidence is deliberately committed, captures included.
+#
+# This negation is load-bearing and must stay below every `*.log` rule. Without it the
+# `*.log` rule silently excluded docs/validation/phase-7-evidence/*.candump.log from
+# commit 9565e13, so the committed README documented two capture files that the
+# repository did not actually contain. Verified 2026-09-23.
+!docs/validation/**/*.log
