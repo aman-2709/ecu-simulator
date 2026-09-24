@@ -57,7 +57,11 @@ artifacts = ["src/ecu_simulator/profiles/*.yaml"]
 include = ["src", "tests", "docs", "scripts", "setup_can.sh", "setup_vcan.sh", "README.md", "LICENSE"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# tests/hardware is deliberately absent. It needs a physical bench and the optional
+# [hardware] extra, and a marker cannot keep it out of a default run because pytest
+# collects before it deselects. `pytest tests/hardware` still works and is then gated by
+# that package's own conftest.
+testpaths = ["tests/unit", "tests/characterization", "tests/integration"]
 addopts = "-ra"
 xfail_strict = true
 asyncio_default_fixture_loop_scope = "function"

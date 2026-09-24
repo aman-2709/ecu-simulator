@@ -1013,11 +1013,37 @@ a machine without the extra.
 - Modify: `pyproject.toml` (the `[tool.pytest.ini_options]` block)
 
 **Interfaces:**
-- Consumes: `_foreign_responder_present` from `tests/integration/conftest.py:53-68`.
-- Produces: the fixtures `hw_bench() -> HardwareBench` and the dataclass
-  `HardwareBench(can_iface: str, serial_port: str, baud: int)`, used by Tasks 10 and 12.
-  Environment contract: `ECU_SIM_HW_BENCH=1`, `ECU_SIM_HW_CAN_IFACE`, `ECU_SIM_HW_SERIAL`,
-  optional `ECU_SIM_HW_BAUD` (default `38400`).
+- Consumes: `_foreign_responder_present` from `tests/integration/conftest.py`.
+- Produces: `hw_bench() -> HardwareBench`, the dataclass
+  `HardwareBench(can_iface: str, serial_port: str, baud: int)`, and **the two-backend seam**
+  below. Environment contract: `ECU_SIM_HW_BENCH=1`, `ECU_SIM_HW_CAN_IFACE`,
+  `ECU_SIM_HW_SERIAL`, optional `ECU_SIM_HW_BAUD` (default `38400`).
+
+**Amended 2026-09-24 — the harness serves two backends, and the diagnostic logic is
+written once.** The plan originally left this implicit, which would have let the bench and
+CI drift into proving slightly different things.
+
+| Backend | Transport | Where it runs | What a pass means |
+|---|---|---|---|
+| **Simulated** | fake ELM327 on a pty, bridged to a real ISO-TP socket on `vcan0` | `tests/integration/`, ordinary CI, no hardware | the harness and the simulator agree |
+| **Physical** | real adapter on a serial device — OBDLink LX over `/dev/rfcomm*`, or a USB ELM327 | `tests/hardware/`, opt-in only, never CI | evidence about real wire, for the adapter named in the bench record |
+
+The seam is `tests/hardware/tester.py`:
+
+- `DiagnosticTester` — a `@runtime_checkable` `Protocol` with `at(text) -> str`,
+  `ask(text) -> bytes`, `close() -> None`. Both backends satisfy it; a backend that
+  forgets a method is rejected at the seam rather than halfway through a bench run.
+- `AcceptanceCase(name, why, run)` — frozen and hashable, so both backends parameterise
+  over the same registry and pytest ids stay stable. A bench result and a CI result can
+  then be compared row by row.
+
+It is named `DiagnosticTester`, not `Tester`: pytest collects classes whose names begin
+with `Test`, and this matches the transport layer's existing `DiagnosticRequest` /
+`DiagnosticResponse` vocabulary. The module imports no pyserial and opens nothing, so the
+unit tests that pin the contract run everywhere.
+
+`tests/hardware/` keeps its outright `vcan*` refusal. The simulated backend does not come
+through it — it lives in `tests/integration/` and is collected normally.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2176,9 +2202,23 @@ Two boundaries this task does **not** cross:
 - Create: `tests/integration/test_elm327_acceptance_dry_run.py`
 
 **Interfaces:**
-- Consumes: `Elm327`, `FakeElm327`, `HardwareBench`, `parse_response`, `assert_silent`.
-- Produces: `acceptance_checks(elm: Elm327) -> list[tuple[str, bool, str]]`, a list of
-  (name, passed, detail), shared by the real suite and the dry run so neither can drift.
+- Consumes: the `DiagnosticTester` protocol and `AcceptanceCase` from Task 6's
+  `tests/hardware/tester.py`; `Elm327` (Task 9); `FakeElm327`; `HardwareBench`.
+- Produces: `ACCEPTANCE_CASES: tuple[AcceptanceCase, ...]` in
+  `tests/hardware/acceptance_cases.py` — **the single registry both backends parameterise
+  over**. Each case is written once against `DiagnosticTester` and never against a concrete
+  adapter, which is what stops the bench and CI drifting apart.
+
+Two thin collected modules share that registry and duplicate no logic:
+
+- `tests/integration/test_elm327_simulated.py` — the fake dongle bridged to `vcan0`, marked
+  `vcan`, collected in ordinary runs. This is the regression test for the harness.
+- `tests/hardware/test_elm327_physical.py` — the real adapter from `hw_bench`, opt-in only.
+  This is the one that can produce Phase 8b evidence.
+
+Cases that cannot apply to a backend declare it, rather than being silently skipped: the
+`AT RV` supply-voltage check is meaningless against a fake, and a case that a backend
+cannot run is reported as not-applicable with its reason, never as a pass.
 
 - [ ] **Step 1: Write the acceptance checks as data**
 
