@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.hardware.tester import AcceptanceCase, DiagnosticTester
+from tests.hardware.tester import BOTH, PHYSICAL, SIMULATED, AcceptanceCase, DiagnosticTester
 
 
 class MinimalTester:
@@ -97,3 +97,41 @@ def test_cases_are_hashable_and_comparable_for_stable_parameterisation():
 def test_the_case_id_is_its_name():
     case = AcceptanceCase(name="supported-pids", why="x", run=lambda t: None)
     assert str(case) == "supported-pids"
+
+
+# --- backend applicability, added with Task 12 -------------------------------------------
+
+
+def test_a_case_applies_to_both_backends_by_default():
+    case = AcceptanceCase(name="rpm", why="x", run=lambda t: None)
+    assert case.applies_to == BOTH
+    assert case.applies(SIMULATED) and case.applies(PHYSICAL)
+
+
+def test_both_names_exactly_the_two_backends():
+    # If a third backend is ever added, BOTH stops being a safe default and every case
+    # that relied on it needs revisiting. Pin it so that is a deliberate change.
+    assert BOTH == frozenset({SIMULATED, PHYSICAL})
+
+
+def test_a_case_can_declare_itself_physical_only():
+    # AT RV reads a supply voltage; a fake dongle has none. The case says so rather than
+    # being silently skipped somewhere in a backend.
+    case = AcceptanceCase(name="supply-voltage", why="0007 6.2 item 2",
+                          run=lambda t: None, applies_to=frozenset({PHYSICAL}))
+    assert case.applies(PHYSICAL)
+    assert not case.applies(SIMULATED)
+
+
+def test_a_case_declares_whether_it_mutates_state():
+    read = AcceptanceCase(name="read", why="x", run=lambda t: None)
+    clear = AcceptanceCase(name="clear", why="x", run=lambda t: None, mutates=True)
+    assert not read.mutates
+    assert clear.mutates
+
+
+def test_cases_with_different_applicability_are_distinct():
+    a = AcceptanceCase(name="x", why="y", run=lambda t: None)
+    b = AcceptanceCase(name="x", why="y", run=a.run, applies_to=frozenset({PHYSICAL}))
+    assert a != b
+    assert len({a, b}) == 2

@@ -2220,6 +2220,26 @@ Cases that cannot apply to a backend declare it, rather than being silently skip
 `AT RV` supply-voltage check is meaningless against a fake, and a case that a backend
 cannot run is reported as not-applicable with its reason, never as a pass.
 
+**Infrastructure limitation, measured 2026-09-24 and standing until it changes.** The
+simulated backend **does not execute on GitHub-hosted runners**, for two independent
+reasons:
+
+1. CI installs `.[dev]`, not `.[dev,hardware]`, so `pytest.importorskip("serial")` skips
+   the module before any fixture runs.
+2. The runner kernel has no `CONFIG_CAN_ISOTP`, so the `vcan` fixture skips the whole of
+   `tests/integration` regardless. The repository's own
+   `scripts/probe_can_capabilities.py` job exists to record exactly this.
+
+Installing the extra in CI would clear the first and **not** the second, so it would not
+make these tests run. The kernel is the binding constraint and a GitHub-hosted runner
+cannot load `can_isotp`.
+
+**Consequence: a green CI run is not evidence that Task 12 passes.** It is evidence that
+Task 12 was correctly *skipped*. The backend is verified locally, on a host with a vcan
+interface and the `[hardware]` extra installed, and any phase report must record it as a
+local result with its command, never as a CI result. Section 10 of the plan already
+requires every skipped CI test to be recorded with its reason; this is one of them.
+
 - [ ] **Step 1: Write the acceptance checks as data**
 
 `tests/hardware/test_elm327_acceptance.py` covers [0007 §6.2](../decisions/0007-phase-8-hardware-validation.md)

@@ -25,8 +25,13 @@ about real wire, and even then only about the adapter named in the bench record.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
+
+#: The two backends an acceptance case can run against.
+SIMULATED = "simulated"
+PHYSICAL = "physical"
+BOTH = frozenset({SIMULATED, PHYSICAL})
 
 
 @runtime_checkable
@@ -76,6 +81,21 @@ class AcceptanceCase:
     name: str
     why: str
     run: Callable[[DiagnosticTester], None]
+
+    #: Which backends this case is meaningful against. A case that cannot apply to a
+    #: backend says so here and is reported as not-applicable with its reason, never
+    #: silently skipped and never counted as a pass. ``AT RV`` reads a supply voltage, for
+    #: instance, and a fake dongle has no supply.
+    applies_to: frozenset[str] = field(default=BOTH)
+
+    #: True when running the case changes ECU state that a later case would read -- a DTC
+    #: clear, for example. Each backend is responsible for restoring a known state
+    #: afterwards; the simulated one restarts the simulator, and the physical one orders
+    #: these last and tells the operator.
+    mutates: bool = False
+
+    def applies(self, backend: str) -> bool:
+        return backend in self.applies_to
 
     def __str__(self) -> str:
         return self.name
