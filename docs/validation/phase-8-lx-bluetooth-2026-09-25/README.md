@@ -9,8 +9,11 @@ OBDLink Android app, and the PC's Bluetooth was not used. No `tests/hardware` te
 that suite needs a serial device on the PC, and none existed. Under
 [0008 §3](../../decisions/0008-phase-8-question-resolutions.md), **USB ELM327 acceptance
 is mandatory for V1.0 and remains open**. Bluetooth is optional and reported separately.
-No conformance row has moved: all 61 rows of [conformance.md](../../conformance.md) still
-read `hardware validated: no`.
+No conformance status has moved: no row of [conformance.md](../../conformance.md) reads
+`hardware validated: yes`. Its 71 status rows read 48 `no` and 23 `n/a`. An earlier
+version of this sentence said "all 61 rows", repeating a figure that had been counted by
+grepping for `| no |` in any column. See the
+[Phase 8a completion report](../phase-8a-completion.md).
 
 Every figure below is reproduced by [`analyze.py`](analyze.py) from the committed capture
 and log:

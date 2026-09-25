@@ -336,6 +336,18 @@ to end against a fake dongle on vcan in an ordinary CI run, so no part of it fir
 on bench day; and the completion report states plainly that **no conformance row gained
 `hardware validated` and V1.0 is not tagged.**
 
+**Completed 2026-09-25**, at `8f17b9e`, with **one DoD line not met as written**; the owner
+decides whether it stands. Report:
+[validation/phase-8a-completion.md](validation/phase-8a-completion.md). Criteria 1–7, 14
+and 15 are met without hardware. **The fake-dongle harness runs end to end on a vcan host
+but not in an ordinary CI run.** GitHub-hosted runners boot the `linux-azure` kernel,
+which has no `can_isotp`, so CI skips it. That is the unmet line, and
+[decisions/0009](decisions/0009-self-hosted-vcan-runner.md) proposes the runner that would
+meet it. During Task 12 acceptance the physical backend was found unable to pass on
+hardware and was fixed (`6fd5132`). The phone-driven LX Bluetooth evidence of 2026-09-23
+and 2026-09-25 is interoperability evidence, not acceptance. Criteria 8–13 remain Phase
+8b.
+
 #### Phase 8b — Physical CAN and ELM327 acceptance (V1.0 gate)
 
 The bench run itself: the nineteen-point ELM327 acceptance list, the physical re-run of

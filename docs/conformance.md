@@ -49,6 +49,15 @@ Linux 6.8 and 6.17 and recorded in
 [decisions/0001-isotp-binding.md](decisions/0001-isotp-binding.md). Manual verification
 used can-utils `candump`, `isotpsend` and `isotprecv`.
 
+Interoperability evidence, physical CAN: on 2026-09-23 and 2026-09-25 these rows carried
+OBD traffic over a CANable at 500 kbit/s to an OBDLink LX. That covered single frames,
+functional requests on `0x7DF`, and multi-frame responses with the adapter's own flow
+control on `0x7E0`, with zero error frames
+([smoke test](validation/phase-8-smoke-test/README.md),
+[LX run](validation/phase-8-lx-bluetooth-2026-09-25/README.md)). Both runs were driven
+from the adapter's Android app over Bluetooth. They are not Phase 8b acceptance, so
+`hardware validated` stays `no`.
+
 ## Addressing and routing
 
 | Behavior | Implemented | Unit tested | Integration tested | Hardware validated | Standards validated |
@@ -105,7 +114,19 @@ column records what each encoding actually rests on.
 
 Interoperability evidence: the Mode 01 values were exercised over the kernel ISO-TP path
 on a vcan interface, and the supported-parameter chain, the multi-frame VIN and a
-six-parameter request whose response spans several frames were verified on the wire. No hardware adapter has been used yet; that is Phase 8.
+six-parameter request whose response spans several frames were verified on the wire.
+
+Interoperability evidence, physical CAN: on 2026-09-25 an OBDLink LX, driven from its
+Android app over Bluetooth, received the bytes these rows' tests pin, unchanged, for the
+supported-parameter chain, Mode 01 PIDs 0x05, 0x0B, 0x0C, 0x0D, 0x10 and 0x2F, the VIN,
+Mode 03 and Mode 04. The app decoded the trouble codes as B1477 and P0001 and reported none
+after the clear ([LX run](validation/phase-8-lx-bluetooth-2026-09-25/README.md)). The
+2026-09-23 smoke test found nine responses byte-identical to the vcan goldens
+([smoke test](validation/phase-8-smoke-test/README.md)). The Phase 8a ELM327 response
+parser reproduces the two worked CAN captures on ELM327DSJ page 45. **None of this is
+Phase 8b acceptance.** Both runs were phone-driven, no Python harness drove the adapter,
+multi-parameter requests and UDS were not exercised, and USB ELM327 acceptance is still
+required. `hardware validated` therefore stays `no` on every row.
 
 Known-wrong or unresolved behavior in these rows is tracked as DEV-03, DEV-11 and DEV-15.
 DEV-18 was corrected in Phase 5.1; the three project choices its evidence did not settle

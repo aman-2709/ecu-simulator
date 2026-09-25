@@ -16,9 +16,9 @@ records the equipment; it does not repeat the evidence and does not restate the 
 **The mandatory USB ELM327 acceptance has not been performed.** The tester used so far is
 a Bluetooth adapter. Under [0008 §3](decisions/0008-phase-8-question-resolutions.md) USB
 acceptance is required for V1.0 and Bluetooth is optional and separately reported, so
-nothing below substitutes for it. Acceptance criterion 8 remains `not verified`, all 61
-rows of [conformance.md](conformance.md) still read `hardware validated: no`, and V1.0 is
-not tagged.
+nothing below substitutes for it. Acceptance criterion 8 remains `not verified`, no row of
+[conformance.md](conformance.md) reads `hardware validated: yes` (its 71 status rows read
+48 `no` and 23 `n/a`), and V1.0 is not tagged.
 
 ---
 
