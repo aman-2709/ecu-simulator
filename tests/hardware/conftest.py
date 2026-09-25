@@ -14,7 +14,9 @@ separate refusals guard it, because they protect against three different mistake
    bench nothing answers OBD before the simulator starts. On a vehicle bus a real ECU
    would. That is what turns the ruling in ``docs/decisions/0008`` section 2 -- this
    simulator never transmits on a live vehicle bus -- from a sentence in a document into a
-   refusal in code.
+   refusal in code. The suite starts the simulator itself, and only after this check
+   passes (``bench_simulator``), so the check can never mistake our own simulator for a
+   vehicle ECU.
 
 The marker alone cannot do any of this: pytest collects before it deselects, so a default
 run would import this package and, with it, pyserial.
@@ -23,11 +25,13 @@ run would import this package and, with it, pyserial.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 import pytest
 
 from ecu_simulator.transport.socketcan import interface as iface_mod
+from tests.hardware.bench_simulator import BenchOccupied, BenchSimulator
 from tests.integration.conftest import _foreign_responder_present
 
 BENCH_FLAG = "ECU_SIM_HW_BENCH"
@@ -107,12 +111,23 @@ def hw_bench() -> HardwareBench:
     if _foreign_responder_present(iface):
         pytest.fail(
             f"something already answers OBD requests on {iface!r}. This suite must run on a "
-            "dedicated bench carrying nothing but the simulator and the tester. If this is a "
-            "vehicle, stop: docs/decisions/0008 rules that this simulator never transmits on a "
-            "live vehicle bus."
+            "dedicated bench carrying nothing but the simulator it starts itself and the tester, "
+            "so stop any simulator you started by hand. If this is a vehicle, stop: "
+            "docs/decisions/0008 rules that this simulator never transmits on a live vehicle bus."
         )
     return HardwareBench(
         can_iface=iface,
         serial_port=os.environ[SERIAL_VAR],
         baud=int(os.environ.get(BAUD_VAR, DEFAULT_BAUD)),
     )
+
+
+@pytest.fixture(scope="module")
+def bench_simulator(hw_bench: HardwareBench, tmp_path_factory: pytest.TempPathFactory) -> Iterator[BenchSimulator]:
+    """The simulator on the bench interface: started after the bus is proved empty, and
+    stopped however the module ends. See bench_simulator.py for why the order matters."""
+    try:
+        with BenchSimulator(hw_bench.can_iface, str(tmp_path_factory.mktemp("bench-sim"))) as sim:
+            yield sim
+    except BenchOccupied as refusal:
+        pytest.fail(str(refusal))
