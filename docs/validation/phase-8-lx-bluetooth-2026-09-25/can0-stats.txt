@@ -1,0 +1,18 @@
+can0 counters from `ip -details -statistics link show can0`, transcribed from the session
+output. The interface was not reconfigured at any point: it was already UP at 500000 bit/s,
+sample-point 0.875, restart-ms 0, gs_usb, clock 48000000.
+
+=== BEFORE (read before the pre-flight probe and before the simulator started) ===
+state ERROR-ACTIVE
+re-started 0  bus-errors 0  arbit-lost 0  error-warn 0  error-pass 0  bus-off 0
+RX: bytes 824400  packets 103050  errors 0  dropped 0  missed 0
+TX: bytes 412136  packets  51517  errors 0  dropped 0
+
+=== AFTER (read after simulator shutdown and after the capture stopped) ===
+state ERROR-ACTIVE
+re-started 0  bus-errors 0  arbit-lost 0  error-warn 0  error-pass 0  bus-off 0
+RX: bytes 921160  packets 115145  errors 0  dropped 0  missed 0
+TX: bytes 460472  packets  57559  errors 0  dropped 0
+
+=== DELTA ===
+RX packets +12095, TX packets +6042; all error counters unchanged at 0.

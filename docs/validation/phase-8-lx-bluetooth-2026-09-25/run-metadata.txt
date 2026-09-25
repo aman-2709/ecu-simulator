@@ -1,0 +1,12 @@
+2026-09-25, run window 09:30:48 to 09:37:05 PDT (-07:00)
+=== simulator commit (fresh clone of origin/modernization) ===
+68859fad742f1cb5e9cf9a5b759dd3dc1e696bb1
+=== simulator command ===
+python -m ecu_simulator --interface can0 --log-level DEBUG   (default profile, src/ecu_simulator/profiles/ice_default.yaml)
+=== capture command ===
+candump -e -t a 'can0,0:0,#FFFFFFFF'   (all IDs, all error frames)
+=== host ===
+kernel 6.8.0-138-generic, Python 3.12.12
+=== tester ===
+OBDLink LX Bluetooth, driven by the OBDLink Android app over Bluetooth by the operator.
+The PC's Bluetooth was not used; no /dev/rfcomm device existed.
