@@ -336,8 +336,9 @@ to end against a fake dongle on vcan in an ordinary CI run, so no part of it fir
 on bench day; and the completion report states plainly that **no conformance row gained
 `hardware validated` and V1.0 is not tagged.**
 
-**Completed 2026-09-25**, at `8f17b9e`, with **one DoD line not met as written**; the owner
-decides whether it stands. Report:
+**Accepted conditionally 2026-09-25**, at `8f17b9e`, with **one DoD requirement
+outstanding**: the fake-ELM327 end-to-end harness has not executed in an ordinary CI run.
+It is recorded as outstanding, not as passed. Report:
 [validation/phase-8a-completion.md](validation/phase-8a-completion.md). Criteria 1–7, 14
 and 15 are met without hardware. **The fake-dongle harness runs end to end on a vcan host
 but not in an ordinary CI run.** GitHub-hosted runners boot the `linux-azure` kernel,

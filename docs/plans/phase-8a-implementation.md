@@ -2234,6 +2234,12 @@ Installing the extra in CI would clear the first and **not** the second, so it w
 make these tests run. The kernel is the binding constraint and a GitHub-hosted runner
 cannot load `can_isotp`.
 
+> **Amended 2026-09-25.** Reason 1 no longer applies to the CI integration step. Since
+> `68859fa` that step installs `.[dev,hardware]`, so the simulated backend there skips
+> only for reason 2, and the annotation reports that reason by name. The unit jobs still
+> install `.[dev]`, so reason 1 still applies there, to this module and to
+> `tests/unit/test_elm327_serial.py`. Reason 2, and the consequence below, are unchanged.
+
 **Consequence: a green CI run is not evidence that Task 12 passes.** It is evidence that
 Task 12 was correctly *skipped*. The backend is verified locally, on a host with a vcan
 interface and the `[hardware]` extra installed, and any phase report must record it as a
@@ -2337,6 +2343,17 @@ grep -n "hardware validated" docs/conformance.md | head -5
 Expected: **all 61 rows still read `hardware validated: no`.** The only permitted change to
 this file is the note in Step 2. If any row changed, stop — Phase 8a cannot move that
 column.
+
+> **Amended 2026-09-25.** Two parts of this step were wrong as written:
+> - `git diff master -- docs/conformance.md` cannot show whether a row moved, because the
+>   file does not exist on `master` and the diff is the whole file. The meaningful check is
+>   `git diff f607d73~1 -- docs/conformance.md`, the diff since this phase began.
+> - The expected "61 rows" is the number of lines containing `| no |` in any column,
+>   and `grep -c "| yes |"` counts matches in any column, too. Counting the
+>   `hardware validated` cells gives 71 status rows: 48 `no`, 23 `n/a`, 0 `yes`.
+>
+> Task 13 used the corrected checks: see
+> [validation/phase-8a-completion.md §6](../validation/phase-8a-completion.md).
 
 - [ ] **Step 2: Add the note, not a status change**
 

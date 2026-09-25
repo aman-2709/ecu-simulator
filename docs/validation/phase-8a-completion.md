@@ -1,9 +1,12 @@
 # Phase 8a — Completion Report
 
-**Result: complete, with one Definition-of-Done line not met as written (§4.2). Accepting
-it is the owner's decision.** Every acceptance criterion assigned to Phase 8a (1–7, 14, 15
-of [decisions/0007 §9](../decisions/0007-phase-8-hardware-validation.md)) is met and
-verified without hardware.
+**Result: accepted conditionally by the owner on 2026-09-25, with one Definition-of-Done
+requirement outstanding: the fake-ELM327 end-to-end harness has not executed in an
+ordinary CI run (§4.2).** That requirement is **not** a passed criterion. It stays open
+until the harness executes in CI. Every acceptance criterion assigned to Phase 8a (1–7,
+14, 15 of [decisions/0007 §9](../decisions/0007-phase-8-hardware-validation.md)) is met
+and verified without hardware. The harness's evidence is local only: **1026 passed, 2
+xfailed** in the full suite and **68 integration passed**, on this host. CI skipped it.
 
 > **Criteria 8 to 13 are not verified. No Phase 8b bench run has taken place. No
 > conformance row gained `hardware validated`. Phase 8b is open and V1.0 is not tagged.**
@@ -135,6 +138,10 @@ reports only the kernel cause. The line cannot be met on hosted runners at all.
 [decisions/0009](../decisions/0009-self-hosted-vcan-runner.md) proposes a runner that can
 meet it; that proposal is not implemented. The owner decides whether Phase 8a closes with
 this line recorded as unmet, or waits for 0009.
+
+**Owner decision, 2026-09-25:** Phase 8a is accepted conditionally, with this requirement
+explicitly outstanding. The runner proposal in 0009 stays a separate matter. Accepting the
+phase does not verify any Phase 8b criterion and does not tag V1.0.
 
 ## 5. Tests CI does not execute, and why
 
