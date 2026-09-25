@@ -12,7 +12,7 @@ credential has been issued. The owner performs or approves every step in §5.
 
 `tests/integration` (53 cases) and `tests/integration/test_elm327_simulated.py` (15 cases)
 need a kernel that can create `CAN_ISOTP` sockets. Every GitHub-hosted Ubuntu runner boots
-an Azure kernel that has no `can_isotp` module:
+Ubuntu's `linux-azure` kernel flavour, which has no `can_isotp` module:
 
 - `modprobe can_isotp` fails with *"Module can_isotp not found in
   /lib/modules/6.17.0-1022-azure"*; `vcan` and `CAN_RAW` both work.
@@ -137,9 +137,15 @@ Two limits of this design have to be stated:
 
 - **The kernel flavour must ship `can_isotp`.** The contents search in §1 found
   `can-isotp.ko.zst` in the gke, ibm, oem, oracle, gcp, aws, generic and lowlatency
-  flavours, and **not azure**. **An Azure VM is therefore ruled out**, for the same reason
-  the hosted runners fail. The package listing is only a hint: R5 requires a measurement
-  on the actual image (§5, step 3).
+  flavours, and **not in the `linux-azure` flavour**. That flavour is what GitHub-hosted
+  runners boot (`6.17.0-1022-azure`), which is the limitation in §1.
+  **This is a property of one kernel flavour, not of Azure as a cloud.** An Azure VM
+  on Ubuntu's Azure image would normally boot `linux-azure` and hit the same wall. But
+  nothing found so far stops an Azure VM from running another flavour, for example
+  `linux-generic`. Whether a given provider's image, with whatever kernel it is given,
+  can create and bind a `CAN_ISOTP` socket is **not known for any provider, Azure
+  included**. The package listing is only a hint, and R5 requires a measurement on
+  the actual image (§5, step 3).
 - Ubuntu 24.04. Either `vcan` and `can_isotp` are listed in `/etc/modules-load.d/can.conf`,
   or user data runs `modprobe` for both **before** the runner starts, as root, while no
   job code is present yet.
@@ -201,7 +207,7 @@ jobs:
           echo "label=$label" >> "$GITHUB_OUTPUT"
       - id: vm
         run: |
-          # PLACEHOLDER: provider CLI. Create one small Ubuntu 24.04 VM (non-Azure kernel),
+          # PLACEHOLDER: provider CLI. Create one small Ubuntu 24.04 VM whose kernel was measured in §5 step 3,
           # no inbound rules, max lifetime 60 min, tagged purpose=vcan-ci, whose user data
           # installs the runner application and runs: ./run.sh --jitconfig "$(cat jit.txt)"
           echo "id=<instance id>" >> "$GITHUB_OUTPUT"
@@ -257,8 +263,8 @@ endpoint, not tested.
 
 ## 5. Owner steps, in order, with nothing done by the agent
 
-1. Choose a provider (not Azure; §4.3) and a monthly budget, and set the budget alert
-   first.
+1. Choose a provider and a monthly budget, and set the budget alert first. Azure is
+   eligible only with a kernel flavour other than `linux-azure` (§4.3).
 2. Create the private repository and add it as a second push URL on `origin`.
 3. **Measure before building anything.** Boot one VM from the intended image by hand. Log
    in as the unprivileged user and run the two commands from the `vcan` job, plus `sysctl
@@ -282,11 +288,13 @@ None of these is being pursued without a decision.
 | Permanent VM host with an overlay VM for each job | Full | A machine that stays on, plus upkeep | Same boundary as above. **Designed only if §5 step 3 or the per-run cost rules out the disposable VM** |
 | Self-hosted runner on the public repository with a job guard | Full | Same | **Doesn't meet R4** (§3) |
 | QEMU VM inside a hosted runner | Full | Slow boot on every run | Hosted, fine. **Only works if `/dev/kvm` is exposed to the runner, which has to be probed and not assumed** |
-| Build `can_isotp` out of tree against `linux-headers-$(uname -r)` | Full once it loads | Breaks whenever the Azure kernel moves | Hosted, fine. Brings back an out-of-tree `.ko` path that Phase 2 removed from the product, for CI only |
+| Build `can_isotp` out of tree against `linux-headers-$(uname -r)` | Full once it loads | Breaks whenever the hosted runners' `linux-azure` kernel moves | Hosted, fine. Brings back an out-of-tree `.ko` path that Phase 2 removed from the product, for CI only |
 | A third, in-process ISO-TP backend | **Changes what a green run means** | Low | Hosted, fine. Not approved |
 
 ## 7. Open questions for the owner
 
-1. **Provider and budget.** Both are still to be decided. Azure is excluded by §4.3.
+1. **Provider and budget.** Both are still to be decided. No provider is excluded, but
+   any provider's default kernel has to be checked, and `linux-azure` is already known to
+   lack `can_isotp` (§4.3).
 2. How long, and how many clean runs, count as the "reliability and security
    demonstrated" that §4.4 waits for?
