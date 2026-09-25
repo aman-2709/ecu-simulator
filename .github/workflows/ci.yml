@@ -43,7 +43,7 @@ jobs:
       - name: pytest
         run: |
           set -o pipefail
-          pytest --cov=ecu_simulator --cov-report=term-missing --cov-report=xml | tee pytest.log
+          pytest --color=no --cov=ecu_simulator --cov-report=term-missing --cov-report=xml | tee pytest.log
           # Publish the summary and coverage total as annotations: readable through the
           # public API without a signed-in session, unlike logs and artifacts.
           summary=$(grep -E 'passed|failed|error' pytest.log | tail -1 | sed -E 's/^=+ *//; s/ *=+$//')
@@ -115,7 +115,7 @@ jobs:
         run: |
           python -m pip install -q -e ".[dev,hardware]"
           set -o pipefail
-          pytest tests/integration -m vcan -q -rs -p no:cacheprovider | tee integration.log || true
+          pytest tests/integration -m vcan -q -rs --color=no -p no:cacheprovider | tee integration.log || true
           summary=$(grep -E 'passed|skipped|failed|error' integration.log | tail -1 | sed -E 's/^=+ *//; s/ *=+$//')
           # The CAN_ISOTP reason is reported by name, not as the first SKIPPED line, so a
           # skip for any other reason cannot mask it; other reasons are listed after it.
