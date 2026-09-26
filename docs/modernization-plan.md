@@ -564,6 +564,18 @@ CAN FD traffic, DoIP, OBDonUDS, ZEVonUDS, gateway routing, extended ISO-TP addre
 UDS 0x22/0x27/0x28/0x2E/0x31, session timing, any OEM security algorithm, Windows or
 macOS, Docker as a requirement, a GUI, J1939, any claim of standards compliance.
 
+**GUI track, noted 2026-09-26 on branch `gui` only.** A read-only browser GUI over an
+opt-in observer API is designed in
+[decisions/0010-gui-observer-api.md](decisions/0010-gui-observer-api.md), approved in
+direction by the owner (M0). It is developed on branch `gui` and **not merged into
+`modernization` until V1.0 is tagged**. It is **not V1.0 scope**:
+- "a GUI" above stays a V1.0 non-goal;
+- the release mapping in section 3 is unchanged;
+- the Phase 8b gate and V1.0 acceptance are unchanged;
+- no conformance status depends on it.
+
+The API is off by default, and its dependency is an optional `[gui]` extra.
+
 ## 9. Commit sequence
 
 One commit per line. Wire changes carry their tests. Bisectable.

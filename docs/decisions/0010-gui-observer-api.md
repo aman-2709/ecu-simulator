@@ -1,8 +1,10 @@
 # 0010 — A browser GUI over an opt-in, read-only observer API
 
-Status: **Proposed 2026-09-26.** The owner approved the direction in principle: approach A
-(§3) and a read-only browser MVP. This record, the written specification, is awaiting
-review. **No production code has been written, and none will be until it is approved.**
+Status: **Proposed.** On 2026-09-26 the owner approved M0 **in direction**, subject to two
+edits: bound the publisher's work per loop turn, and correct the P5 accounting. Both are
+applied in this revision. The direction covers approach A (§3) and a read-only browser
+MVP. **No production code has been written.** M1 starts only after the owner has reviewed
+its implementation plan.
 
 This work lives on branch `gui`, which starts from `modernization` at `a57b98f`. It is
 **not merged into `modernization` until V1.0 is tagged.** A GUI remains a V1.0 non-goal
@@ -17,6 +19,13 @@ Revised 2026-09-26 after owner review. The revision:
 - added byte limits and a sequence watermark (§4.3, §4.5);
 - fixed the outcome definition (§5);
 - made the M4 criteria explicit (§9.2).
+
+A second revision, after M0 was approved in direction:
+
+- bounded the publisher's work per loop turn (§4.2, O4, P9);
+- corrected P5's accounting for queued messages and disconnects with a per-connection
+  ledger (§5.1);
+- linked the duplicate-reply defect, DEV-25 (§4.4).
 
 The evidence for the routing and ordering claims is in §12.
 
@@ -151,6 +160,32 @@ the reply has been sent". That was wrong. What holds is this:
 hot path's cost is independent of the number of clients. The publisher's cost is
 proportional to clients × events, and it runs on the same loop.
 
+**The publisher's work per loop turn is bounded.** A full `HandOff` holds 4096 records.
+Draining it in one go would hold the loop for the whole backlog, delaying every read and
+writable callback behind it. So, each time it is scheduled, the publisher processes
+records only while **both** of these hold:
+
+- it has handled **at most 64 records** in this turn;
+- it has spent **at most 1 ms** of `time.monotonic()` in this turn, checked after each
+  record.
+
+Processing a record covers summarising it, JSON-encoding it once, appending it to the
+history ring and offering it to every client queue. As soon as either limit is reached,
+the publisher yields with `await asyncio.sleep(0)`. The loop then runs the I/O callbacks
+that are ready before the publisher continues, so draining a full `HandOff` takes at
+least 64 turns.
+
+Sending to each WebSocket runs in that client's own writer task, which awaits
+`send_str`, so no client's network I/O runs inside a publisher turn. The longest a
+publisher turn can hold the loop is therefore about 1 ms plus one record's processing.
+M1 and M4 measure it (§9.2, P9).
+
+**Verified by** test **O4**. It fills `HandOff` to 4096 records, then from inside the
+drain schedules a marker callback with `call_soon`. The ordered log must show the marker
+running before the drain finishes, and the publisher yielding at least ⌈4096 / 64⌉ = 64
+times. A second case uses a stub encoder that takes 0.3 ms per record, and asserts that
+no turn exceeds 1 ms plus one record's processing time.
+
 ### 4.3 Limits, byte budgets and overflow behavior
 
 Payload sizes are bounded by ISO-TP: at most 4095 bytes each way on Classical CAN. Every
@@ -165,6 +200,7 @@ applies.
 | Per-client queue | 1024 messages | 4 MiB of encoded JSON | **The new `exchange` message is dropped** and that client's `client_dropped` increments. `state` and `dropped` messages are never queued behind others: each client has a one-slot latest `state` and a one-slot latest `dropped` notice, which are **replaced** rather than queued, and sent before the next queued exchange. After 5 s of continuous overflow the client is disconnected with close code 1013 and the reason `"client too slow"`, and `forced_disconnects` increments |
 | WebSocket clients | 4 | — | A 5th connection is refused with HTTP 503 before the upgrade, and `refused_clients` increments |
 | Single encoded `state` message | — | 256 KiB | Checked once when the API starts. A profile whose state encodes larger makes `--api` refuse to start (exit 2), rather than truncating state at runtime |
+| Publisher turn | 64 records | 1 ms of loop time | The publisher yields (`await asyncio.sleep(0)`) and continues on a later turn. Nothing is dropped. A backlog that keeps growing ends in `HandOff`'s own overflow above |
 | `state` push rate | at most 4 Hz | — | Coalesced into the one-slot latest `state`, which is not a drop |
 | Incoming HTTP body | — | 1 KiB | 413. v1 routes are GET-only, so a body is never needed |
 | Incoming WebSocket data message (text or binary) | — | — | Any data message closes the socket with 1008: v1 accepts nothing from clients. Control frames (ping/pong/close) are handled normally |
@@ -200,7 +236,9 @@ may therefore declare two physical endpoints on `rx 0x7E0` with different `tx`, 
 `check_routes` accepts it (E5). Measured on vcan: two ISO-TP sockets bound to the same rx
 ID **both** receive the same single-frame and multi-frame request (E6). So such a profile
 answers one request twice, on two IDs. **That is a configuration-validation gap in the
-simulator, not a GUI matter.** It is recorded here for the owner to schedule separately.
+simulator, not a GUI matter.** It is recorded as the existing defect **DEV-25** in
+`docs/known-deviations.md` on `modernization`, and is **not fixed as part of any GUI
+milestone**.
 The GUI reports what happens and does not paper over it.
 
 ### 4.5 Sequence numbers and the history/live watermark
@@ -243,7 +281,7 @@ version prefix means a future write API cannot silently change v1.
 
 | Endpoint | Returns |
 |---|---|
-| `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `per_client` [{`id`, `connected_at`, `client_dropped`, `queue_len`, `queue_bytes`}]} |
+| `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `connections` [one **ledger** per open connection, §5.1], `closed_connections` [the ledgers of the last 64 closed connections, final values]} |
 | `GET /vehicle` | `kind`, `vin`, `signals` {dotted path → value}, `as_of` (the scenario time of the last application, equal to `t_last_applied`; `null` without a scenario) |
 | `GET /dtcs` | per ECU: `[{code, pending, confirmed, indicator_requested}]`, and `mil` |
 | `GET /ecus` | per ECU: endpoints {`name`, `rx_id`, `tx_id`, `functional`, `receive`, `reply_via`, `padding`} and protocols {`name`, `sids`} |
@@ -282,7 +320,32 @@ WebSocket messages, server → client:
 - `dispatch_us` is **dispatcher time only**. It is not wire latency. Wire timing belongs
   to candump and, later, to the raw-frame panel.
 - `client_dropped` in a `dropped` message is that client's own count. `GET /status` has
-  every client's.
+  every connection's ledger (§5.1).
+
+### 5.1 The per-connection ledger
+
+Every WebSocket connection gets its own ledger, keyed by a connection `id`. A reconnect is
+a new connection with a new ledger. The ledger counts **live `exchange` messages only**.
+The history sent on connect is counted separately, and `state` and `dropped` messages,
+which are replaced rather than queued (§4.3), are not counted.
+
+| Field | Meaning |
+|---|---|
+| `id`, `connected_at`, `closed_at`, `close_code` | Identity and lifetime. `close_code` is 1013 for a forced disconnect |
+| `watermark` | `W` at registration (§4.5) |
+| `published_at_open`, `published_at_close` | The global `published` counter when the connection was registered, and when it closed (or now, while it is open) |
+| `history_sent` | History events sent on connect, all with `seq ≤ W` |
+| `offered` | Live events published while this connection was registered, all with `seq > W` |
+| `client_dropped` | Offered events refused because the queue was full |
+| `enqueued` | Offered events accepted into the queue |
+| `sent` | Events the writer task has passed to `send_str` successfully |
+| `queued` | Events in the queue now (0 once closed) |
+| `discarded_on_close` | Events still in the queue when the connection closed, forced or not. They are discarded, not sent |
+
+The server keeps these identities **exactly**, at every instant:
+`offered = published_at_close − published_at_open`, `offered = enqueued + client_dropped`,
+and `enqueued = sent + queued + discarded_on_close`.
+The ledger of a closed connection is final and stays in `closed_connections`.
 
 ## 6. Security
 
@@ -347,8 +410,9 @@ WebSocket messages, server → client:
 cheap to fix. They are not acceptance.
 
 - **M1**, in-process, no network. 20,000 calls through a bare `Dispatcher` against the
-  same calls through `ObservedDispatcher`, with the publisher draining. **If median
-  overhead exceeds 10 µs or p99 overhead exceeds 50 µs, stop and report before M2.**
+  same calls through `ObservedDispatcher`, with the publisher draining. It also drains a full 4096-record `HandOff` and reports the longest publisher turn.
+  **If median overhead exceeds 10 µs, p99 overhead exceeds 50 µs, or any publisher turn
+  exceeds 2 ms, stop and report before M2.**
 - **M2**, on vcan in a namespace. M4 conditions 1, 2 and 4 at 5,000 requests each. **If
   any M4 latency criterion below is already missed, stop and report before M3.**
 
@@ -386,10 +450,11 @@ the events' `dispatch_us`.
 | P2 | p99 wire latency, conditions 2, 3 and 4 | ≤ condition 1's p99 **+ 0.50 ms**, on pooled samples, in every round |
 | P3 | Lost replies, every condition | **Exactly 0.** A lost reply is a request frame with no reply frame before the next request, or within 1 s |
 | P4 | Throughput, condition 5 | Requests answered per second ≥ **90 %** of the same tester's maximum rate with the API off (measured the same way in each round) |
-| P5 | Drop accounting (reconciliation) | For every run, after the publisher has drained `HandOff`, **exactly**: `issued_seq = published + handoff_dropped`, where `issued_seq` is the number of sequence numbers issued and `published` the number of events published. For every client: exchange messages received + `client_dropped` = exchanges published while it was connected. Closes with 1013 counted by the harness = `forced_disconnects`. **Any unexplained difference fails** |
-| P6 | Drops where none should occur | In conditions 2 and 3, and for the 3 reading clients in condition 4: `handoff_dropped` = 0 and `client_dropped` = 0. Drops are allowed only for the stalled client, and only where P5 accounts for them |
+| P5 | Drop and delivery accounting (reconciliation) | Checked after the run has **quiesced**: tester stopped, `HandOff` drained, every open connection's `queued` = 0. All of the following must hold **exactly**: (a) `issued_seq = published + handoff_dropped`. (b) For every connection, open or closed, the §5.1 identities hold. (c) Summed over every connection that was open for the whole run, `offered` equals the growth of `published` over the run, measured by the harness from `GET /status` before and after. (d) On the harness side, the `exchange` messages a connection received have strictly increasing `seq` and no duplicates. For an **open** connection, received live events = `sent`. For a **closed** connection, received live events ≤ `sent`, and the difference (sent but still in transit when the socket closed) is reported per connection. (e) Closes with code 1013 seen by the harness = `forced_disconnects`, and HTTP 503 refusals seen = `refused_clients`. **Any unexplained difference fails** |
+| P6 | Drops where none should occur | In conditions 2 and 3, and for the 3 reading clients in condition 4: `handoff_dropped` = 0, `client_dropped` = 0 and `discarded_on_close` = 0. Drops, discards and in-transit losses are allowed only on the stalled client's connections, and only where P5 accounts for them |
 | P7 | Memory (RSS trend) | A 10-minute soak under condition 4 load, sampling the simulator's RSS every 5 s. Samples in the first 60 s are discarded as warm-up. **Pass if** the least-squares slope of RSS against time over the remaining samples is **≤ 0.1 MiB per minute**, **and** the final sample exceeds the first post-warm-up sample by **≤ 2 MiB**. Separately, the peak RSS increase over condition 1 must stay within the §4.3 bound of about 19 MiB plus 10 MiB for code and libraries |
 | P8 | Noise guard | If condition 1's own p99 differs by more than 0.50 ms between rounds, the benchmark is **inconclusive**. It is reported as such and does not pass |
+| P9 | Loop hold time | The publisher records the length of every turn. The maximum over the whole of conditions 2–5 is **≤ 2 ms**. The M1 early check reports the same maximum for a full 4096-record `HandOff` |
 
 Results, the raw captures and the scripts that produced them are committed under
 `docs/validation/`. A failed criterion is reported with its numbers, never rounded into a
@@ -400,7 +465,8 @@ pass.
 | Test | Needs | Runs in ordinary CI? |
 |---|---|---|
 | `observe` unit tests: `HandOff` count and byte bounds and drop counting; `seq` gaps on drop; `ObservedDispatcher` timing, error re-raise and one record per call; `Publisher` fan-out, per-client count and byte limits, one-slot `state` / `dropped`, forced disconnect; the client limit; the watermark handshake (no gap and no duplicate across history/live, `after=` and `gap`); every §5 `outcome` value, including `unrouted` by giving the wrapped dispatcher a router with no route; snapshots serialise and **never mutate** (state, store and runner compared before and after) | nothing | **Yes**, every job |
-| Ordering tests O1–O3 (§4.2), through a real `IsoTpTransport` with a fake socket factory | nothing | **Yes**, every job |
+| Ordering tests O1–O3 and the turn bound O4 (§4.2), through a real `IsoTpTransport` with a fake socket factory | nothing | **Yes**, every job |
+| Ledger tests (§5.1): the identities hold after enqueue, send, overflow, and voluntary and forced close; closed ledgers are retained and final | nothing | **Yes**, every job |
 | Observation of the two-socket case (§4.4): one request delivered to two fake sockets gives two exchanges | nothing | **Yes**, every job |
 | API-off proofs (§9.1) | nothing | **Yes**. In the `.[dev]` jobs, without aiohttp installed. In the `.[dev,gui]` job, the "not imported" form only |
 | `api` tests with aiohttp's test client over loopback: every route, 405 on every other method, `Host` 421, `Origin` 403, 503 for a 5th client, 1008 on an incoming data message, the WebSocket stream and its ordering, static files | `.[dev,gui]` and loopback | **Yes**, in a CI job that installs `.[dev,gui]`. Loopback exists on hosted runners |
@@ -419,7 +485,7 @@ performance results are reported as local results, with their commands.
 | **M2** | `ApiServer`, `--api`, the `[gui]` extra, §6 security, §4.3 limits, API tests, the CI job; the M2 early check | yes | API tests green in CI; M2 early check reported |
 | **M3a** | Frontend MVP: status, vehicle, DTCs, exchange log with gap markers | yes | Owner runs the manual view checklist |
 | **M3b** | Sparklines with vendored uPlot | yes | Owner runs the manual view checklist for sparklines |
-| **M4** | Full benchmark (§9.2) and MVP acceptance report | benchmark scripts only | P1–P8 met, or failures reported; owner accepts |
+| **M4** | Full benchmark (§9.2) and MVP acceptance report | benchmark scripts only | P1–P9 met, or failures reported; owner accepts |
 | Later | Raw CAN frame panel (optional, read-only, a raw CAN socket in the API process) | — | Separate approval |
 | Later | `ControlPort` controls (§8) | — | Own decision record first |
 
