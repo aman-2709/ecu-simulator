@@ -80,6 +80,28 @@ async def test_a_body_over_1_kib_is_413(server, session):
 
 
 @pytest.mark.asyncio
+async def test_a_chunked_body_over_1_kib_is_413(server):
+    port = server.port
+    request = (
+        f"GET /api/v1/status HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+        "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n800\r\n"
+    ).encode() + b"x" * 2048 + b"\r\n0\r\n\r\n"
+    reply = await raw_request(port, request)
+    assert reply.startswith(b"HTTP/1.1 413"), reply[:40]
+
+
+@pytest.mark.asyncio
+async def test_a_small_chunked_body_is_accepted(server):
+    port = server.port
+    request = (
+        f"GET /api/v1/status HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+        "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\na\r\n"
+    ).encode() + b"x" * 10 + b"\r\n0\r\n\r\n"
+    reply = await raw_request(port, request)
+    assert reply.startswith(b"HTTP/1.1 200"), reply[:40]
+
+
+@pytest.mark.asyncio
 async def test_the_placeholder_page_is_served(server, session):
     # M2 serves exactly this one file. Frontend files and rendering are M3's (decisions/0010 §7).
     async with session.get(url(server, "/")) as r:

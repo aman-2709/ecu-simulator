@@ -85,6 +85,12 @@ class ApiServer:
                 raise web.HTTPMisdirectedRequest(text="Host not allowed (decisions/0010 §6)")
             if request.content_length is not None and request.content_length > MAX_BODY:
                 raise web.HTTPRequestEntityTooLarge(max_size=MAX_BODY, actual_size=request.content_length)
+            if request.body_exists and request.content_length is None:
+                # Chunked (or otherwise length-less) bodies bypass client_max_size, which
+                # only enforces Content-Length: read a bounded probe ourselves (0010 §4.3).
+                data = await request.content.read(MAX_BODY + 1)
+                if len(data) > MAX_BODY:
+                    raise web.HTTPRequestEntityTooLarge(max_size=MAX_BODY, actual_size=len(data))
             upgrade = request.path == EVENTS and request.method == "GET"
             # Same-origin against THIS request's validated Host: localhost and 127.0.0.1 are
             # different origins and are never substituted for one another (owner, 2026-09-27).
