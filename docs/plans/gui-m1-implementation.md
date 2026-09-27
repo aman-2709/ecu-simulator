@@ -20,7 +20,35 @@ Nothing is wired into a running simulator until M2.
 `tests/unit/fakes.py` provides the fake ISO-TP sockets.
 
 **Spec:** [docs/decisions/0010-gui-observer-api.md](../decisions/0010-gui-observer-api.md)
-at `310e56d`. Read it first. Section numbers below refer to it.
+at `310e56d`, with the third revision made in the same commit as this plan's amendment.
+Read it first. Section numbers below refer to it.
+
+## Amendment, 2026-09-26, after owner review of `b026c4d`
+
+Applied before any M1 code. The owner accepted the M2 deferral below and asked for four
+changes. Each one is marked **(amended)** where it lands:
+
+1. **`HistoryRing.since()` limits are defined and tested** (Task 4). `limit` defaults to
+   500, is clamped to 500, and raises `ValueError` below 1. `after` raises `ValueError`
+   when negative. Both raise `TypeError` when they are not `int`, and `bool` counts as
+   not `int`. The unamended code had a real defect here: `since(None, 0)` sliced `[-0:]`
+   and returned the **whole** ring.
+2. **Encoding and fan-out failures are specified** (Tasks 5 and 6). A record whose
+   encoding raises is published as a minimal fallback `exchange` event, so `seq` stays
+   contiguous and P5's identity `issued_seq = published + handoff_dropped` is unchanged.
+   The new counters are `encode_failed` and `fanout_failed`. Each error type is logged
+   once per stage. A connection whose `offer` raises is closed with code 1011 and
+   retired, and every other connection is unaffected. `Connection.offer` either completes
+   or changes nothing. Nothing raises out of a publisher turn. 0010 §4.2, §5, §5.1 and
+   §9.2 (P5, P6) are updated to match, in the same commit.
+3. **Task 9 says plainly that its script is only an in-process early check**: no network,
+   no vcan and no transport. It is not the M2 early check or the M4 benchmark.
+4. **O4 proves loop scheduling** (Task 6). The test registers a reader on a socketpair
+   that is always ready, and schedules a `call_soon` marker from inside every turn. Between
+   **every** pair of consecutive turns, both must run while `HandOff` is still non-empty.
+   The test also records every clock read the publisher makes, and checks each turn
+   against `max_turn_s`: the turn never continues past the budget, and it stops only for
+   one of its three reasons.
 
 ## Global Constraints
 
@@ -41,7 +69,8 @@ at `310e56d`. Read it first. Section numbers below refer to it.
   - forced disconnect after 5 s of continuous overflow, close code 1013;
   - `state` message: 256 KiB, at most 4 Hz;
   - publisher turn: 64 records / 1 ms;
-  - closed ledgers kept: 64.
+  - closed ledgers kept: 64;
+  - `GET /exchanges` `limit`: default and maximum 500 (0010 §5).
 - `outcome` is exactly one of `responded`, `no_response`, `unrouted`, `error` (0010 §5).
 - Snapshots **never call `sync()`** (0010 §2.1).
 - Run `mypy` **bare**, never `mypy src tests`. Run `ruff check .` and never `ruff format`
@@ -50,7 +79,7 @@ at `310e56d`. Read it first. Section numbers below refer to it.
 - The host's default `python3` is 3.10. Use the repository's `.venv/bin/python`, which is
   3.12.
 
-## Deviation from 0010, for owner review
+## Deviation from 0010: accepted by the owner on 2026-09-26
 
 0010 §10 puts "the §9.1 proofs" in M1. Two of the three depend on wiring that M1 does not
 build, so they move to M2:
@@ -80,6 +109,15 @@ into a test. Each is pinned by a test in the task named.
    events and `gap: false`, and never raise. Task 4, `test_after_beyond_newest_and_empty_ring`.
 5. **A connection closed twice, or closed while overflowing**: the ledger must stay final
    and the identities must hold. Task 5, `test_close_is_idempotent_and_final`.
+6. **(amended) Out-of-range or mistyped `limit` and `after`**, which M2 will pass
+   straight from a query string: `since` must clamp or raise exactly as Task 4 defines,
+   and never return the whole ring for `limit=0`. Task 4, `test_limit_bounds` and
+   `test_after_bounds`.
+7. **(amended) An encoder or a connection that raises inside a publisher turn**: the
+   turn must not raise, `seq` must stay contiguous, and the identities must hold.
+   Task 6, `test_encode_failure_publishes_a_fallback_and_seq_stays_contiguous` and
+   `test_fanout_failure_closes_only_that_connection`; Task 5,
+   `test_offer_changes_nothing_when_it_raises`.
 
 ---
 
@@ -214,6 +252,8 @@ CLIENT_MAX_BYTES = 4 << 20
 MAX_CLIENTS = 4
 OVERFLOW_DISCONNECT_S = 5.0
 CLOSE_TOO_SLOW = 1013
+CLOSE_INTERNAL_ERROR = 1011
+EXCHANGES_MAX_LIMIT = 500
 STATE_MAX_BYTES = 256 << 10
 STATE_MIN_INTERVAL_S = 0.25
 TURN_MAX_RECORDS = 64
@@ -709,12 +749,32 @@ git commit -m "feat(observe): exchange events with the four outcomes, summaries 
     - `.add(seq: int, text: str) -> None`;
     - `.oldest_seq: int | None`;
     - `.last_seq: int`, which is 0 when nothing has been published;
-    - `.since(after: int | None, limit: int) -> tuple[list[str], bool]`, returning `(texts oldest first, gap)`;
+    - `.since(after: int | None = None, limit: int | None = None) -> tuple[list[str], bool]`, returning `(texts oldest first, gap)`;
     - `.snapshot() -> list[tuple[int, str]]`.
+
+**`since()` argument rules (amended).** M2's HTTP layer passes parsed query values
+straight in, so `since` is where the rules live. M2 turns `ValueError` and `TypeError`
+into HTTP 400 and adds no rules of its own.
+
+| Argument | Value | Behaviour |
+|---|---|---|
+| `limit` | `None` | 500 (`EXCHANGES_MAX_LIMIT`), the 0010 §5 default |
+| `limit` | 1 to 500 | as given |
+| `limit` | over 500 | **clamped** to 500. §5 says "maximum 500", so a larger request gets the maximum, as the default does |
+| `limit` | 0 or negative | **`ValueError`**. It is meaningless, and the unamended slice `[-0:]` returned the whole ring |
+| `after` | `None` | the most recent `limit` events, `gap` false |
+| `after` | 0 or more | events with `seq > after`, at most `limit`, oldest first. `gap` is true when `after < oldest_seq − 1`. Beyond the newest, or on an empty ring, the result is `([], False)` |
+| `after` | negative | **`ValueError`**. `seq` starts at 1, so no event is ever "after −1" in a meaningful sense |
+| either | not an `int`, or a `bool` | **`TypeError`**. `bool` is an `int` subclass in Python, and `after=True` must not mean `after=1` |
+
+The ring's own `max_events` bounds what exists, so `since` needs no second clamp for a
+ring smaller than 500.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
+import pytest
+
 from ecu_simulator.observe.history import HistoryRing
 
 
@@ -748,6 +808,31 @@ def test_after_beyond_newest_and_empty_ring():  # Review Focus 4
     assert filled(3).since(99, 10) == ([], False)
     assert HistoryRing().since(0, 10) == ([], False)
     assert HistoryRing().oldest_seq is None and HistoryRing().last_seq == 0
+    assert HistoryRing().since() == ([], False)
+
+
+def test_limit_bounds():  # Review Focus 6 (amended)
+    ring = filled(600, max_events=600)
+    assert len(ring.since()[0]) == 500                        # default
+    assert len(ring.since(None, 501)[0]) == 500               # clamped
+    assert ring.since(None, 1) == (["e600"], False)
+    assert ring.since(0, 3) == (["e1", "e2", "e3"], False)
+    for bad in (0, -1):
+        with pytest.raises(ValueError):
+            ring.since(None, bad)
+    for bad in (True, 2.0, "5"):
+        with pytest.raises(TypeError):
+            ring.since(None, bad)
+
+
+def test_after_bounds():  # Review Focus 6 (amended)
+    ring = filled(10, max_events=5)                          # holds 6..10
+    assert ring.since(0, 10) == (["e6", "e7", "e8", "e9", "e10"], True)
+    with pytest.raises(ValueError):
+        ring.since(-1, 10)
+    for bad in (True, 7.0, "7"):
+        with pytest.raises(TypeError):
+            ring.since(bad, 10)
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -764,13 +849,18 @@ from __future__ import annotations
 
 from collections import deque
 
-from ecu_simulator.observe.limits import HISTORY_MAX_BYTES, HISTORY_MAX_EVENTS
+from ecu_simulator.observe.limits import EXCHANGES_MAX_LIMIT, HISTORY_MAX_BYTES, HISTORY_MAX_EVENTS
+
+
+def _check_int(name: str, value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{name} must be an int, not {type(value).__name__}")
+    return value
 
 
 class HistoryRing:
     def __init__(self, max_events: int = HISTORY_MAX_EVENTS, max_bytes: int = HISTORY_MAX_BYTES) -> None:
         self._events: deque[tuple[int, str]] = deque()
-        self.max_events = max_events
         self._max_events = max_events
         self._max_bytes = max_bytes
         self._bytes = 0
@@ -788,7 +878,13 @@ class HistoryRing:
             _, old = self._events.popleft()
             self._bytes -= len(old.encode())
 
-    def since(self, after: int | None, limit: int) -> tuple[list[str], bool]:
+    def since(self, after: int | None = None, limit: int | None = None) -> tuple[list[str], bool]:
+        """Events with ``seq > after`` (or the most recent), oldest first. Rules: the table in Task 4."""
+        limit = EXCHANGES_MAX_LIMIT if limit is None else min(_check_int("limit", limit), EXCHANGES_MAX_LIMIT)
+        if limit < 1:
+            raise ValueError(f"limit must be at least 1, not {limit}")
+        if after is not None and _check_int("after", after) < 0:
+            raise ValueError(f"after must not be negative, not {after}")
         if after is None:
             return [text for _, text in list(self._events)[-limit:]], False
         oldest = self.oldest_seq
@@ -799,7 +895,7 @@ class HistoryRing:
         return list(self._events)
 ```
 
-- [ ] **Step 4: Run to verify it passes.** Expected: 4 passed.
+- [ ] **Step 4: Run to verify it passes.** Expected: 6 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -900,7 +996,25 @@ def test_close_is_idempotent_and_final():  # Review Focus 5
     assert c.ledger(published_now=200) == first and c.close_code == 1000
     assert c.offer("late") is False and first["published_at_close"] == 12
     identities(first)
+
+
+def test_offer_changes_nothing_when_it_raises():  # Review Focus 7 (amended)
+    clock = {"fail": False}
+    def now():
+        if clock["fail"]:
+            raise RuntimeError("clock")
+        return 0.0
+    c = Connection(1, watermark=10, published_at_open=10, now=now, max_messages=1)
+    c.offer("a")
+    before = c.ledger(published_now=11)
+    clock["fail"] = True
+    with pytest.raises(RuntimeError):
+        c.offer("b")                      # overflow path: reads the clock before counting anything
+    assert c.ledger(published_now=11) == before and not c.closed
+    identities(before)
 ```
+
+Add `import pytest` at the top of this test module.
 
 - [ ] **Step 2: Run to verify it fails.** Expected: `ModuleNotFoundError`.
 
@@ -959,21 +1073,26 @@ class Connection:
         return self.close_code is not None
 
     def offer(self, text: str) -> bool:
+        """Accept or drop one live exchange. If this raises, it has changed nothing (amended):
+        everything that can fail runs before the first counter moves, so the Publisher can
+        close the connection with the ledger's identities intact.
+        """
         if self.closed:
             return False
-        self.offered += 1
         size = len(text.encode())
         if len(self._queue) >= self._max_messages or self._bytes + size > self._max_bytes:
-            self.client_dropped += 1
             now = self._now()
             if self._overflow_since is None:
                 self._overflow_since = now
-            elif now - self._overflow_since >= self._overflow_disconnect_s:
-                self.close(CLOSE_TOO_SLOW, published_now=self.published_at_open + self.offered)
+            self.offered += 1
+            self.client_dropped += 1
+            if now - self._overflow_since >= self._overflow_disconnect_s:
+                self._close(CLOSE_TOO_SLOW, self.published_at_open + self.offered, now)
             return False
         self._overflow_since = None
         self._queue.append(text)
         self._bytes += size
+        self.offered += 1
         self.enqueued += 1
         return True
 
@@ -1005,10 +1124,13 @@ class Connection:
             self.sent += 1
 
     def close(self, code: int, published_now: int) -> None:
-        if self.closed:
-            return
+        if not self.closed:
+            self._close(code, published_now, self._now())
+
+    def _close(self, code: int, published_now: int, now: float) -> None:
+        # No call that can fail: offer() closes through here with the clock value it already read.
         self.close_code = code
-        self.closed_at = self._now()
+        self.closed_at = now
         self._published_at_close = published_now
         self.discarded_on_close = len(self._queue) + (1 if self._in_flight is not None else 0)
         self._queue.clear()
@@ -1033,7 +1155,7 @@ class Connection:
 > publication is offered to every open connection exactly once (Task 6), so the
 > `offered = published_at_close − published_at_open` identity stays exact.
 
-- [ ] **Step 4: Run to verify it passes.** Expected: 6 passed.
+- [ ] **Step 4: Run to verify it passes.** Expected: 7 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -1060,17 +1182,35 @@ git commit -m "feat(observe): per-connection queue, one-slot state and dropped n
   - `.connect(after: int | None = None) -> tuple[Connection, dict, list[str]]`, returning `(connection, hello, history_texts)`. It raises `TooManyClients` when the limit is reached;
   - `.disconnect(conn, code)`;
   - `.published: int`, `.longest_turn_s: float`, `.refused_clients: int`, `.forced_disconnects: int`;
+  - `.encode_failed: int`, `.fanout_failed: int` (amended);
   - `.stats(issued: int) -> dict`: the `api` object of `GET /status`.
+
+**Failures inside a turn (amended).** `drain_turn` never raises. It catches `Exception`
+only; `BaseException` such as `KeyboardInterrupt` still propagates, and a synchronous turn
+cannot receive `CancelledError`.
+
+| Failure | Behaviour | Counter |
+|---|---|---|
+| `encode(record, …)` raises | The record is published as the fallback event `{"type": "exchange", "seq": S, "outcome": O, "error": "encode_failed"}`: history, then fan-out, as usual. `O` comes from `classify`, or, if that raises too, from the record alone (`error` if it has an error, `responded` if it has a response, otherwise `no_response`; `unrouted` is not reachable in v1, 0010 §5) | `encode_failed` += 1. `published` += 1 as for any record, so `issued_seq = published + handoff_dropped` holds unchanged |
+| `conn.offer(text)` raises | That connection alone is closed with code 1011 and `published_now = published − 1`, because the failing publication was never offered to it (`Connection.offer` changes nothing when it raises, Task 5), and its ledger is retired to `closed_connections`. Fan-out continues with the next connection | `fanout_failed` += 1 |
+| a connection was closed by someone other than the Publisher, for example M2's writer task on a socket error | `offer` returns `False` without counting, and the connection is retired at the next publication. Its ledger is already final | none |
+
+Each failure is logged once per `(stage, exception type)`, with its traceback, and counted
+every time. The counters go into `stats()`.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
 import asyncio
 import json
+import logging
+import socket
+import time
 
 import pytest
 
 from ecu_simulator.observe.handoff import ExchangeRecord, HandOff
+from ecu_simulator.observe.limits import TURN_MAX_RECORDS, TURN_MAX_S
 from ecu_simulator.observe.publisher import Publisher, TooManyClients
 from ecu_simulator.transport import DiagnosticRequest, DiagnosticResponse
 
@@ -1108,23 +1248,116 @@ def test_a_turn_stops_at_the_time_budget():
 
 
 @pytest.mark.asyncio
-async def test_O4_a_full_handoff_yields_to_the_loop():
+async def test_O4_ready_io_and_call_soon_run_between_turns_while_handoff_is_non_empty():  # (amended)
     handoff = HandOff(); fill(handoff, 4096)
-    p = publisher(handoff)
-    log: list[str] = []
+    reads: list[float] = []                       # every clock read the publisher makes
+    def clock() -> float:
+        now = time.monotonic(); reads.append(now); return now
+    p = publisher(handoff, monotonic=clock)
+    loop = asyncio.get_running_loop()
+    log: list[tuple[str, int]] = []               # (what ran, len(handoff) when it ran)
+    turns: list[tuple[int, list[float]]] = []     # (records processed, clock reads in that turn)
     real_turn = p.drain_turn
-    def logged_turn():
-        n = real_turn(); log.append("turn"); return n
+    def logged_turn() -> int:
+        first = len(reads)
+        n = real_turn()
+        turns.append((n, reads[first:]))
+        log.append(("turn", len(handoff)))
+        loop.call_soon(lambda: log.append(("soon", len(handoff))))   # scheduled from inside the drain
+        return n
     p.drain_turn = logged_turn
+    reader, writer = socket.socketpair()
+    reader.setblocking(False); writer.setblocking(False)
+    def readable() -> None:                       # ready I/O: always one byte waiting
+        reader.recv(1); log.append(("io", len(handoff))); writer.send(b"x")
+    loop.add_reader(reader.fileno(), readable)
+    writer.send(b"x")
     task = asyncio.create_task(p.run())
     p.wake()
-    await asyncio.sleep(0)
-    asyncio.get_running_loop().call_soon(log.append, "marker")
-    while len(handoff):
-        await asyncio.sleep(0)
-    task.cancel()
-    assert "marker" in log and log.index("marker") < len(log) - 1   # the marker ran before the drain finished
-    assert log.count("turn") >= 64
+    try:
+        while len(handoff):
+            await asyncio.sleep(0)
+    finally:
+        task.cancel(); loop.remove_reader(reader.fileno()); reader.close(); writer.close()
+
+    at = [i for i, (kind, _) in enumerate(log) if kind == "turn"]
+    assert len(at) >= 4096 // TURN_MAX_RECORDS
+    for i, j in zip(at, at[1:]):
+        between = log[i + 1:j]
+        assert {"soon", "io"} <= {kind for kind, _ in between}, (i, j, between)
+        assert all(left > 0 for _, left in between)          # HandOff still non-empty when they ran
+    # Measured against max_turn_s: reads are [start, one per record..., final].
+    for (n, turn_reads), left in zip(turns, [left for kind, left in log if kind == "turn"]):
+        assert len(turn_reads) == n + 2
+        start, checks = turn_reads[0], turn_reads[1:n + 1]
+        assert all(t - start < TURN_MAX_S for t in checks[:-1])   # never continued past the budget
+        assert n == TURN_MAX_RECORDS or left == 0 or checks[-1] - start >= TURN_MAX_S   # stopped for a reason
+    assert p.longest_turn_s == max(r[-1] - r[0] for _, r in turns)
+
+
+def test_encode_failure_publishes_a_fallback_and_seq_stays_contiguous(caplog):  # Review Focus 7
+    handoff = HandOff(); fill(handoff, 4)
+    def flaky(rec, *_):
+        if rec.seq == 2:
+            raise ValueError("bad record")
+        if rec.seq == 3:
+            raise ValueError("bad again")
+        return json.dumps({"type": "exchange", "seq": rec.seq})
+    p = Publisher(handoff, Router(), {}, encode=flaky)
+    conn, _, _ = p.connect()
+    with caplog.at_level(logging.ERROR, logger="ecu_simulator.observe.publisher"):
+        assert p.drain_turn() == 4
+    assert [seq for seq, _ in p.history.snapshot()] == [1, 2, 3, 4]
+    assert json.loads(p.history.snapshot()[1][1]) == {"type": "exchange", "seq": 2, "outcome": "responded", "error": "encode_failed"}
+    assert (p.published, p.encode_failed) == (4, 2)
+    assert len([r for r in caplog.records if "encode" in r.getMessage()]) == 1   # once per error type
+    assert [json.loads(conn.next_message())["seq"] for _ in range(4)] == [1, 2, 3, 4]
+    stats = p.stats(issued=4)
+    assert stats["issued_seq"] == stats["published"] + stats["handoff_dropped"] and stats["encode_failed"] == 2
+
+
+def test_encode_fallback_survives_a_failing_router():
+    handoff = HandOff(); fill(handoff, 1)
+    class Broken:
+        def resolve(self, request):
+            raise RuntimeError("router")
+    def boom(*_):
+        raise ValueError
+    p = Publisher(handoff, Broken(), {}, encode=boom)
+    assert p.drain_turn() == 1
+    assert json.loads(p.history.snapshot()[0][1])["outcome"] == "responded"
+
+
+def test_fanout_failure_closes_only_that_connection():  # Review Focus 7
+    handoff = HandOff(); p = publisher(handoff)
+    a, _, _ = p.connect(); b, _, _ = p.connect()
+    fill(handoff, 1); p.drain_turn()
+    def broken(text):
+        raise RuntimeError("offer")
+    a.offer = broken
+    fill(handoff, 2, start=2)
+    assert p.drain_turn() == 2                               # did not raise
+    assert a.closed and a.close_code == 1011 and a not in p.connections
+    assert p.fanout_failed == 1 and p.published == 3
+    assert [json.loads(b.next_message())["seq"] for _ in range(3)] == [1, 2, 3]
+    stats = p.stats(issued=3)
+    (closed,) = stats["closed_connections"]
+    assert (closed["id"], closed["offered"], closed["published_at_close"]) == (a.id, 1, 1)
+    for ledger in stats["connections"] + stats["closed_connections"]:
+        assert ledger["offered"] == ledger["published_at_close"] - ledger["published_at_open"]
+        assert ledger["offered"] == ledger["enqueued"] + ledger["client_dropped"]
+    assert stats["fanout_failed"] == 1
+
+
+def test_a_connection_closed_elsewhere_is_retired_at_the_next_publication():
+    handoff = HandOff(); p = publisher(handoff)
+    c, _, _ = p.connect()
+    fill(handoff, 1); p.drain_turn()
+    c.close(1000, published_now=p.published)                 # e.g. M2's writer task saw the socket fail
+    fill(handoff, 1, start=2); p.drain_turn()
+    assert c not in p.connections and c.offered == 1
+    (closed,) = p.stats(issued=2)["closed_connections"]
+    assert closed["offered"] == closed["published_at_close"] - closed["published_at_open"] == 1
 
 
 def test_watermark_handshake_has_no_gap_and_no_duplicate():
@@ -1172,6 +1405,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections import deque
 from collections.abc import Callable, Mapping
@@ -1179,11 +1413,20 @@ from typing import Any
 
 from ecu_simulator.ecu.router import AddressRouter
 from ecu_simulator.observe.connection import Connection
-from ecu_simulator.observe.events import encode_exchange
-from ecu_simulator.observe.handoff import HandOff
+from ecu_simulator.observe.events import classify, encode_exchange
+from ecu_simulator.observe.handoff import ExchangeRecord, HandOff
 from ecu_simulator.observe.history import HistoryRing
-from ecu_simulator.observe.limits import CLOSED_LEDGERS_KEPT, CLOSE_TOO_SLOW, MAX_CLIENTS, TURN_MAX_RECORDS, TURN_MAX_S
+from ecu_simulator.observe.limits import (
+    CLOSE_INTERNAL_ERROR,
+    CLOSE_TOO_SLOW,
+    CLOSED_LEDGERS_KEPT,
+    MAX_CLIENTS,
+    TURN_MAX_RECORDS,
+    TURN_MAX_S,
+)
 from ecu_simulator.transport.socketcan import EndpointConfig
+
+logger = logging.getLogger(__name__)
 
 
 class TooManyClients(Exception):
@@ -1222,6 +1465,9 @@ class Publisher:
         self.longest_turn_s = 0.0
         self.refused_clients = 0
         self.forced_disconnects = 0
+        self.encode_failed = 0
+        self.fanout_failed = 0
+        self._logged: set[tuple[str, str]] = set()
 
     def wake(self) -> None:
         self._event.set()
@@ -1230,19 +1476,58 @@ class Publisher:
         start = self._monotonic()
         done = 0
         while len(self._handoff) and done < self._max_turn_records:
-            record = self._handoff.popleft()
-            text = self._encode(record, self._router, self._endpoints, self._wall_origin)
-            self.published += 1
-            self.history.add(record.seq, text)
-            for conn in list(self.connections):
-                conn.offer(text)
-                if conn.closed:
-                    self._retire(conn)
+            self._publish(self._handoff.popleft())
             done += 1
             if self._monotonic() - start >= self._max_turn_s:
                 break
         self.longest_turn_s = max(self.longest_turn_s, self._monotonic() - start)
         return done
+
+    def _publish(self, record: ExchangeRecord) -> None:
+        # Never raises (amended): a failed encoding becomes a fallback event, a failed offer
+        # closes that one connection. Either way seq stays contiguous and the ledgers balance.
+        try:
+            text = self._encode(record, self._router, self._endpoints, self._wall_origin)
+        except Exception as error:
+            self.encode_failed += 1
+            self._log_once("encode", error)
+            text = self._fallback(record)
+        self.published += 1
+        self.history.add(record.seq, text)
+        for conn in list(self.connections):
+            try:
+                conn.offer(text)
+            except Exception as error:
+                self.fanout_failed += 1
+                self._log_once("fan-out", error)
+                self._abandon(conn)
+                continue
+            if conn.closed:
+                self._retire(conn)
+
+    def _fallback(self, record: ExchangeRecord) -> str:
+        try:
+            outcome = classify(record, self._router)[0]
+        except Exception:
+            outcome = "error" if record.error is not None else "responded" if record.response is not None else "no_response"
+        event = {"type": "exchange", "seq": record.seq, "outcome": outcome, "error": "encode_failed"}
+        return json.dumps(event, separators=(",", ":"))
+
+    def _abandon(self, conn: Connection) -> None:
+        # The publication whose offer raised was never offered: Connection.offer changes
+        # nothing when it raises (Task 5), so the connection's ledger ends one before it.
+        try:
+            conn.close(CLOSE_INTERNAL_ERROR, published_now=self.published - 1)
+        except Exception as error:
+            self._log_once("close", error)
+        self._retire(conn)
+
+    def _log_once(self, stage: str, error: Exception) -> None:
+        key = (stage, type(error).__name__)
+        if key not in self._logged:
+            self._logged.add(key)
+            logger.error("observer %s failed with %s; logged once per type, counted in /status", stage, key[1],
+                         exc_info=error)
 
     async def run(self) -> None:
         while True:
@@ -1258,7 +1543,7 @@ class Publisher:
             self.refused_clients += 1
             raise TooManyClients
         watermark = self.history.last_seq
-        texts, gap = self.history.since(after, limit=self.history.max_events)
+        texts, gap = self.history.since(after)       # raises on a bad after=, before anything is registered
         self._next_id += 1
         conn = Connection(self._next_id, watermark, self.published, now=self._monotonic)
         conn.history_sent = len(texts)
@@ -1285,6 +1570,7 @@ class Publisher:
             "last_published_seq": self.history.last_seq, "oldest_seq": self.history.oldest_seq,
             "handoff_dropped": self._handoff.dropped, "refused_clients": self.refused_clients,
             "forced_disconnects": self.forced_disconnects, "longest_turn_s": self.longest_turn_s,
+            "encode_failed": self.encode_failed, "fanout_failed": self.fanout_failed,
             "connections": [c.ledger(self.published) for c in self.connections],
             "closed_connections": list(self.closed),
         }
@@ -1302,7 +1588,10 @@ class Publisher:
 
 `hello` carries `gap` only when `after` is given, which matches 0010 §4.5 and §5.
 
-- [ ] **Step 4: Run to verify it passes.** Expected: 6 passed.
+Add one more test for `connect` (amended): `p.connect(after=-1)` raises `ValueError`, and
+afterwards `p.connections == []` and `p.refused_clients == 0`.
+
+- [ ] **Step 4: Run to verify it passes.** Expected: 11 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -1647,11 +1936,23 @@ git commit -m "test(observe): pin publisher-after-send ordering, the queued case
 **Files:**
 - Create: `scripts/gui_m1_early_check.py`, `docs/validation/gui-m1-early-check.md`
 
+**What this script is, and what it is not (amended).** `scripts/gui_m1_early_check.py`
+is **only an in-process early check**. It calls the dispatcher and the publisher
+directly, in one Python process. It opens no network socket, no vcan interface and no
+transport: no ISO-TP, no CAN frames and no event loop I/O. Its figures are dispatcher and
+publisher CPU time on this host. They say nothing about wire latency. It is **not** the
+M2 early check (vcan, in a namespace) and **not** the M4 benchmark (§9.2, P1–P9), and a
+pass here is not evidence for either. The script's docstring and the validation record
+both say so.
+
 - [ ] **Step 1: Write the script**
 
 ```python
 #!/usr/bin/env python3
-"""GUI M1 early check (decisions/0010 §9.2). In-process, no network.
+"""GUI M1 early check (decisions/0010 §9.2).
+
+Only an in-process early check: no network, no vcan, no transport. It is not the M2 early
+check and not the M4 benchmark, and its figures say nothing about wire latency.
 
 1. Dispatch overhead: 20,000 calls through a bare Dispatcher against the same calls through
    ObservedDispatcher with the Publisher draining between calls.
@@ -1754,7 +2055,12 @@ It records:
 - that the vcan and performance rows are not yet applicable;
 - the §9.1 wiring proofs deferred to M2, with their reason.
 
-State plainly: *"An early check, not acceptance. P1–P9 are judged at M4."*
+State plainly: *"An in-process early check, not acceptance. It ran no network, vcan or
+transport. P1–P9 are judged at M4."*
+
+Also state that **M1 has no CI result**: `ci.yml` runs on pushes to `master` and
+`modernization` and on `pull_request` only, so a push to `gui` triggers nothing. Every
+result in the record is local.
 
 - [ ] **Step 5: Commit, and stop for owner review**
 
@@ -1804,6 +2110,6 @@ line:
 - `HandOff.append` / `popleft` / `dropped` / `bytes`;
 - `ObservedDispatcher(inner, handoff, wake, clock_ns)` / `.issued`;
 - `encode_exchange(record, router, endpoints, wall_origin)`;
-- `HistoryRing.since(after, limit) -> (texts, gap)`;
+- `HistoryRing.since(after=None, limit=None) -> (texts, gap)`, raising `ValueError` / `TypeError` (amended);
 - `Connection.offer` / `next_message` / `mark_sent` / `close(code, published_now)` / `ledger(published_now)`;
-- `Publisher.drain_turn` / `connect(after)` / `disconnect(conn, code)` / `stats(issued)`.
+- `Publisher.drain_turn` / `connect(after)` / `disconnect(conn, code)` / `stats(issued)`, with `encode_failed` and `fanout_failed` in `stats` (amended).

@@ -27,6 +27,17 @@ A second revision, after M0 was approved in direction:
   ledger (§5.1);
 - linked the duplicate-reply defect, DEV-25 (§4.4).
 
+A third revision, on 2026-09-26, came with the owner's review of the M1 plan. It changes no
+approved direction:
+
+- O4 must prove loop scheduling, not count turns (§4.2);
+- encoding and fan-out failures inside a publisher turn are defined, with two new counters,
+  `encode_failed` and `fanout_failed`, and close code 1011 (§5, §5.1). The identity
+  `issued_seq = published + handoff_dropped` is **unchanged**: a record whose encoding
+  fails is still published, as a fallback event;
+- P5 and P6 cover the new counters (§9.2);
+- `GET /exchanges` `limit` and `after` rules are fixed in the M1 plan, Task 4.
+
 The evidence for the routing and ordering claims is in §12.
 
 ## 1. Purpose and scope
@@ -180,10 +191,15 @@ Sending to each WebSocket runs in that client's own writer task, which awaits
 publisher turn can hold the loop is therefore about 1 ms plus one record's processing.
 M1 and M4 measure it (§9.2, P9).
 
-**Verified by** test **O4**. It fills `HandOff` to 4096 records, then from inside the
-drain schedules a marker callback with `call_soon`. The ordered log must show the marker
-running before the drain finishes, and the publisher yielding at least ⌈4096 / 64⌉ = 64
-times. A second case uses a stub encoder that takes 0.3 ms per record, and asserts that
+**Verified by** test **O4**. It fills `HandOff` to 4096 records, registers a reader on a
+socketpair that always has a byte waiting, and schedules a marker callback with
+`call_soon` from inside every turn. The ordered log must show **both** the ready I/O
+callback and the marker running between **every** pair of consecutive turns, while
+`HandOff` is still non-empty, and at least ⌈4096 / 64⌉ = 64 turns. It also records every
+clock read the publisher makes and checks each turn against the 1 ms budget: no record is
+started after the budget was reached, and every turn stops at 64 records, at an empty
+`HandOff`, or at the budget. (Revised 2026-09-26: the first version of this test only
+showed one marker running somewhere before the last turn.) A second case uses a stub encoder that takes 0.3 ms per record, and asserts that
 no turn exceeds 1 ms plus one record's processing time.
 
 ### 4.3 Limits, byte budgets and overflow behavior
@@ -281,7 +297,7 @@ version prefix means a future write API cannot silently change v1.
 
 | Endpoint | Returns |
 |---|---|
-| `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `connections` [one **ledger** per open connection, §5.1], `closed_connections` [the ledgers of the last 64 closed connections, final values]} |
+| `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `encode_failed`, `fanout_failed`, `connections` [one **ledger** per open connection, §5.1], `closed_connections` [the ledgers of the last 64 closed connections, final values]} |
 | `GET /vehicle` | `kind`, `vin`, `signals` {dotted path → value}, `as_of` (the scenario time of the last application, equal to `t_last_applied`; `null` without a scenario) |
 | `GET /dtcs` | per ECU: `[{code, pending, confirmed, indicator_requested}]`, and `mil` |
 | `GET /ecus` | per ECU: endpoints {`name`, `rx_id`, `tx_id`, `functional`, `receive`, `reply_via`, `padding`} and protocols {`name`, `sids`} |
@@ -321,6 +337,14 @@ WebSocket messages, server → client:
   to candump and, later, to the raw-frame panel.
 - `client_dropped` in a `dropped` message is that client's own count. `GET /status` has
   every connection's ledger (§5.1).
+- **A publisher turn never raises** (added 2026-09-26). If encoding a record raises, the
+  record is still published, as the fallback event
+  `{"type": "exchange", "seq": S, "outcome": O, "error": "encode_failed"}`, so `seq`
+  stays contiguous, and `encode_failed` increments. If offering an event to one
+  connection raises, that connection alone is closed with code 1011, its ledger ends at
+  the previous publication, and `fanout_failed` increments. Each failure is logged once
+  per stage and exception type, and counted every time. Neither should ever happen; the
+  counters make it visible if it does.
 
 ### 5.1 The per-connection ledger
 
@@ -331,7 +355,7 @@ which are replaced rather than queued (§4.3), are not counted.
 
 | Field | Meaning |
 |---|---|
-| `id`, `connected_at`, `closed_at`, `close_code` | Identity and lifetime. `close_code` is 1013 for a forced disconnect |
+| `id`, `connected_at`, `closed_at`, `close_code` | Identity and lifetime. `close_code` is 1013 for a forced disconnect, and 1011 when offering it an event raised (§5) |
 | `watermark` | `W` at registration (§4.5) |
 | `published_at_open`, `published_at_close` | The global `published` counter when the connection was registered, and when it closed (or now, while it is open) |
 | `history_sent` | History events sent on connect, all with `seq ≤ W` |
@@ -450,8 +474,8 @@ the events' `dispatch_us`.
 | P2 | p99 wire latency, conditions 2, 3 and 4 | ≤ condition 1's p99 **+ 0.50 ms**, on pooled samples, in every round |
 | P3 | Lost replies, every condition | **Exactly 0.** A lost reply is a request frame with no reply frame before the next request, or within 1 s |
 | P4 | Throughput, condition 5 | Requests answered per second ≥ **90 %** of the same tester's maximum rate with the API off (measured the same way in each round) |
-| P5 | Drop and delivery accounting (reconciliation) | Checked after the run has **quiesced**: tester stopped, `HandOff` drained, every open connection's `queued` = 0. All of the following must hold **exactly**: (a) `issued_seq = published + handoff_dropped`. (b) For every connection, open or closed, the §5.1 identities hold. (c) Summed over every connection that was open for the whole run, `offered` equals the growth of `published` over the run, measured by the harness from `GET /status` before and after. (d) On the harness side, the `exchange` messages a connection received have strictly increasing `seq` and no duplicates. For an **open** connection, received live events = `sent`. For a **closed** connection, received live events ≤ `sent`, and the difference (sent but still in transit when the socket closed) is reported per connection. (e) Closes with code 1013 seen by the harness = `forced_disconnects`, and HTTP 503 refusals seen = `refused_clients`. **Any unexplained difference fails** |
-| P6 | Drops where none should occur | In conditions 2 and 3, and for the 3 reading clients in condition 4: `handoff_dropped` = 0, `client_dropped` = 0 and `discarded_on_close` = 0. Drops, discards and in-transit losses are allowed only on the stalled client's connections, and only where P5 accounts for them |
+| P5 | Drop and delivery accounting (reconciliation) | Checked after the run has **quiesced**: tester stopped, `HandOff` drained, every open connection's `queued` = 0. All of the following must hold **exactly**: (a) `issued_seq = published + handoff_dropped`. A record whose encoding failed counts in `published`, because it was published as its fallback event (§5). (b) For every connection, open or closed, the §5.1 identities hold. (c) Summed over every connection that was open for the whole run, `offered` equals the growth of `published` over the run, measured by the harness from `GET /status` before and after. (d) On the harness side, the `exchange` messages a connection received have strictly increasing `seq` and no duplicates. For an **open** connection, received live events = `sent`. For a **closed** connection, received live events ≤ `sent`, and the difference (sent but still in transit when the socket closed) is reported per connection. (e) Closes with code 1013 seen by the harness = `forced_disconnects`, closes with code 1011 = `fanout_failed`, and HTTP 503 refusals seen = `refused_clients`. **Any unexplained difference fails** |
+| P6 | Drops where none should occur | In conditions 2 and 3, and for the 3 reading clients in condition 4: `handoff_dropped` = 0, `client_dropped` = 0 and `discarded_on_close` = 0. In **every** condition, `encode_failed` = 0 and `fanout_failed` = 0. Drops, discards and in-transit losses are allowed only on the stalled client's connections, and only where P5 accounts for them |
 | P7 | Memory (RSS trend) | A 10-minute soak under condition 4 load, sampling the simulator's RSS every 5 s. Samples in the first 60 s are discarded as warm-up. **Pass if** the least-squares slope of RSS against time over the remaining samples is **≤ 0.1 MiB per minute**, **and** the final sample exceeds the first post-warm-up sample by **≤ 2 MiB**. Separately, the peak RSS increase over condition 1 must stay within the §4.3 bound of about 19 MiB plus 10 MiB for code and libraries |
 | P8 | Noise guard | If condition 1's own p99 differs by more than 0.50 ms between rounds, the benchmark is **inconclusive**. It is reported as such and does not pass |
 | P9 | Loop hold time | The publisher records the length of every turn. The maximum over the whole of conditions 2–5 is **≤ 2 ms**. The M1 early check reports the same maximum for a full 4096-record `HandOff` |
