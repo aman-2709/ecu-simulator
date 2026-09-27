@@ -79,6 +79,15 @@ A sixth revision, on 2026-09-27, came from the owner's review of the M2 Task 1�
 - **a request body stalled mid-chunk gets 408 after 2 s** instead of holding a handler
   indefinitely (§4.3).
 
+**Who approved relaxing P5(h), and why.** The project owner, on 2026-09-27, in their review
+of the Task 1–6 checkpoint `de7e431`. Their instruction was: "allow at most one explicitly
+reported delivery_unknown per forced stalled/reset connection, with zero for healthy
+clients; keep diagnostic reply loss and latency criteria unchanged". The reason is the
+measurement: a stalled or reset connection is cut off while one frame sits in the transport
+buffer, and that frame's delivery cannot be known. Under the previous rule, M4 condition 4
+could therefore never pass. Zero unknowns on forced and reset connections remains an open
+goal, not a requirement.
+
 The evidence for the routing and ordering claims is in §12.
 
 ## 1. Purpose and scope
