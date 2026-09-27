@@ -18,7 +18,9 @@ import logging
 import signal
 from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass
+from typing import Any
 
+from ecu_simulator.api.options import ApiOptions, ApiStartupError
 from ecu_simulator.clock import Clock, MonotonicClock
 from ecu_simulator.config import Profile
 from ecu_simulator.config.schema import EcuConfig, EndpointConfigModel
@@ -303,6 +305,14 @@ def _endpoint_named(ecu: EcuConfig, name: str) -> EndpointConfigModel:
     raise ValueError(f"endpoint {name!r} is not defined on this ECU")  # unreachable: schema validated
 
 
+def _api_server(runtime: Runtime, endpoints: list[EndpointConfig], api: ApiOptions) -> Any:
+    try:
+        from ecu_simulator.api.server import ApiServer  # the only aiohttp import (decisions/0010 §4.1)
+    except ImportError as error:
+        raise ApiStartupError("--api needs the optional [gui] extra: pip install 'ecu-simulator[gui]'") from error
+    return ApiServer(runtime, endpoints, api)
+
+
 async def run(
     config: RuntimeConfig,
     *,
@@ -310,21 +320,27 @@ async def run(
     install_signal_handlers: bool = True,
     transport_factory: Callable[..., IsoTpTransport] = IsoTpTransport,
     clock: Clock | None = None,
+    api: ApiOptions | None = None,
 ) -> None:
     """Start the transport, wait for ``stop`` (or SIGINT/SIGTERM), then shut down.
 
     Raises :class:`TransportError` if the transport cannot start; the caller reports it.
+    Raises :class:`ApiStartupError` if ``api`` is given and the observer API cannot start.
     """
     endpoints = build_endpoints(config)
     runtime = build_runtime(config, clock)
     check_routes(runtime.router, endpoints)  # before any socket is opened
+    server = _api_server(runtime, endpoints, api) if api is not None else None
+    handler = server.handler if server is not None else runtime.dispatcher
+    if server is not None:
+        await server.start()           # a busy port fails here, before the transport exists
     transport = transport_factory(config.interface, endpoints)
     stop = stop or asyncio.Event()
     loop = asyncio.get_running_loop()
     installed: list[signal.Signals] = []
     started = False
     try:
-        await transport.start(runtime.dispatcher)
+        await transport.start(handler)
         started = True
         if install_signal_handlers:
             for sig in (signal.SIGINT, signal.SIGTERM):
@@ -336,6 +352,8 @@ async def run(
     finally:
         for sig in installed:
             loop.remove_signal_handler(sig)
+        if server is not None:
+            await server.stop()
         await transport.stop()
         if started:
             logger.info("shutdown complete")
@@ -346,11 +364,11 @@ def _request_stop(stop: asyncio.Event, sig: signal.Signals) -> None:
     stop.set()
 
 
-def main(config: RuntimeConfig) -> int:
+def main(config: RuntimeConfig, api: ApiOptions | None = None) -> int:
     """Run to completion; exit status 0 on clean shutdown, 2 on a transport/startup failure."""
     try:
-        asyncio.run(run(config))
-    except TransportError as error:
+        asyncio.run(run(config, api=api))
+    except (TransportError, ApiStartupError) as error:
         logger.error("%s", error)
         return 2
     return 0

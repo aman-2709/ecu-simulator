@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import logging
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from ecu_simulator import app
+from ecu_simulator.api.options import ApiStartupError, parse_api
 from ecu_simulator.config import DEFAULT_PROFILE, ConfigError, load_profile
 from ecu_simulator.loggers import logger_app
 
@@ -60,6 +62,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="YAML profile to load (default: the packaged profiles/ice_default.yaml)",
     )
     parser.add_argument("--log-level", choices=LOG_LEVELS, default="INFO", help="log verbosity (default: INFO)")
+    parser.add_argument(
+        "--api",
+        metavar="HOST:PORT",
+        help="serve the read-only observer API and page on a loopback address, e.g. 127.0.0.1:8765 "
+        "(needs the [gui] extra; off by default)",
+    )
     return parser
 
 
@@ -80,9 +88,19 @@ def main(argv: list[str] | None = None) -> int:
             "profile %s is valid: %s vehicle, ECUs [%s], %d endpoint(s)", path, profile.vehicle.type, ecus, endpoints
         )
         return 0
+    api = None
+    if args.api is not None:
+        try:
+            api = parse_api(args.api, str(path), package_version())
+        except ApiStartupError as error:
+            log.error("%s", error)
+            return 2
+        if importlib.util.find_spec("aiohttp") is None:
+            log.error("--api needs the optional [gui] extra: pip install 'ecu-simulator[gui]'")
+            return 2
     config = app.RuntimeConfig.build(profile, args.interface)
     try:
-        return app.main(config)
+        return app.main(config, api)
     except KeyboardInterrupt:
         # Ctrl-C before the runtime installed its signal handlers (during startup).
         log.info("interrupted during startup")
