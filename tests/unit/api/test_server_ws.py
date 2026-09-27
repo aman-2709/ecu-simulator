@@ -1,6 +1,8 @@
 import asyncio
+import gc
 import json
 import socket
+import struct
 import time
 
 import pytest
@@ -354,3 +356,96 @@ async def test_a_writer_that_dies_on_an_open_socket_closes_it_1011(server, sessi
     stats = server.publisher.stats(issued=server.handler.issued)
     assert stats["clients"] == 0 and stats["closed_totals"]["close_codes"] == {"1011": 1}
     assert stats["closed_totals"]["delivery_unknown"] == 1              # owner decision 8: any other exception
+
+
+def raw_upgrade(s, rcvbuf=None):
+    raw = socket.socket()
+    if rcvbuf:
+        raw.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, rcvbuf)
+    raw.connect(("127.0.0.1", s.port))
+    raw.sendall(
+        f"GET /api/v1/events HTTP/1.1\r\nHost: 127.0.0.1:{s.port}\r\nOrigin: http://127.0.0.1:{s.port}\r\n"
+        "Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n\r\n".encode()
+    )
+    return raw
+
+
+def reset(raw):
+    raw.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))   # close sends RST
+    raw.close()
+
+
+class LoopErrors:
+    """Records every call of the event loop's exception handler (Review Focus 2)."""
+
+    def __enter__(self):
+        self.loop = asyncio.get_running_loop()
+        self.previous = self.loop.get_exception_handler()
+        self.calls = []
+        self.loop.set_exception_handler(lambda loop, context: self.calls.append(context))
+        return self
+
+    def __exit__(self, *exc):
+        gc.collect()                  # "Task exception was never retrieved" is reported on collection
+        self.loop.set_exception_handler(self.previous)
+
+
+async def closed_totals_after_reset(s):
+    assert await wait_until(lambda: not s._sockets and not s.publisher.stats(issued=0)["closed_unresolved"])
+    stats = s.publisher.stats(issued=s.handler.issued)
+    totals = stats["closed_totals"]
+    assert stats["clients"] == 0 and stats["closed_unresolved"] == 0 and totals["close_codes"] == {"1006": 1}
+    assert totals["enqueued"] == totals["sent"] + totals["delivery_unknown"] + totals["discarded_on_close"]
+    return totals
+
+
+@pytest.mark.asyncio
+async def test_a_client_reset_during_the_live_stream_is_retired_cleanly():  # Review Focus 2
+    with LoopErrors() as errors:
+        s = build()
+        await s.start()
+        try:
+            raw = raw_upgrade(s)
+            raw.setblocking(False)
+            receive = asyncio.get_running_loop().sock_recv
+            assert (await asyncio.wait_for(receive(raw, 65536), 2)).startswith(b"HTTP/1.1 101")
+            await publish(s, 20)
+            assert await asyncio.wait_for(receive(raw, 65536), 2)          # the live stream is flowing
+            reset(raw)
+            await publish(s, 20)                                          # sends after the reset: NotDelivered
+            totals = await closed_totals_after_reset(s)
+            # Not backpressured, a send never suspends: nothing is in flight across the reset,
+            # so nothing is delivery_unknown (owner decision 8).
+            assert totals["delivery_unknown"] == 0
+        finally:
+            await s.stop()
+    assert errors.calls == []
+
+
+@pytest.mark.asyncio
+async def test_a_client_reset_while_backpressured_is_delivery_unknown_once():  # Review Focus 2
+    with LoopErrors() as errors:
+        s = build(connection_options={"max_messages": 4, "overflow_disconnect_s": 60})
+        await s.start()
+        try:
+            raw = raw_upgrade(s, rcvbuf=4096)                             # then never reads
+            assert await wait_until(lambda: bool(s._sockets))
+            request = next(iter(s._sockets.values()))[0]
+            deadline = time.monotonic() + 20
+
+            def writer_blocked():
+                # A full queue behind one unresolved exchange: the writer is stuck in send_str.
+                (ledger,) = s.publisher.stats(issued=0)["connections"]
+                return request.protocol.writing_paused and ledger["queued"] == 4 + 1
+            while not writer_blocked() and time.monotonic() < deadline:
+                await publish(s, 1000)
+            assert writer_blocked()
+            reset(raw)
+            totals = await closed_totals_after_reset(s)
+            # The blocked send ends in ConnectionError('Connection lost'): any exception other
+            # than NotDelivered is delivery_unknown (owner decision 8).
+            assert totals["delivery_unknown"] == 1
+        finally:
+            await s.stop()
+    assert errors.calls == []
