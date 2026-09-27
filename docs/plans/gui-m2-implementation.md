@@ -145,8 +145,9 @@ Each is pinned in the task named.
    though the writer never returns to `next_message()`. Task 5,
    `test_a_stalled_client_is_closed_1013_and_frees_its_slot`.
 2. **A client that vanishes mid-send**, for example a reset or a closed tab. The writer's
-   exception must end that connection only, with the ledger resolved (`mark_failed`), and
-   must never reach the event loop's unhandled-exception log. Task 5,
+   exception must end that connection only, with the ledger resolved per owner decision 8
+   (known non-delivery → `mark_failed`, otherwise delivery_unknown), and must never reach
+   the event loop's unhandled-exception log. Task 5,
    `test_a_client_that_disconnects_mid_stream_is_retired_cleanly`.
 3. **Host header variants:**
    - allowed: `localhost:PORT`, and `LOCALHOST:PORT` (hosts are case-insensitive);

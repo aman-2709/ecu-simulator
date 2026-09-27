@@ -27,11 +27,13 @@ resolving the previous exchange loses it from the ledger, and
 from the Publisher (a forced 1013), from ``Publisher.disconnect``, or from the writer
 itself. Close discards everything still queued (``discarded_on_close``) and clears the
 ``state`` and ``dropped`` slots, but it leaves the in-flight exchange unresolved and
-counted in ``queued``. The writer still resolves it when ``send_str`` finishes:
-``mark_sent()`` if the frame went out, ``mark_failed()`` if not. That keeps P5(d),
-"received ≤ ``sent``" (0010 §9.2), true for a frame that reached the client after a
-forced close. After close, ``next_message()`` returns ``None``, and the ledger is final
-once the in-flight send has resolved. A writer that stops without resolving leaves
+counted in ``queued``. The writer still resolves it when ``send_str`` finishes, by
+owner decision 8: ``mark_sent()`` if it returned, ``mark_failed()`` only if it raised
+``NotDelivered`` (known: nothing written), and ``mark_unknown()`` for any other exception
+or a cancellation. That keeps P5(d), "received ≤ ``sent`` + ``delivery_unknown``"
+(0010 §9.2), true for a frame that reached the client after a forced close. After
+close, ``next_message()`` returns ``None``, and the ledger is final once the in-flight
+send has resolved. A writer that stops without resolving leaves
 ``queued`` at 1 for good, which P5's quiesce check reports.
 """
 
@@ -156,13 +158,14 @@ class Connection:
             self.sent += 1
 
     def mark_failed(self) -> None:
-        """The writer's ``send_str`` failed: the in-flight exchange was not delivered."""
+        """Known non-delivery: ``send`` raised ``NotDelivered``, so nothing was written (owner decision 8)."""
         if self._in_flight is not None:
             self._in_flight = None
             self.discarded_on_close += 1
 
     def mark_unknown(self) -> None:
-        """The writer's ``send_str`` was cancelled while under way: delivery is unknown.
+        """Delivery unknown: ``send`` raised any exception other than ``NotDelivered``, or was
+        cancelled while under way (owner decision 8); the frame may have been written.
 
         Neither sent nor discarded. P5 treats any such exchange as inconclusive (0010 §9.2).
         """
