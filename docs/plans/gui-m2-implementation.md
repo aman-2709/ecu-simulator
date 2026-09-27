@@ -2316,6 +2316,8 @@ def unresolved(api: dict) -> list[str]:
     """Beyond the P5(h) allowance: the condition is inconclusive, never passed (0010 §9.2 P5(h))."""
     notes = []
     t = api["closed_totals"]
+    if t["delivery_unknown_over_allowance"]:
+        notes.append(f"{t['delivery_unknown_over_allowance']} closed connection(s) over the P5(h) allowance")
     for code, unknown in t["delivery_unknown_by_close_code"].items():
         if code in ALLOWED and unknown > t["close_codes"].get(code, 0):
             notes.append(f"delivery_unknown {unknown} > {t['close_codes'].get(code, 0)} connections closed {code}")
@@ -2507,6 +2509,21 @@ connection with 1011 through `disconnect`. `stats()` reports `writer_failed`.
   - a following normal `GET /api/v1/status` gets 200 (the server is not wedged).
 - Also add the deferred test: a bad Host with a chunked body gets 421 without the body
   being read. A body that is never sent must not delay the 421.
+
+**R6. Per-connection allowance counter** (owner, 2026-09-27, after round 3).
+- `_fold` increments `closed_totals["delivery_unknown_over_allowance"]` for each closed
+  connection whose `delivery_unknown` exceeds its allowance: 1 if its close code is 1013 or
+  1006, otherwise 0. The per-code sums alone cannot catch this once ledgers are evicted.
+- The test helper `check_delivery_unknown_allowance` also asserts the counter is 0.
+- Publisher test: more than 64 closes, where one early connection closed 1013 carries two
+  unknowns and one closed 1013 carries none. After the offender is evicted from
+  `closed_connections`:
+  - the counter is 1;
+  - the per-code sum check alone would pass, and the test shows that too;
+  - with no offender, the counter is 0.
+- The two older 1011 publisher tests (`test_fanout_failure_closes_only_that_connection` and
+  `test_abandon_keeps_the_ledger_exact_when_the_clock_also_fails`) assert
+  `close_codes["1011"] == fanout_failed + writer_failed` and `writer_failed == 0`.
 
 **R5. Task 9's script** (above) applies the revised P5(e) and P5(h) rules, and prints the
 allowed `delivery_unknown` counts per condition. The early check's STOP rule and latency
