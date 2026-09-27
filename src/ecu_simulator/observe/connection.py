@@ -2,6 +2,33 @@
 
 The ledger counts live ``exchange`` messages only. ``state`` and ``dropped`` are replaced,
 never queued, so they can neither be dropped nor starve a client of the latest state.
+
+The writer contract (for M2's per-connection writer task)
+----------------------------------------------------------
+The Publisher fills a connection; exactly one writer task drains it. The writer:
+
+1. calls ``next_message()``. It returns the pending ``state``, else the pending
+   ``dropped`` notice, else the oldest queued ``exchange``, else ``None`` (wait for more);
+2. awaits ``send_str(text)`` on the WebSocket;
+3. then, **before calling ``next_message()`` again**, resolves that send:
+   ``mark_sent()`` if ``send_str`` returned, ``mark_failed()`` if it raised. Both are
+   no-ops after a ``state`` or ``dropped`` message, which the ledger does not count, so
+   the writer may call them after every message.
+
+Only one ``exchange`` is in flight at a time. Calling ``next_message()`` again before
+resolving the previous exchange loses it from the ledger, and
+``enqueued = sent + queued + discarded_on_close`` then no longer holds.
+
+**Close during an in-flight send.** ``close()`` may run while ``send_str`` is awaiting:
+from the Publisher (a forced 1013), from ``Publisher.disconnect``, or from the writer
+itself. Close discards everything still queued (``discarded_on_close``) and clears the
+``state`` and ``dropped`` slots, but it leaves the in-flight exchange unresolved and
+counted in ``queued``. The writer still resolves it when ``send_str`` finishes:
+``mark_sent()`` if the frame went out, ``mark_failed()`` if not. That keeps P5(d),
+"received ≤ ``sent``" (0010 §9.2), true for a frame that reached the client after a
+forced close. After close, ``next_message()`` returns ``None``, and the ledger is final
+once the in-flight send has resolved. A writer that stops without resolving leaves
+``queued`` at 1 for good, which P5's quiesce check reports.
 """
 
 from __future__ import annotations
@@ -82,6 +109,7 @@ class Connection:
             self._dropped_notice = text
 
     def next_message(self) -> str | None:
+        """The next message to send; resolve an ``exchange`` before asking again (module docstring)."""
         if self._state is not None:
             text, self._state = self._state, None
             return text

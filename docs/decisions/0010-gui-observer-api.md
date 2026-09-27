@@ -373,6 +373,13 @@ The ledger of a closed connection is final once a send under way at close, if an
 (Revised 2026-09-27, from the M1 final review: an event being sent when a forced close happened was counted as
 discarded even when it reached the client, which would have made P5(d) fail.)
 
+**Writer contract** (added 2026-09-27; the full text is the docstring of
+`observe/connection.py`). One writer task per connection takes one message at a time
+with `next_message()`, awaits `send_str`, and resolves an `exchange` with `mark_sent()`
+or `mark_failed()` before taking the next. A close while `send_str` is awaiting discards
+what is still queued, but leaves the in-flight exchange to that resolution, so that it
+counts as `sent` if it reached the client and as `discarded_on_close` if it did not.
+
 ## 6. Security
 
 - `--api HOST:PORT` accepts only a loopback host: `127.0.0.1`, `::1` or `localhost`. Any

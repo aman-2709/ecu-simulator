@@ -121,3 +121,23 @@ def test_a_message_in_flight_at_close_resolves_as_sent_or_discarded():  # final 
     ledger = d.ledger(published_now=99)
     assert (ledger["sent"], ledger["queued"], ledger["discarded_on_close"]) == (0, 0, 1)
     identities(ledger)
+
+
+def test_the_documented_writer_contract():
+    # The sequence in connection.py's module docstring, step by step.
+    c, _ = conn()
+    c.set_state("s")
+    c.offer("x")
+    c.offer("y")
+    assert c.next_message() == "s"
+    c.mark_sent()                                  # after a state message: a no-op
+    assert c.ledger(published_now=12)["sent"] == 0
+    assert c.next_message() == "x"                 # exchange in flight
+    c.close(1013, published_now=12)                # forced close while send_str is awaiting
+    assert c.next_message() is None                # nothing more to send after close
+    ledger = c.ledger(published_now=12)
+    assert (ledger["sent"], ledger["queued"], ledger["discarded_on_close"]) == (0, 1, 1)
+    c.mark_sent()                                  # the frame reached the client after all
+    ledger = c.ledger(published_now=12)
+    assert (ledger["sent"], ledger["queued"], ledger["discarded_on_close"]) == (1, 0, 1)
+    identities(ledger)
