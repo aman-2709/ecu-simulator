@@ -140,3 +140,20 @@ Two points from the review about the early check's method, which 0010 §9.2 pres
   The reviewer's own run printed −0.09 µs.
 
 M2 measures both on vcan.
+
+## Addendum, 2026-09-27: before M1 acceptance
+
+On the owner's request, before acceptance:
+
+- `snapshots.status()` now carries the §5 `profile` field, passed in by the caller, and
+  has a test (`09b360c`);
+- initial `state` delivery to a newly connected client while state is unchanged is tested
+  by `test_a_late_client_gets_the_current_state`. That test fails against the
+  publisher at `667f072` and passes at the final commit;
+- the M2 writer contract is documented in `observe/connection.py` and 0010 §5.1, and
+  pinned by `test_the_documented_writer_contract` (`c34853c`).
+
+M1 now adds 57 tests. The gate results on the final commit are reported to the owner
+with the commit range for review, not recorded here, because committing them would move
+the final commit. The early check is unchanged: **in-process only**, not the M2 check, not
+the M4 benchmark, and M1 still has **no CI result**.
