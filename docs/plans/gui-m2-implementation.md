@@ -34,7 +34,8 @@ contract in the `observe/connection.py` docstring.
 ## Owner decisions this plan carries (2026-09-27)
 
 Items 5 and 6 were added in a revision after the owner reviewed the first draft (`84a2d6c`);
-the tasks they touch say so in their tests and code.
+the tasks they touch say so in their tests and code. Item 8 was added at M2 approval, before any
+code.
 
 1. **`gui` becomes a CI push branch.** Task 7 adds `gui` to `on.push.branches` in
    `.github/workflows/ci.yml` **on branch `gui` only**. The `modernization` workflow, the
@@ -75,7 +76,23 @@ the tasks they touch say so in their tests and code.
      passed the 421 check.
    - A page from `http://localhost:P` cannot open the socket through Host `127.0.0.1:P`,
      and the reverse is refused too (Task 5).
-7. **No change to the V1.0 or Phase 8b gates.** Nothing in this plan touches
+7. **No change to the V1.0 or Phase 8b gates.**
+8. **A `send_str` exception is `failed` only when non-delivery is known** (owner, at M2
+   approval, 2026-09-27). Anything else is `delivery_unknown`.
+   - `send` raises `NotDelivered` (Task 2) only when it knows nothing was written. Every
+     other exception is `delivery_unknown`, and so is a cancellation.
+   - The server's `send` (Task 5) knows exactly one such case: before calling `send_str`,
+     it checks, synchronously, whether the socket is already closed or its transport is
+     closing.
+   - Why that check is enough, from reading aiohttp 3.13.5 and 3.14.3 `web_ws.py` and
+     `_websocket/writer.py`, with compression off as this plan sets it:
+     - `send_str` reaches `transport.write()` without suspending;
+     - its own pre-write refusals come first: the writer's `_closing` flag, which only
+       `ws.close()` sets, **after** it has set `ws.closed`, and `transport.is_closing()`.
+       Both are covered by that synchronous check;
+     - so any exception after the check passes arises at or after `transport.write()`,
+       typically "Connection lost" from the drain wait. By then the frame is in the
+       transport buffer, so delivery is unknown. Nothing in this plan touches
    `modernization`, and `gui` is not merged before V1.0 is tagged.
 
 ## Global constraints
@@ -410,13 +427,18 @@ Then install the extra into the worktree venv:
   - `Connection.mark_unknown() -> None`, with a new ledger field `delivery_unknown: int`;
   - `async Connection.wait_changed() -> None`;
   - `async Connection.wait_closed() -> None`;
-  - `async run_writer(conn, send: Callable[[str], Awaitable[None]], hello: dict, history: list[str]) -> None`.
+  - `async run_writer(conn, send: Callable[[str], Awaitable[None]], hello: dict, history: list[str]) -> None`;
+  - `class NotDelivered(Exception)` in `observe/writer.py`. A `send` raises it only when it
+    **knows** nothing was written (owner decision 8).
 
 **Contract changes, decided here:**
-- **Three ways a send resolves.** A `send_str` that **returned** is `sent` (`mark_sent`).
-  One that **raised** is `discarded_on_close` (`mark_failed`): it was not written. One that
-  was **cancelled** while under way is `delivery_unknown` (`mark_unknown`): it may or may
-  not have reached the client, and the ledger does not guess. The identity becomes
+- **Three ways a send resolves.**
+  - A `send` that **returned** is `sent` (`mark_sent`).
+  - One that raised **`NotDelivered`** is `discarded_on_close` (`mark_failed`): it is known
+    not to have been written.
+  - One that raised **anything else**, or was **cancelled** while under way, is
+    `delivery_unknown` (`mark_unknown`): it may or may not have reached the client, and the
+    ledger does not guess (owner decision 8). The identity becomes
   `enqueued = sent + delivery_unknown + queued + discarded_on_close`.
 - **Message order.** The writer sends `hello`, then `take_state()`, then history, then
   loops on `next_message()`. That gives 0010 §4.5's order: hello, state, history, live.
@@ -483,7 +505,7 @@ import json
 import pytest
 
 from ecu_simulator.observe.connection import Connection
-from ecu_simulator.observe.writer import run_writer
+from ecu_simulator.observe.writer import NotDelivered, run_writer
 
 HELLO = {"type": "hello", "api": 1, "watermark": 5, "oldest_seq": 1}
 
@@ -537,16 +559,29 @@ async def test_without_a_state_the_writer_goes_straight_to_history():
 
 
 @pytest.mark.asyncio
-async def test_a_failed_send_is_marked_failed_and_raised():
+async def test_a_known_non_delivery_is_marked_failed_and_raised():
     c = conn()
     c.offer("L1")
     async def send(text):
         if text == "L1":
-            raise ConnectionResetError
+            raise NotDelivered("socket closing: nothing written")
+    with pytest.raises(NotDelivered):
+        await run_writer(c, send, HELLO, [])
+    ledger = identities(c)
+    assert (ledger["sent"], ledger["delivery_unknown"], ledger["queued"], ledger["discarded_on_close"]) == (0, 0, 0, 1)
+
+
+@pytest.mark.asyncio
+async def test_any_other_send_error_is_delivery_unknown():  # owner decision 8
+    c = conn()
+    c.offer("L1")
+    async def send(text):
+        if text == "L1":
+            raise ConnectionResetError("Connection lost")   # e.g. from the drain wait, after the write
     with pytest.raises(ConnectionResetError):
         await run_writer(c, send, HELLO, [])
     ledger = identities(c)
-    assert (ledger["sent"], ledger["queued"], ledger["discarded_on_close"]) == (0, 0, 1)
+    assert (ledger["sent"], ledger["delivery_unknown"], ledger["queued"], ledger["discarded_on_close"]) == (0, 1, 0, 0)
 
 
 @pytest.mark.asyncio
@@ -636,8 +671,9 @@ In `connection.py`:
 7. Extend the module docstring's contract:
    - add a step 0: "send `hello`, then `take_state()` if not `None`, then the history, then
      loop";
-   - replace step 3 with the three outcomes: `mark_sent()` if `send_str` returned,
-     `mark_failed()` if it raised, `mark_unknown()` if it was cancelled while under way;
+   - replace step 3 with the three outcomes: `mark_sent()` if `send_str` returned;
+     `mark_failed()` only if non-delivery is **known**, meaning `NotDelivered`; and
+     `mark_unknown()` for any other exception, or a cancellation while under way;
    - state the identity
      `enqueued = sent + delivery_unknown + queued + discarded_on_close`.
 
@@ -662,6 +698,10 @@ from ecu_simulator.observe.connection import Connection
 Send = Callable[[str], Awaitable[None]]
 
 
+class NotDelivered(Exception):
+    """Raised by a ``send`` that knows nothing was written: the only failure counted as failed."""
+
+
 async def run_writer(conn: Connection, send: Send, hello: dict[str, Any], history: list[str]) -> None:
     """hello, the current state, the history, then live messages until ``conn`` closes.
 
@@ -681,11 +721,11 @@ async def run_writer(conn: Connection, send: Send, hello: dict[str, Any], histor
             continue
         try:
             await send(text)
-        except asyncio.CancelledError:
-            conn.mark_unknown()   # it may or may not have reached the client: never guessed
+        except NotDelivered:
+            conn.mark_failed()    # known: nothing was written
             raise
-        except Exception:
-            conn.mark_failed()
+        except BaseException:     # any other error, or cancellation: it may have been written
+            conn.mark_unknown()
             raise
         conn.mark_sent()
 ```
@@ -693,7 +733,7 @@ async def run_writer(conn: Connection, send: Send, hello: dict[str, Any], histor
 - [ ] **Step 4: Run them to verify they pass**
 
 Run: `.venv/bin/python -m pytest tests/unit/observe -q -p no:cacheprovider`
-Expected: all pass. That is 57 from M1, plus 4 connection tests and 5 writer tests.
+Expected: all pass. That is 57 from M1, plus 4 connection tests and 6 writer tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1292,8 +1332,11 @@ git commit -m "feat(api): ApiServer with loopback guard, REST routes, one page a
 - Test: `tests/unit/api/test_server_ws.py`
 
 **Interfaces:**
-- Consumes: `Publisher.connect`, `TooManyClients`, `run_writer`, `Connection.wait_closed`.
-- Produces: `WS /api/v1/events?after=S`, following 0010 §4.5, §4.3 and §6.
+- Consumes: `Publisher.connect`, `TooManyClients`, `run_writer`, `NotDelivered`, `Connection.wait_closed`.
+- Produces:
+  - `WS /api/v1/events?after=S`, following 0010 §4.5, §4.3 and §6;
+  - `send_via(ws, request) -> Send` in `server.py`: the one place that decides "known not
+    delivered" (owner decision 8).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1422,6 +1465,9 @@ async def test_a_client_that_disconnects_mid_stream_is_retired_cleanly(server, s
     assert "Task exception was never retrieved" not in caplog.text
 
 
+STALLED_FINDING: dict[str, int] = {}
+
+
 @pytest.mark.asyncio
 async def test_a_stalled_client_is_closed_1013_and_frees_its_slot():  # Review Focus 1
     s = build(connection_options={"max_messages": 4, "overflow_disconnect_s": 0.2})
@@ -1443,16 +1489,63 @@ async def test_a_stalled_client_is_closed_1013_and_frees_its_slot():  # Review F
             await asyncio.sleep(0.05)
         stats = s.publisher.stats(issued=s.handler.issued)
         assert stats["clients"] == 0 and stats["closed_totals"]["close_codes"] == {"1013": 1}
-        # The blocked send must END (raise, or return) when the socket is aborted, not be cancelled
-        # at WRITER_GRACE_S. If this is not 0, every M4 condition 4 would be inconclusive: report
-        # it as a finding, do not relax the assertion.
-        assert stats["closed_totals"]["delivery_unknown"] == 0
+        totals = stats["closed_totals"]
+        assert totals["enqueued"] == totals["sent"] + totals["delivery_unknown"] + totals["discarded_on_close"]
+        STALLED_FINDING["delivery_unknown"] = totals["delivery_unknown"]    # read by the next test
         async with aiohttp.ClientSession() as session:                # the slot is free again
             async with session.ws_connect(url(s, "/api/v1/events"), origin=origin(s)) as ws:
                 assert (await next_json(ws))["type"] == "hello"
     finally:
         raw.close()
         await s.stop()
+
+
+def test_a_stalled_clients_blocked_send_is_not_delivery_unknown():
+    # The measurement behind 0010 P5(h) for M4 condition 4: if a stalled client's blocked
+    # send resolves as delivery_unknown, every condition-4 run is inconclusive. Kept separate
+    # so the lifecycle test above stays a clean pass or fail.
+    if "delivery_unknown" not in STALLED_FINDING:
+        pytest.skip("the stalled-client lifecycle test did not run in this session")
+    assert STALLED_FINDING["delivery_unknown"] == 0
+
+
+class FakeTransport:
+    def __init__(self, closing):
+        self.closing = closing
+
+    def is_closing(self):
+        return self.closing
+
+
+class FakeWs:
+    def __init__(self, closed=False, error=None):
+        self.closed, self.error, self.sent = closed, error, []
+
+    async def send_str(self, text):
+        if self.error:
+            raise self.error
+        self.sent.append(text)
+
+
+class FakeRequest:
+    def __init__(self, closing=False, transport=True):
+        self.transport = FakeTransport(closing) if transport else None
+
+
+@pytest.mark.asyncio
+async def test_send_via_raises_not_delivered_only_when_nothing_can_be_written():  # owner decision 8
+    from ecu_simulator.api.server import send_via
+    from ecu_simulator.observe.writer import NotDelivered
+    for ws, request in ((FakeWs(closed=True), FakeRequest()), (FakeWs(), FakeRequest(closing=True)),
+                        (FakeWs(), FakeRequest(transport=False))):
+        with pytest.raises(NotDelivered):
+            await send_via(ws, request)("x")
+        assert ws.sent == []                                            # send_str was never called
+    ok = FakeWs()
+    await send_via(ok, FakeRequest())("x")
+    assert ok.sent == ["x"]
+    with pytest.raises(ConnectionResetError):                            # after the pre-check: not NotDelivered
+        await send_via(FakeWs(error=ConnectionResetError("Connection lost")), FakeRequest())("x")
 
 
 @pytest.mark.asyncio
@@ -1493,7 +1586,7 @@ stream tests fail the same way.
             self.publisher.disconnect(conn, WSCloseCode.ABNORMAL_CLOSURE)   # recorded, never sent
             raise
         self._sockets.add(ws)
-        writer = asyncio.create_task(run_writer(conn, ws.send_str, hello, history))
+        writer = asyncio.create_task(run_writer(conn, send_via(ws, request), hello, history))
         closer = asyncio.create_task(self._close_when_forced(conn, ws))
         try:
             async for msg in ws:
@@ -1522,6 +1615,25 @@ stream tests fail the same way.
             await ws.close(code=WSCloseCode.TRY_AGAIN_LATER, message=b"client too slow")
 ```
 
+Add at module level, and import `NotDelivered` and `Send` from `ecu_simulator.observe.writer`:
+
+```python
+def send_via(ws: Any, request: Any) -> Send:
+    """``ws.send_str`` with the one known non-delivery made explicit (owner decision 8).
+
+    With compression off, ``send_str`` reaches ``transport.write()`` without suspending, and
+    its own pre-write refusals are the two checked here, synchronously. So a refusal here
+    means nothing was written (``NotDelivered``); any exception from ``send_str`` itself
+    arises at or after the write, and the writer records it as delivery_unknown.
+    """
+    async def send(text: str) -> None:
+        transport = request.transport
+        if ws.closed or transport is None or transport.is_closing():
+            raise NotDelivered("socket closed or closing: nothing written")
+        await ws.send_str(text)
+    return send
+```
+
 Delete the Task 4 placeholder.
 
 - [ ] **Step 4: Run them to verify they pass**
@@ -1530,6 +1642,17 @@ Run: `.venv/bin/python -m pytest tests/unit/api -q -p no:cacheprovider`, three t
 Expected: all pass, every time. The stalled-client test finishes in seconds, not at its
 20 s bound. **If it is flaky, do not raise the bound.** Diagnose instead: the buffer that
 absorbs the backlog is the likely cause. Record the finding.
+
+**Expected stalled-client finding.** By the reading of aiohttp in owner decision 8, a stalled
+client's writer is blocked in the drain wait **after** its frame was written, so the forced
+close most likely resolves that exchange as `delivery_unknown` = 1. If
+`test_a_stalled_clients_blocked_send_is_not_delivery_unknown` fails that way:
+- do **not** change its assertion;
+- mark it `@pytest.mark.xfail(strict=True, reason="stalled-client finding: blocked send resolves as delivery_unknown=<measured>; M4 condition 4 P5(h) decision pending")`;
+- record the measured value in the report.
+
+`strict=True` means the test turns red if the behaviour ever changes. The owner decides
+what P5(h) does with condition 4.
 
 - [ ] **Step 5: Commit**
 
@@ -2340,4 +2463,5 @@ Task 5 replaces; Task 5 Step 2 depends on it. There is no other TBD.
 - `run_writer(conn, send, hello, history)`;
 - `Publisher(..., connection_options=)`;
 - `stats()` keys `connections_opened`, `closed_totals` and `closed_unresolved`;
-- `Connection.mark_sent` / `mark_failed` / `mark_unknown`, and the ledger key `delivery_unknown`.
+- `Connection.mark_sent` / `mark_failed` / `mark_unknown`, and the ledger key `delivery_unknown`;
+- `NotDelivered` and `send_via(ws, request)`.

@@ -389,8 +389,8 @@ which are replaced rather than queued (§4.3), are not counted.
 | `enqueued` | Offered events accepted into the queue |
 | `sent` | Events the writer task has passed to `send_str` successfully, including one that was already being sent when the connection closed and then succeeded |
 | `queued` | Events in the queue now, plus the one handed to `send_str` and not yet confirmed. Once closed, only that unconfirmed one, and 0 once it resolves |
-| `discarded_on_close` | Events still in the queue when the connection closed, forced or not, which are discarded, not sent; plus an event whose `send_str` was under way and then raised |
-| `delivery_unknown` | Events whose `send_str` was **cancelled** while under way, for example at shutdown or after the writer's grace period. They may or may not have reached the client, and the ledger does not guess. Any non-zero value makes the P5 and P6 result it belongs to inconclusive (§9.2) |
+| `discarded_on_close` | Events still in the queue when the connection closed, forced or not, which are discarded, not sent; plus an event the writer **knows** was never written, because the socket was already closed or closing when it tried |
+| `delivery_unknown` | Events whose `send_str` was **cancelled** while under way, for example at shutdown or after the writer's grace period, or **raised** anything other than a known non-delivery (revised 2026-09-27, at M2 approval). They may or may not have reached the client, and the ledger does not guess. Any non-zero value makes the P5 and P6 result it belongs to inconclusive (§9.2) |
 
 The server keeps these identities **exactly**, at every instant:
 `offered = published_at_close − published_at_open`, `offered = enqueued + client_dropped`,
@@ -421,8 +421,9 @@ discarded even when it reached the client, which would have made P5(d) fail.)
 with `next_message()`, awaits `send_str`, and resolves an `exchange` before taking the
 next:
 - `mark_sent()` if `send_str` returned;
-- `mark_failed()` if it raised, which counts as `discarded_on_close`;
-- `mark_unknown()` if it was cancelled while under way, which counts as `delivery_unknown`.
+- `mark_failed()` only if non-delivery is **known**, which counts as `discarded_on_close`;
+- `mark_unknown()` for any other exception, or a cancellation while under way, which counts
+  as `delivery_unknown`.
 
 A close while `send_str` is awaiting discards what is still queued, but leaves the
 in-flight exchange to that resolution, so that it counts as exactly what happened to it.
