@@ -2298,15 +2298,33 @@ def p5(api: dict) -> list[str]:
         problems.append("connections_opened does not reconcile")
     if t["close_codes"].get("1013", 0) != api["forced_disconnects"]:
         problems.append("P5(e) 1013 closes != forced_disconnects")
+    if t["close_codes"].get("1011", 0) != api["fanout_failed"] + api["writer_failed"]:
+        problems.append("P5(e) 1011 closes != fanout_failed + writer_failed")
     return problems
 
 
+ALLOWED = ("1013", "1006")   # 0010 P5(h): at most one delivery_unknown per forced or reset connection
+
+
+def allowed_unknown(api: dict) -> dict[str, int]:
+    """The delivery_unknown counts P5(h) allows, reported explicitly with the results."""
+    by_code = api["closed_totals"]["delivery_unknown_by_close_code"]
+    return {code: by_code.get(code, 0) for code in ALLOWED if by_code.get(code, 0)}
+
+
 def unresolved(api: dict) -> list[str]:
-    """Delivery the ledger cannot vouch for: the condition is inconclusive, never passed (0010 §9.2 P5(h))."""
+    """Beyond the P5(h) allowance: the condition is inconclusive, never passed (0010 §9.2 P5(h))."""
     notes = []
-    unknown = api["closed_totals"]["delivery_unknown"] + sum(c["delivery_unknown"] for c in api["connections"])
-    if unknown:
-        notes.append(f"delivery_unknown = {unknown}")
+    t = api["closed_totals"]
+    for code, unknown in t["delivery_unknown_by_close_code"].items():
+        if code in ALLOWED and unknown > t["close_codes"].get(code, 0):
+            notes.append(f"delivery_unknown {unknown} > {t['close_codes'].get(code, 0)} connections closed {code}")
+        elif code not in ALLOWED and unknown:
+            notes.append(f"delivery_unknown {unknown} on connections closed {code} (allowance is 0)")
+    for led in api["connections"] + api["closed_connections"]:
+        limit = 1 if str(led["close_code"]) in ALLOWED else 0
+        if led["delivery_unknown"] > limit:
+            notes.append(f"connection {led['id']}: delivery_unknown {led['delivery_unknown']} > {limit}")
     if api["closed_unresolved"]:
         notes.append(f"closed_unresolved = {api['closed_unresolved']} at quiesce")
     return notes
@@ -2339,6 +2357,7 @@ async def condition(n: int, api: bool, clients: bool, workdir: Path) -> dict:
             await asyncio.sleep(0.25)
         result["p5_problems"] = p5(state)
         result["inconclusive"] = unresolved(state)
+        result["delivery_unknown_allowed"] = allowed_unknown(state)   # reported, never silently passed
         result["forced_disconnects"] = state["forced_disconnects"]
         result["connections_opened"] = state["connections_opened"]
         result["reader_seq_ok"] = all(s == sorted(set(s)) for s in seen)
@@ -2430,6 +2449,68 @@ git commit -m "docs(validation): GUI M2 early check on vcan and verification rec
 Do not push unless asked, and do not start M3.
 
 ---
+
+## Revision after the Task 1–6 checkpoint (owner, 2026-09-27)
+
+The owner reviewed `de7e431`, pushed it, and asked for these changes before Tasks 7–9. 0010's
+sixth revision carries the spec side. Latency and reply-loss criteria (P1–P4) are unchanged.
+
+**R1. `delivery_unknown` per close code** (`observe/publisher.py`). `_fold` also sums each
+closed ledger's `delivery_unknown` into `closed_totals["delivery_unknown_by_close_code"]`, a
+map from the close code as a string to the sum. A code is added only when the sum is
+non-zero; `stats()` returns a copy.
+- Test: a connection closed 1013 with one unknown, and one closed 1000 with none, gives
+  `{"1013": 1}`.
+
+**R2. `writer_failed`** (`observe/publisher.py`, `api/server.py`). `Publisher` gains a
+`writer_failed: int` counter and `fail_writer(conn)`, which increments it and closes the
+connection with 1011 through `disconnect`. `stats()` reports `writer_failed`.
+- The server's writer done-callback (`_writer_ended`, from the fix wave) calls
+  `publisher.fail_writer(conn)` instead of `disconnect(conn, 1011)`.
+- Also, from the fix-wave re-review: return early when the writer's exception is
+  `NotDelivered`, explicitly, instead of relying on the transport state.
+- Tests: the publisher unit test checks `writer_failed == 1`, `close_codes == {"1011": 1}`
+  and `fanout_failed == 0`. The server test
+  `test_a_writer_that_dies_on_an_open_socket_closes_it_1011` also asserts
+  `writer_failed == 1` and `fanout_failed == 0`, and `test_a_connection_the_publisher_abandons_is_closed_1011`
+  asserts `writer_failed == 0`.
+
+**R3. The P5(h) allowance, pinned in tests** (`tests/unit/api`).
+- Add a helper to `tests/unit/api/support.py`,
+  `check_delivery_unknown_allowance(stats) -> dict[str, int]`. It asserts the P5(h) rule:
+  - for each code in 1013 and 1006, `delivery_unknown_by_close_code[code]` is at most
+    `close_codes[code]`;
+  - every other code has 0;
+  - every open and retained ledger is within its limit: 1 if closed 1013 or 1006, else 0;
+  - `closed_unresolved` is 0.
+
+  It returns the allowed counts, so tests can **assert them explicitly**.
+- Use it in the stalled-client test, asserting `{"1013": 1}`; the backpressured-reset
+  test, asserting `{"1006": 1}`; and the live-reset test, asserting `{}`.
+- Use it also in the tests of healthy clients: the order test, the 1008 test and the
+  shutdown test. Each must assert `{}`: zero unknowns.
+- **The strict xfail `test_a_stalled_clients_blocked_send_is_not_delivery_unknown` stays.**
+  Its assertion (`== 0`) and `strict=True` are unchanged, so a behaviour change still turns
+  it red. Only its reason text is updated to: "stalled-client finding: delivery_unknown=1
+  per forced close, within the 0010 P5(h) allowance and reported explicitly; kept strict so
+  any change is noticed". It must still be reported as XFAIL, never as a pass.
+
+**R4. A request body stalled mid-chunk gets 408** (`api/server.py`).
+- Add `BODY_TIMEOUT_S = 2.0` and an `ApiServer(..., body_timeout_s=BODY_TIMEOUT_S)` keyword.
+- In the guard, wrap the chunked read in `asyncio.wait_for(..., body_timeout_s)`. On
+  timeout, raise `web.HTTPRequestTimeout(text="request body not received in time (decisions/0010 §4.3)")`.
+- Test `test_a_body_stalled_mid_chunk_is_408`:
+  - server built with `body_timeout_s=0.2`;
+  - a raw request with `Transfer-Encoding: chunked`, `800\r\n`, then 100 bytes, then
+    silence;
+  - the reply starts with `HTTP/1.1 408` within 2 s;
+  - a following normal `GET /api/v1/status` gets 200 (the server is not wedged).
+- Also add the deferred test: a bad Host with a chunked body gets 421 without the body
+  being read. A body that is never sent must not delay the 421.
+
+**R5. Task 9's script** (above) applies the revised P5(e) and P5(h) rules, and prints the
+allowed `delivery_unknown` counts per condition. The early check's STOP rule and latency
+thresholds are unchanged.
 
 ## Self-review
 

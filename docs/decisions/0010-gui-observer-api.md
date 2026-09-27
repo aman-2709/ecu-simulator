@@ -61,6 +61,24 @@ code:
 - the WebSocket `Origin` must equal the origin of **the same request's** validated `Host`.
   `localhost` and `127.0.0.1` are never substituted for one another (§6).
 
+A sixth revision, on 2026-09-27, came from the owner's review of the M2 Task 1–6 checkpoint
+(`de7e431`). It changes no latency or reply-loss criterion (P1–P4 are unchanged):
+
+- **A forced or reset connection may carry at most one `delivery_unknown`, reported
+  explicitly.** The checkpoint measured it: when a stalled client is forced off (1013), or
+  a client resets its socket (1006), the frame being sent is already in the transport
+  buffer, so its delivery is genuinely unknown. Such a connection may carry at most one.
+  Every other connection, healthy clients included, must carry zero. `closed_totals`
+  reports the counts per close code (§5.1, P5(h), P6). Before this revision, any
+  `delivery_unknown` made the condition inconclusive, so M4 condition 4 could never pass;
+- **`writer_failed`** counts 1011 closes caused by a writer task that died on an open
+  socket. `fanout_failed` counts those caused by a failed offer. P5(e) reconciles 1011
+  against both (§5, §5.1);
+- **forced 1013 closes are reconciled from the server's cumulative counters**, because a
+  client that never reads can never see its 1013 frame (P5(e));
+- **a request body stalled mid-chunk gets 408 after 2 s** instead of holding a handler
+  indefinitely (§4.3).
+
 The evidence for the routing and ordering claims is in §12.
 
 ## 1. Purpose and scope
@@ -241,7 +259,7 @@ applies.
 | Single encoded `state` message | — | 256 KiB | Checked once when the API starts. A profile whose state encodes larger makes `--api` refuse to start (exit 2), rather than truncating state at runtime |
 | Publisher turn | 64 records | 1 ms of loop time | The publisher yields (`await asyncio.sleep(0)`) and continues on a later turn. Nothing is dropped. A backlog that keeps growing ends in `HandOff`'s own overflow above |
 | `state` push rate | at most 4 Hz | — | Coalesced into the one-slot latest `state`, which is not a drop |
-| Incoming HTTP body | — | 1 KiB | 413. v1 routes are GET-only, so a body is never needed |
+| Incoming HTTP body | — | 1 KiB | 413. v1 routes are GET-only, so a body is never needed. A body of undeclared length (chunked) that does not complete within **2 s** gets **408** (added 2026-09-27) |
 | Incoming WebSocket data message (text or binary) | — | — | Any data message closes the socket with 1008: v1 accepts nothing from clients. Control frames (ping/pong/close) are handled normally |
 
 **Bounded memory.** The worst case for the observer's retained data is 1 MiB (`HandOff`) +
@@ -322,7 +340,7 @@ version prefix means a future write API cannot silently change v1.
 
 | Endpoint | Returns |
 |---|---|
-| `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `encode_failed`, `fanout_failed`, `connections_opened`, `closed_unresolved`, `closed_totals` [cumulative, §5.1], `connections` [one **ledger** per open connection, §5.1], `closed_connections` [the ledgers of the last 64 closed connections, final values]} |
+| `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `encode_failed`, `fanout_failed`, `writer_failed`, `connections_opened`, `closed_unresolved`, `closed_totals` [cumulative, §5.1], `connections` [one **ledger** per open connection, §5.1], `closed_connections` [the ledgers of the last 64 closed connections, final values]} |
 | `GET /vehicle` | `kind`, `vin`, `signals` {dotted path → value}, `as_of` (the scenario time of the last application, equal to `t_last_applied`; `null` without a scenario) |
 | `GET /dtcs` | per ECU: `[{code, pending, confirmed, indicator_requested}]`, and `mil` |
 | `GET /ecus` | per ECU: endpoints {`name`, `rx_id`, `tx_id`, `functional`, `receive`, `reply_via`, `padding`} and protocols {`name`, `sids`} |
@@ -367,7 +385,9 @@ WebSocket messages, server → client:
   `{"type": "exchange", "seq": S, "outcome": O, "error": "encode_failed"}`, so `seq`
   stays contiguous, and `encode_failed` increments. If offering an event to one
   connection raises, that connection alone is closed with code 1011, its ledger ends at
-  the previous publication, and `fanout_failed` increments. Each failure is logged once
+  the previous publication, and `fanout_failed` increments. If a connection's writer
+  task ends with an exception while the socket is still open, that connection is closed
+  with 1011 and `writer_failed` increments (added 2026-09-27). Each failure is logged once
   per stage and exception type, and counted every time. Neither should ever happen; the
   counters make it visible if it does.
 
@@ -380,7 +400,7 @@ which are replaced rather than queued (§4.3), are not counted.
 
 | Field | Meaning |
 |---|---|
-| `id`, `connected_at`, `closed_at`, `close_code` | Identity and lifetime. `close_code` is 1013 for a forced disconnect, and 1011 when offering it an event raised (§5) |
+| `id`, `connected_at`, `closed_at`, `close_code` | Identity and lifetime. `close_code` is 1013 for a forced disconnect, 1011 when offering it an event raised or its writer task failed (§5), and 1006 when the client reset or vanished without a close frame |
 | `watermark` | `W` at registration (§4.5) |
 | `published_at_open`, `published_at_close` | The global `published` counter when the connection was registered, and when it closed (or now, while it is open) |
 | `history_sent` | History events sent on connect, all with `seq ≤ W` |
@@ -404,7 +424,10 @@ ledgers, and a soak closes many more. So `GET /status` also carries:
   together with:
   - `connections`, their count;
   - `published_span`, the sum of `published_at_close − published_at_open`;
-  - `close_codes`, a count per close code.
+  - `close_codes`, a count per close code;
+  - `delivery_unknown_by_close_code`, the `delivery_unknown` sum per close code (added
+    2026-09-27), so P5(h) can check the allowance of one per forced or reset connection
+    after the ledgers themselves have left `closed_connections`.
 
   A closed connection is added **once**, when its in-flight send (if any) has resolved.
 - `closed_unresolved`: the number of closed connections still waiting for that.
@@ -542,8 +565,8 @@ the events' `dispatch_us`.
 | P2 | p99 wire latency, conditions 2, 3 and 4 | ≤ condition 1's p99 **+ 0.50 ms**, on pooled samples, in every round |
 | P3 | Lost replies, every condition | **Exactly 0.** A lost reply is a request frame with no reply frame before the next request, or within 1 s |
 | P4 | Throughput, condition 5 | Requests answered per second ≥ **90 %** of the same tester's maximum rate with the API off (measured the same way in each round) |
-| P5 | Drop and delivery accounting (reconciliation) | Checked after the run has **quiesced**: tester stopped, `HandOff` drained, every open connection's `queued` = 0. All of the following must hold **exactly**: (a) `issued_seq = published + handoff_dropped`. A record whose encoding failed counts in `published`, because it was published as its fallback event (§5). (b) For every connection, open or closed, the §5.1 identities hold. (c) Summed over every connection that was open for the whole run, `offered` equals the growth of `published` over the run, measured by the harness from `GET /status` before and after. (d) On the harness side, the `exchange` messages a connection received have strictly increasing `seq` and no duplicates. For an **open** connection, received live events = `sent`. For a **closed** connection, received live events ≤ `sent` + `delivery_unknown`, and `sent` − received (sent but still in transit when the socket closed) is reported per connection. (e) Closes with code 1013 seen by the harness = `forced_disconnects`, closes with code 1011 = `fanout_failed`, and HTTP 503 refusals seen = `refused_clients`. (f) Every closed connection is accounted for, including those no longer among the 64 retained: `closed_unresolved` = 0, `connections_opened = clients + closed_totals.connections`, the summed identities of §5.1, including `delivery_unknown`, hold on `closed_totals`, and `closed_totals.close_codes["1013"]` = `forced_disconnects`. (g) **Durable output:** the harness appends every `GET /status` poll (at most 1 s apart) and every close it observes to JSONL files committed with the results. The union of `closed_connections` ids across the polls must be exactly `1..connections_opened` minus the open ones. A missing id means the polls were too far apart, and the run is reported inconclusive, not passed. (h) **Unresolved delivery makes the result inconclusive.** If any ledger or `closed_totals` has `delivery_unknown` > 0, or `closed_unresolved` > 0 at quiesce, P5 and P6 for that condition and round are reported as **inconclusive**, with the counts. They are never passed; the run is repeated or the cause found. **Any unexplained difference fails** |
-| P6 | Drops where none should occur | In conditions 2 and 3, and for the 3 reading clients in condition 4: `handoff_dropped` = 0, `client_dropped` = 0 and `discarded_on_close` = 0. In **every** condition, `encode_failed` = 0 and `fanout_failed` = 0. Drops, discards and in-transit losses are allowed only on the stalled client's connections, and only where P5 accounts for them. `delivery_unknown` > 0 on any connection makes P6 inconclusive for that condition and round (P5(h)) |
+| P5 | Drop and delivery accounting (reconciliation) | Checked after the run has **quiesced**: tester stopped, `HandOff` drained, every open connection's `queued` = 0. All of the following must hold **exactly**: (a) `issued_seq = published + handoff_dropped`. A record whose encoding failed counts in `published`, because it was published as its fallback event (§5). (b) For every connection, open or closed, the §5.1 identities hold. (c) Summed over every connection that was open for the whole run, `offered` equals the growth of `published` over the run, measured by the harness from `GET /status` before and after. (d) On the harness side, the `exchange` messages a connection received have strictly increasing `seq` and no duplicates. For an **open** connection, received live events = `sent`. For a **closed** connection, received live events ≤ `sent` + `delivery_unknown`, and `sent` − received (sent but still in transit when the socket closed) is reported per connection. (e) **From the server's cumulative counters** (revised 2026-09-27; a client that never reads can never see its 1013 frame, so the harness cannot count those closes itself): `closed_totals.close_codes["1013"]` = `forced_disconnects`, and `closed_totals.close_codes["1011"]` = `fanout_failed` + `writer_failed`. The harness also records each time it had to reconnect its stalled client; that count must be ≤ `forced_disconnects`, and any shortfall is reported. HTTP 503 refusals seen = `refused_clients`. (f) Every closed connection is accounted for, including those no longer among the 64 retained: `closed_unresolved` = 0, `connections_opened = clients + closed_totals.connections`, the summed identities of §5.1, including `delivery_unknown`, hold on `closed_totals`, and `closed_totals.close_codes["1013"]` = `forced_disconnects`. (g) **Durable output:** the harness appends every `GET /status` poll (at most 1 s apart) and every close it observes to JSONL files committed with the results. The union of `closed_connections` ids across the polls must be exactly `1..connections_opened` minus the open ones. A missing id means the polls were too far apart, and the run is reported inconclusive, not passed. (h) **Delivery the ledger cannot vouch for, and its allowance** (revised 2026-09-27). A connection closed with **1013 (forced) or 1006 (reset or vanished)** may carry **at most one** `delivery_unknown`: the frame that was in the transport buffer when it was cut off. Every other connection must carry **zero**; that includes every open connection, every connection closed with any other code, and every healthy reading client. Checked on each retained ledger and, cumulatively, as `delivery_unknown_by_close_code[c]` ≤ `close_codes[c]` for c in 1013 and 1006, and = 0 for every other c. **Every allowed `delivery_unknown` is reported explicitly** with the results, per condition and round, never folded silently into a pass. If the allowance is exceeded, or `closed_unresolved` > 0 at quiesce, P5 and P6 for that condition and round are **inconclusive**: reported with the counts, never passed; the run is repeated or the cause found. **Any unexplained difference fails** |
+| P6 | Drops where none should occur | In conditions 2 and 3, and for the 3 reading clients in condition 4: `handoff_dropped` = 0, `client_dropped` = 0 and `discarded_on_close` = 0. In **every** condition, `encode_failed` = 0 and `fanout_failed` = 0. Drops, discards and in-transit losses are allowed only on the stalled client's connections, and only where P5 accounts for them. For those reading clients `delivery_unknown` must also be 0; the stalled client's connections may carry the P5(h) allowance of one per forced or reset close, reported explicitly. Anything beyond the allowance makes P6 inconclusive for that condition and round (P5(h)) |
 | P7 | Memory (RSS trend) | A 10-minute soak under condition 4 load, sampling the simulator's RSS every 5 s. Samples in the first 60 s are discarded as warm-up. **Pass if** the least-squares slope of RSS against time over the remaining samples is **≤ 0.1 MiB per minute**, **and** the final sample exceeds the first post-warm-up sample by **≤ 2 MiB**. Separately, the peak RSS increase over condition 1 must stay within the §4.3 bound of about 19 MiB plus 10 MiB for code and libraries |
 | P8 | Noise guard | If condition 1's own p99 differs by more than 0.50 ms between rounds, the benchmark is **inconclusive**. It is reported as such and does not pass |
 | P9 | Loop hold time | The publisher records the length of every turn. The maximum over the whole of conditions 2–5 is **≤ 2 ms**. The M1 early check reports the same maximum for a full 4096-record `HandOff` |
