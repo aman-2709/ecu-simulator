@@ -258,3 +258,45 @@ async def test_shutdown_is_bounded_with_a_stalled_client():
     finally:
         raw.close()
         await s.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_data_frame_during_a_forced_close_still_ends_in_an_abort():
+    # A stalled client, forced to 1013 while the close is blocked in aiohttp's drain, then sends
+    # one data frame: the 1008 path must not cancel the forced close into a graceful close that
+    # waits forever on the backlog; the socket must still be aborted within the bound.
+    s = build(connection_options={"max_messages": 4, "overflow_disconnect_s": 0.2})
+    await s.start()
+    raw = socket.socket()
+    raw.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+    raw.connect(("127.0.0.1", s.port))
+    raw.sendall(
+        f"GET /api/v1/events HTTP/1.1\r\nHost: 127.0.0.1:{s.port}\r\nOrigin: http://127.0.0.1:{s.port}\r\n"
+        "Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n\r\n".encode()
+    )
+    try:
+        deadline = time.monotonic() + 20
+        while not s._sockets and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
+        request = next(iter(s._sockets.values()))[0]
+        while s.publisher.forced_disconnects == 0 and time.monotonic() < deadline:
+            await publish(s, 1000)
+        assert s.publisher.forced_disconnects == 1
+        mask = b"\x01\x02\x03\x04"
+        raw.sendall(b"\x81\x82" + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(b"hi")))   # masked "hi"
+        gone = time.monotonic() + 5
+        while request.transport is not None and time.monotonic() < gone:
+            await asyncio.sleep(0.05)
+        assert request.transport is None                                  # aborted, not left closing
+        raw.settimeout(5)                                                 # a timeout here fails the test
+        try:
+            while raw.recv(65536):                                        # EOF ...
+                pass
+        except ConnectionResetError:                                      # ... or a reset: either way, gone
+            pass
+        stats = s.publisher.stats(issued=s.handler.issued)
+        assert stats["closed_unresolved"] == 0 and stats["closed_totals"]["close_codes"] == {"1013": 1}
+    finally:
+        raw.close()
+        await s.stop()

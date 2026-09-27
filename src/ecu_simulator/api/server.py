@@ -8,7 +8,6 @@ WebSocket client receives it (0010 §4.5).
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import re
 import time
@@ -69,13 +68,25 @@ async def _close_or_abort(ws: web.WebSocketResponse, request: web.Request, code:
     """``ws.close``, bounded. aiohttp's close drains the socket first, with no timeout, so a
     client that stopped reading would hold it forever; after ``WS_CLOSE_TIMEOUT_S`` the socket
     is aborted, which discards its unsent backlog and ends every task waiting on it.
+
+    A close that ends unfinished, by timeout or by cancellation, leaves aiohttp's graceful
+    ``transport.close()``, which waits for that backlog; so either way the socket is aborted.
     """
     try:
         await asyncio.wait_for(ws.close(code=code, message=message), WS_CLOSE_TIMEOUT_S)
     except TimeoutError:
-        transport = request.transport
-        if transport is not None:
-            transport.abort()
+        _abort(request)
+    except asyncio.CancelledError:
+        _abort(request)
+        task = asyncio.current_task()
+        if task is not None and task.cancelling():
+            raise           # this task was cancelled: pass it on; any other CancelledError ends here
+
+
+def _abort(request: web.Request) -> None:
+    transport = request.transport
+    if transport is not None:
+        transport.abort()
 
 
 class ApiServer:
@@ -236,15 +247,15 @@ class ApiServer:
             self._sockets.pop(ws, None)
             # The first close code wins: a forced 1013, a 1008 or a shutdown 1001 stays as recorded.
             self.publisher.disconnect(conn, ws.close_code or WSCloseCode.GOING_AWAY)
-            closer.cancel()
             try:
                 await asyncio.wait_for(writer, WRITER_GRACE_S)   # a timeout cancels it: delivery_unknown
             except (TimeoutError, asyncio.CancelledError):
                 pass
             except Exception as error:     # raised by send: the writer has already resolved its ledger
                 logger.debug("writer for connection %d ended: %r", conn.id, error)
-            with contextlib.suppress(asyncio.CancelledError):
-                await closer
+            # Never cancelled: disconnect() has closed conn, so the closer either returns at once
+            # or finishes its own bounded close-or-abort (a cancel would leave a graceful close).
+            await closer
         return ws
 
     async def _close_when_forced(self, conn: Connection, ws: web.WebSocketResponse, request: web.Request) -> None:
