@@ -126,6 +126,7 @@ class ApiServer:
         self._runner: web.AppRunner | None = None
         self._tasks: list[asyncio.Task[None]] = []
         self._sockets: dict[web.WebSocketResponse, tuple[web.Request, Connection]] = {}
+        self._stopping = False
         self._page = resources.files("ecu_simulator.api").joinpath("static/index.html").read_bytes()
 
     def application(self) -> web.Application:
@@ -164,6 +165,7 @@ class ApiServer:
         return application
 
     async def start(self) -> None:
+        self._stopping = False
         self._runner = web.AppRunner(self.application(), access_log=None, shutdown_timeout=2.0)
         await self._runner.setup()
         try:
@@ -186,6 +188,7 @@ class ApiServer:
         logger.info("observer API on http://%s/", sorted(self._allowed)[0])
 
     async def stop(self) -> None:
+        self._stopping = True          # from here a new client is refused before the upgrade
         closing = []
         for ws, (request, conn) in list(self._sockets.items()):
             self.publisher.disconnect(conn, WSCloseCode.GOING_AWAY)   # the ledger records the code sent
@@ -231,6 +234,8 @@ class ApiServer:
 
     async def _events(self, request: web.Request) -> web.StreamResponse:
         after = _query_int(request, "after")
+        if self._stopping:
+            raise web.HTTPServiceUnavailable(text="server shutting down")
         try:
             conn, hello, history = self.publisher.connect(after)
         except TooManyClients:
@@ -256,8 +261,9 @@ class ApiServer:
                     break
         finally:
             self._sockets.pop(ws, None)
-            # The first close code wins: a forced 1013, a 1008 or a shutdown 1001 stays as recorded.
-            self.publisher.disconnect(conn, ws.close_code or WSCloseCode.GOING_AWAY)
+            # The first close code wins: a forced 1013, a 1011, a 1008 or a shutdown 1001 stays as
+            # recorded. Otherwise the ws code, or 1006 if none: never a code this server did not send.
+            self.publisher.disconnect(conn, ws.close_code or WSCloseCode.ABNORMAL_CLOSURE)
             try:
                 await asyncio.wait_for(writer, WRITER_GRACE_S)   # a timeout cancels it: delivery_unknown
             except (TimeoutError, asyncio.CancelledError):

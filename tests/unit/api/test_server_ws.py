@@ -463,3 +463,30 @@ async def test_a_publisher_task_that_fails_is_logged_at_once(caplog, monkeypatch
     finally:
         await s.stop()
     assert not [r for r in caplog.records if "never retrieved" in r.getMessage()]
+
+
+@pytest.mark.asyncio
+async def test_a_client_connecting_during_stop_is_refused_503(session):
+    # stop() spends up to WS_CLOSE_TIMEOUT_S on a stalled client while still listening: a new
+    # client in that window must be refused before the upgrade, never recorded as sent a 1001.
+    s = build(connection_options={"max_messages": 4, "overflow_disconnect_s": 60})
+    await s.start()
+    raw = raw_upgrade(s, rcvbuf=4096)
+    try:
+        assert await wait_until(lambda: bool(s._sockets))
+        request = next(iter(s._sockets.values()))[0]
+        deadline = time.monotonic() + 20
+        while not request.protocol.writing_paused and time.monotonic() < deadline:
+            await publish(s, 1000)
+        stopping = asyncio.create_task(s.stop())
+        await asyncio.sleep(0.2)                                          # stop() is closing the stalled client
+        assert not stopping.done()
+        with pytest.raises(aiohttp.WSServerHandshakeError) as info:
+            await session.ws_connect(url(s, "/api/v1/events"), origin=origin(s))
+        assert info.value.status == 503
+        await stopping
+        stats = s.publisher.stats(issued=s.handler.issued)
+        assert stats["connections_opened"] == 1 and stats["closed_totals"]["close_codes"] == {"1001": 1}
+    finally:
+        raw.close()
+        await s.stop()
