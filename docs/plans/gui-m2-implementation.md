@@ -25,13 +25,16 @@ The M2 early check runs on vcan.
 - can-isotp and `candump` for the vcan work.
 
 **Spec:** [docs/decisions/0010-gui-observer-api.md](../decisions/0010-gui-observer-api.md),
-fourth revision, made in the same commit as this plan. Read it first. Section numbers
+fifth revision (the fourth came with this plan's first draft, `84a2d6c`). Read it first. Section numbers
 below refer to it.
 
 **Builds on:** M1 at `a450dad` (`origin/gui`): `ecu_simulator.observe`, and the writer
 contract in the `observe/connection.py` docstring.
 
 ## Owner decisions this plan carries (2026-09-27)
+
+Items 5 and 6 were added in a revision after the owner reviewed the first draft (`84a2d6c`);
+the tasks they touch say so in their tests and code.
 
 1. **`gui` becomes a CI push branch.** Task 7 adds `gui` to `on.push.branches` in
    `.github/workflows/ci.yml` **on branch `gui` only**. The `modernization` workflow, the
@@ -57,7 +60,22 @@ contract in the `observe/connection.py` docstring.
        `1..connections_opened`.
 4. **Frontend file tests and rendering acceptance belong to M3.** M2 serves exactly one
    static file, a placeholder page at `/`, and its static tests cover only that file.
-5. **No change to the V1.0 or Phase 8b gates.** Nothing in this plan touches
+5. **A cancelled send is `delivery_unknown`, not `sent`** (owner review, 2026-09-27).
+   A `send_str` cancelled while under way may or may not have reached the client. The
+   ledger records it as a fourth outcome, `delivery_unknown`, alongside `sent`, `queued`
+   and `discarded_on_close`:
+   - it is carried in every ledger, in `closed_totals`, and in the identities;
+   - any `delivery_unknown > 0` makes that benchmark condition's P5 and P6 result
+     **inconclusive**, and so does any closed connection still unresolved at quiesce.
+     Inconclusive means reported with the counts, never passed (Tasks 2, 3, 5 and 9;
+     0010 §5.1 and §9.2).
+6. **The WebSocket `Origin` is checked against this request's validated `Host`** (owner
+   review, 2026-09-27).
+   - The only accepted origin is `http://` plus the request's own `Host`, which has already
+     passed the 421 check.
+   - A page from `http://localhost:P` cannot open the socket through Host `127.0.0.1:P`,
+     and the reverse is refused too (Task 5).
+7. **No change to the V1.0 or Phase 8b gates.** Nothing in this plan touches
    `modernization`, and `gui` is not merged before V1.0 is tagged.
 
 ## Global constraints
@@ -389,20 +407,25 @@ Then install the extra into the worktree venv:
 - Consumes: M1's `Connection`.
 - Produces:
   - `Connection.take_state() -> str | None`;
+  - `Connection.mark_unknown() -> None`, with a new ledger field `delivery_unknown: int`;
   - `async Connection.wait_changed() -> None`;
   - `async Connection.wait_closed() -> None`;
   - `async run_writer(conn, send: Callable[[str], Awaitable[None]], hello: dict, history: list[str]) -> None`.
 
 **Contract changes, decided here:**
-- **Cancellation counts as sent.** A `send_str` interrupted by cancellation may already
-  have reached the client, so it counts as **sent**. That keeps P5(d) (received ≤ `sent`)
-  true. A `send_str` that **raises** counts as failed.
+- **Three ways a send resolves.** A `send_str` that **returned** is `sent` (`mark_sent`).
+  One that **raised** is `discarded_on_close` (`mark_failed`): it was not written. One that
+  was **cancelled** while under way is `delivery_unknown` (`mark_unknown`): it may or may
+  not have reached the client, and the ledger does not guess. The identity becomes
+  `enqueued = sent + delivery_unknown + queued + discarded_on_close`.
 - **Message order.** The writer sends `hello`, then `take_state()`, then history, then
   loops on `next_message()`. That gives 0010 §4.5's order: hello, state, history, live.
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to `tests/unit/observe/test_connection.py`:
+Add to `tests/unit/observe/test_connection.py`, and update its `identities()` helper, and
+the identity assertions in `test_publisher.py`, to
+`ledger["enqueued"] == ledger["sent"] + ledger["delivery_unknown"] + ledger["queued"] + ledger["discarded_on_close"]`:
 
 ```python
 import asyncio
@@ -424,6 +447,20 @@ async def test_wait_changed_wakes_on_offer_state_dropped_and_close():
         assert not waiter.done()
         poke(c)
         await asyncio.wait_for(waiter, 1)
+
+
+def test_mark_unknown_resolves_the_in_flight_exchange_as_delivery_unknown():
+    for close_first in (False, True):
+        c, _ = conn()
+        c.offer("x")
+        c.next_message()
+        if close_first:
+            c.close(1001, published_now=11)
+        c.mark_unknown()
+        c.mark_sent()                                     # nothing in flight any more: a no-op
+        ledger = c.ledger(published_now=11)
+        assert (ledger["sent"], ledger["delivery_unknown"], ledger["queued"], ledger["discarded_on_close"]) == (0, 1, 0, 0)
+        identities(ledger)
 
 
 @pytest.mark.asyncio
@@ -458,7 +495,8 @@ def conn():
 def identities(c):
     ledger = c.ledger(published_now=5 + c.offered)
     assert ledger["offered"] == ledger["enqueued"] + ledger["client_dropped"]
-    assert ledger["enqueued"] == ledger["sent"] + ledger["queued"] + ledger["discarded_on_close"]
+    assert ledger["enqueued"] == (ledger["sent"] + ledger["delivery_unknown"] + ledger["queued"]
+                                  + ledger["discarded_on_close"])
     return ledger
 
 
@@ -512,7 +550,7 @@ async def test_a_failed_send_is_marked_failed_and_raised():
 
 
 @pytest.mark.asyncio
-async def test_a_cancelled_send_counts_as_sent():
+async def test_a_cancelled_send_is_delivery_unknown():
     c = conn()
     c.offer("L1")
     blocked = asyncio.Event()
@@ -525,7 +563,8 @@ async def test_a_cancelled_send_counts_as_sent():
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert identities(c)["sent"] == 1
+    ledger = identities(c)
+    assert (ledger["sent"], ledger["delivery_unknown"], ledger["queued"]) == (0, 1, 0)
 
 
 @pytest.mark.asyncio
@@ -544,7 +583,7 @@ async def test_a_forced_close_during_a_blocked_send_resolves_when_the_send_retur
     release.set()
     await asyncio.wait_for(task, 1)
     ledger = identities(c)
-    assert (ledger["sent"], ledger["discarded_on_close"], ledger["client_dropped"]) == (1, 1, 1)
+    assert (ledger["sent"], ledger["discarded_on_close"], ledger["client_dropped"], ledger["delivery_unknown"]) == (1, 1, 1, 0)
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
@@ -567,7 +606,9 @@ In `connection.py`:
 3. Call `self._changed.set()` at the end of the enqueue branch of `offer`, and in
    `set_state` and `set_dropped`, after the slot is filled.
 4. In `_close`, add `self._changed.set()` and `self._closed_event.set()`.
-5. Add these methods:
+5. Add the counter `self.delivery_unknown = 0` beside `sent`. In `ledger()`, add the key
+   `"delivery_unknown": self.delivery_unknown`.
+6. Add these methods:
 
    ```python
        def take_state(self) -> str | None:
@@ -582,12 +623,23 @@ In `connection.py`:
 
        async def wait_closed(self) -> None:
            await self._closed_event.wait()
+
+       def mark_unknown(self) -> None:
+           """The writer's ``send_str`` was cancelled while under way: delivery is unknown.
+
+           Neither sent nor discarded. P5 treats any such exchange as inconclusive (0010 §9.2).
+           """
+           if self._in_flight is not None:
+               self._in_flight = None
+               self.delivery_unknown += 1
    ```
-6. Extend the module docstring's contract:
+7. Extend the module docstring's contract:
    - add a step 0: "send `hello`, then `take_state()` if not `None`, then the history, then
      loop";
-   - add the rule: "a `send_str` cancelled while under way counts as sent (`mark_sent`),
-     because it may have reached the client; one that raised counts as failed".
+   - replace step 3 with the three outcomes: `mark_sent()` if `send_str` returned,
+     `mark_failed()` if it raised, `mark_unknown()` if it was cancelled while under way;
+   - state the identity
+     `enqueued = sent + delivery_unknown + queued + discarded_on_close`.
 
 `src/ecu_simulator/observe/writer.py`:
 
@@ -630,7 +682,7 @@ async def run_writer(conn: Connection, send: Send, hello: dict[str, Any], histor
         try:
             await send(text)
         except asyncio.CancelledError:
-            conn.mark_sent()      # it may have reached the client: P5(d), received <= sent
+            conn.mark_unknown()   # it may or may not have reached the client: never guessed
             raise
         except Exception:
             conn.mark_failed()
@@ -641,7 +693,7 @@ async def run_writer(conn: Connection, send: Send, hello: dict[str, Any], histor
 - [ ] **Step 4: Run them to verify they pass**
 
 Run: `.venv/bin/python -m pytest tests/unit/observe -q -p no:cacheprovider`
-Expected: all pass. That is 57 from M1, plus 3 connection tests and 5 writer tests.
+Expected: all pass. That is 57 from M1, plus 4 connection tests and 5 writer tests.
 
 - [ ] **Step 5: Commit**
 
@@ -670,15 +722,15 @@ git commit -m "feat(observe): writer task, connection wake-ups and take_state; t
 - It is a dict with:
   - `connections`;
   - `published_span`, the sum of `published_at_close − published_at_open`;
-  - `history_sent`, `offered`, `client_dropped`, `enqueued`, `sent` and
-    `discarded_on_close`;
+  - `history_sent`, `offered`, `client_dropped`, `enqueued`, `sent`,
+    `delivery_unknown` and `discarded_on_close`;
   - `close_codes`, a map from the code as a string to a count.
 - A closed connection is added **once**, when it is closed **and** its `queued` is 0,
   meaning any in-flight send has resolved. Until then it counts in `closed_unresolved`.
 - It then satisfies, at every instant:
   - `offered = published_span`;
   - `offered = enqueued + client_dropped`;
-  - `enqueued = sent + discarded_on_close`.
+  - `enqueued = sent + delivery_unknown + discarded_on_close`.
 - `connections_opened = clients + closed_totals.connections + closed_unresolved` holds at
   every `stats()` call.
 
@@ -704,7 +756,8 @@ def test_totals_reconcile_beyond_the_64_retained_ledgers():
     assert len(stats["closed_connections"]) == 64 and totals["connections"] == 200
     assert stats["connections_opened"] == stats["clients"] + totals["connections"] + stats["closed_unresolved"] == 200
     assert totals["offered"] == totals["published_span"] == totals["enqueued"] + totals["client_dropped"]
-    assert totals["enqueued"] == totals["sent"] + totals["discarded_on_close"]
+    assert totals["enqueued"] == totals["sent"] + totals["delivery_unknown"] + totals["discarded_on_close"]
+    assert totals["delivery_unknown"] == 0
     assert totals["close_codes"] == {"1013": 200} and stats["forced_disconnects"] == 200
 
 
@@ -723,6 +776,20 @@ def test_an_unresolved_close_is_added_to_the_totals_only_when_it_resolves():
     assert (stats["closed_unresolved"], stats["closed_totals"]["connections"], stats["closed_totals"]["sent"]) == (0, 1, 1)
 
 
+def test_delivery_unknown_is_carried_into_the_totals():
+    handoff = HandOff()
+    p = publisher(handoff)
+    c, _, _ = p.connect()
+    fill(handoff, 1)
+    p.drain_turn()
+    c.next_message()
+    p.disconnect(c, 1001)
+    c.mark_unknown()
+    totals = p.stats(issued=1)["closed_totals"]
+    assert (totals["connections"], totals["sent"], totals["delivery_unknown"]) == (1, 0, 1)
+    assert totals["enqueued"] == totals["sent"] + totals["delivery_unknown"] + totals["discarded_on_close"]
+
+
 def test_connection_options_reach_every_connection():
     p = Publisher(HandOff(), Router(), {}, connection_options={"max_messages": 1})
     c, _, _ = p.connect()
@@ -738,7 +805,9 @@ Expected: `TypeError: Publisher.__init__() got an unexpected keyword argument 'c
 In `publisher.py`:
 
 ```python
-TOTAL_FIELDS = ("history_sent", "offered", "client_dropped", "enqueued", "sent", "discarded_on_close")
+TOTAL_FIELDS = (
+    "history_sent", "offered", "client_dropped", "enqueued", "sent", "delivery_unknown", "discarded_on_close",
+)
 
 
 def _empty_totals() -> dict[str, Any]:
@@ -1099,7 +1168,6 @@ class ApiServer:
         self.port: int | None = None
         self._state_interval_s = state_interval_s
         self._allowed: frozenset[str] = frozenset()
-        self._origins: frozenset[str] = frozenset()
         self._runner: web.AppRunner | None = None
         self._tasks: list[asyncio.Task[None]] = []
         self._sockets: set[web.WebSocketResponse] = set()
@@ -1108,13 +1176,16 @@ class ApiServer:
     def application(self) -> web.Application:
         @web.middleware
         async def guard(request: web.Request, handler: Handler) -> web.StreamResponse:
-            if request.host.lower() not in self._allowed:
+            host = request.host.lower()
+            if host not in self._allowed:
                 raise web.HTTPMisdirectedRequest(text="Host not allowed (decisions/0010 §6)")
             if request.content_length is not None and request.content_length > MAX_BODY:
                 raise web.HTTPRequestEntityTooLarge(max_size=MAX_BODY, actual_size=request.content_length)
             upgrade = request.path == EVENTS and request.method == "GET"
-            if upgrade and request.headers.get("Origin") not in self._origins:
-                raise web.HTTPForbidden(text="Origin not allowed (decisions/0010 §6)")
+            # Same-origin against THIS request's validated Host: localhost and 127.0.0.1 are
+            # different origins and are never substituted for one another (owner, 2026-09-27).
+            if upgrade and (request.headers.get("Origin") or "").lower() != f"http://{host}":
+                raise web.HTTPForbidden(text="Origin must match Host (decisions/0010 §6)")
             return await handler(request)
 
         application = web.Application(middlewares=[guard], client_max_size=MAX_BODY)
@@ -1144,7 +1215,6 @@ class ApiServer:
             ) from error
         self.port = int(self._runner.addresses[0][1])
         self._allowed = allowed_hosts(self.options.host, self.port)
-        self._origins = frozenset(f"http://{host}" for host in self._allowed)
         state = lambda: snapshots.state_message(self.runtime)  # noqa: E731
         self._tasks = [
             asyncio.create_task(self.publisher.run()),
@@ -1293,6 +1363,22 @@ async def test_origin_missing_or_foreign_is_403_before_the_upgrade(server, sessi
 
 
 @pytest.mark.asyncio
+async def test_origin_must_match_the_host_of_the_same_request(server, session):
+    port = server.port
+    events = url(server, "/api/v1/events")
+    for host, good, bad in ((f"127.0.0.1:{port}", f"http://127.0.0.1:{port}", f"http://localhost:{port}"),
+                            (f"localhost:{port}", f"http://localhost:{port}", f"http://127.0.0.1:{port}")):
+        with pytest.raises(aiohttp.WSServerHandshakeError) as info:     # the other loopback name: refused
+            await session.ws_connect(events, origin=bad, headers={"Host": host})
+        assert info.value.status == 403, (host, bad)
+        async with session.ws_connect(events, origin=good, headers={"Host": host}) as ws:   # its own origin: accepted
+            assert (await next_json(ws))["type"] == "hello"
+    with pytest.raises(aiohttp.WSServerHandshakeError) as info:
+        await session.ws_connect(events, origin=f"https://127.0.0.1:{port}")           # scheme is part of the origin
+    assert info.value.status == 403
+
+
+@pytest.mark.asyncio
 async def test_a_fifth_client_is_503_before_the_upgrade(server, session):
     sockets = [await session.ws_connect(url(server, "/api/v1/events"), origin=origin(server)) for _ in range(4)]
     with pytest.raises(aiohttp.WSServerHandshakeError) as info:
@@ -1332,7 +1418,7 @@ async def test_a_client_that_disconnects_mid_stream_is_retired_cleanly(server, s
     stats = server.publisher.stats(issued=server.handler.issued)
     assert stats["clients"] == 0 and stats["closed_unresolved"] == 0 and stats["closed_totals"]["connections"] == 1
     totals = stats["closed_totals"]
-    assert totals["enqueued"] == totals["sent"] + totals["discarded_on_close"]
+    assert totals["enqueued"] == totals["sent"] + totals["delivery_unknown"] + totals["discarded_on_close"]
     assert "Task exception was never retrieved" not in caplog.text
 
 
@@ -1357,6 +1443,10 @@ async def test_a_stalled_client_is_closed_1013_and_frees_its_slot():  # Review F
             await asyncio.sleep(0.05)
         stats = s.publisher.stats(issued=s.handler.issued)
         assert stats["clients"] == 0 and stats["closed_totals"]["close_codes"] == {"1013": 1}
+        # The blocked send must END (raise, or return) when the socket is aborted, not be cancelled
+        # at WRITER_GRACE_S. If this is not 0, every M4 condition 4 would be inconclusive: report
+        # it as a finding, do not relax the assertion.
+        assert stats["closed_totals"]["delivery_unknown"] == 0
         async with aiohttp.ClientSession() as session:                # the slot is free again
             async with session.ws_connect(url(s, "/api/v1/events"), origin=origin(s)) as ws:
                 assert (await next_json(ws))["type"] == "hello"
@@ -1415,7 +1505,7 @@ stream tests fail the same way.
             self.publisher.disconnect(conn, ws.close_code or WSCloseCode.GOING_AWAY)  # a forced 1013 stays 1013
             closer.cancel()
             try:
-                await asyncio.wait_for(writer, WRITER_GRACE_S)   # a timeout cancels it: counted as sent
+                await asyncio.wait_for(writer, WRITER_GRACE_S)   # a timeout cancels it: delivery_unknown
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
             except Exception as error:                        # the socket went away mid-send: resolved as failed
@@ -2074,17 +2164,28 @@ def p5(api: dict) -> list[str]:
     for led in ledgers:
         if led["offered"] != led["published_at_close"] - led["published_at_open"] or \
            led["offered"] != led["enqueued"] + led["client_dropped"] or \
-           led["enqueued"] != led["sent"] + led["queued"] + led["discarded_on_close"]:
+           led["enqueued"] != led["sent"] + led["delivery_unknown"] + led["queued"] + led["discarded_on_close"]:
             problems.append(f"P5(b) ledger {led['id']}")
     t = api["closed_totals"]
     if not (t["offered"] == t["published_span"] == t["enqueued"] + t["client_dropped"]
-            and t["enqueued"] == t["sent"] + t["discarded_on_close"]):
+            and t["enqueued"] == t["sent"] + t["delivery_unknown"] + t["discarded_on_close"]):
         problems.append("P5(b) closed_totals")
     if api["connections_opened"] != api["clients"] + t["connections"] + api["closed_unresolved"]:
         problems.append("connections_opened does not reconcile")
     if t["close_codes"].get("1013", 0) != api["forced_disconnects"]:
         problems.append("P5(e) 1013 closes != forced_disconnects")
     return problems
+
+
+def unresolved(api: dict) -> list[str]:
+    """Delivery the ledger cannot vouch for: the condition is inconclusive, never passed (0010 §9.2 P5(h))."""
+    notes = []
+    unknown = api["closed_totals"]["delivery_unknown"] + sum(c["delivery_unknown"] for c in api["connections"])
+    if unknown:
+        notes.append(f"delivery_unknown = {unknown}")
+    if api["closed_unresolved"]:
+        notes.append(f"closed_unresolved = {api['closed_unresolved']} at quiesce")
+    return notes
 
 
 async def condition(n: int, api: bool, clients: bool, workdir: Path) -> dict:
@@ -2113,6 +2214,7 @@ async def condition(n: int, api: bool, clients: bool, workdir: Path) -> dict:
                 break
             await asyncio.sleep(0.25)
         result["p5_problems"] = p5(state)
+        result["inconclusive"] = unresolved(state)
         result["forced_disconnects"] = state["forced_disconnects"]
         result["connections_opened"] = state["connections_opened"]
         result["reader_seq_ok"] = all(s == sorted(set(s)) for s in seen)
@@ -2136,15 +2238,22 @@ async def main() -> int:
     results = [await condition(args.n, False, False, work), await condition(args.n, True, False, work),
                await condition(args.n, True, True, work)]
     base = results[0]
-    stop = False
+    stop = inconclusive = False
     for number, r in zip((1, 2, 4), results, strict=True):
         print(f"condition {number}: {json.dumps(r)}")
         if number != 1:
             stop |= r["median_ms"] > base["median_ms"] + 0.10 or r["p99_ms"] > base["p99_ms"] + 0.50
         stop |= r["lost"] > 0 or bool(r.get("p5_problems"))
+        inconclusive |= bool(r.get("inconclusive"))
     print(f"captures in {work}")
-    print("STOP: report before M3" if stop else "within the M2 early-check limits")
-    return 1 if stop else 0
+    if stop:
+        print("STOP: report before M3")
+        return 1
+    if inconclusive:
+        print("INCONCLUSIVE: delivery the ledger cannot vouch for; report the counts, not a pass")
+        return 2
+    print("within the M2 early-check limits")
+    return 0
 
 
 if __name__ == "__main__":
@@ -2154,8 +2263,9 @@ if __name__ == "__main__":
 - [ ] **Step 3: Run it three times** and keep every output verbatim.
 
 Run: `for i in 1 2 3; do scripts/run_gui_m2_early_check.sh; done`
-Expected: each run prints three condition lines and either "within the M2 early-check
-limits" or "STOP". **On STOP, do not tune anything. Report it.**
+Expected: each run prints three condition lines and one of: "within the M2 early-check
+limits", "STOP" or "INCONCLUSIVE". **On STOP or INCONCLUSIVE, do not tune anything. Report
+it with its counts.**
 
 - [ ] **Step 4: Run the gates on the final commit**
 
@@ -2199,7 +2309,7 @@ Do not push unless asked, and do not start M3.
 
 ## Self-review
 
-**Spec coverage** (0010, fourth revision):
+**Spec coverage** (0010, fifth revision):
 
 | Requirement | Task |
 |---|---|
@@ -2229,4 +2339,5 @@ Task 5 replaces; Task 5 Step 2 depends on it. There is no other TBD.
   `.handler`, `.publisher`, `.port`, `.start()` and `.stop()`;
 - `run_writer(conn, send, hello, history)`;
 - `Publisher(..., connection_options=)`;
-- `stats()` keys `connections_opened`, `closed_totals` and `closed_unresolved`.
+- `stats()` keys `connections_opened`, `closed_totals` and `closed_unresolved`;
+- `Connection.mark_sent` / `mark_failed` / `mark_unknown`, and the ledger key `delivery_unknown`.

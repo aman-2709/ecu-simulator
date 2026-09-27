@@ -50,6 +50,17 @@ changes no approved direction, and no V1.0 or Phase 8b gate:
 - `gui` becomes a CI push branch on branch `gui`, with CAN_ISOTP skips reported by name
   (§9.3).
 
+A fifth revision, on 2026-09-27, came from the owner's review of the M2 plan, before any M2
+code:
+
+- a `send_str` cancelled while under way is recorded as a separate ledger outcome,
+  `delivery_unknown`, not as `sent`. It appears in every ledger, in `closed_totals` and in
+  the identities, and any unresolved delivery makes the benchmark result concerned
+  **inconclusive** (§5.1, §9.2 P5(h)). The M2 plan's earlier draft counted it as sent. That
+  was a guess, and it would have let P5(d) pass on an assumption;
+- the WebSocket `Origin` must equal the origin of **the same request's** validated `Host`.
+  `localhost` and `127.0.0.1` are never substituted for one another (§6).
+
 The evidence for the routing and ordering claims is in §12.
 
 ## 1. Purpose and scope
@@ -378,17 +389,19 @@ which are replaced rather than queued (§4.3), are not counted.
 | `enqueued` | Offered events accepted into the queue |
 | `sent` | Events the writer task has passed to `send_str` successfully, including one that was already being sent when the connection closed and then succeeded |
 | `queued` | Events in the queue now, plus the one handed to `send_str` and not yet confirmed. Once closed, only that unconfirmed one, and 0 once it resolves |
-| `discarded_on_close` | Events still in the queue when the connection closed, forced or not, which are discarded, not sent; plus an event whose `send_str` was under way at close and then failed |
+| `discarded_on_close` | Events still in the queue when the connection closed, forced or not, which are discarded, not sent; plus an event whose `send_str` was under way and then raised |
+| `delivery_unknown` | Events whose `send_str` was **cancelled** while under way, for example at shutdown or after the writer's grace period. They may or may not have reached the client, and the ledger does not guess. Any non-zero value makes the P5 and P6 result it belongs to inconclusive (§9.2) |
 
 The server keeps these identities **exactly**, at every instant:
 `offered = published_at_close − published_at_open`, `offered = enqueued + client_dropped`,
-and `enqueued = sent + queued + discarded_on_close`.
+and `enqueued = sent + delivery_unknown + queued + discarded_on_close`.
 The ledger of a closed connection is final once a send under way at close, if any, has resolved, and it stays in `closed_connections`.
 
 **Cumulative accounting** (added 2026-09-27). `closed_connections` keeps only the last 64
 ledgers, and a soak closes many more. So `GET /status` also carries:
 - `closed_totals`: the sum over **every** connection ever closed of `history_sent`,
-  `offered`, `client_dropped`, `enqueued`, `sent` and `discarded_on_close`, together with:
+  `offered`, `client_dropped`, `enqueued`, `sent`, `delivery_unknown` and `discarded_on_close`,
+  together with:
   - `connections`, their count;
   - `published_span`, the sum of `published_at_close − published_at_open`;
   - `close_codes`, a count per close code.
@@ -398,17 +411,21 @@ ledgers, and a soak closes many more. So `GET /status` also carries:
 - `connections_opened`: every connection ever registered.
 
 The summed identities hold at every instant: `offered = published_span`,
-`offered = enqueued + client_dropped` and `enqueued = sent + discarded_on_close`.
+`offered = enqueued + client_dropped` and `enqueued = sent + delivery_unknown + discarded_on_close`.
 `connections_opened = clients + closed_totals.connections + closed_unresolved` also holds.
 (Revised 2026-09-27, from the M1 final review: an event being sent when a forced close happened was counted as
 discarded even when it reached the client, which would have made P5(d) fail.)
 
 **Writer contract** (added 2026-09-27; the full text is the docstring of
 `observe/connection.py`). One writer task per connection takes one message at a time
-with `next_message()`, awaits `send_str`, and resolves an `exchange` with `mark_sent()`
-or `mark_failed()` before taking the next. A close while `send_str` is awaiting discards
-what is still queued, but leaves the in-flight exchange to that resolution, so that it
-counts as `sent` if it reached the client and as `discarded_on_close` if it did not.
+with `next_message()`, awaits `send_str`, and resolves an `exchange` before taking the
+next:
+- `mark_sent()` if `send_str` returned;
+- `mark_failed()` if it raised, which counts as `discarded_on_close`;
+- `mark_unknown()` if it was cancelled while under way, which counts as `delivery_unknown`.
+
+A close while `send_str` is awaiting discards what is still queued, but leaves the
+in-flight exchange to that resolution, so that it counts as exactly what happened to it.
 
 ## 6. Security
 
@@ -417,8 +434,16 @@ counts as `sent` if it reached the client and as `discarded_on_close` if it did 
   default.
 - **`Host` header allowlist:** the request's `Host` must be the bound loopback address or
   `localhost` with the bound port, otherwise 421. This defends against DNS rebinding.
-- **WebSocket `Origin`** must equal the server's own origin, otherwise 403 before
-  `ws.prepare()`. No CORS headers are ever sent.
+- **WebSocket `Origin`** must equal `http://` plus **the same request's `Host`**, after
+  that `Host` has passed the allowlist, otherwise 403 before `ws.prepare()`. The comparison
+  ignores case.
+  - `localhost` and `127.0.0.1` are different origins, and one is never accepted for the
+    other: a page loaded from `http://localhost:P` cannot open the socket through Host
+    `127.0.0.1:P`, nor the reverse.
+  - A missing `Origin`, or another scheme, is refused.
+
+  (Revised 2026-09-27; this said "the server's own origin", which the M2 draft read as
+  any allowed origin.) No CORS headers are ever sent.
 - **No authentication in v1,** by the owner's decision on 2026-09-26. Any local user of the
   machine can read the page. The data is simulator state, and the VIN is a test value.
   This is revisited when §8 adds writes.
@@ -516,8 +541,8 @@ the events' `dispatch_us`.
 | P2 | p99 wire latency, conditions 2, 3 and 4 | ≤ condition 1's p99 **+ 0.50 ms**, on pooled samples, in every round |
 | P3 | Lost replies, every condition | **Exactly 0.** A lost reply is a request frame with no reply frame before the next request, or within 1 s |
 | P4 | Throughput, condition 5 | Requests answered per second ≥ **90 %** of the same tester's maximum rate with the API off (measured the same way in each round) |
-| P5 | Drop and delivery accounting (reconciliation) | Checked after the run has **quiesced**: tester stopped, `HandOff` drained, every open connection's `queued` = 0. All of the following must hold **exactly**: (a) `issued_seq = published + handoff_dropped`. A record whose encoding failed counts in `published`, because it was published as its fallback event (§5). (b) For every connection, open or closed, the §5.1 identities hold. (c) Summed over every connection that was open for the whole run, `offered` equals the growth of `published` over the run, measured by the harness from `GET /status` before and after. (d) On the harness side, the `exchange` messages a connection received have strictly increasing `seq` and no duplicates. For an **open** connection, received live events = `sent`. For a **closed** connection, received live events ≤ `sent`, and the difference (sent but still in transit when the socket closed) is reported per connection. (e) Closes with code 1013 seen by the harness = `forced_disconnects`, closes with code 1011 = `fanout_failed`, and HTTP 503 refusals seen = `refused_clients`. (f) Every closed connection is accounted for, including those no longer among the 64 retained: `closed_unresolved` = 0, `connections_opened = clients + closed_totals.connections`, the summed identities of §5.1 hold on `closed_totals`, and `closed_totals.close_codes["1013"]` = `forced_disconnects`. (g) **Durable output:** the harness appends every `GET /status` poll (at most 1 s apart) and every close it observes to JSONL files committed with the results. The union of `closed_connections` ids across the polls must be exactly `1..connections_opened` minus the open ones. A missing id means the polls were too far apart, and the run is reported inconclusive, not passed. **Any unexplained difference fails** |
-| P6 | Drops where none should occur | In conditions 2 and 3, and for the 3 reading clients in condition 4: `handoff_dropped` = 0, `client_dropped` = 0 and `discarded_on_close` = 0. In **every** condition, `encode_failed` = 0 and `fanout_failed` = 0. Drops, discards and in-transit losses are allowed only on the stalled client's connections, and only where P5 accounts for them |
+| P5 | Drop and delivery accounting (reconciliation) | Checked after the run has **quiesced**: tester stopped, `HandOff` drained, every open connection's `queued` = 0. All of the following must hold **exactly**: (a) `issued_seq = published + handoff_dropped`. A record whose encoding failed counts in `published`, because it was published as its fallback event (§5). (b) For every connection, open or closed, the §5.1 identities hold. (c) Summed over every connection that was open for the whole run, `offered` equals the growth of `published` over the run, measured by the harness from `GET /status` before and after. (d) On the harness side, the `exchange` messages a connection received have strictly increasing `seq` and no duplicates. For an **open** connection, received live events = `sent`. For a **closed** connection, received live events ≤ `sent` + `delivery_unknown`, and `sent` − received (sent but still in transit when the socket closed) is reported per connection. (e) Closes with code 1013 seen by the harness = `forced_disconnects`, closes with code 1011 = `fanout_failed`, and HTTP 503 refusals seen = `refused_clients`. (f) Every closed connection is accounted for, including those no longer among the 64 retained: `closed_unresolved` = 0, `connections_opened = clients + closed_totals.connections`, the summed identities of §5.1, including `delivery_unknown`, hold on `closed_totals`, and `closed_totals.close_codes["1013"]` = `forced_disconnects`. (g) **Durable output:** the harness appends every `GET /status` poll (at most 1 s apart) and every close it observes to JSONL files committed with the results. The union of `closed_connections` ids across the polls must be exactly `1..connections_opened` minus the open ones. A missing id means the polls were too far apart, and the run is reported inconclusive, not passed. (h) **Unresolved delivery makes the result inconclusive.** If any ledger or `closed_totals` has `delivery_unknown` > 0, or `closed_unresolved` > 0 at quiesce, P5 and P6 for that condition and round are reported as **inconclusive**, with the counts. They are never passed; the run is repeated or the cause found. **Any unexplained difference fails** |
+| P6 | Drops where none should occur | In conditions 2 and 3, and for the 3 reading clients in condition 4: `handoff_dropped` = 0, `client_dropped` = 0 and `discarded_on_close` = 0. In **every** condition, `encode_failed` = 0 and `fanout_failed` = 0. Drops, discards and in-transit losses are allowed only on the stalled client's connections, and only where P5 accounts for them. `delivery_unknown` > 0 on any connection makes P6 inconclusive for that condition and round (P5(h)) |
 | P7 | Memory (RSS trend) | A 10-minute soak under condition 4 load, sampling the simulator's RSS every 5 s. Samples in the first 60 s are discarded as warm-up. **Pass if** the least-squares slope of RSS against time over the remaining samples is **≤ 0.1 MiB per minute**, **and** the final sample exceeds the first post-warm-up sample by **≤ 2 MiB**. Separately, the peak RSS increase over condition 1 must stay within the §4.3 bound of about 19 MiB plus 10 MiB for code and libraries |
 | P8 | Noise guard | If condition 1's own p99 differs by more than 0.50 ms between rounds, the benchmark is **inconclusive**. It is reported as such and does not pass |
 | P9 | Loop hold time | The publisher records the length of every turn. The maximum over the whole of conditions 2–5 is **≤ 2 ms**. The M1 early check reports the same maximum for a full 4096-record `HandOff` |
