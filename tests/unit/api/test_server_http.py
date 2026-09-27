@@ -176,3 +176,73 @@ async def test_a_chunked_body_over_1_kib_sent_in_pieces_is_413(server):
     writer.close()
     await writer.wait_closed()
     assert reply.startswith(b"HTTP/1.1 413"), reply[:40]
+
+
+def chunked_head(port: int, keep_alive: bool = True) -> bytes:
+    return (f"GET /api/v1/status HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nTransfer-Encoding: chunked\r\n"
+            + ("" if keep_alive else "Connection: close\r\n") + "\r\n").encode()
+
+
+@pytest.mark.asyncio
+async def test_a_slow_drip_body_is_408_at_the_deadline():
+    # One byte every 0.1 s keeps every single read short: only a deadline over the whole
+    # body read, not one per read, answers before the drip's natural end (3 s here).
+    s = build(body_timeout_s=0.5)
+    await s.start()
+    reader, writer = await asyncio.open_connection("127.0.0.1", s.port)
+
+    async def drip():
+        writer.write(chunked_head(s.port))
+        for _ in range(30):
+            writer.write(b"1\r\nx\r\n")
+            await writer.drain()
+            await asyncio.sleep(0.1)
+    dripping = asyncio.create_task(drip())
+    try:
+        started = time.monotonic()
+        reply = await asyncio.wait_for(reader.read(65536), 5)
+        elapsed = time.monotonic() - started
+        assert reply.startswith(b"HTTP/1.1 408"), reply[:40]
+        assert 0.5 <= elapsed < 1.5, elapsed
+    finally:
+        dripping.cancel()
+        writer.close()
+        await s.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_body_over_1_kib_in_40_chunks_of_64_bytes_is_413(server):
+    reader, writer = await asyncio.open_connection("127.0.0.1", server.port)
+    writer.write(chunked_head(server.port, keep_alive=False))
+    for _ in range(40):                                                  # 2560 bytes, one chunk per write
+        writer.write(b"40\r\n" + b"x" * 64 + b"\r\n")
+        await writer.drain()
+        await asyncio.sleep(0.005)
+    writer.write(b"0\r\n\r\n")
+    await writer.drain()
+    reply = await asyncio.wait_for(reader.read(65536), 2)
+    writer.close()
+    assert reply.startswith(b"HTTP/1.1 413"), reply[:40]
+
+
+@pytest.mark.asyncio
+async def test_20_concurrent_stalled_bodies_do_not_wedge_the_server(session):
+    s = build(body_timeout_s=0.5)
+    await s.start()
+    stalled = []
+    try:
+        for _ in range(20):
+            reader, writer = await asyncio.open_connection("127.0.0.1", s.port)
+            writer.write(chunked_head(s.port) + b"800\r\n" + b"x" * 10)  # then silence
+            await writer.drain()
+            stalled.append((reader, writer))
+        started = time.monotonic()
+        async with session.get(url(s, "/api/v1/status")) as r:          # answered while all 20 wait
+            assert r.status == 200
+        assert time.monotonic() - started < 0.4
+        replies = await asyncio.wait_for(asyncio.gather(*(r.read(65536) for r, _ in stalled)), 3)
+        assert all(reply.startswith(b"HTTP/1.1 408") for reply in replies), [r[:20] for r in replies]
+    finally:
+        for _, writer in stalled:
+            writer.close()
+        await s.stop()
