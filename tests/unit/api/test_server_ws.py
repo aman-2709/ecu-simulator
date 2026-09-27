@@ -102,6 +102,9 @@ async def test_a_bad_after_is_400_before_the_upgrade(server, session):
 async def test_a_client_data_message_closes_1008(server, session):
     async with session.ws_connect(url(server, "/api/v1/events"), origin=origin(server)) as ws:
         await next_json(ws)                                           # hello
+        assert (await next_json(ws))["type"] == "state"
+        await publish(server, 1)
+        assert (await next_exchange(ws))["seq"] == 1                  # a live send, received: mark_sent ran
         await ws.send_str("hi")
         while (await asyncio.wait_for(ws.receive(), 2)).type == aiohttp.WSMsgType.TEXT:
             pass
@@ -225,6 +228,9 @@ async def test_shutdown_closes_clients_with_1001(session):  # Review Focus 5
     await s.start()
     ws = await session.ws_connect(url(s, "/api/v1/events"), origin=origin(s))
     await next_json(ws)
+    assert (await next_json(ws))["type"] == "state"
+    await publish(s, 1)
+    assert (await next_exchange(ws))["seq"] == 1                      # a live send, received: mark_sent ran
     started = time.monotonic()
     await s.stop()
     while (msg := await asyncio.wait_for(ws.receive(), 3)).type == aiohttp.WSMsgType.TEXT:
