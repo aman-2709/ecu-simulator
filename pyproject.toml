@@ -47,6 +47,9 @@ dev = [
 # code goes wrong, in a suite that runs rarely enough that the bug would sit undiscovered
 # until bench day. See docs/decisions/0008 section 2, Q2.
 hardware = ["pyserial>=3.5,<4"]
+# The observer API and its browser page (docs/decisions/0010). Opt-in: nothing in the
+# default install imports aiohttp, and `ecu-simulator` without --api never does (§9.1).
+gui = ["aiohttp>=3.13,<4"]
 
 [project.scripts]
 ecu-simulator = "ecu_simulator.cli:main"
@@ -57,7 +60,7 @@ Homepage = "https://github.com/lbenthins/ecu-simulator"
 [tool.hatch.build.targets.wheel]
 packages = ["src/ecu_simulator"]
 # The default profile ships inside the package so the console script finds it when installed.
-artifacts = ["src/ecu_simulator/profiles/*.yaml"]
+artifacts = ["src/ecu_simulator/profiles/*.yaml", "src/ecu_simulator/api/static/*"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src", "tests", "docs", "scripts", "setup_can.sh", "setup_vcan.sh", "README.md", "LICENSE"]
