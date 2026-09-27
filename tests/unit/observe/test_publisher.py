@@ -161,7 +161,8 @@ def test_fanout_failure_closes_only_that_connection():  # Review Focus 7
     for ledger in stats["connections"] + stats["closed_connections"]:
         assert ledger["offered"] == ledger["published_at_close"] - ledger["published_at_open"]
         assert ledger["offered"] == ledger["enqueued"] + ledger["client_dropped"]
-    assert stats["fanout_failed"] == 1
+    assert stats["fanout_failed"] == 1 and stats["writer_failed"] == 0
+    assert stats["closed_totals"]["close_codes"]["1011"] == stats["fanout_failed"] + stats["writer_failed"]
 
 
 def test_a_connection_closed_elsewhere_is_retired_at_the_next_publication():
@@ -308,10 +309,13 @@ def test_abandon_keeps_the_ledger_exact_when_the_clock_also_fails():  # final re
     fill(handoff, 1, start=2)
     assert p.drain_turn() == 1
     assert a.closed and a.close_code == 1011 and a not in p.connections
-    (closed,) = p.stats(issued=2)["closed_connections"]
+    stats = p.stats(issued=2)
+    (closed,) = stats["closed_connections"]
     assert closed["closed_at"] is None and closed["published_at_close"] == 1
     assert closed["offered"] == closed["published_at_close"] - closed["published_at_open"]
     assert closed["offered"] == closed["enqueued"] + closed["client_dropped"]
+    assert stats["writer_failed"] == 0
+    assert stats["closed_totals"]["close_codes"]["1011"] == stats["fanout_failed"] + stats["writer_failed"]
 
 
 def test_totals_reconcile_beyond_the_64_retained_ledgers():
