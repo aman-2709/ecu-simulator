@@ -332,9 +332,11 @@ async def run(
     check_routes(runtime.router, endpoints)  # before any socket is opened
     server = _api_server(runtime, endpoints, api) if api is not None else None
     handler = server.handler if server is not None else runtime.dispatcher
-    if server is not None:
-        await server.start()           # a busy port fails here, before the transport exists
+    # Constructed before the API starts, so a constructor error leaves nothing to clean up;
+    # the constructor opens no socket, so a busy port still fails before any CAN socket opens.
     transport = transport_factory(config.interface, endpoints)
+    if server is not None:
+        await server.start()           # a busy port fails here, before transport.start()
     stop = stop or asyncio.Event()
     loop = asyncio.get_running_loop()
     installed: list[signal.Signals] = []

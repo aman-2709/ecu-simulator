@@ -36,4 +36,23 @@ async def test_a_busy_api_port_fails_before_any_can_socket_opens():  # Review Fo
                           api=ApiOptions("127.0.0.1", holder.getsockname()[1], "p", "t"))
     finally:
         holder.close()
+    # The transport may be constructed (its constructor opens no socket), but never started.
+    assert len(Capture.instances) <= 1
     assert Capture.handlers == [], "the transport must not have been started"
+
+
+@pytest.mark.asyncio
+async def test_a_transport_constructor_that_raises_leaves_no_api_listening():
+    from ecu_simulator.transport.errors import AddressError
+
+    def refuse(interface, endpoints):
+        raise AddressError("duplicate ISO-TP address pairs")
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+    with pytest.raises(AddressError):
+        await app.run(shipped(), install_signal_handlers=False, transport_factory=refuse,
+                      api=ApiOptions("127.0.0.1", port, "p", "t"))
+    with pytest.raises(ConnectionRefusedError):                          # nothing is listening on the port
+        await asyncio.open_connection("127.0.0.1", port)
