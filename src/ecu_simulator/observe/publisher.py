@@ -34,7 +34,8 @@ TOTAL_FIELDS = (
 
 
 def _empty_totals() -> dict[str, Any]:
-    return {"connections": 0, "published_span": 0, **dict.fromkeys(TOTAL_FIELDS, 0), "close_codes": {}}
+    return {"connections": 0, "published_span": 0, **dict.fromkeys(TOTAL_FIELDS, 0), "close_codes": {},
+            "delivery_unknown_by_close_code": {}}
 
 
 class TooManyClients(Exception):
@@ -79,6 +80,7 @@ class Publisher:
         self.forced_disconnects = 0
         self.encode_failed = 0
         self.fanout_failed = 0
+        self.writer_failed = 0
         self._logged: set[tuple[str, str]] = set()
         self._connection_options = dict(connection_options or {})
         self.connections_opened = 0
@@ -178,6 +180,11 @@ class Publisher:
             hello["gap"] = gap
         return conn, hello, texts
 
+    def fail_writer(self, conn: Connection) -> None:
+        """A connection's writer died on a healthy socket: a server fault, closed with 1011."""
+        self.writer_failed += 1
+        self.disconnect(conn, CLOSE_INTERNAL_ERROR)
+
     def disconnect(self, conn: Connection, code: int) -> None:
         conn.close(code, published_now=self.published)
         self._retire(conn)
@@ -212,6 +219,9 @@ class Publisher:
                 totals[field] += ledger[field]
             code = str(ledger["close_code"])
             totals["close_codes"][code] = totals["close_codes"].get(code, 0) + 1
+            if ledger["delivery_unknown"]:        # 0010 P5(h): the allowance depends on the close code
+                by_code = totals["delivery_unknown_by_close_code"]
+                by_code[code] = by_code.get(code, 0) + ledger["delivery_unknown"]
         self._unresolved = waiting
 
     def stats(self, issued: int) -> dict[str, Any]:
@@ -223,10 +233,12 @@ class Publisher:
             "handoff_dropped": self._handoff.dropped, "refused_clients": self.refused_clients,
             "forced_disconnects": self.forced_disconnects, "longest_turn_s": self.longest_turn_s,
             "encode_failed": self.encode_failed, "fanout_failed": self.fanout_failed,
+            "writer_failed": self.writer_failed,
             "connections": [c.ledger(self.published) for c in self.connections],
             "closed_connections": [c.ledger(self.published) for c in self.closed],
             "connections_opened": self.connections_opened,
-            "closed_totals": {**self._totals, "close_codes": dict(self._totals["close_codes"])},
+            "closed_totals": {**self._totals, "close_codes": dict(self._totals["close_codes"]),
+                              "delivery_unknown_by_close_code": dict(self._totals["delivery_unknown_by_close_code"])},
             "closed_unresolved": len(self._unresolved),
         }
 

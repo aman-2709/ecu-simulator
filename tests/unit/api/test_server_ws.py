@@ -332,6 +332,7 @@ async def test_a_connection_the_publisher_abandons_is_closed_1011(server, sessio
     assert await wait_until(lambda: not server._sockets)
     stats = server.publisher.stats(issued=server.handler.issued)
     assert stats["fanout_failed"] == 1 and stats["closed_totals"]["close_codes"] == {"1011": 1}
+    assert stats["writer_failed"] == 0
 
 
 @pytest.mark.asyncio
@@ -356,6 +357,7 @@ async def test_a_writer_that_dies_on_an_open_socket_closes_it_1011(server, sessi
     stats = server.publisher.stats(issued=server.handler.issued)
     assert stats["clients"] == 0 and stats["closed_totals"]["close_codes"] == {"1011": 1}
     assert stats["closed_totals"]["delivery_unknown"] == 1              # owner decision 8: any other exception
+    assert (stats["writer_failed"], stats["fanout_failed"]) == (1, 0)
 
 
 def raw_upgrade(s, rcvbuf=None):
@@ -490,3 +492,16 @@ async def test_a_client_connecting_during_stop_is_refused_503(session):
     finally:
         raw.close()
         await s.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_writer_ended_by_not_delivered_is_never_a_writer_failure():
+    # NotDelivered means the socket was closed or closing: the handler records that close,
+    # whatever the transport looks like by the time the done-callback runs.
+    from ecu_simulator.observe.writer import NotDelivered
+    s = build()
+    conn, _, _ = s.publisher.connect()
+    ended = asyncio.get_running_loop().create_future()
+    ended.set_exception(NotDelivered("nothing written"))
+    s._writer_ended(ended, conn, FakeRequest())                        # a healthy-looking transport
+    assert not conn.closed and s.publisher.writer_failed == 0

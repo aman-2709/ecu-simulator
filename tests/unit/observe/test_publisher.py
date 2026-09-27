@@ -369,3 +369,33 @@ def test_connection_options_reach_every_connection():
     p = Publisher(HandOff(), Router(), {}, connection_options={"max_messages": 1})
     c, _, _ = p.connect()
     assert c.offer("a") and c.offer("b") is False
+
+
+def test_delivery_unknown_is_totalled_per_close_code():  # 0010 P5(h), sixth revision
+    handoff = HandOff()
+    p = publisher(handoff)
+    forced, _, _ = p.connect()
+    normal, _, _ = p.connect()
+    fill(handoff, 1)
+    p.drain_turn()
+    forced.next_message()                                 # in flight when closed 1013
+    p.disconnect(forced, 1013)
+    forced.mark_unknown()
+    normal.next_message()
+    normal.mark_sent()
+    p.disconnect(normal, 1000)
+    totals = p.stats(issued=1)["closed_totals"]
+    assert totals["close_codes"] == {"1013": 1, "1000": 1}
+    assert totals["delivery_unknown_by_close_code"] == {"1013": 1}  # a zero sum adds no code
+    totals["delivery_unknown_by_close_code"]["1013"] = 99             # stats() returns a copy
+    assert p.stats(issued=1)["closed_totals"]["delivery_unknown_by_close_code"] == {"1013": 1}
+
+
+def test_a_failed_writer_closes_its_connection_1011_and_is_counted():
+    p = publisher(HandOff())
+    c, _, _ = p.connect()
+    p.fail_writer(c)
+    stats = p.stats(issued=0)
+    assert c.close_code == 1011 and stats["clients"] == 0
+    assert (stats["writer_failed"], stats["fanout_failed"]) == (1, 0)
+    assert stats["closed_totals"]["close_codes"] == {"1011": 1}

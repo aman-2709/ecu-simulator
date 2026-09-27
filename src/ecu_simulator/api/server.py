@@ -278,13 +278,16 @@ class ApiServer:
     def _writer_ended(self, task: asyncio.Task[None], conn: Connection, request: web.Request) -> None:
         # A writer that dies while its socket is healthy is a server fault, not a slow client:
         # close that connection with 1011 now, rather than leave it registered until overflow
-        # forces a misattributed 1013. A socket already going away is the handler's to record.
-        if task.cancelled() or task.exception() is None or conn.closed:
+        # forces a misattributed 1013. A socket already going away is the handler's to record:
+        # NotDelivered says so explicitly, and a closing transport says so for anything else.
+        if task.cancelled() or (error := task.exception()) is None or conn.closed:
+            return
+        if isinstance(error, NotDelivered):
             return
         transport = request.transport
         if transport is not None and not transport.is_closing():
-            logger.error("writer for connection %d failed; closing it with 1011", conn.id, exc_info=task.exception())
-            self.publisher.disconnect(conn, CLOSE_INTERNAL_ERROR)
+            logger.error("writer for connection %d failed; closing it with 1011", conn.id, exc_info=error)
+            self.publisher.fail_writer(conn)
 
     async def _close_when_closed(self, conn: Connection, ws: web.WebSocketResponse, request: web.Request) -> None:
         # Sends the close the Publisher or a dead writer decided: 1013 for a forced disconnect,
