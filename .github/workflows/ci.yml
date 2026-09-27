@@ -45,13 +45,21 @@ jobs:
       - name: pytest
         run: |
           set -o pipefail
+          set +e
           pytest --color=no --cov=ecu_simulator --cov-report=term-missing --cov-report=xml | tee pytest.log
+          status=${PIPESTATUS[0]}
+          set -e
           # Publish the summary and coverage total as annotations: readable through the
           # public API without a signed-in session, unlike logs and artifacts.
           summary=$(grep -E 'passed|failed|error' pytest.log | tail -1 | sed -E 's/^=+ *//; s/ *=+$//')
           total=$(grep -E '^TOTAL' pytest.log | tr -s ' ')
           skips=$(grep -oE 'SKIPPED \[[0-9]+\] [^:]+:[0-9]+: .*' pytest.log | sed -E 's/^SKIPPED \[([0-9]+)\] [^:]+:[0-9]+: /\1\t/' | awk -F'\t' '{n[$2]+=$1} END{for (k in n) print n[k] "x " k}' | sort -rn | paste -sd ';' - || true)
-          echo "::notice title=pytest (Python ${{ matrix.python-version }})::${summary} | coverage ${total}${skips:+ | skips: $skips}"
+          failed=$(grep -E '^(FAILED|ERROR) ' pytest.log | cut -c1-180 | head -25 | paste -sd ';' - || true)
+          echo "::notice title=pytest (Python ${{ matrix.python-version }})::${summary} | coverage ${total}${skips:+ | skips: $skips}${failed:+ | failed: $failed}"
+          if [ -n "$failed" ]; then
+            echo "::error title=pytest failures (Python ${{ matrix.python-version }})::${failed}"
+          fi
+          exit "$status"
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -72,10 +80,18 @@ jobs:
       - name: pytest with the [gui] extra
         run: |
           set -o pipefail
+          set +e
           pytest --color=no -p no:cacheprovider | tee pytest-gui.log
+          status=${PIPESTATUS[0]}
+          set -e
           summary=$(grep -E 'passed|failed|error' pytest-gui.log | tail -1 | sed -E 's/^=+ *//; s/ *=+$//')
           skips=$(grep -oE 'SKIPPED \[[0-9]+\] [^:]+:[0-9]+: .*' pytest-gui.log | sed -E 's/^SKIPPED \[([0-9]+)\] [^:]+:[0-9]+: /\1\t/' | awk -F'\t' '{n[$2]+=$1} END{for (k in n) print n[k] "x " k}' | sort -rn | paste -sd ';' - || true)
-          echo "::notice title=pytest [gui] (Python 3.12)::${summary}${skips:+ | skips: $skips}"
+          failed=$(grep -E '^(FAILED|ERROR) ' pytest-gui.log | cut -c1-180 | head -25 | paste -sd ';' - || true)
+          echo "::notice title=pytest [gui] (Python 3.12)::${summary}${skips:+ | skips: $skips}${failed:+ | failed: $failed}"
+          if [ -n "$failed" ]; then
+            echo "::error title=pytest failures ([gui] Python 3.12)::${failed}"
+          fi
+          exit "$status"
 
   can-capabilities:
     # Records whether kernel-dependent integration tests (marker "vcan") can run on
