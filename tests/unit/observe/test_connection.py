@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from ecu_simulator.observe.connection import Connection
@@ -12,7 +14,8 @@ def conn(**kw):
 def identities(ledger):
     assert ledger["offered"] == ledger["published_at_close"] - ledger["published_at_open"]
     assert ledger["offered"] == ledger["enqueued"] + ledger["client_dropped"]
-    assert ledger["enqueued"] == ledger["sent"] + ledger["queued"] + ledger["discarded_on_close"]
+    assert ledger["enqueued"] == (ledger["sent"] + ledger["delivery_unknown"] + ledger["queued"]
+                                   + ledger["discarded_on_close"])
 
 
 def test_queue_order_and_ledger():
@@ -141,3 +144,46 @@ def test_the_documented_writer_contract():
     ledger = c.ledger(published_now=12)
     assert (ledger["sent"], ledger["queued"], ledger["discarded_on_close"]) == (1, 0, 1)
     identities(ledger)
+
+
+def test_take_state_empties_the_slot():
+    c, _ = conn()
+    c.set_state("s")
+    assert c.take_state() == "s" and c.take_state() is None and c.next_message() is None
+
+
+@pytest.mark.asyncio
+async def test_wait_changed_wakes_on_offer_state_dropped_and_close():
+    for poke in (lambda c: c.offer("x"), lambda c: c.set_state("s"), lambda c: c.set_dropped("d"),
+                 lambda c: c.close(1000, published_now=10)):
+        c, _ = conn()
+        waiter = asyncio.create_task(c.wait_changed())
+        await asyncio.sleep(0)
+        assert not waiter.done()
+        poke(c)
+        await asyncio.wait_for(waiter, 1)
+
+
+def test_mark_unknown_resolves_the_in_flight_exchange_as_delivery_unknown():
+    for close_first in (False, True):
+        c, _ = conn()
+        c.offer("x")
+        c.next_message()
+        if close_first:
+            c.close(1001, published_now=11)
+        c.mark_unknown()
+        c.mark_sent()                                     # nothing in flight any more: a no-op
+        ledger = c.ledger(published_now=11)
+        assert (ledger["sent"], ledger["delivery_unknown"], ledger["queued"], ledger["discarded_on_close"]) == (0, 1, 0, 0)
+        identities(ledger)
+
+
+@pytest.mark.asyncio
+async def test_wait_closed_wakes_only_on_close():
+    c, _ = conn()
+    waiter = asyncio.create_task(c.wait_closed())
+    c.offer("x")
+    await asyncio.sleep(0)
+    assert not waiter.done()
+    c.close(1013, published_now=11)
+    await asyncio.wait_for(waiter, 1)

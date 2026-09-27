@@ -218,7 +218,8 @@ def test_ledgers_reconcile_after_quiesce():
     for ledger in stats["connections"] + stats["closed_connections"]:
         assert ledger["offered"] == ledger["published_at_close"] - ledger["published_at_open"]
         assert ledger["offered"] == ledger["enqueued"] + ledger["client_dropped"]
-        assert ledger["enqueued"] == ledger["sent"] + ledger["queued"] + ledger["discarded_on_close"]
+        assert ledger["enqueued"] == (ledger["sent"] + ledger["delivery_unknown"] + ledger["queued"]
+                                       + ledger["discarded_on_close"])
 
 
 def test_a_bad_after_registers_nothing():  # (amended)
