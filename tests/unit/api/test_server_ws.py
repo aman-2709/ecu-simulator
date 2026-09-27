@@ -11,7 +11,7 @@ aiohttp = pytest.importorskip("aiohttp", reason="needs the optional [gui] extra 
 
 from ecu_simulator.observe import snapshots  # noqa: E402
 from ecu_simulator.transport import DiagnosticRequest  # noqa: E402
-from tests.unit.api.support import build, url  # noqa: E402
+from tests.unit.api.support import build, check_delivery_unknown_allowance, url  # noqa: E402
 
 REQ = DiagnosticRequest(b"\x01\x0c", 0x7DF, functional=True)
 
@@ -51,6 +51,8 @@ async def test_hello_state_history_then_live(server, session):
         await publish(server, 1)
         live = await next_exchange(ws)
         assert (live["type"], live["seq"], live["outcome"]) == ("exchange", 3, "responded")
+    assert await wait_until(lambda: server.publisher.stats(issued=0)["closed_totals"]["connections"] == 1)
+    assert check_delivery_unknown_allowance(server.publisher.stats(issued=server.handler.issued)) == {}
 
 
 @pytest.mark.asyncio
@@ -108,6 +110,7 @@ async def test_a_client_data_message_closes_1008(server, session):
     while not server.publisher.stats(issued=0)["closed_totals"]["connections"] and time.monotonic() < deadline:
         await asyncio.sleep(0.01)
     assert server.publisher.stats(issued=0)["closed_totals"]["close_codes"] == {"1008": 1}
+    assert check_delivery_unknown_allowance(server.publisher.stats(issued=server.handler.issued)) == {}
 
 
 @pytest.mark.asyncio
@@ -156,6 +159,7 @@ async def test_a_stalled_client_is_closed_1013_and_frees_its_slot():  # Review F
         totals = stats["closed_totals"]
         assert totals["enqueued"] == totals["sent"] + totals["delivery_unknown"] + totals["discarded_on_close"]
         STALLED_FINDING["delivery_unknown"] = totals["delivery_unknown"]    # read by the next test
+        assert check_delivery_unknown_allowance(stats) == {"1013": 1}       # 0010 P5(h): within the allowance
         async with aiohttp.ClientSession() as session:                # the slot is free again
             async with session.ws_connect(url(s, "/api/v1/events"), origin=origin(s)) as ws:
                 assert (await next_json(ws))["type"] == "hello"
@@ -164,8 +168,9 @@ async def test_a_stalled_client_is_closed_1013_and_frees_its_slot():  # Review F
         await s.stop()
 
 
-@pytest.mark.xfail(strict=True, reason="stalled-client finding: blocked send resolves as delivery_unknown=1; "
-                                       "M4 condition 4 P5(h) decision pending")
+@pytest.mark.xfail(strict=True, reason="stalled-client finding: delivery_unknown=1 per forced close, within the "
+                                       "0010 P5(h) allowance and reported explicitly; kept strict so any change "
+                                       "is noticed")
 def test_a_stalled_clients_blocked_send_is_not_delivery_unknown():
     # The measurement behind 0010 P5(h) for M4 condition 4: if a stalled client's blocked
     # send resolves as delivery_unknown, every condition-4 run is inconclusive. Kept separate
@@ -229,6 +234,7 @@ async def test_shutdown_closes_clients_with_1001(session):  # Review Focus 5
     # client then overwrites the received 1001 with 1006 when its own reply cannot be written.
     assert (msg.type, msg.data) == (aiohttp.WSMsgType.CLOSE, 1001) and time.monotonic() - started < 5
     assert s.publisher.stats(issued=0)["closed_totals"]["close_codes"] == {"1001": 1}
+    assert check_delivery_unknown_allowance(s.publisher.stats(issued=s.handler.issued)) == {}
 
 
 @pytest.mark.asyncio
@@ -420,6 +426,7 @@ async def test_a_client_reset_during_the_live_stream_is_retired_cleanly():  # Re
             # Not backpressured, a send never suspends: nothing is in flight across the reset,
             # so nothing is delivery_unknown (owner decision 8).
             assert totals["delivery_unknown"] == 0
+            assert check_delivery_unknown_allowance(s.publisher.stats(issued=s.handler.issued)) == {}
         finally:
             await s.stop()
     assert errors.calls == []
@@ -448,6 +455,7 @@ async def test_a_client_reset_while_backpressured_is_delivery_unknown_once():  #
             # The blocked send ends in ConnectionError('Connection lost'): any exception other
             # than NotDelivered is delivery_unknown (owner decision 8).
             assert totals["delivery_unknown"] == 1
+            assert check_delivery_unknown_allowance(s.publisher.stats(issued=s.handler.issued)) == {"1006": 1}
         finally:
             await s.stop()
     assert errors.calls == []

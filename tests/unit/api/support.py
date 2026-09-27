@@ -26,3 +26,25 @@ async def raw_request(port: int, request: bytes) -> bytes:
     writer.close()
     await writer.wait_closed()
     return data
+
+
+UNKNOWN_ALLOWED_CODES = ("1013", "1006")   # 0010 P5(h): forced, or reset/vanished
+
+
+def check_delivery_unknown_allowance(stats) -> dict[str, int]:
+    """Assert the 0010 P5(h) rule and return the delivery_unknown counts per close code.
+
+    A connection closed 1013 or 1006 may carry at most one delivery_unknown; every other
+    connection, open or closed, none. Tests assert the returned counts explicitly.
+    """
+    totals = stats["closed_totals"]
+    by_code = totals["delivery_unknown_by_close_code"]
+    assert stats["closed_unresolved"] == 0, "a closed connection still has a send in flight"
+    assert totals["delivery_unknown"] == sum(by_code.values()), by_code
+    for code, unknown in by_code.items():
+        allowed = totals["close_codes"].get(code, 0) if code in UNKNOWN_ALLOWED_CODES else 0
+        assert unknown <= allowed, f"close code {code}: delivery_unknown {unknown} > allowed {allowed}"
+    for ledger in stats["connections"] + stats["closed_connections"]:
+        limit = 1 if str(ledger["close_code"]) in UNKNOWN_ALLOWED_CODES else 0
+        assert ledger["delivery_unknown"] <= limit, ledger
+    return dict(by_code)
