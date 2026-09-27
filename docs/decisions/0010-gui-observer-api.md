@@ -362,14 +362,16 @@ which are replaced rather than queued (§4.3), are not counted.
 | `offered` | Live events published while this connection was registered, all with `seq > W` |
 | `client_dropped` | Offered events refused because the queue was full |
 | `enqueued` | Offered events accepted into the queue |
-| `sent` | Events the writer task has passed to `send_str` successfully |
-| `queued` | Events in the queue now (0 once closed) |
-| `discarded_on_close` | Events still in the queue when the connection closed, forced or not. They are discarded, not sent |
+| `sent` | Events the writer task has passed to `send_str` successfully, including one that was already being sent when the connection closed and then succeeded |
+| `queued` | Events in the queue now, plus the one handed to `send_str` and not yet confirmed. Once closed, only that unconfirmed one, and 0 once it resolves |
+| `discarded_on_close` | Events still in the queue when the connection closed, forced or not, which are discarded, not sent; plus an event whose `send_str` was under way at close and then failed |
 
 The server keeps these identities **exactly**, at every instant:
 `offered = published_at_close − published_at_open`, `offered = enqueued + client_dropped`,
 and `enqueued = sent + queued + discarded_on_close`.
-The ledger of a closed connection is final and stays in `closed_connections`.
+The ledger of a closed connection is final once a send under way at close, if any, has resolved, and it stays in `closed_connections`.
+(Revised 2026-09-27, from the M1 final review: an event being sent when a forced close happened was counted as
+discarded even when it reached the client, which would have made P5(d) fail.)
 
 ## 6. Security
 

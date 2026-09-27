@@ -96,23 +96,38 @@ class Connection:
         return text
 
     def mark_sent(self) -> None:
+        """The writer's ``send_str`` succeeded. Valid after close too: a send already under
+        way when the connection closed may still deliver, and then it counts as sent.
+        """
         if self._in_flight is not None:
             self._in_flight = None
             self.sent += 1
 
-    def close(self, code: int, published_now: int) -> None:
-        if not self.closed:
-            self._close(code, published_now, self._now())
+    def mark_failed(self) -> None:
+        """The writer's ``send_str`` failed: the in-flight exchange was not delivered."""
+        if self._in_flight is not None:
+            self._in_flight = None
+            self.discarded_on_close += 1
 
-    def _close(self, code: int, published_now: int, now: float) -> None:
+    def close(self, code: int, published_now: int) -> None:
+        if self.closed:
+            return
+        try:
+            now: float | None = self._now()
+        except Exception:
+            now = None          # still close: a missing timestamp must not leave the ledger open
+        self._close(code, published_now, now)
+
+    def _close(self, code: int, published_now: int, now: float | None) -> None:
         # No call that can fail: offer() closes through here with the clock value it already read.
+        # An exchange in flight is left to mark_sent / mark_failed, so that it is counted as
+        # what actually happened to it (0010 §9.2 P5(d)); until then it counts as queued.
         self.close_code = code
         self.closed_at = now
         self._published_at_close = published_now
-        self.discarded_on_close = len(self._queue) + (1 if self._in_flight is not None else 0)
+        self.discarded_on_close += len(self._queue)
         self._queue.clear()
         self._bytes = 0
-        self._in_flight = None
         self._state = self._dropped_notice = None
 
     def ledger(self, published_now: int) -> dict[str, Any]:

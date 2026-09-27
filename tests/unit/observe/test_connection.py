@@ -97,3 +97,27 @@ def test_offer_changes_nothing_when_it_raises():  # Review Focus 7 (amended)
         c.offer("b")                      # overflow path: reads the clock before counting anything
     assert c.ledger(published_now=11) == before and not c.closed
     identities(before)
+
+
+def test_a_message_in_flight_at_close_resolves_as_sent_or_discarded():  # final review
+    c, _ = conn()
+    c.offer("x")
+    c.offer("y")
+    assert c.next_message() == "x"                 # handed to send_str, not yet confirmed
+    c.close(1013, published_now=12)
+    ledger = c.ledger(published_now=99)
+    assert (ledger["sent"], ledger["queued"], ledger["discarded_on_close"]) == (0, 1, 1)   # y discarded, x unresolved
+    identities(ledger)
+    c.mark_sent()                                  # the frame did go out
+    ledger = c.ledger(published_now=99)
+    assert (ledger["sent"], ledger["queued"], ledger["discarded_on_close"]) == (1, 0, 1)
+    identities(ledger)
+
+    d, _ = conn()
+    d.offer("x")
+    d.next_message()
+    d.close(1013, published_now=11)
+    d.mark_failed()                                # the send failed
+    ledger = d.ledger(published_now=99)
+    assert (ledger["sent"], ledger["queued"], ledger["discarded_on_close"]) == (0, 0, 1)
+    identities(ledger)

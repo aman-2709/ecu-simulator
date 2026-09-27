@@ -251,3 +251,63 @@ async def test_state_is_pushed_only_when_it_changes_and_dropped_follows_it():
     assert conn.next_message() == "b"                           # one slot: "b" replaced "a"
     assert json.loads(conn.next_message())["type"] == "dropped"
     assert conn.next_message() is None
+
+
+def test_closed_connections_are_retired_without_traffic():  # final review
+    p = publisher(HandOff(), max_clients=2)
+    a, _, _ = p.connect()
+    b, _, _ = p.connect()
+    a.close(1001, published_now=p.published)       # e.g. the browser tab closed; no exchange follows
+    b.close(1001, published_now=p.published)
+    stats = p.stats(issued=0)
+    assert stats["clients"] == 0 and stats["connections"] == [] and len(stats["closed_connections"]) == 2
+    p.connect()                                    # not TooManyClients
+
+
+@pytest.mark.asyncio
+async def test_a_late_client_gets_the_current_state():  # final review
+    p = publisher(HandOff())
+    calls: list[int] = []
+    def snapshot() -> str:
+        calls.append(1)
+        return "s"
+    task = asyncio.create_task(p.run_state(snapshot, interval_s=0))
+    while len(calls) < 2:                          # state unchanged since the first push
+        await asyncio.sleep(0)
+    conn, _, _ = p.connect()
+    task.cancel()
+    assert conn.next_message() == "s"
+
+
+def test_a_closed_ledger_reflects_a_send_confirmed_after_close():  # final review
+    handoff = HandOff()
+    p = publisher(handoff)
+    conn, _, _ = p.connect()
+    fill(handoff, 1)
+    p.drain_turn()
+    conn.next_message()
+    p.disconnect(conn, 1013)
+    conn.mark_sent()
+    (closed,) = p.stats(issued=1)["closed_connections"]
+    assert (closed["sent"], closed["queued"], closed["discarded_on_close"]) == (1, 0, 0)
+
+
+def test_abandon_keeps_the_ledger_exact_when_the_clock_also_fails():  # final review
+    handoff = HandOff()
+    p = publisher(handoff)
+    a, _, _ = p.connect()
+    fill(handoff, 1)
+    p.drain_turn()
+    def broken_offer(text):
+        raise RuntimeError("offer")
+    def broken_clock():
+        raise RuntimeError("clock")
+    a.offer = broken_offer
+    a._now = broken_clock                          # close() must still close, without a timestamp
+    fill(handoff, 1, start=2)
+    assert p.drain_turn() == 1
+    assert a.closed and a.close_code == 1011 and a not in p.connections
+    (closed,) = p.stats(issued=2)["closed_connections"]
+    assert closed["closed_at"] is None and closed["published_at_close"] == 1
+    assert closed["offered"] == closed["published_at_close"] - closed["published_at_open"]
+    assert closed["offered"] == closed["enqueued"] + closed["client_dropped"]

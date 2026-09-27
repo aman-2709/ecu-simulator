@@ -60,7 +60,10 @@ class Publisher:
         self._event = asyncio.Event()
         self._next_id = 0
         self.connections: list[Connection] = []
-        self.closed: deque[dict[str, Any]] = deque(maxlen=CLOSED_LEDGERS_KEPT)
+        # Connection objects, not ledger copies: an exchange in flight at close may still
+        # resolve as sent or discarded, and the retained ledger must show that.
+        self.closed: deque[Connection] = deque(maxlen=CLOSED_LEDGERS_KEPT)
+        self._last_state: str | None = None
         self.published = 0
         self.longest_turn_s = 0.0
         self.refused_clients = 0
@@ -142,6 +145,7 @@ class Publisher:
 
     def connect(self, after: int | None = None) -> tuple[Connection, dict[str, Any], list[str]]:
         # One synchronous step, no await: nothing can be published between these lines (0010 §4.5).
+        self._retire_closed()
         if len(self.connections) >= self._max_clients:
             self.refused_clients += 1
             raise TooManyClients
@@ -150,6 +154,8 @@ class Publisher:
         self._next_id += 1
         conn = Connection(self._next_id, watermark, self.published, now=self._monotonic)
         conn.history_sent = len(texts)
+        if self._last_state is not None:
+            conn.set_state(self._last_state)       # a new client gets the current state, changed or not
         self.connections.append(conn)
         hello: dict[str, Any] = {
             "type": "hello", "api": 1, "watermark": watermark, "oldest_seq": self.history.oldest_seq,
@@ -167,9 +173,16 @@ class Publisher:
             self.connections.remove(conn)
             if conn.close_code == CLOSE_TOO_SLOW:
                 self.forced_disconnects += 1
-            self.closed.append(conn.ledger(self.published))
+            self.closed.append(conn)
+
+    def _retire_closed(self) -> None:
+        # A connection closed outside the Publisher (M2's writer task) must not hold a client
+        # slot or appear as open while no exchange arrives to retire it.
+        for conn in [c for c in self.connections if c.closed]:
+            self._retire(conn)
 
     def stats(self, issued: int) -> dict[str, Any]:
+        self._retire_closed()
         return {
             "clients": len(self.connections), "issued_seq": issued, "published": self.published,
             "last_published_seq": self.history.last_seq, "oldest_seq": self.history.oldest_seq,
@@ -177,10 +190,11 @@ class Publisher:
             "forced_disconnects": self.forced_disconnects, "longest_turn_s": self.longest_turn_s,
             "encode_failed": self.encode_failed, "fanout_failed": self.fanout_failed,
             "connections": [c.ledger(self.published) for c in self.connections],
-            "closed_connections": list(self.closed),
+            "closed_connections": [c.ledger(self.published) for c in self.closed],
         }
 
     def push_state(self, text: str) -> None:
+        self._last_state = text
         for conn in self.connections:
             conn.set_state(text)
 
@@ -192,11 +206,9 @@ class Publisher:
 
     async def run_state(self, snapshot: Callable[[], str], interval_s: float = STATE_MIN_INTERVAL_S) -> None:
         """Push ``state`` at most every ``interval_s``, and only when it changed (0010 §4.3)."""
-        last: str | None = None
         while True:
             text = snapshot()
-            if text != last:
+            if text != self._last_state:
                 self.push_state(text)
-                last = text
             self.push_dropped()
             await asyncio.sleep(interval_s)
