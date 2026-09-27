@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master, modernization]
+    # gui is the GUI track (decisions/0010). It is listed here on branch gui only; the
+    # modernization workflow and the V1.0 / Phase 8b gates are unchanged.
+    branches: [master, modernization, gui]
   pull_request:
 
 permissions:
@@ -48,12 +50,32 @@ jobs:
           # public API without a signed-in session, unlike logs and artifacts.
           summary=$(grep -E 'passed|failed|error' pytest.log | tail -1 | sed -E 's/^=+ *//; s/ *=+$//')
           total=$(grep -E '^TOTAL' pytest.log | tr -s ' ')
-          echo "::notice title=pytest (Python ${{ matrix.python-version }})::${summary} | coverage ${total}"
+          skips=$(grep -oE 'SKIPPED \[[0-9]+\] [^:]+:[0-9]+: .*' pytest.log | sed -E 's/^SKIPPED \[([0-9]+)\] [^:]+:[0-9]+: /\1x /' | sort | uniq | paste -sd ';' - || true)
+          echo "::notice title=pytest (Python ${{ matrix.python-version }})::${summary} | coverage ${total}${skips:+ | skips: $skips}"
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ matrix.python-version }}
           path: coverage.xml
+
+  api:
+    name: API tests with the [gui] extra (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev,gui]"
+      - name: pytest with the [gui] extra
+        run: |
+          set -o pipefail
+          pytest --color=no -p no:cacheprovider | tee pytest-gui.log
+          summary=$(grep -E 'passed|failed|error' pytest-gui.log | tail -1 | sed -E 's/^=+ *//; s/ *=+$//')
+          skips=$(grep -oE 'SKIPPED \[[0-9]+\] [^:]+:[0-9]+: .*' pytest-gui.log | sed -E 's/^SKIPPED \[([0-9]+)\] [^:]+:[0-9]+: /\1x /' | sort | uniq | paste -sd ';' - || true)
+          echo "::notice title=pytest [gui] (Python 3.12)::${summary}${skips:+ | skips: $skips}"
 
   can-capabilities:
     # Records whether kernel-dependent integration tests (marker "vcan") can run on
@@ -113,7 +135,7 @@ jobs:
         # installed so the simulated ELM327 cases skip only for want of CAN_ISOTP.
         continue-on-error: true
         run: |
-          python -m pip install -q -e ".[dev,hardware]"
+          python -m pip install -q -e ".[dev,hardware,gui]"
           set -o pipefail
           pytest tests/integration -m vcan -q -rs --color=no -p no:cacheprovider | tee integration.log || true
           summary=$(grep -E 'passed|skipped|failed|error' integration.log | tail -1 | sed -E 's/^=+ *//; s/ *=+$//')
