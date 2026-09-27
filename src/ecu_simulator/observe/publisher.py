@@ -33,9 +33,14 @@ TOTAL_FIELDS = (
 )
 
 
+# 0010 P5(h): a connection closed 1013 (forced) or 1006 (reset, vanished) may carry one
+# delivery_unknown; every other connection none.
+UNKNOWN_ALLOWANCE = {CLOSE_TOO_SLOW: 1, 1006: 1}
+
+
 def _empty_totals() -> dict[str, Any]:
     return {"connections": 0, "published_span": 0, **dict.fromkeys(TOTAL_FIELDS, 0), "close_codes": {},
-            "delivery_unknown_by_close_code": {}}
+            "delivery_unknown_by_close_code": {}, "delivery_unknown_over_allowance": 0}
 
 
 class TooManyClients(Exception):
@@ -222,6 +227,10 @@ class Publisher:
             if ledger["delivery_unknown"]:        # 0010 P5(h): the allowance depends on the close code
                 by_code = totals["delivery_unknown_by_close_code"]
                 by_code[code] = by_code.get(code, 0) + ledger["delivery_unknown"]
+            # Per connection, as it is added: the per-code sums cannot show one connection over
+            # its allowance once its ledger is evicted (0010 §5.1).
+            if ledger["delivery_unknown"] > UNKNOWN_ALLOWANCE.get(ledger["close_code"], 0):
+                totals["delivery_unknown_over_allowance"] += 1
         self._unresolved = waiting
 
     def stats(self, issued: int) -> dict[str, Any]:

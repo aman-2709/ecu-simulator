@@ -399,3 +399,41 @@ def test_a_failed_writer_closes_its_connection_1011_and_is_counted():
     assert c.close_code == 1011 and stats["clients"] == 0
     assert (stats["writer_failed"], stats["fanout_failed"]) == (1, 0)
     assert stats["closed_totals"]["close_codes"] == {"1011": 1}
+
+
+def closes_with_one_offender(offender: bool):
+    """Two early 1013 closes (one with two unknowns if ``offender``), then 70 clean 1000 closes."""
+    handoff = HandOff()
+    p = publisher(handoff)
+    first, _, _ = p.connect()
+    clean, _, _ = p.connect()
+    fill(handoff, 2)
+    p.drain_turn()
+    for _ in range(2):
+        first.next_message()                             # in flight
+        if offender:
+            first.mark_unknown()
+        else:
+            first.mark_sent()
+    p.disconnect(clean, 1013)                            # folded first: a running sum check passes 2 <= 2
+    p.disconnect(first, 1013)
+    for _ in range(70):
+        c, _, _ = p.connect()
+        p.disconnect(c, 1000)
+    return p, first
+
+
+def test_a_connection_over_its_allowance_is_counted_after_its_ledger_is_evicted():  # 0010 §5.1, P5(h)
+    p, offender = closes_with_one_offender(offender=True)
+    stats = p.stats(issued=2)
+    totals = stats["closed_totals"]
+    assert offender.id not in [ledger["id"] for ledger in stats["closed_connections"]]   # evicted
+    assert totals["delivery_unknown_over_allowance"] == 1
+    # Why the counter exists: the per-code sums alone pass (2 unknowns over 2 closes 1013).
+    assert totals["delivery_unknown_by_close_code"] == {"1013": 2} and totals["close_codes"]["1013"] == 2
+    assert totals["delivery_unknown_by_close_code"]["1013"] <= totals["close_codes"]["1013"]
+
+
+def test_no_offender_no_count():
+    p, _ = closes_with_one_offender(offender=False)
+    assert p.stats(issued=2)["closed_totals"]["delivery_unknown_over_allowance"] == 0

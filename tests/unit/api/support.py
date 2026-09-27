@@ -41,6 +41,7 @@ def check_delivery_unknown_allowance(stats) -> dict[str, int]:
     by_code = totals["delivery_unknown_by_close_code"]
     assert stats["closed_unresolved"] == 0, "a closed connection still has a send in flight"
     assert totals["delivery_unknown"] == sum(by_code.values()), by_code
+    assert totals["delivery_unknown_over_allowance"] == 0, "a closed connection exceeded its allowance"
     for code, unknown in by_code.items():
         allowed = totals["close_codes"].get(code, 0) if code in UNKNOWN_ALLOWED_CODES else 0
         assert unknown <= allowed, f"close code {code}: delivery_unknown {unknown} > allowed {allowed}"
