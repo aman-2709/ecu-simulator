@@ -132,9 +132,6 @@ async def test_a_client_that_disconnects_mid_stream_is_retired_cleanly(server, s
     assert "Task exception was never retrieved" not in caplog.text
 
 
-STALLED_FINDING: dict[str, int] = {}
-
-
 @pytest.mark.asyncio
 async def test_a_stalled_client_is_closed_1013_and_frees_its_slot():  # Review Focus 1
     s = build(connection_options={"max_messages": 4, "overflow_disconnect_s": 0.2})
@@ -161,7 +158,6 @@ async def test_a_stalled_client_is_closed_1013_and_frees_its_slot():  # Review F
         assert stats["closed_totals"]["close_codes"] == {"1013": 1}
         totals = stats["closed_totals"]
         assert totals["enqueued"] == totals["sent"] + totals["delivery_unknown"] + totals["discarded_on_close"]
-        STALLED_FINDING["delivery_unknown"] = totals["delivery_unknown"]    # read by the next test
         assert check_delivery_unknown_allowance(stats) == {"1013": 1}       # 0010 P5(h): within the allowance
         async with aiohttp.ClientSession() as session:                # the slot is free again
             async with session.ws_connect(url(s, "/api/v1/events"), origin=origin(s)) as ws:
@@ -169,18 +165,6 @@ async def test_a_stalled_client_is_closed_1013_and_frees_its_slot():  # Review F
     finally:
         raw.close()
         await s.stop()
-
-
-@pytest.mark.xfail(strict=True, reason="stalled-client finding: delivery_unknown=1 per forced close, within the "
-                                       "0010 P5(h) allowance and reported explicitly; kept strict so any change "
-                                       "is noticed")
-def test_a_stalled_clients_blocked_send_is_not_delivery_unknown():
-    # The measurement behind 0010 P5(h) for M4 condition 4: if a stalled client's blocked
-    # send resolves as delivery_unknown, every condition-4 run is inconclusive. Kept separate
-    # so the lifecycle test above stays a clean pass or fail.
-    if "delivery_unknown" not in STALLED_FINDING:
-        pytest.skip("the stalled-client lifecycle test did not run in this session")
-    assert STALLED_FINDING["delivery_unknown"] == 0
 
 
 class FakeTransport:
@@ -519,3 +503,48 @@ async def test_a_writer_ended_by_not_delivered_is_never_a_writer_failure():
     ended.set_exception(NotDelivered("nothing written"))
     s._writer_ended(ended, conn, FakeRequest())                        # a healthy-looking transport
     assert not conn.closed and s.publisher.writer_failed == 0
+
+
+@pytest.mark.asyncio
+async def test_a_forced_stalled_connection_carries_at_most_one_reported_delivery_unknown(session):
+    # The accepted 0010 P5(h) contract: a connection closed 1013 may carry at most one
+    # delivery_unknown, reported under "1013"; every other connection carries none.
+    s = build(connection_options={"overflow_disconnect_s": 0.2})
+    await s.start()
+    raw = raw_upgrade(s, rcvbuf=4096)                                    # stalled: never reads
+    healthy = await session.ws_connect(url(s, "/api/v1/events"), origin=origin(s))
+    received = 0
+
+    async def read():
+        nonlocal received
+        async for msg in healthy:
+            received += json.loads(msg.data)["type"] == "exchange"
+    reading = asyncio.create_task(read())
+    try:
+        deadline = time.monotonic() + 20
+        while s.publisher.forced_disconnects == 0 and time.monotonic() < deadline:
+            await publish(s, 1000)
+        assert s.publisher.forced_disconnects == 1
+        assert await wait_until(lambda: not s.publisher.stats(issued=0)["closed_unresolved"])
+        (open_healthy,) = s.publisher.stats(issued=0)["connections"]
+
+        def drained():                                                  # every resolved send has arrived
+            (ledger,) = s.publisher.stats(issued=0)["connections"]
+            return ledger["queued"] == 0 and received == ledger["sent"] + ledger["delivery_unknown"]
+        assert await wait_until(drained)
+        await healthy.close()                                           # nothing in flight: a clean 1000
+        await reading
+        stats = s.publisher.stats(issued=s.handler.issued)
+        by_id = {ledger["id"]: ledger for ledger in stats["closed_connections"]}
+        assert by_id[open_healthy["id"]]["delivery_unknown"] == 0 and received > 0      # the healthy client
+        stalled = next(ledger for ledger in by_id.values() if ledger["close_code"] == 1013)
+        assert stalled["delivery_unknown"] <= 1 and stalled["delivery_unknown"] == 1     # the bound; today's value
+        totals = stats["closed_totals"]
+        assert totals["delivery_unknown_by_close_code"] == {"1013": 1}
+        assert totals["delivery_unknown_by_close_code"]["1013"] <= totals["close_codes"]["1013"]
+        assert stats["closed_unresolved"] == 0
+        assert check_delivery_unknown_allowance(stats) == {"1013": 1}
+    finally:
+        reading.cancel()
+        raw.close()
+        await s.stop()
