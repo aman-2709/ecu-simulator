@@ -1,0 +1,2232 @@
+# GUI M2: API server implementation plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
+> (recommended) or superpowers:executing-plans to implement this plan task by task. Steps
+> use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Serve the M1 observer core over an opt-in, loopback-only HTTP and WebSocket API
+(`--api HOST:PORT`, `[gui]` extra) without changing a single reply when the API is off.
+The M2 early check runs on vcan.
+
+**Architecture:**
+- `ecu_simulator.api.options` is stdlib-only. It parses and validates `--api` and defines
+  `ApiStartupError`, so the CLI and `app.run` can use both without aiohttp.
+- `ecu_simulator.api.server.ApiServer` is the **only** module that imports aiohttp. It
+  owns the `HandOff`, the `Publisher` and the `ObservedDispatcher`, primes the initial
+  state, serves the routes and runs one writer task per WebSocket client.
+- `run()` imports it lazily, only when `api` is given, and hands the transport the wrapped
+  dispatcher. With `api=None` the transport gets the plain `Dispatcher`, as today.
+
+**Tech stack:**
+- Python 3.12+;
+- aiohttp `>=3.13,<4` in the new `[gui]` extra. The server, runner and close-code APIs
+  used below were checked on 3.13.5 and 3.14.3 on 2026-09-27;
+- pytest with pytest-asyncio in strict mode;
+- can-isotp and `candump` for the vcan work.
+
+**Spec:** [docs/decisions/0010-gui-observer-api.md](../decisions/0010-gui-observer-api.md),
+fourth revision, made in the same commit as this plan. Read it first. Section numbers
+below refer to it.
+
+**Builds on:** M1 at `a450dad` (`origin/gui`): `ecu_simulator.observe`, and the writer
+contract in the `observe/connection.py` docstring.
+
+## Owner decisions this plan carries (2026-09-27)
+
+1. **`gui` becomes a CI push branch.** Task 7 adds `gui` to `on.push.branches` in
+   `.github/workflows/ci.yml` **on branch `gui` only**. The `modernization` workflow, the
+   V1.0 gate and the Phase 8b gate are unchanged. On hosted runners the vcan tests keep
+   skipping with the **explicit CAN_ISOTP reason**, and every job's annotation lists its
+   skip reasons by name.
+2. **Initial state before the first WebSocket connection.** `ApiServer.__init__` computes
+   `state_message(runtime)` once, after the 256 KiB check, and calls
+   `publisher.push_state()`. This happens before the listening socket is bound, so the
+   state is there before any client can connect: the first client receives `hello`, then
+   `state`, then history. `run_state` keeps it fresh after that (Task 4).
+3. **P5 must reconcile more than 64 closed clients over the M4 soak.** Two layers:
+   - **cumulative accounting on the server (Task 3):**
+     - `closed_totals` sums every closed connection's ledger, including those evicted
+       from the 64 retained `closed_connections`;
+     - it has `close_codes` counts, and adds each connection only once its in-flight send
+       has resolved;
+     - `connections_opened` and `closed_unresolved` sit alongside it.
+   - **durable output from the harness (0010 §9.2, used from M4):**
+     - the M4 harness appends every `GET /status` poll and every close it observes to
+       JSONL files under `docs/validation/`;
+     - the union of polled `closed_connections` ids is checked against
+       `1..connections_opened`.
+4. **Frontend file tests and rendering acceptance belong to M3.** M2 serves exactly one
+   static file, a placeholder page at `/`, and its static tests cover only that file.
+5. **No change to the V1.0 or Phase 8b gates.** Nothing in this plan touches
+   `modernization`, and `gui` is not merged before V1.0 is tagged.
+
+## Global constraints
+
+- **Where to work:**
+  - branch `gui`, worktree `.claude/worktrees/gui`, with the worktree's own `.venv`
+    (created by `uv venv` plus `-e .[dev,hardware,gui]`). The main `.venv` imports the
+    main checkout's `src`;
+  - never commit to `modernization`, never merge, and push only when the owner asks;
+  - **no `Co-Authored-By` trailer.**
+- **Imports:**
+  - `ecu_simulator.observe` stays **stdlib-only**; the M1 test enforces this;
+  - `ecu_simulator.api.options` is stdlib-only;
+  - only `ecu_simulator/api/server.py` may import aiohttp (Task 1 test).
+- **aiohttp usage:**
+  - pin `aiohttp>=3.13,<4`, and do not use APIs absent from 3.13: for example,
+    `WebSocketResponse(decode_text=…)` does not exist there;
+  - set `writer_limit` explicitly, because its default differs between 3.13 (64 KiB) and
+    3.14 (256 KiB).
+- **Limits** (0010 §4.3, verbatim):
+  - 4 clients, then 503 before the upgrade;
+  - forced close with 1013, `"client too slow"`, after 5 s of continuous overflow;
+  - request body at most 1 KiB, else 413;
+  - any client data message closes with 1008;
+  - state at most 256 KiB, else refuse to start with exit 2.
+- **Security** (0010 §6):
+  - `--api` accepts only `127.0.0.1`, `::1` or `localhost`, else exit 2;
+  - `Host` must be the bound address or `localhost`, with the bound port, else 421;
+  - the WebSocket `Origin` must be the server's own origin, else 403 before the upgrade;
+  - no CORS headers ever;
+  - only `GET` and the upgrade are allowed: every other method, **including `HEAD`**,
+    gets 405.
+- **Exit statuses:** 2 for every `--api` startup failure (bad address, missing extra, busy
+  port, oversized state), and nothing opens a CAN socket first.
+- **Tooling:**
+  - `mypy` bare; `ruff check .`, never `ruff format` wholesale; line length 120;
+  - `set -o pipefail` when piping pytest;
+  - tests that spawn Python use `sys.executable`;
+  - never `pkill -f`: kill by exact PID.
+- **Namespaces:** a fresh `unshare -r -n` namespace has `lo` **down**. Every namespace
+  script here runs `ip link set lo up` first. The HTTP API needs loopback.
+
+## Review Focus
+
+These are the five inputs most likely to bite that no spec sentence makes into a test.
+Each is pinned in the task named.
+
+1. **A client that stops reading while the writer is blocked in `send_str`.** The forced
+   1013 must still close the socket, free the client slot and finalise the ledger, even
+   though the writer never returns to `next_message()`. Task 5,
+   `test_a_stalled_client_is_closed_1013_and_frees_its_slot`.
+2. **A client that vanishes mid-send**, for example a reset or a closed tab. The writer's
+   exception must end that connection only, with the ledger resolved (`mark_failed`), and
+   must never reach the event loop's unhandled-exception log. Task 5,
+   `test_a_client_that_disconnects_mid_stream_is_retired_cleanly`.
+3. **Host header variants:**
+   - allowed: `localhost:PORT`, and `LOCALHOST:PORT` (hosts are case-insensitive);
+   - 421: a missing `Host` (HTTP/1.0), `127.0.0.1` with no port, the right host with the
+     wrong port, `[::1]:PORT` while bound to IPv4, and any other name.
+
+   Task 4, `test_host_header_rules`.
+4. **A busy port, or an unwritable state, when `--api` is given.** The simulator must exit
+   with status 2 **before opening any CAN socket**. Task 6,
+   `test_a_busy_api_port_fails_before_any_can_socket_opens`.
+5. **Shutdown while clients are connected** (SIGINT or `stop`). Every client gets 1001, the
+   process finishes within a bounded time, and no "Task was destroyed but it is pending"
+   warning appears. Task 6, `test_shutdown_closes_clients_with_1001`, and Task 8's
+   subprocess test.
+
+## File structure
+
+| File | Responsibility | Task |
+|---|---|---|
+| `pyproject.toml` | the `gui` extra, and static files as package data | 1 |
+| `src/ecu_simulator/api/__init__.py` | package marker, stdlib only | 1 |
+| `src/ecu_simulator/api/options.py` | `ApiOptions`, `parse_api`, `allowed_hosts`, `ApiStartupError` (stdlib) | 1 |
+| `src/ecu_simulator/observe/connection.py` | wake-ups, `take_state`, writer contract text | 2 |
+| `src/ecu_simulator/observe/writer.py` | `run_writer`: the contract as code (stdlib) | 2 |
+| `src/ecu_simulator/observe/publisher.py` | cumulative totals, `connection_options` | 3 |
+| `src/ecu_simulator/api/server.py` | `ApiServer`: HTTP routes, guard middleware, WebSocket, lifecycle (aiohttp) | 4, 5 |
+| `src/ecu_simulator/api/static/index.html` | the one placeholder page M2 serves | 4 |
+| `src/ecu_simulator/app.py` | `run(..., api=None)` and `main(config, api=None)` | 6 |
+| `src/ecu_simulator/cli.py` | `--api HOST:PORT` | 6 |
+| `.github/workflows/ci.yml` | `gui` push branch, `api` job, skip reasons in annotations | 7 |
+| `scripts/run_integration_tests.sh` | `ip link set lo up` in the namespace | 8 |
+| `tests/integration/conftest.py` | `Simulator(extra_args=…)` | 8 |
+| `scripts/run_gui_m2_early_check.sh`, `scripts/gui_m2_early_check.py` | the M2 early check on vcan | 9 |
+| `docs/validation/gui-m2-early-check.md` | its record | 9 |
+
+These tests need nothing extra, and run in every `.[dev]` job:
+- `tests/unit/test_gui_extra_is_optional.py`
+- `tests/unit/test_api_options.py`
+- `tests/unit/test_api_wiring.py`
+- `tests/unit/observe/test_writer.py`
+- the new tests in `tests/unit/observe/test_publisher.py`
+
+These need aiohttp. Each module starts with `pytest.importorskip("aiohttp", reason=…)`,
+so a `.[dev]` job skips it **with that reason**:
+- `tests/unit/api/__init__.py`
+- `tests/unit/api/conftest.py`
+- `tests/unit/api/test_server_http.py`
+- `tests/unit/api/test_server_ws.py`
+- `tests/unit/api/test_run_with_api.py`
+
+`tests/integration/test_api_vcan.py` uses the `vcan` fixture **before** aiohttp is
+checked, so on a hosted runner it skips with the CAN_ISOTP reason.
+
+---
+
+### Task 1: the `[gui]` extra, `api.options`, and "aiohttp only in `server.py`"
+
+**Files:**
+- Modify: `pyproject.toml`
+- Create: `src/ecu_simulator/api/__init__.py`, `src/ecu_simulator/api/options.py`
+- Test: `tests/unit/test_gui_extra_is_optional.py`, `tests/unit/test_api_options.py`
+
+**Interfaces:**
+- Produces:
+  - `ApiStartupError(Exception)`;
+  - `ApiOptions(host: str, port: int, profile: str, version: str)`, frozen. `host` is the
+    literal **bind** address, `"127.0.0.1"` or `"::1"`;
+  - `parse_api(value: str, profile: str, version: str) -> ApiOptions`;
+  - `allowed_hosts(bind_host: str, port: int) -> frozenset[str]`, lowercase `host:port`
+    strings.
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/unit/test_api_options.py`:
+
+```python
+import pytest
+
+from ecu_simulator.api.options import ApiOptions, ApiStartupError, allowed_hosts, parse_api
+
+
+@pytest.mark.parametrize(
+    ("value", "host", "port"),
+    [("127.0.0.1:8765", "127.0.0.1", 8765), ("localhost:8765", "127.0.0.1", 8765),
+     ("::1:8765", "::1", 8765), ("[::1]:8765", "::1", 8765), ("127.0.0.1:0", "127.0.0.1", 0)],
+)
+def test_loopback_forms_are_accepted(value, host, port):
+    assert parse_api(value, "p.yaml", "1.0") == ApiOptions(host, port, "p.yaml", "1.0")
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["0.0.0.0:8765", "192.168.1.20:8765", "127.0.0.2:8765", "example.com:8765", ":8765", "[::]:8765"],
+)
+def test_non_loopback_hosts_are_refused(value):
+    with pytest.raises(ApiStartupError, match="loopback"):
+        parse_api(value, "p.yaml", "1.0")
+
+
+@pytest.mark.parametrize("value", ["127.0.0.1", "127.0.0.1:", "127.0.0.1:x", "127.0.0.1:70000", "127.0.0.1:-1"])
+def test_malformed_values_are_refused(value):
+    with pytest.raises(ApiStartupError):
+        parse_api(value, "p.yaml", "1.0")
+
+
+def test_allowed_hosts():
+    assert allowed_hosts("127.0.0.1", 8765) == {"127.0.0.1:8765", "localhost:8765"}
+    assert allowed_hosts("::1", 8765) == {"[::1]:8765", "localhost:8765"}
+```
+
+`tests/unit/test_gui_extra_is_optional.py`:
+
+```python
+"""aiohttp is an opt-in extra (decisions/0010 §4.1, §9.1). These tests hold whether or not
+the developer running them has the extra installed, except the one that says so by name."""
+
+from __future__ import annotations
+
+import importlib.util
+import pathlib
+import subprocess
+import sys
+import tomllib
+
+import pytest
+
+REPO = pathlib.Path(__file__).resolve().parents[2]
+PYPROJECT = tomllib.loads((REPO / "pyproject.toml").read_text())
+SRC = REPO / "src" / "ecu_simulator"
+BLOCK_AIOHTTP = (
+    "import sys\n"
+    "class Block:\n"
+    "    def find_spec(self, name, path=None, target=None):\n"
+    "        if name == 'aiohttp' or name.startswith('aiohttp.'):\n"
+    "            raise ImportError('aiohttp blocked by the test')\n"
+    "        return None\n"
+    "sys.meta_path.insert(0, Block())\n"
+)
+
+
+def test_the_gui_extra_pins_aiohttp_to_a_major_version():
+    (spec,) = PYPROJECT["project"]["optional-dependencies"]["gui"]
+    assert spec.startswith("aiohttp") and ">=" in spec and "<4" in spec, spec
+
+
+def test_aiohttp_is_neither_a_runtime_nor_a_dev_dependency():
+    for spec in PYPROJECT["project"]["dependencies"] + PYPROJECT["project"]["optional-dependencies"]["dev"]:
+        assert "aiohttp" not in spec, spec
+
+
+def test_only_the_server_module_imports_aiohttp():
+    offenders = [
+        str(path.relative_to(SRC)) for path in SRC.rglob("*.py")
+        if ("import aiohttp" in path.read_text() or "from aiohttp" in path.read_text())
+        and path != SRC / "api" / "server.py"
+    ]
+    assert offenders == [], offenders
+
+
+def test_the_simulator_validates_a_profile_with_aiohttp_unavailable():
+    program = BLOCK_AIOHTTP + "from ecu_simulator import cli\nraise SystemExit(cli.main(['validate-config']))\n"
+    result = subprocess.run([sys.executable, "-c", program], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+
+
+def test_aiohttp_is_not_installed_in_this_environment():
+    # 0010 §9.1, the stronger "not installed" form. It runs in the .[dev] CI jobs, and skips
+    # by name wherever the [gui] extra is installed.
+    if importlib.util.find_spec("aiohttp") is not None:
+        pytest.skip("aiohttp is installed (a [gui] environment): the 'not installed' form runs in the .[dev] jobs")
+    assert importlib.util.find_spec("aiohttp") is None
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `.venv/bin/python -m pytest tests/unit/test_api_options.py tests/unit/test_gui_extra_is_optional.py -q -p no:cacheprovider`
+Expected: collection error, `No module named 'ecu_simulator.api'`. The pyproject test would
+fail with `KeyError: 'gui'`.
+
+- [ ] **Step 3: Implement**
+
+`pyproject.toml`: after `hardware = [...]`, add:
+
+```toml
+# The observer API and its browser page (docs/decisions/0010). Opt-in: nothing in the
+# default install imports aiohttp, and `ecu-simulator` without --api never does (§9.1).
+gui = ["aiohttp>=3.13,<4"]
+```
+
+and extend the wheel artifacts:
+
+```toml
+artifacts = ["src/ecu_simulator/profiles/*.yaml", "src/ecu_simulator/api/static/*"]
+```
+
+`src/ecu_simulator/api/__init__.py`:
+
+```python
+"""The opt-in observer API (decisions/0010). Importing this package imports no aiohttp:
+only ``api.server`` does, and only ``app.run`` with ``--api`` imports that."""
+```
+
+`src/ecu_simulator/api/options.py`:
+
+```python
+"""``--api HOST:PORT``: parsing and the loopback rule (decisions/0010 §6). Standard library only."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
+
+
+class ApiStartupError(Exception):
+    """The API cannot start: bad address, missing [gui] extra, busy port or oversized state. Exit status 2."""
+
+
+@dataclass(frozen=True)
+class ApiOptions:
+    host: str       # the literal bind address: "127.0.0.1" or "::1"
+    port: int       # 0 asks the kernel for a free port (tests)
+    profile: str    # reported by GET /status
+    version: str    # reported by GET /status
+
+
+def parse_api(value: str, profile: str, version: str) -> ApiOptions:
+    host, sep, port_text = value.rpartition(":")
+    if not sep or not host:
+        raise ApiStartupError(f"--api expects HOST:PORT, got {value!r}")
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    if host not in LOOPBACK_HOSTS:
+        raise ApiStartupError(
+            f"--api host must be 127.0.0.1, ::1 or localhost (loopback only, decisions/0010 §6), got {host!r}"
+        )
+    if not port_text.isdigit() or int(port_text) > 65535:
+        raise ApiStartupError(f"--api port must be 0-65535, got {port_text!r}")
+    # "localhost" binds IPv4 only, so the bound address and the Host allowlist are exact.
+    return ApiOptions("127.0.0.1" if host == "localhost" else host, int(port_text), profile, version)
+
+
+def allowed_hosts(bind_host: str, port: int) -> frozenset[str]:
+    literal = f"[{bind_host}]" if ":" in bind_host else bind_host
+    return frozenset({f"{literal}:{port}", f"localhost:{port}"})
+```
+
+- [ ] **Step 4: Run them to verify they pass**
+
+Run: `.venv/bin/python -m pytest tests/unit/test_api_options.py tests/unit/test_gui_extra_is_optional.py -q -p no:cacheprovider`
+Expected: all pass. With `[gui]` installed in the worktree `.venv`,
+`test_aiohttp_is_not_installed_in_this_environment` **skips, with its reason**. Record the
+skip.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add pyproject.toml src/ecu_simulator/api tests/unit/test_api_options.py tests/unit/test_gui_extra_is_optional.py
+git commit -m "feat(api): the optional [gui] extra and loopback-only --api parsing"
+```
+
+Then install the extra into the worktree venv:
+`uv pip install --python .venv/bin/python -e '.[dev,hardware,gui]'`.
+
+---
+
+### Task 2: connection wake-ups, `take_state`, and `run_writer` (the writer contract as code)
+
+**Files:**
+- Modify: `src/ecu_simulator/observe/connection.py`
+- Create: `src/ecu_simulator/observe/writer.py`
+- Test: `tests/unit/observe/test_writer.py`, and additions to `tests/unit/observe/test_connection.py`
+
+**Interfaces:**
+- Consumes: M1's `Connection`.
+- Produces:
+  - `Connection.take_state() -> str | None`;
+  - `async Connection.wait_changed() -> None`;
+  - `async Connection.wait_closed() -> None`;
+  - `async run_writer(conn, send: Callable[[str], Awaitable[None]], hello: dict, history: list[str]) -> None`.
+
+**Contract changes, decided here:**
+- **Cancellation counts as sent.** A `send_str` interrupted by cancellation may already
+  have reached the client, so it counts as **sent**. That keeps P5(d) (received ≤ `sent`)
+  true. A `send_str` that **raises** counts as failed.
+- **Message order.** The writer sends `hello`, then `take_state()`, then history, then
+  loops on `next_message()`. That gives 0010 §4.5's order: hello, state, history, live.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `tests/unit/observe/test_connection.py`:
+
+```python
+import asyncio
+
+
+def test_take_state_empties_the_slot():
+    c, _ = conn()
+    c.set_state("s")
+    assert c.take_state() == "s" and c.take_state() is None and c.next_message() is None
+
+
+@pytest.mark.asyncio
+async def test_wait_changed_wakes_on_offer_state_dropped_and_close():
+    for poke in (lambda c: c.offer("x"), lambda c: c.set_state("s"), lambda c: c.set_dropped("d"),
+                 lambda c: c.close(1000, published_now=10)):
+        c, _ = conn()
+        waiter = asyncio.create_task(c.wait_changed())
+        await asyncio.sleep(0)
+        assert not waiter.done()
+        poke(c)
+        await asyncio.wait_for(waiter, 1)
+
+
+@pytest.mark.asyncio
+async def test_wait_closed_wakes_only_on_close():
+    c, _ = conn()
+    waiter = asyncio.create_task(c.wait_closed())
+    c.offer("x")
+    await asyncio.sleep(0)
+    assert not waiter.done()
+    c.close(1013, published_now=11)
+    await asyncio.wait_for(waiter, 1)
+```
+
+`tests/unit/observe/test_writer.py`:
+
+```python
+import asyncio
+import json
+
+import pytest
+
+from ecu_simulator.observe.connection import Connection
+from ecu_simulator.observe.writer import run_writer
+
+HELLO = {"type": "hello", "api": 1, "watermark": 5, "oldest_seq": 1}
+
+
+def conn():
+    return Connection(1, watermark=5, published_at_open=5, now=lambda: 0.0)
+
+
+def identities(c):
+    ledger = c.ledger(published_now=5 + c.offered)
+    assert ledger["offered"] == ledger["enqueued"] + ledger["client_dropped"]
+    assert ledger["enqueued"] == ledger["sent"] + ledger["queued"] + ledger["discarded_on_close"]
+    return ledger
+
+
+async def settle(n=10):
+    for _ in range(n):
+        await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_order_is_hello_state_history_then_live():
+    c = conn()
+    c.set_state("S")
+    c.offer("L1")
+    sent: list[str] = []
+    async def send(text):
+        sent.append(text)
+    task = asyncio.create_task(run_writer(c, send, HELLO, ["H4", "H5"]))
+    await settle()
+    c.offer("L2")
+    await settle()
+    c.close(1000, published_now=7)
+    await asyncio.wait_for(task, 1)
+    assert [json.loads(sent[0])["type"]] + sent[1:] == ["hello", "S", "H4", "H5", "L1", "L2"]
+    assert identities(c)["sent"] == 2                     # history and state are not ledger-counted
+
+
+@pytest.mark.asyncio
+async def test_without_a_state_the_writer_goes_straight_to_history():
+    c = conn()
+    sent: list[str] = []
+    async def send(text):
+        sent.append(text)
+    task = asyncio.create_task(run_writer(c, send, HELLO, ["H1"]))
+    await settle()
+    c.close(1000, published_now=5)
+    await asyncio.wait_for(task, 1)
+    assert sent[1:] == ["H1"]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_send_is_marked_failed_and_raised():
+    c = conn()
+    c.offer("L1")
+    async def send(text):
+        if text == "L1":
+            raise ConnectionResetError
+    with pytest.raises(ConnectionResetError):
+        await run_writer(c, send, HELLO, [])
+    ledger = identities(c)
+    assert (ledger["sent"], ledger["queued"], ledger["discarded_on_close"]) == (0, 0, 1)
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_send_counts_as_sent():
+    c = conn()
+    c.offer("L1")
+    blocked = asyncio.Event()
+    async def send(text):
+        if text == "L1":
+            blocked.set()
+            await asyncio.Event().wait()                    # never returns
+    task = asyncio.create_task(run_writer(c, send, HELLO, []))
+    await asyncio.wait_for(blocked.wait(), 1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert identities(c)["sent"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_forced_close_during_a_blocked_send_resolves_when_the_send_returns():
+    c = Connection(1, watermark=5, published_at_open=5, now=lambda: 0.0, max_messages=1, overflow_disconnect_s=0.0)
+    c.offer("L1")
+    release = asyncio.Event()
+    async def send(text):
+        if text == "L1":
+            await release.wait()
+    task = asyncio.create_task(run_writer(c, send, HELLO, []))
+    await settle()
+    c.offer("L2")                                         # queued
+    c.offer("L3")                                         # overflow at t=0 with a 0 s budget: forced 1013
+    assert c.closed and c.close_code == 1013
+    release.set()
+    await asyncio.wait_for(task, 1)
+    ledger = identities(c)
+    assert (ledger["sent"], ledger["discarded_on_close"], ledger["client_dropped"]) == (1, 1, 1)
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `.venv/bin/python -m pytest tests/unit/observe/test_writer.py tests/unit/observe/test_connection.py -q -p no:cacheprovider`
+Expected: `No module named 'ecu_simulator.observe.writer'`. The connection tests fail with
+`AttributeError: 'Connection' object has no attribute 'take_state'`.
+
+- [ ] **Step 3: Implement**
+
+In `connection.py`:
+
+1. Add `import asyncio`.
+2. In `__init__`:
+
+   ```python
+           self._changed = asyncio.Event()       # a message may be available, or the connection closed
+           self._closed_event = asyncio.Event()
+   ```
+3. Call `self._changed.set()` at the end of the enqueue branch of `offer`, and in
+   `set_state` and `set_dropped`, after the slot is filled.
+4. In `_close`, add `self._changed.set()` and `self._closed_event.set()`.
+5. Add these methods:
+
+   ```python
+       def take_state(self) -> str | None:
+           """The pending ``state``, for the writer to send between ``hello`` and history (0010 §4.5)."""
+           text, self._state = self._state, None
+           return text
+
+       async def wait_changed(self) -> None:
+           """Until something may be sendable or the connection closed. Spurious wake-ups are harmless."""
+           await self._changed.wait()
+           self._changed.clear()
+
+       async def wait_closed(self) -> None:
+           await self._closed_event.wait()
+   ```
+6. Extend the module docstring's contract:
+   - add a step 0: "send `hello`, then `take_state()` if not `None`, then the history, then
+     loop";
+   - add the rule: "a `send_str` cancelled while under way counts as sent (`mark_sent`),
+     because it may have reached the client; one that raised counts as failed".
+
+`src/ecu_simulator/observe/writer.py`:
+
+```python
+"""One WebSocket client's writer task: the contract in connection.py, as code.
+
+Standard library only. ``send`` is the socket's ``send_str``, injected, so the contract is
+tested without aiohttp and holds for any transport M2 or later puts behind it.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import Awaitable, Callable
+from typing import Any
+
+from ecu_simulator.observe.connection import Connection
+
+Send = Callable[[str], Awaitable[None]]
+
+
+async def run_writer(conn: Connection, send: Send, hello: dict[str, Any], history: list[str]) -> None:
+    """hello, the current state, the history, then live messages until ``conn`` closes.
+
+    Returns when the connection is closed. Raises what ``send`` raises, after resolving the
+    ledger for the message it was sending.
+    """
+    await send(json.dumps(hello, separators=(",", ":")))
+    state = conn.take_state()
+    if state is not None:
+        await send(state)
+    for text in history:
+        await send(text)
+    while not conn.closed:
+        text = conn.next_message()
+        if text is None:
+            await conn.wait_changed()
+            continue
+        try:
+            await send(text)
+        except asyncio.CancelledError:
+            conn.mark_sent()      # it may have reached the client: P5(d), received <= sent
+            raise
+        except Exception:
+            conn.mark_failed()
+            raise
+        conn.mark_sent()
+```
+
+- [ ] **Step 4: Run them to verify they pass**
+
+Run: `.venv/bin/python -m pytest tests/unit/observe -q -p no:cacheprovider`
+Expected: all pass. That is 57 from M1, plus 3 connection tests and 5 writer tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/ecu_simulator/observe tests/unit/observe
+git commit -m "feat(observe): writer task, connection wake-ups and take_state; the writer contract as code"
+```
+
+---
+
+### Task 3: cumulative accounting for P5, and per-connection options
+
+**Files:**
+- Modify: `src/ecu_simulator/observe/publisher.py`
+- Test: additions to `tests/unit/observe/test_publisher.py`
+
+**Interfaces:**
+- Produces:
+  - `Publisher(..., connection_options: Mapping[str, Any] | None = None)`, passed as
+    keyword arguments to every `Connection`. Tests and the M2 early check use it; `run()`
+    never does;
+  - `Publisher.connections_opened: int`;
+  - `stats()` gains `connections_opened`, `closed_totals` and `closed_unresolved`.
+
+**`closed_totals`, exactly:**
+- It is a dict with:
+  - `connections`;
+  - `published_span`, the sum of `published_at_close − published_at_open`;
+  - `history_sent`, `offered`, `client_dropped`, `enqueued`, `sent` and
+    `discarded_on_close`;
+  - `close_codes`, a map from the code as a string to a count.
+- A closed connection is added **once**, when it is closed **and** its `queued` is 0,
+  meaning any in-flight send has resolved. Until then it counts in `closed_unresolved`.
+- It then satisfies, at every instant:
+  - `offered = published_span`;
+  - `offered = enqueued + client_dropped`;
+  - `enqueued = sent + discarded_on_close`.
+- `connections_opened = clients + closed_totals.connections + closed_unresolved` holds at
+  every `stats()` call.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `tests/unit/observe/test_publisher.py`:
+
+```python
+def test_totals_reconcile_beyond_the_64_retained_ledgers():
+    handoff = HandOff()
+    p = Publisher(handoff, Router(), {}, encode=lambda rec, *_: json.dumps({"seq": rec.seq}),
+                  connection_options={"max_messages": 2, "overflow_disconnect_s": 0.0})
+    seq = 1
+    for i in range(200):
+        c, _, _ = p.connect()
+        fill(handoff, 3, start=seq)
+        seq += 3
+        p.drain_turn()                                   # 3 offered: 2 enqueued, then a forced 1013 on the 3rd
+        if i % 2:
+            p.disconnect(c, 1000)                        # already forced: stays 1013, idempotent
+    stats = p.stats(issued=seq - 1)
+    totals = stats["closed_totals"]
+    assert len(stats["closed_connections"]) == 64 and totals["connections"] == 200
+    assert stats["connections_opened"] == stats["clients"] + totals["connections"] + stats["closed_unresolved"] == 200
+    assert totals["offered"] == totals["published_span"] == totals["enqueued"] + totals["client_dropped"]
+    assert totals["enqueued"] == totals["sent"] + totals["discarded_on_close"]
+    assert totals["close_codes"] == {"1013": 200} and stats["forced_disconnects"] == 200
+
+
+def test_an_unresolved_close_is_added_to_the_totals_only_when_it_resolves():
+    handoff = HandOff()
+    p = publisher(handoff)
+    c, _, _ = p.connect()
+    fill(handoff, 1)
+    p.drain_turn()
+    c.next_message()                                      # in flight
+    p.disconnect(c, 1001)
+    stats = p.stats(issued=1)
+    assert (stats["closed_unresolved"], stats["closed_totals"]["connections"]) == (1, 0)
+    c.mark_sent()
+    stats = p.stats(issued=1)
+    assert (stats["closed_unresolved"], stats["closed_totals"]["connections"], stats["closed_totals"]["sent"]) == (0, 1, 1)
+
+
+def test_connection_options_reach_every_connection():
+    p = Publisher(HandOff(), Router(), {}, connection_options={"max_messages": 1})
+    c, _, _ = p.connect()
+    assert c.offer("a") and c.offer("b") is False
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Expected: `TypeError: Publisher.__init__() got an unexpected keyword argument 'connection_options'`.
+
+- [ ] **Step 3: Implement**
+
+In `publisher.py`:
+
+```python
+TOTAL_FIELDS = ("history_sent", "offered", "client_dropped", "enqueued", "sent", "discarded_on_close")
+
+
+def _empty_totals() -> dict[str, Any]:
+    return {"connections": 0, "published_span": 0, **dict.fromkeys(TOTAL_FIELDS, 0), "close_codes": {}}
+```
+
+Changes to `Publisher`:
+- **Constructor:** add the keyword `connection_options: Mapping[str, Any] | None = None`,
+  and store `self._connection_options = dict(connection_options or {})`,
+  `self.connections_opened = 0`, `self._unresolved: list[Connection] = []` and
+  `self._totals = _empty_totals()`.
+- **`connect`:** construct with
+  `Connection(self._next_id, watermark, self.published, now=self._monotonic, **self._connection_options)`,
+  then increment `self.connections_opened`.
+- **`_retire`:** after `self.closed.append(conn)`, add `self._unresolved.append(conn)` and
+  `self._fold()`.
+- **New method:**
+
+  ```python
+      def _fold(self) -> None:
+          # 0010 §5.1, cumulative: every closed connection, once, when its in-flight send has resolved.
+          waiting = []
+          for conn in self._unresolved:
+              ledger = conn.ledger(self.published)
+              if ledger["queued"]:
+                  waiting.append(conn)
+                  continue
+              totals = self._totals
+              totals["connections"] += 1
+              totals["published_span"] += ledger["published_at_close"] - ledger["published_at_open"]
+              for field in TOTAL_FIELDS:
+                  totals[field] += ledger[field]
+              code = str(ledger["close_code"])
+              totals["close_codes"][code] = totals["close_codes"].get(code, 0) + 1
+          self._unresolved = waiting
+  ```
+- **`stats()`:** call `self._fold()` after `self._retire_closed()`, and add:
+
+  ```python
+              "connections_opened": self.connections_opened,
+              "closed_totals": {**self._totals, "close_codes": dict(self._totals["close_codes"])},
+              "closed_unresolved": len(self._unresolved),
+  ```
+
+- [ ] **Step 4: Run them to verify they pass**
+
+Run: `.venv/bin/python -m pytest tests/unit/observe -q -p no:cacheprovider`
+Expected: all pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/ecu_simulator/observe/publisher.py tests/unit/observe/test_publisher.py
+git commit -m "feat(observe): cumulative closed-connection totals so P5 reconciles past 64 closes"
+```
+
+---
+
+### Task 4: `ApiServer`: lifecycle, guard middleware, REST routes, the one page, initial state
+
+**Files:**
+- Create: `src/ecu_simulator/api/server.py`, `src/ecu_simulator/api/static/index.html`
+- Test: `tests/unit/api/__init__.py` (empty), `tests/unit/api/support.py`, `tests/unit/api/conftest.py`, `tests/unit/api/test_server_http.py`
+
+**Interfaces:**
+- Consumes:
+  - `Runtime` and `build_endpoints` from `app`;
+  - `ApiOptions`, `ApiStartupError` and `allowed_hosts` (Task 1);
+  - `Publisher(connection_options=…)` (Task 3);
+  - `snapshots`, including `status(..., profile)` (M1);
+  - `ObservedDispatcher` and `HandOff` (M1).
+- Produces:
+  - `ApiServer(runtime, endpoints, options, *, state_interval_s=STATE_MIN_INTERVAL_S, connection_options=None)`;
+  - `.handler`: the `ObservedDispatcher` to give the transport;
+  - `.publisher`;
+  - `async .start()`: binds, raises `ApiStartupError`, then starts the publisher tasks;
+  - `async .stop()`;
+  - `.port: int | None`: the bound port.
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/unit/api/support.py`. It imports aiohttp and the server lazily, so collecting it
+never fails on a `.[dev]` install; the test modules skip first:
+
+```python
+import asyncio
+
+
+def build(**kw):
+    from ecu_simulator import app
+    from ecu_simulator.api.options import ApiOptions
+    from ecu_simulator.api.server import ApiServer
+    from ecu_simulator.cli import default_profile_path
+    from ecu_simulator.config import load_profile
+
+    config = app.RuntimeConfig.build(load_profile(default_profile_path()), "vcan0")
+    runtime = app.build_runtime(config)
+    options = ApiOptions("127.0.0.1", 0, profile="profiles/ice_default.yaml", version="test")
+    return ApiServer(runtime, app.build_endpoints(config), options, **kw)
+
+
+def url(server, path):
+    return f"http://127.0.0.1:{server.port}{path}"
+
+
+async def raw_request(port: int, request: bytes) -> bytes:
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    writer.write(request)
+    await writer.drain()
+    data = await reader.read(65536)
+    writer.close()
+    await writer.wait_closed()
+    return data
+```
+
+`tests/unit/api/conftest.py`. pytest-asyncio runs in **strict** mode, so async fixtures
+need `pytest_asyncio.fixture`:
+
+```python
+import pytest_asyncio
+
+from tests.unit.api.support import build
+
+
+@pytest_asyncio.fixture
+async def server():
+    s = build()
+    await s.start()
+    yield s
+    await s.stop()
+
+
+@pytest_asyncio.fixture
+async def session():
+    import aiohttp
+
+    async with aiohttp.ClientSession() as client:
+        yield client
+```
+
+`tests/unit/api/test_server_http.py`:
+
+```python
+import json
+import socket
+
+import pytest
+
+aiohttp = pytest.importorskip("aiohttp", reason="needs the optional [gui] extra (aiohttp)")
+
+from ecu_simulator.api.options import ApiStartupError  # noqa: E402
+from ecu_simulator.observe import snapshots  # noqa: E402
+from tests.unit.api.support import build, raw_request, url  # noqa: E402
+
+ROUTES = ["/api/v1/status", "/api/v1/vehicle", "/api/v1/dtcs", "/api/v1/ecus", "/api/v1/exchanges"]
+
+
+@pytest.mark.asyncio
+async def test_every_route_answers_json(server, session):
+    for path in ROUTES:
+        async with session.get(url(server, path)) as r:
+            assert r.status == 200 and r.content_type == "application/json", path
+            body = await r.json()
+    async with session.get(url(server, "/api/v1/status")) as r:
+        status = await r.json()
+    assert status["profile"] == "profiles/ice_default.yaml" and status["api"]["issued_seq"] == 0
+    assert body == {"watermark": 0, "oldest_seq": None, "gap": False, "events": []}
+
+
+def test_the_initial_state_is_ready_before_the_server_starts():
+    s = build()                                           # constructed, not started: no socket, no task
+    conn, _, _ = s.publisher.connect()
+    assert conn.take_state() == snapshots.state_message(s.runtime)
+
+
+@pytest.mark.asyncio
+async def test_exchanges_reflect_dispatched_requests(server, session):
+    from ecu_simulator.transport import DiagnosticRequest
+    server.handler(DiagnosticRequest(b"\x01\x0c", 0x7DF, functional=True))
+    server.publisher.drain_turn()
+    async with session.get(url(server, "/api/v1/exchanges?after=0&limit=10")) as r:
+        body = await r.json()
+    assert (body["watermark"], body["gap"], [e["request"] for e in body["events"]]) == (1, False, ["010c"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["limit=0", "limit=x", "limit=1.5", "after=-1", "after=", "after=1e3"])
+async def test_bad_exchange_queries_are_400(server, session, query):
+    async with session.get(url(server, f"/api/v1/exchanges?{query}")) as r:
+        assert r.status == 400
+
+
+@pytest.mark.asyncio
+async def test_every_other_method_is_405(server, session):
+    for path in ROUTES + ["/", "/api/v1/events"]:
+        for method in ("POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"):
+            async with session.request(method, url(server, path)) as r:
+                assert r.status == 405, (method, path)
+
+
+@pytest.mark.asyncio
+async def test_host_header_rules(server, session):  # Review Focus 3
+    port = server.port
+    for host in (f"localhost:{port}", f"LOCALHOST:{port}", f"127.0.0.1:{port}"):
+        async with session.get(url(server, "/api/v1/status"), headers={"Host": host}) as r:
+            assert r.status == 200, host
+    for host in ("127.0.0.1", f"127.0.0.1:{port + 1}", f"[::1]:{port}", f"evil.example:{port}"):
+        async with session.get(url(server, "/api/v1/status"), headers={"Host": host}) as r:
+            assert r.status == 421, host
+    reply = await raw_request(port, b"GET /api/v1/status HTTP/1.0\r\n\r\n")   # no Host at all
+    assert reply.startswith(b"HTTP/1.0 421") or reply.startswith(b"HTTP/1.1 421"), reply[:40]
+
+
+@pytest.mark.asyncio
+async def test_no_response_carries_cors_headers(server, session):
+    async with session.get(url(server, "/api/v1/status"), headers={"Origin": "http://evil.example"}) as r:
+        assert not [h for h in r.headers if h.lower().startswith("access-control-")]
+
+
+@pytest.mark.asyncio
+async def test_a_body_over_1_kib_is_413(server, session):
+    async with session.get(url(server, "/api/v1/status"), data=b"x" * 1025) as r:
+        assert r.status == 413
+
+
+@pytest.mark.asyncio
+async def test_the_placeholder_page_is_served(server, session):
+    # M2 serves exactly this one file. Frontend files and rendering are M3's (decisions/0010 §7).
+    async with session.get(url(server, "/")) as r:
+        assert r.status == 200 and r.content_type == "text/html"
+        assert "/api/v1/status" in await r.text()
+
+
+@pytest.mark.asyncio
+async def test_a_busy_port_is_an_api_startup_error():
+    holder = socket.socket()
+    holder.bind(("127.0.0.1", 0))
+    holder.listen()
+    try:
+        s = build()
+        s.options = type(s.options)("127.0.0.1", holder.getsockname()[1], "p", "t")
+        with pytest.raises(ApiStartupError, match="cannot listen"):
+            await s.start()
+    finally:
+        holder.close()
+
+
+def test_an_oversized_state_refuses_to_construct(monkeypatch):
+    monkeypatch.setattr(snapshots, "STATE_MAX_BYTES", 10)
+    with pytest.raises(ApiStartupError, match="256 KiB"):
+        build()
+```
+
+`snapshots.check_state_size` reads the module global `STATE_MAX_BYTES` when it is
+called, so monkeypatching the module attribute works. The error message keeps the literal
+"256 KiB".
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `.venv/bin/python -m pytest tests/unit/api -q -p no:cacheprovider`
+Expected: `No module named 'ecu_simulator.api.server'`.
+
+- [ ] **Step 3: Implement**
+
+`src/ecu_simulator/api/static/index.html`:
+
+```html
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>ECU simulator observer</title></head>
+<body>
+<h1>ECU simulator observer</h1>
+<p>The browser view arrives in milestone M3. The read-only API is live:
+<a href="/api/v1/status">/api/v1/status</a>, <a href="/api/v1/vehicle">/api/v1/vehicle</a>,
+<a href="/api/v1/dtcs">/api/v1/dtcs</a>, <a href="/api/v1/ecus">/api/v1/ecus</a>,
+<a href="/api/v1/exchanges">/api/v1/exchanges</a>, and the WebSocket <code>/api/v1/events</code>.</p>
+</body>
+</html>
+```
+
+`src/ecu_simulator/api/server.py`:
+
+```python
+"""The observer API server (decisions/0010 §5, §6). The only module that imports aiohttp.
+
+It owns the observer: HandOff, Publisher and the ObservedDispatcher that run() hands the
+transport. The initial state is computed here, before the socket is bound, so the first
+WebSocket client receives it (0010 §4.5).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import re
+import time
+from collections.abc import Awaitable, Callable, Iterable, Mapping
+from importlib import resources
+from typing import Any
+
+from aiohttp import WSCloseCode, WSMsgType, web
+
+from ecu_simulator import app
+from ecu_simulator.api.options import ApiOptions, ApiStartupError, allowed_hosts
+from ecu_simulator.observe import snapshots
+from ecu_simulator.observe.connection import Connection
+from ecu_simulator.observe.handoff import HandOff
+from ecu_simulator.observe.limits import CLOSE_TOO_SLOW, STATE_MIN_INTERVAL_S
+from ecu_simulator.observe.publisher import Publisher, TooManyClients
+from ecu_simulator.observe.wrapper import ObservedDispatcher
+from ecu_simulator.observe.writer import run_writer
+from ecu_simulator.transport.socketcan import EndpointConfig
+
+logger = logging.getLogger(__name__)
+
+MAX_BODY = 1024                 # 0010 §4.3: incoming HTTP body
+WS_CLOSE_TIMEOUT_S = 2.0        # a stalled client cannot answer the close handshake
+WS_WRITER_LIMIT = 64 * 1024     # explicit: the default differs between aiohttp 3.13 and 3.14
+WRITER_GRACE_S = 2.0            # a send under way when the socket closes gets this long to resolve
+EVENTS = "/api/v1/events"
+INT = re.compile(r"-?[0-9]{1,19}")
+Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
+
+
+def _query_int(request: web.Request, name: str) -> int | None:
+    value = request.query.get(name)
+    if value is None:
+        return None
+    if not INT.fullmatch(value):
+        raise web.HTTPBadRequest(text=f"{name} must be an integer")
+    return int(value)
+
+
+class ApiServer:
+    def __init__(
+        self,
+        runtime: app.Runtime,
+        endpoints: Iterable[EndpointConfig],
+        options: ApiOptions,
+        *,
+        state_interval_s: float = STATE_MIN_INTERVAL_S,
+        connection_options: Mapping[str, Any] | None = None,
+    ) -> None:
+        try:
+            snapshots.check_state_size(runtime)
+        except ValueError as error:
+            raise ApiStartupError(str(error)) from error
+        self.runtime = runtime
+        self.options = options
+        self.handoff = HandOff()
+        self.publisher = Publisher(self.handoff, runtime.router, {e.name: e for e in endpoints},
+                                   connection_options=connection_options)
+        self.handler = ObservedDispatcher(runtime.dispatcher, self.handoff, self.publisher.wake)
+        # Owner decision 2026-09-27: state exists before the first client can connect.
+        self.publisher.push_state(snapshots.state_message(runtime))
+        self.started_at = time.time()
+        self.port: int | None = None
+        self._state_interval_s = state_interval_s
+        self._allowed: frozenset[str] = frozenset()
+        self._origins: frozenset[str] = frozenset()
+        self._runner: web.AppRunner | None = None
+        self._tasks: list[asyncio.Task[None]] = []
+        self._sockets: set[web.WebSocketResponse] = set()
+        self._page = resources.files("ecu_simulator.api").joinpath("static/index.html").read_bytes()
+
+    def application(self) -> web.Application:
+        @web.middleware
+        async def guard(request: web.Request, handler: Handler) -> web.StreamResponse:
+            if request.host.lower() not in self._allowed:
+                raise web.HTTPMisdirectedRequest(text="Host not allowed (decisions/0010 §6)")
+            if request.content_length is not None and request.content_length > MAX_BODY:
+                raise web.HTTPRequestEntityTooLarge(max_size=MAX_BODY, actual_size=request.content_length)
+            upgrade = request.path == EVENTS and request.method == "GET"
+            if upgrade and request.headers.get("Origin") not in self._origins:
+                raise web.HTTPForbidden(text="Origin not allowed (decisions/0010 §6)")
+            return await handler(request)
+
+        application = web.Application(middlewares=[guard], client_max_size=MAX_BODY)
+        routes: list[tuple[str, Handler]] = [
+            ("/", self._index),
+            ("/api/v1/status", self._status),
+            ("/api/v1/vehicle", self._vehicle),
+            ("/api/v1/dtcs", self._dtcs),
+            ("/api/v1/ecus", self._ecus),
+            ("/api/v1/exchanges", self._exchanges),
+            (EVENTS, self._events),
+        ]
+        for path, handler in routes:
+            application.router.add_get(path, handler, allow_head=False)
+        return application
+
+    async def start(self) -> None:
+        self._runner = web.AppRunner(self.application(), access_log=None, shutdown_timeout=2.0)
+        await self._runner.setup()
+        try:
+            await web.TCPSite(self._runner, self.options.host, self.options.port).start()
+        except OSError as error:
+            await self._runner.cleanup()
+            self._runner = None
+            raise ApiStartupError(
+                f"--api cannot listen on {self.options.host}:{self.options.port}: {error.strerror}"
+            ) from error
+        self.port = int(self._runner.addresses[0][1])
+        self._allowed = allowed_hosts(self.options.host, self.port)
+        self._origins = frozenset(f"http://{host}" for host in self._allowed)
+        state = lambda: snapshots.state_message(self.runtime)  # noqa: E731
+        self._tasks = [
+            asyncio.create_task(self.publisher.run()),
+            asyncio.create_task(self.publisher.run_state(state, self._state_interval_s)),
+        ]
+        logger.info("observer API on http://%s/", sorted(self._allowed)[0])
+
+    async def stop(self) -> None:
+        for ws in list(self._sockets):
+            await ws.close(code=WSCloseCode.GOING_AWAY, message=b"server shutdown")
+        for task in self._tasks:
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        self._tasks = []
+        if self._runner is not None:
+            await self._runner.cleanup()
+            self._runner = None
+
+    async def _index(self, request: web.Request) -> web.Response:
+        return web.Response(body=self._page, content_type="text/html", charset="utf-8")
+
+    async def _status(self, request: web.Request) -> web.Response:
+        return web.json_response(snapshots.status(
+            self.runtime, self.publisher, self.handler.issued, self.started_at,
+            self.options.version, self.options.profile,
+        ))
+
+    async def _vehicle(self, request: web.Request) -> web.Response:
+        return web.json_response(snapshots.vehicle(self.runtime))
+
+    async def _dtcs(self, request: web.Request) -> web.Response:
+        return web.json_response(snapshots.dtcs(self.runtime))
+
+    async def _ecus(self, request: web.Request) -> web.Response:
+        return web.json_response(snapshots.ecus(self.runtime))
+
+    async def _exchanges(self, request: web.Request) -> web.Response:
+        after, limit = _query_int(request, "after"), _query_int(request, "limit")
+        history = self.publisher.history
+        try:
+            texts, gap = history.since(after, limit)
+        except (TypeError, ValueError) as error:
+            raise web.HTTPBadRequest(text=str(error)) from error
+        oldest = "null" if history.oldest_seq is None else str(history.oldest_seq)
+        body = (f'{{"watermark":{history.last_seq},"oldest_seq":{oldest},'
+                f'"gap":{"true" if gap else "false"},"events":[{",".join(texts)}]}}')
+        return web.Response(text=body, content_type="application/json")
+
+    async def _events(self, request: web.Request) -> web.StreamResponse:
+        raise web.HTTPNotImplemented(text="Task 5")
+```
+
+The events are joined as already-encoded text: each is encoded once, by the publisher
+(0010 §4.2).
+
+- [ ] **Step 4: Run them to verify they pass**
+
+Run: `.venv/bin/python -m pytest tests/unit/api -q -p no:cacheprovider`
+Expected: all pass. On `/api/v1/events`, `test_every_other_method_is_405` gets 405 from
+the router before the placeholder handler runs.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/ecu_simulator/api tests/unit/api
+git commit -m "feat(api): ApiServer with loopback guard, REST routes, one page and state primed before binding"
+```
+
+---
+
+### Task 5: the WebSocket route
+
+**Files:**
+- Modify: `src/ecu_simulator/api/server.py`, replacing `_events` and adding `_close_when_forced`
+- Test: `tests/unit/api/test_server_ws.py`
+
+**Interfaces:**
+- Consumes: `Publisher.connect`, `TooManyClients`, `run_writer`, `Connection.wait_closed`.
+- Produces: `WS /api/v1/events?after=S`, following 0010 §4.5, §4.3 and §6.
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/unit/api/test_server_ws.py`:
+
+```python
+import asyncio
+import json
+import socket
+import time
+
+import pytest
+
+aiohttp = pytest.importorskip("aiohttp", reason="needs the optional [gui] extra (aiohttp)")
+
+from ecu_simulator.observe import snapshots  # noqa: E402
+from ecu_simulator.transport import DiagnosticRequest  # noqa: E402
+from tests.unit.api.support import build, url  # noqa: E402
+
+REQ = DiagnosticRequest(b"\x01\x0c", 0x7DF, functional=True)
+
+
+def origin(server):
+    return f"http://127.0.0.1:{server.port}"
+
+
+async def next_json(ws):
+    msg = await asyncio.wait_for(ws.receive(), 2)
+    assert msg.type == aiohttp.WSMsgType.TEXT, msg
+    return json.loads(msg.data)
+
+
+async def next_exchange(ws):
+    # run_state sets a one-slot `dropped` notice every 250 ms (0010 §4.3); it may come first.
+    while (event := await next_json(ws))["type"] != "exchange":
+        assert event["type"] == "dropped", event
+    return event
+
+
+async def publish(server, n):
+    for _ in range(n):
+        server.handler(REQ)
+    for _ in range(50):
+        await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_hello_state_history_then_live(server, session):
+    await publish(server, 2)                                          # seq 1, 2 go to history
+    async with session.ws_connect(url(server, "/api/v1/events"), origin=origin(server)) as ws:
+        hello = await next_json(ws)
+        assert hello == {"type": "hello", "api": 1, "watermark": 2, "oldest_seq": 1}
+        assert await next_json(ws) == json.loads(snapshots.state_message(server.runtime))
+        assert [(await next_json(ws))["seq"] for _ in range(2)] == [1, 2]   # history is sent directly
+        await publish(server, 1)
+        live = await next_exchange(ws)
+        assert (live["type"], live["seq"], live["outcome"]) == ("exchange", 3, "responded")
+
+
+@pytest.mark.asyncio
+async def test_origin_missing_or_foreign_is_403_before_the_upgrade(server, session):
+    for bad in (None, "http://evil.example", f"http://127.0.0.1:{server.port + 1}"):
+        with pytest.raises(aiohttp.WSServerHandshakeError) as info:
+            await session.ws_connect(url(server, "/api/v1/events"), origin=bad)
+        assert info.value.status == 403, bad
+    assert server.publisher.stats(issued=0)["connections_opened"] == 0
+
+
+@pytest.mark.asyncio
+async def test_a_fifth_client_is_503_before_the_upgrade(server, session):
+    sockets = [await session.ws_connect(url(server, "/api/v1/events"), origin=origin(server)) for _ in range(4)]
+    with pytest.raises(aiohttp.WSServerHandshakeError) as info:
+        await session.ws_connect(url(server, "/api/v1/events"), origin=origin(server))
+    assert info.value.status == 503 and server.publisher.refused_clients == 1
+    for ws in sockets:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_bad_after_is_400_before_the_upgrade(server, session):
+    for query in ("after=-1", "after=x"):
+        with pytest.raises(aiohttp.WSServerHandshakeError) as info:
+            await session.ws_connect(url(server, f"/api/v1/events?{query}"), origin=origin(server))
+        assert info.value.status == 400, query
+
+
+@pytest.mark.asyncio
+async def test_a_client_data_message_closes_1008(server, session):
+    async with session.ws_connect(url(server, "/api/v1/events"), origin=origin(server)) as ws:
+        await next_json(ws)                                           # hello
+        await ws.send_str("hi")
+        while (await asyncio.wait_for(ws.receive(), 2)).type == aiohttp.WSMsgType.TEXT:
+            pass
+        assert ws.close_code == 1008
+
+
+@pytest.mark.asyncio
+async def test_a_client_that_disconnects_mid_stream_is_retired_cleanly(server, session, caplog):  # Review Focus 2
+    ws = await session.ws_connect(url(server, "/api/v1/events"), origin=origin(server))
+    await next_json(ws)
+    await ws.close()
+    await publish(server, 200)
+    deadline = time.monotonic() + 3
+    while server.publisher.stats(issued=server.handler.issued)["clients"] and time.monotonic() < deadline:
+        await asyncio.sleep(0.01)
+    stats = server.publisher.stats(issued=server.handler.issued)
+    assert stats["clients"] == 0 and stats["closed_unresolved"] == 0 and stats["closed_totals"]["connections"] == 1
+    totals = stats["closed_totals"]
+    assert totals["enqueued"] == totals["sent"] + totals["discarded_on_close"]
+    assert "Task exception was never retrieved" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_a_stalled_client_is_closed_1013_and_frees_its_slot():  # Review Focus 1
+    s = build(connection_options={"max_messages": 4, "overflow_disconnect_s": 0.2})
+    await s.start()
+    raw = socket.socket()
+    raw.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+    raw.connect(("127.0.0.1", s.port))
+    raw.sendall(
+        f"GET /api/v1/events HTTP/1.1\r\nHost: 127.0.0.1:{s.port}\r\nOrigin: http://127.0.0.1:{s.port}\r\n"
+        "Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n\r\n".encode()
+    )                                                                 # then never reads again
+    try:
+        deadline = time.monotonic() + 20
+        while s.publisher.forced_disconnects == 0 and time.monotonic() < deadline:
+            await publish(s, 1000)                                    # enough to fill every buffer
+        assert s.publisher.forced_disconnects == 1
+        while s.publisher.stats(issued=s.handler.issued)["clients"] and time.monotonic() < deadline:
+            await asyncio.sleep(0.05)
+        stats = s.publisher.stats(issued=s.handler.issued)
+        assert stats["clients"] == 0 and stats["closed_totals"]["close_codes"] == {"1013": 1}
+        async with aiohttp.ClientSession() as session:                # the slot is free again
+            async with session.ws_connect(url(s, "/api/v1/events"), origin=origin(s)) as ws:
+                assert (await next_json(ws))["type"] == "hello"
+    finally:
+        raw.close()
+        await s.stop()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_closes_clients_with_1001(session):  # Review Focus 5
+    s = build()
+    await s.start()
+    ws = await session.ws_connect(url(s, "/api/v1/events"), origin=origin(s))
+    await next_json(ws)
+    started = time.monotonic()
+    await s.stop()
+    while (await asyncio.wait_for(ws.receive(), 3)).type == aiohttp.WSMsgType.TEXT:
+        pass
+    assert ws.close_code == 1001 and time.monotonic() - started < 5
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `.venv/bin/python -m pytest tests/unit/api/test_server_ws.py -q -p no:cacheprovider`
+Expected: the handshake tests fail with status 501, the placeholder from Task 4, and the
+stream tests fail the same way.
+
+- [ ] **Step 3: Implement.** Replace `_events` in `server.py`:
+
+```python
+    async def _events(self, request: web.Request) -> web.StreamResponse:
+        after = _query_int(request, "after")
+        try:
+            conn, hello, history = self.publisher.connect(after)
+        except TooManyClients:
+            raise web.HTTPServiceUnavailable(text="too many clients (decisions/0010 §4.3)") from None
+        except (TypeError, ValueError) as error:
+            raise web.HTTPBadRequest(text=str(error)) from error
+        ws = web.WebSocketResponse(timeout=WS_CLOSE_TIMEOUT_S, compress=False, max_msg_size=MAX_BODY,
+                                   writer_limit=WS_WRITER_LIMIT)
+        try:
+            await ws.prepare(request)
+        except BaseException:
+            self.publisher.disconnect(conn, WSCloseCode.ABNORMAL_CLOSURE)   # recorded, never sent
+            raise
+        self._sockets.add(ws)
+        writer = asyncio.create_task(run_writer(conn, ws.send_str, hello, history))
+        closer = asyncio.create_task(self._close_when_forced(conn, ws))
+        try:
+            async for msg in ws:
+                if msg.type in (WSMsgType.TEXT, WSMsgType.BINARY):
+                    await ws.close(code=WSCloseCode.POLICY_VIOLATION, message=b"v1 accepts no client messages")
+                    break
+        finally:
+            self._sockets.discard(ws)
+            self.publisher.disconnect(conn, ws.close_code or WSCloseCode.GOING_AWAY)  # a forced 1013 stays 1013
+            closer.cancel()
+            try:
+                await asyncio.wait_for(writer, WRITER_GRACE_S)   # a timeout cancels it: counted as sent
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            except Exception as error:                        # the socket went away mid-send: resolved as failed
+                logger.debug("writer for connection %d ended: %r", conn.id, error)
+            with contextlib.suppress(asyncio.CancelledError):
+                await closer
+        return ws
+
+    async def _close_when_forced(self, conn: Connection, ws: web.WebSocketResponse) -> None:
+        # The writer may be blocked in send_str on a client that stopped reading, so the
+        # forced close cannot wait for it (Review Focus 1).
+        await conn.wait_closed()
+        if conn.close_code == CLOSE_TOO_SLOW:
+            await ws.close(code=WSCloseCode.TRY_AGAIN_LATER, message=b"client too slow")
+```
+
+Delete the Task 4 placeholder.
+
+- [ ] **Step 4: Run them to verify they pass**
+
+Run: `.venv/bin/python -m pytest tests/unit/api -q -p no:cacheprovider`, three times.
+Expected: all pass, every time. The stalled-client test finishes in seconds, not at its
+20 s bound. **If it is flaky, do not raise the bound.** Diagnose instead: the buffer that
+absorbs the backlog is the likely cause. Record the finding.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/ecu_simulator/api/server.py tests/unit/api/test_server_ws.py
+git commit -m "feat(api): WebSocket events with hello/state/history ordering, 503/400/403 before upgrade, 1008 and 1013"
+```
+
+---
+
+### Task 6: `run()` and CLI wiring, and the §9.1 proofs deferred from M1
+
+**Files:**
+- Modify: `src/ecu_simulator/app.py` (`run`, `main`), `src/ecu_simulator/cli.py`
+- Test: `tests/unit/test_api_wiring.py` (no aiohttp), `tests/unit/api/test_run_with_api.py`
+
+**Interfaces:**
+- Produces:
+  - `app.run(config, *, stop=None, install_signal_handlers=True, transport_factory=IsoTpTransport, clock=None, api: ApiOptions | None = None)`;
+  - `app.main(config, api: ApiOptions | None = None) -> int`: exit 2 on `ApiStartupError`;
+  - CLI `--api HOST:PORT`.
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/unit/test_api_wiring.py`:
+
+```python
+"""decisions/0010 §9.1, the two proofs M1 deferred: with the API off, run() hands the
+transport the plain Dispatcher, and aiohttp is never imported."""
+
+import asyncio
+import subprocess
+import sys
+
+import pytest
+
+from ecu_simulator import app, cli
+from ecu_simulator.api.options import ApiOptions, ApiStartupError
+from ecu_simulator.config import load_profile
+from ecu_simulator.ecu.dispatcher import Dispatcher
+from tests.unit.test_cli import isolated_logging  # noqa: F401  (fixture: cli.main configures logging)
+
+
+def shipped():
+    return app.RuntimeConfig.build(load_profile(cli.default_profile_path()), "vcan0")
+
+
+class Capture:
+    handlers: list = []
+    instances: list = []
+
+    def __init__(self, interface, endpoints):
+        Capture.instances.append(self)
+
+    async def start(self, handler):
+        Capture.handlers.append(handler)
+
+    async def stop(self):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_api_off_hands_the_transport_the_plain_dispatcher():
+    Capture.handlers.clear()
+    stop = asyncio.Event()
+    stop.set()
+    await app.run(shipped(), stop=stop, install_signal_handlers=False, transport_factory=Capture)
+    (handler,) = Capture.handlers
+    assert type(handler) is Dispatcher
+
+
+def test_api_off_never_imports_aiohttp():
+    program = (
+        "import asyncio, sys\n"
+        "from ecu_simulator import app, cli\n"
+        "from ecu_simulator.config import load_profile\n"
+        "class T:\n"
+        "    def __init__(self, i, e): pass\n"
+        "    async def start(self, h): pass\n"
+        "    async def stop(self): pass\n"
+        "async def go():\n"
+        "    stop = asyncio.Event(); stop.set()\n"
+        "    config = app.RuntimeConfig.build(load_profile(cli.default_profile_path()), 'vcan0')\n"
+        "    await app.run(config, stop=stop, install_signal_handlers=False, transport_factory=T)\n"
+        "asyncio.run(go())\n"
+        "print(sorted(m for m in sys.modules if m.split('.')[0] == 'aiohttp'))\n"
+    )
+    result = subprocess.run([sys.executable, "-c", program], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "[]"
+
+
+def test_the_cli_refuses_a_non_loopback_api_with_exit_2(isolated_logging, monkeypatch):
+    called = []
+    monkeypatch.setattr(app, "main", lambda *a, **k: called.append(1) or 0)
+    assert cli.main(["--api", "0.0.0.0:8765"]) == 2 and called == []
+
+
+def test_the_cli_refuses_api_without_the_extra_with_exit_2(isolated_logging, monkeypatch):
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda name: None if name == "aiohttp" else object())
+    called = []
+    monkeypatch.setattr(app, "main", lambda *a, **k: called.append(1) or 0)
+    assert cli.main(["--api", "127.0.0.1:8765"]) == 2 and called == []
+
+
+def test_the_cli_passes_parsed_options_to_app_main(isolated_logging, monkeypatch):
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda name: object())
+    seen = []
+    monkeypatch.setattr(app, "main", lambda config, api=None: seen.append(api) or 0)
+    assert cli.main(["--api", "localhost:8765"]) == 0
+    (options,) = seen
+    assert (options.host, options.port, options.profile) == ("127.0.0.1", 8765, str(cli.default_profile_path()))
+
+
+def test_app_main_turns_an_api_startup_error_into_exit_2(monkeypatch):
+    async def failing(config, api=None):
+        raise ApiStartupError("busy")
+    monkeypatch.setattr(app, "run", failing)
+    assert app.main(shipped(), ApiOptions("127.0.0.1", 1, "p", "t")) == 2
+```
+
+`tests/unit/api/test_run_with_api.py`:
+
+```python
+import asyncio
+
+import pytest
+
+aiohttp = pytest.importorskip("aiohttp", reason="needs the optional [gui] extra (aiohttp)")
+
+import socket  # noqa: E402
+
+from ecu_simulator import app  # noqa: E402
+from ecu_simulator.api.options import ApiOptions, ApiStartupError  # noqa: E402
+from ecu_simulator.observe.wrapper import ObservedDispatcher  # noqa: E402
+from tests.unit.test_api_wiring import Capture, shipped  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_api_on_hands_the_transport_the_observed_dispatcher():
+    Capture.handlers.clear()
+    stop = asyncio.Event()
+    stop.set()
+    await app.run(shipped(), stop=stop, install_signal_handlers=False, transport_factory=Capture,
+                  api=ApiOptions("127.0.0.1", 0, "p", "t"))
+    (handler,) = Capture.handlers
+    assert isinstance(handler, ObservedDispatcher)
+
+
+@pytest.mark.asyncio
+async def test_a_busy_api_port_fails_before_any_can_socket_opens():  # Review Focus 4
+    Capture.instances.clear()
+    Capture.handlers.clear()
+    holder = socket.socket()
+    holder.bind(("127.0.0.1", 0))
+    holder.listen()
+    try:
+        with pytest.raises(ApiStartupError):
+            await app.run(shipped(), install_signal_handlers=False, transport_factory=Capture,
+                          api=ApiOptions("127.0.0.1", holder.getsockname()[1], "p", "t"))
+    finally:
+        holder.close()
+    assert Capture.handlers == [], "the transport must not have been started"
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `.venv/bin/python -m pytest tests/unit/test_api_wiring.py tests/unit/api/test_run_with_api.py -q -p no:cacheprovider`
+Expected:
+- `run() got an unexpected keyword argument 'api'`;
+- the CLI tests fail with argparse's "unrecognized arguments: --api".
+
+`test_api_off_hands_the_transport_the_plain_dispatcher` and
+`test_api_off_never_imports_aiohttp` **pass already**: they pin today's behaviour. Record
+that. Then prove they can fail: temporarily wrap the dispatcher in `run()`, watch the
+first fail, and revert.
+
+- [ ] **Step 3: Implement**
+
+In `app.py`, import `from ecu_simulator.api.options import ApiOptions, ApiStartupError`.
+It is stdlib only, which the Task 1 test enforces. Then:
+
+```python
+def _api_server(runtime: Runtime, endpoints: list[EndpointConfig], api: ApiOptions) -> Any:
+    try:
+        from ecu_simulator.api.server import ApiServer  # the only aiohttp import (decisions/0010 §4.1)
+    except ImportError as error:
+        raise ApiStartupError("--api needs the optional [gui] extra: pip install 'ecu-simulator[gui]'") from error
+    return ApiServer(runtime, endpoints, api)
+```
+
+In `run`, add the keyword `api: ApiOptions | None = None`. After `check_routes(...)`:
+
+```python
+    server = _api_server(runtime, endpoints, api) if api is not None else None
+    handler = server.handler if server is not None else runtime.dispatcher
+    if server is not None:
+        await server.start()           # a busy port fails here, before the transport exists
+    transport = transport_factory(config.interface, endpoints)
+```
+
+Make these changes to the rest of `run`:
+- call `await transport.start(handler)` instead of `runtime.dispatcher`;
+- in `finally`, call `await server.stop()` before `await transport.stop()`, guarded by
+  `if server is not None:`.
+
+Moving `transport_factory(...)` after the API start keeps
+`test_run_rejects_inconsistent_routes_before_opening_sockets` true, because the routes are
+still checked first. Import `Any` if it is missing.
+
+`main` becomes:
+
+```python
+def main(config: RuntimeConfig, api: ApiOptions | None = None) -> int:
+    """Run to completion; exit status 0 on clean shutdown, 2 on a transport/startup failure."""
+    try:
+        asyncio.run(run(config, api=api))
+    except (TransportError, ApiStartupError) as error:
+        logger.error("%s", error)
+        return 2
+    return 0
+```
+
+In `cli.py`:
+- add `import importlib.util`, and `from ecu_simulator.api.options import ApiStartupError, parse_api`;
+- add the argument:
+
+  ```python
+      parser.add_argument(
+          "--api",
+          metavar="HOST:PORT",
+          help="serve the read-only observer API and page on a loopback address, e.g. 127.0.0.1:8765 "
+          "(needs the [gui] extra; off by default)",
+      )
+  ```
+- in `main`, before `config = ...`:
+
+  ```python
+      api = None
+      if args.api is not None:
+          try:
+              api = parse_api(args.api, str(path), package_version())
+          except ApiStartupError as error:
+              log.error("%s", error)
+              return 2
+          if importlib.util.find_spec("aiohttp") is None:
+              log.error("--api needs the optional [gui] extra: pip install 'ecu-simulator[gui]'")
+              return 2
+  ```
+- and call `app.main(config, api)` instead of `app.main(config)`.
+
+- [ ] **Step 4: Run them to verify they pass**
+
+Run: `.venv/bin/python -m pytest tests/unit -q -p no:cacheprovider`
+Expected: all pass, with the existing `test_app.py` and `test_cli.py` unchanged.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/ecu_simulator/app.py src/ecu_simulator/cli.py tests/unit/test_api_wiring.py tests/unit/api/test_run_with_api.py
+git commit -m "feat(app): --api wiring; API-off hands the transport the plain Dispatcher and imports no aiohttp"
+```
+
+---
+
+### Task 7: CI: `gui` push branch, the `[gui]` job, explicit skip reasons
+
+**Files:**
+- Modify: `.github/workflows/ci.yml` (on `gui` only)
+
+- [ ] **Step 1: Edit `on.push.branches`**
+
+```yaml
+on:
+  push:
+    # gui is the GUI track (decisions/0010). It is listed here on branch gui only; the
+    # modernization workflow and the V1.0 / Phase 8b gates are unchanged.
+    branches: [master, modernization, gui]
+  pull_request:
+```
+
+- [ ] **Step 2: Report skip reasons in the `test` job.** Replace the notice line in the
+  `pytest` step with:
+
+```yaml
+          skips=$(grep -oE 'SKIPPED \[[0-9]+\] [^:]+:[0-9]+: .*' pytest.log | sed -E 's/^SKIPPED \[([0-9]+)\] [^:]+:[0-9]+: /\1x /' | sort | uniq | paste -sd ';' - || true)
+          echo "::notice title=pytest (Python ${{ matrix.python-version }})::${summary} | coverage ${total}${skips:+ | skips: $skips}"
+```
+
+  `addopts = "-ra"` already prints `SKIPPED` lines. On hosted runners the vcan tests then
+  report "kernel cannot create CAN_ISOTP sockets (CONFIG_CAN_ISOTP not built, …)"
+  **explicitly**, and the aiohttp tests report "needs the optional [gui] extra".
+
+- [ ] **Step 3: Add the `api` job**
+
+```yaml
+  api:
+    name: API tests with the [gui] extra (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev,gui]"
+      - name: pytest with the [gui] extra
+        run: |
+          set -o pipefail
+          pytest --color=no -p no:cacheprovider | tee pytest-gui.log
+          summary=$(grep -E 'passed|failed|error' pytest-gui.log | tail -1 | sed -E 's/^=+ *//; s/ *=+$//')
+          skips=$(grep -oE 'SKIPPED \[[0-9]+\] [^:]+:[0-9]+: .*' pytest-gui.log | sed -E 's/^SKIPPED \[([0-9]+)\] [^:]+:[0-9]+: /\1x /' | sort | uniq | paste -sd ';' - || true)
+          echo "::notice title=pytest [gui] (Python 3.12)::${summary}${skips:+ | skips: $skips}"
+```
+
+- [ ] **Step 4: Make the `can-capabilities` integration step install `[gui]`**, so that
+  `test_api_vcan.py` skips there with the CAN_ISOTP reason too:
+  `python -m pip install -q -e ".[dev,hardware,gui]"`.
+
+- [ ] **Step 5: Check the YAML locally**
+
+Run: `.venv/bin/python -c "from ruamel.yaml import YAML; d=YAML(typ='safe').load(open('.github/workflows/ci.yml')); print(list(d['on']['push']['branches']), sorted(d['jobs']))"`
+Expected: `['master', 'modernization', 'gui'] ['api', 'can-capabilities', 'lint', 'test']`.
+ruamel.yaml is already a runtime dependency, and YAML 1.2 keeps `on` as a string key.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add .github/workflows/ci.yml
+git commit -m "ci: run on gui pushes, add the [gui] API job, and name every skip reason in annotations"
+```
+
+This produces a CI result only when the owner asks for a push. After a push, check the run
+through the unauthenticated API with the **full 40-character SHA** in `head_sha=`, poll at
+120 s or slower, and check the returned `head_sha`. Report every job's summary and skip
+annotation verbatim. Report the vcan tests as **skipped with the CAN_ISOTP reason, never as
+validated**.
+
+---
+
+### Task 8: vcan integration: a real ISO-TP request becomes a WebSocket `exchange`
+
+**Files:**
+- Modify: `scripts/run_integration_tests.sh`, `tests/integration/conftest.py`
+- Create: `tests/integration/test_api_vcan.py`
+
+- [ ] **Step 1: Bring `lo` up in the namespace.** In `scripts/run_integration_tests.sh`,
+  make the first line inside the `unshare` command `ip link set lo up`. Then run the
+  existing suite to prove nothing changed:
+
+Run: `scripts/run_integration_tests.sh -q -p no:cacheprovider 2>&1 | tail -1`
+Expected: `68 passed`.
+
+- [ ] **Step 2: Add `extra_args` to `Simulator`.** In `conftest.py`:
+  - add `extra_args: Sequence[str] = ()` to `Simulator.__init__`;
+  - store `self.extra_args = tuple(extra_args)`;
+  - append it to `command` in `_start`;
+  - import `Sequence` from `collections.abc`.
+
+- [ ] **Step 3: Write the test**
+
+`tests/integration/test_api_vcan.py`:
+
+```python
+"""decisions/0010 §9.3: a real kernel ISO-TP request produces the matching WebSocket event.
+
+The vcan fixture runs before aiohttp is looked for, so on a hosted runner this skips with
+the CAN_ISOTP reason, which is the one that matters (0009)."""
+
+import asyncio
+import json
+import socket
+
+import pytest
+
+from tests.integration.conftest import FunctionalTester, Simulator
+
+
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+@pytest.mark.asyncio
+async def test_an_isotp_request_appears_on_the_websocket(vcan, tmp_path):
+    aiohttp = pytest.importorskip("aiohttp", reason="needs the optional [gui] extra (aiohttp)")
+    port = free_port()
+    sim = Simulator(vcan, str(tmp_path), extra_args=["--api", f"127.0.0.1:{port}"])
+    tester = None
+    try:
+        sim.wait_ready()
+        tester = FunctionalTester(vcan, 0x7DF, 0x7E8, 0x7E0)
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(f"http://127.0.0.1:{port}/api/v1/events",
+                                          origin=f"http://127.0.0.1:{port}") as ws:
+                kinds = [json.loads((await asyncio.wait_for(ws.receive(), 3)).data)["type"] for _ in range(2)]
+                assert kinds == ["hello", "state"]
+                await asyncio.to_thread(tester.send, b"\x01\x0c")
+                reply = await asyncio.to_thread(tester.recv)
+                while (event := json.loads((await asyncio.wait_for(ws.receive(), 3)).data))["type"] == "dropped":
+                    pass                                        # the 4 Hz one-slot notice may come first
+        assert reply[:2] == b"\x41\x0c"
+        assert (event["type"], event["request"], event["response"]) == ("exchange", "010c", reply.hex())
+        assert (event["rx_id"], event["tx_id"], event["functional"], event["outcome"]) == ("0x7df", "0x7e8", True, "responded")
+    finally:
+        if tester is not None:
+            tester.close()
+        sim.terminate()
+```
+
+`Simulator.terminate()` exists (`conftest.py`, checked when this plan was written).
+
+- [ ] **Step 4: Run it**
+
+Run: `scripts/run_integration_tests.sh -k api_vcan -v -p no:cacheprovider`
+Expected: 1 passed. Then run `scripts/run_integration_tests.sh -q -p no:cacheprovider`.
+Expected: 69 passed.
+
+Also run it **without** a vcan interface, to prove the skip reason:
+`.venv/bin/python -m pytest tests/integration/test_api_vcan.py -rs -p no:cacheprovider`
+must skip with the interface or CAN_ISOTP reason, **not** the aiohttp one.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add scripts/run_integration_tests.sh tests/integration/conftest.py tests/integration/test_api_vcan.py
+git commit -m "test(integration): a real ISO-TP request appears as a WebSocket exchange; lo up in the namespace"
+```
+
+---
+
+### Task 9: the M2 early check on vcan (0010 §9.2), the record, and stop
+
+**Files:**
+- Create: `scripts/run_gui_m2_early_check.sh`, `scripts/gui_m2_early_check.py`, `docs/validation/gui-m2-early-check.md`
+
+**What it is:**
+- M4 conditions **1** (API off), **2** (API on, 0 clients) and **4** (API on, 3 reading
+  clients and 1 stalled, reconnected when forced off), at **5,000 requests** each, one
+  round, on vcan in a private namespace.
+- Wire latency is taken from `candump -L` by the `analyze.py` pairing rule: a request frame
+  on 0x7DF, to the **first** 0x7E8 frame before the next request.
+- **Stop rule, the M4 thresholds applied early:**
+  - median ≤ condition 1 + 0.10 ms;
+  - p99 ≤ condition 1 + 0.50 ms;
+  - lost replies = 0.
+
+  If any is missed, print `STOP` and report before M3.
+- For conditions 2 and 4 it also checks P5 at quiesce: (a), the §5.1 identities on every
+  retained ledger and on `closed_totals`, and
+  `connections_opened = clients + closed_totals.connections + closed_unresolved`. P5 is
+  judged at M4; here it is exercised early.
+- **What it is not:** it is not the M4 benchmark. It has one round, no condition 3 or 5,
+  and no RSS soak.
+
+- [ ] **Step 1: Write `scripts/run_gui_m2_early_check.sh`**
+
+```bash
+#!/usr/bin/env bash
+# The GUI M2 early check (decisions/0010 §9.2) in a private user+network namespace:
+# lo up, a private vcan0, candump, the simulator and the tester. Nothing on the host changes.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+PYTHON="${PYTHON:-.venv/bin/python}"
+exec unshare -r -n bash -euo pipefail -c '
+    ip link set lo up
+    ip link add dev vcan0 type vcan
+    ip link set up vcan0
+    exec "$0" scripts/gui_m2_early_check.py "$@"
+' "$PYTHON" "$@"
+```
+
+- [ ] **Step 2: Write `scripts/gui_m2_early_check.py`**
+
+```python
+#!/usr/bin/env python3
+"""GUI M2 early check (decisions/0010 §9.2) -- run through scripts/run_gui_m2_early_check.sh.
+
+On vcan, in a namespace: conditions 1, 2 and 4 at N requests each, one round. Wire latency
+comes from candump -L, pairing each 0x7DF request with the first 0x7E8 frame before the
+next request. It prints per-condition figures, P5 at quiesce for 2 and 4, and "STOP" if an
+M4 latency criterion is already missed. Early, not acceptance: P1-P9 are judged at M4.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import re
+import signal
+import socket
+import statistics
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from pathlib import Path
+
+import aiohttp
+import isotp
+
+IFACE = "vcan0"
+PORT = 8765
+BASE = f"http://127.0.0.1:{PORT}"
+CAN_ISOTP_SF_BROADCAST = 0x0800
+MIX = [b"\x01\x0d", b"\x01\x10"]
+EVERY_100 = [b"\x01\x00", b"\x01\x20", b"\x01\x40", b"\x09\x02"]
+FRAME = re.compile(r"\((\d+\.\d+)\)\s+\S+\s+([0-9A-F]{3})#([0-9A-F]*)")
+
+
+def requests(n: int) -> list[bytes]:
+    out: list[bytes] = []
+    while len(out) < n:
+        out.extend(EVERY_100 if len(out) % 100 == 0 and out else [MIX[len(out) % 2]])
+    return out[:n]
+
+
+class Tester:
+    """The same shape as tests/integration/conftest.py FunctionalTester."""
+
+    def __init__(self) -> None:
+        self.tx = isotp.socket()
+        self.tx.set_opts(optflag=isotp.socket.flags.TX_PADDING | CAN_ISOTP_SF_BROADCAST, txpad=0)
+        self.tx.bind(IFACE, isotp.Address(isotp.AddressingMode.Normal_11bits, rxid=0, txid=0x7DF))
+        self.rx = isotp.socket(timeout=1.0)
+        self.rx.set_opts(optflag=isotp.socket.flags.TX_PADDING, txpad=0)
+        self.rx.bind(IFACE, isotp.Address(isotp.AddressingMode.Normal_11bits, rxid=0x7E8, txid=0x7E0))
+
+    def run(self, reqs: list[bytes]) -> int:
+        lost = 0
+        for payload in reqs:
+            self.tx.send(payload)
+            try:
+                self.rx.recv()
+            except TimeoutError:
+                lost += 1
+        return lost
+
+    def close(self) -> None:
+        self.tx.close()
+        self.rx.close()
+
+
+def start_simulator(api: bool) -> subprocess.Popen[str]:
+    """Start it and wait for its own "ready" line; drain stderr so the pipe never fills."""
+    cmd = [sys.executable, "-m", "ecu_simulator", "--interface", IFACE, "--log-level", "INFO"]
+    if api:
+        cmd += ["--api", f"127.0.0.1:{PORT}"]
+    proc = subprocess.Popen(cmd, stderr=subprocess.PIPE, text=True, cwd=tempfile.mkdtemp())
+    ready = threading.Event()
+
+    def pump() -> None:
+        assert proc.stderr is not None
+        for line in proc.stderr:
+            if "ecu-simulator ready on" in line:
+                ready.set()
+
+    threading.Thread(target=pump, daemon=True).start()
+    if not ready.wait(10):
+        proc.kill()
+        raise RuntimeError("simulator did not become ready within 10 s")
+    return proc
+
+
+def latencies(log: Path) -> tuple[list[float], int]:
+    frames = [(float(m[1]), m[2]) for line in log.read_text().splitlines() if (m := FRAME.search(line))]
+    samples, lost = [], 0
+    starts = [i for i, (_, cid) in enumerate(frames) if cid == "7DF"]
+    for k, i in enumerate(starts):
+        end = starts[k + 1] if k + 1 < len(starts) else len(frames)
+        reply = next((t for t, cid in frames[i + 1:end] if cid == "7E8"), None)
+        if reply is None or reply - frames[i][0] > 1.0:
+            lost += 1
+        else:
+            samples.append((reply - frames[i][0]) * 1000)
+    return sorted(samples), lost
+
+
+async def reader(stop: asyncio.Event, seen: list[int]) -> None:
+    async with aiohttp.ClientSession() as s, s.ws_connect(f"{BASE}/api/v1/events", origin=BASE) as ws:
+        while not stop.is_set():
+            try:
+                msg = await asyncio.wait_for(ws.receive(), 0.5)
+            except TimeoutError:
+                continue
+            if msg.type != aiohttp.WSMsgType.TEXT:
+                return
+            event = json.loads(msg.data)
+            if event.get("type") == "exchange":
+                seen.append(event["seq"])
+
+
+def stalled_socket() -> socket.socket:
+    raw = socket.socket()
+    raw.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+    raw.connect(("127.0.0.1", PORT))
+    raw.sendall(
+        f"GET /api/v1/events HTTP/1.1\r\nHost: 127.0.0.1:{PORT}\r\nOrigin: {BASE}\r\nUpgrade: websocket\r\n"
+        "Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"
+        .encode()
+    )
+    return raw
+
+
+async def status() -> dict:
+    async with aiohttp.ClientSession() as s, s.get(f"{BASE}/api/v1/status") as r:
+        return (await r.json())["api"]
+
+
+async def stalled(stop: asyncio.Event, reconnects: list[int]) -> None:
+    raw, forced = stalled_socket(), 0
+    while not stop.is_set():
+        await asyncio.sleep(0.5)
+        now = (await status())["forced_disconnects"]
+        if now > forced:                                          # 0010 §9.2 condition 4: reconnect at once
+            forced = now
+            raw.close()
+            raw = stalled_socket()
+            reconnects.append(now)
+    raw.close()
+
+
+def p5(api: dict) -> list[str]:
+    problems = []
+    if api["issued_seq"] != api["published"] + api["handoff_dropped"]:
+        problems.append("P5(a) issued != published + handoff_dropped")
+    ledgers = api["connections"] + api["closed_connections"]
+    for led in ledgers:
+        if led["offered"] != led["published_at_close"] - led["published_at_open"] or \
+           led["offered"] != led["enqueued"] + led["client_dropped"] or \
+           led["enqueued"] != led["sent"] + led["queued"] + led["discarded_on_close"]:
+            problems.append(f"P5(b) ledger {led['id']}")
+    t = api["closed_totals"]
+    if not (t["offered"] == t["published_span"] == t["enqueued"] + t["client_dropped"]
+            and t["enqueued"] == t["sent"] + t["discarded_on_close"]):
+        problems.append("P5(b) closed_totals")
+    if api["connections_opened"] != api["clients"] + t["connections"] + api["closed_unresolved"]:
+        problems.append("connections_opened does not reconcile")
+    if t["close_codes"].get("1013", 0) != api["forced_disconnects"]:
+        problems.append("P5(e) 1013 closes != forced_disconnects")
+    return problems
+
+
+async def condition(n: int, api: bool, clients: bool, workdir: Path) -> dict:
+    log = workdir / f"candump-{int(api)}{int(clients)}.log"
+    dump = subprocess.Popen(["candump", "-L", IFACE], stdout=log.open("w"))
+    sim = start_simulator(api)
+    stop, tasks, seen, reconnects = asyncio.Event(), [], [[], [], []], []
+    if clients:
+        tasks = [asyncio.create_task(reader(stop, seen[i])) for i in range(3)]
+        tasks.append(asyncio.create_task(stalled(stop, reconnects)))
+        await asyncio.sleep(0.5)
+    tester = Tester()
+    started = time.monotonic()
+    tester_lost = await asyncio.to_thread(tester.run, requests(n))
+    elapsed = time.monotonic() - started
+    tester.close()
+    await asyncio.sleep(1.0)                                         # let the publisher drain
+    result: dict = {"api": api, "clients": clients, "requests": n, "seconds": round(elapsed, 2),
+                    "tester_timeouts": tester_lost}
+    if api:
+        stop.set()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        for _ in range(40):                                          # quiesce: every close resolved
+            state = await status()
+            if state["clients"] == 0 and state["closed_unresolved"] == 0:
+                break
+            await asyncio.sleep(0.25)
+        result["p5_problems"] = p5(state)
+        result["forced_disconnects"] = state["forced_disconnects"]
+        result["connections_opened"] = state["connections_opened"]
+        result["reader_seq_ok"] = all(s == sorted(set(s)) for s in seen)
+    sim.send_signal(signal.SIGINT)
+    sim.wait(10)
+    dump.send_signal(signal.SIGINT)
+    dump.wait(5)
+    samples, lost = latencies(log)
+    if not samples:
+        raise RuntimeError(f"no request/reply pairs in {log}: the capture or the tester failed")
+    result.update(median_ms=round(statistics.median(samples), 3), p99_ms=round(samples[int(len(samples) * 0.99)], 3),
+                  lost=lost, paired=len(samples))
+    return result
+
+
+async def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-n", type=int, default=5000)
+    args = parser.parse_args()
+    work = Path(tempfile.mkdtemp(prefix="gui-m2-"))
+    results = [await condition(args.n, False, False, work), await condition(args.n, True, False, work),
+               await condition(args.n, True, True, work)]
+    base = results[0]
+    stop = False
+    for number, r in zip((1, 2, 4), results, strict=True):
+        print(f"condition {number}: {json.dumps(r)}")
+        if number != 1:
+            stop |= r["median_ms"] > base["median_ms"] + 0.10 or r["p99_ms"] > base["p99_ms"] + 0.50
+        stop |= r["lost"] > 0 or bool(r.get("p5_problems"))
+    print(f"captures in {work}")
+    print("STOP: report before M3" if stop else "within the M2 early-check limits")
+    return 1 if stop else 0
+
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(main()))
+```
+
+- [ ] **Step 3: Run it three times** and keep every output verbatim.
+
+Run: `for i in 1 2 3; do scripts/run_gui_m2_early_check.sh; done`
+Expected: each run prints three condition lines and either "within the M2 early-check
+limits" or "STOP". **On STOP, do not tune anything. Report it.**
+
+- [ ] **Step 4: Run the gates on the final commit**
+
+```bash
+set -o pipefail
+.venv/bin/python -m pytest -p no:cacheprovider -rs 2>&1 | tail -3   # [dev,hardware,gui]: 1083 + the M2 tests; 2 xfailed
+scripts/run_integration_tests.sh -q -p no:cacheprovider 2>&1 | tail -1   # 69 passed
+.venv/bin/ruff check . && .venv/bin/mypy
+```
+
+Then two CI-shaped runs, each in a fresh clone inside `unshare -r -n` with `lo` up:
+- `.[dev]` only: every `tests/unit/api` module skips with the "[gui] extra" reason;
+  `test_aiohttp_is_not_installed_in_this_environment` runs and passes;
+- `.[dev,gui]`: the `api` tests run; the "not installed" test skips by name.
+
+Record every skip, grouped by reason, for both.
+
+- [ ] **Step 5: Write `docs/validation/gui-m2-early-check.md`**
+
+Record:
+- the host, kernel, CPU governor, Python, aiohttp version and commit;
+- the three runs verbatim;
+- the gate results, with both CI-shaped skip lists;
+- whether any CI result exists. If the owner asked for a push, give the run id, the
+  **full** `head_sha`, every job summary and the skip annotations, **and say that the vcan
+  and early-check results are local, not CI**.
+
+State plainly: *"An early check on vcan, one round, conditions 1, 2 and 4 only; not the M4
+benchmark. P1–P9 are judged at M4."*
+
+- [ ] **Step 6: Commit and stop**
+
+```bash
+git add scripts/run_gui_m2_early_check.sh scripts/gui_m2_early_check.py docs/validation/gui-m2-early-check.md
+git commit -m "docs(validation): GUI M2 early check on vcan and verification record"
+```
+
+Do not push unless asked, and do not start M3.
+
+---
+
+## Self-review
+
+**Spec coverage** (0010, fourth revision):
+
+| Requirement | Task |
+|---|---|
+| §4.1 `ApiServer` in `api`, aiohttp only there | 1, 4 |
+| §4.3 limits: 4 clients / 503, 1013 after overflow, 1 KiB body / 413, 1008, 256 KiB state | 4, 5 |
+| §4.5 hello, state, history, live; `after=` and `gap`; initial state primed | 2, 4, 5 |
+| §5 routes and `/status`, including `profile` and the cumulative fields | 3, 4 |
+| §5.1 ledgers, cumulative totals, writer contract | 2, 3, 5 |
+| §6 loopback-only bind, `Host` 421, `Origin` 403, no CORS, GET-only / 405 including HEAD | 1, 4, 5 |
+| §9.1 API off: plain `Dispatcher`, no aiohttp import, not installed in `.[dev]` | 1, 6 |
+| §9.2 M2 early check (conditions 1, 2, 4 on vcan) and P5 exercised early | 9 |
+| §9.3 the `[gui]` CI job, explicit skips, `gui` push branch | 7 |
+| §9.3 vcan integration: ISO-TP request to WebSocket event | 8 |
+| §7 / §10: frontend files and rendering acceptance in M3 | out of M2 by design; M2 serves one page |
+
+**Out of M2 by design:** the frontend views and their file tests (M3), uPlot (M3b), the
+full benchmark and the RSS soak (M4), and the M4 harness JSONL (specified in 0010 §9.2,
+built in M4).
+
+**Placeholder scan.** Task 4 has a deliberate temporary `_events` returning 501, which
+Task 5 replaces; Task 5 Step 2 depends on it. There is no other TBD.
+
+**Type consistency.** These names are used identically across tasks:
+- `ApiOptions(host, port, profile, version)`;
+- `parse_api(value, profile, version)`;
+- `ApiServer(runtime, endpoints, options, *, state_interval_s, connection_options)` with
+  `.handler`, `.publisher`, `.port`, `.start()` and `.stop()`;
+- `run_writer(conn, send, hello, history)`;
+- `Publisher(..., connection_options=)`;
+- `stats()` keys `connections_opened`, `closed_totals` and `closed_unresolved`.

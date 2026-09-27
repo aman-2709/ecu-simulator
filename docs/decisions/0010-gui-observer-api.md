@@ -38,6 +38,18 @@ approved direction:
 - P5 and P6 cover the new counters (§9.2);
 - `GET /exchanges` `limit` and `after` rules are fixed in the M1 plan, Task 4.
 
+A fourth revision, on 2026-09-27, came with the owner's instructions for the M2 plan. It
+changes no approved direction, and no V1.0 or Phase 8b gate:
+
+- the server computes the initial `state` before it accepts any connection (§4.5);
+- `GET /status` gains cumulative closed-connection accounting, so P5 reconciles any
+  number of closed connections, not only the last 64; the M4 harness also keeps durable
+  JSONL output (§5, §5.1, §9.2);
+- frontend file tests and the rendering checklist are M3's exit criteria; M2 serves one
+  placeholder page (§7, §9.3, §10);
+- `gui` becomes a CI push branch on branch `gui`, with CAN_ISOTP skips reported by name
+  (§9.3).
+
 The evidence for the routing and ordering claims is in §12.
 
 ## 1. Purpose and scope
@@ -272,7 +284,9 @@ The GUI reports what happens and does not paper over it.
   2. copy the history ring;
   3. register the client's queue.
 
-  Then it sends, in order:
+  The server computes `state` once at startup, after the 256 KiB check and **before the
+  listening socket is bound**, so the first client already has a current `state` to
+  receive (added 2026-09-27). Then it sends, in order:
 
   ```json
   {"type": "hello", "api": 1, "watermark": W, "oldest_seq": 812}
@@ -297,7 +311,7 @@ version prefix means a future write API cannot silently change v1.
 
 | Endpoint | Returns |
 |---|---|
-| `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `encode_failed`, `fanout_failed`, `connections` [one **ledger** per open connection, §5.1], `closed_connections` [the ledgers of the last 64 closed connections, final values]} |
+| `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `encode_failed`, `fanout_failed`, `connections_opened`, `closed_unresolved`, `closed_totals` [cumulative, §5.1], `connections` [one **ledger** per open connection, §5.1], `closed_connections` [the ledgers of the last 64 closed connections, final values]} |
 | `GET /vehicle` | `kind`, `vin`, `signals` {dotted path → value}, `as_of` (the scenario time of the last application, equal to `t_last_applied`; `null` without a scenario) |
 | `GET /dtcs` | per ECU: `[{code, pending, confirmed, indicator_requested}]`, and `mil` |
 | `GET /ecus` | per ECU: endpoints {`name`, `rx_id`, `tx_id`, `functional`, `receive`, `reply_via`, `padding`} and protocols {`name`, `sids`} |
@@ -370,6 +384,22 @@ The server keeps these identities **exactly**, at every instant:
 `offered = published_at_close − published_at_open`, `offered = enqueued + client_dropped`,
 and `enqueued = sent + queued + discarded_on_close`.
 The ledger of a closed connection is final once a send under way at close, if any, has resolved, and it stays in `closed_connections`.
+
+**Cumulative accounting** (added 2026-09-27). `closed_connections` keeps only the last 64
+ledgers, and a soak closes many more. So `GET /status` also carries:
+- `closed_totals`: the sum over **every** connection ever closed of `history_sent`,
+  `offered`, `client_dropped`, `enqueued`, `sent` and `discarded_on_close`, together with:
+  - `connections`, their count;
+  - `published_span`, the sum of `published_at_close − published_at_open`;
+  - `close_codes`, a count per close code.
+
+  A closed connection is added **once**, when its in-flight send (if any) has resolved.
+- `closed_unresolved`: the number of closed connections still waiting for that.
+- `connections_opened`: every connection ever registered.
+
+The summed identities hold at every instant: `offered = published_span`,
+`offered = enqueued + client_dropped` and `enqueued = sent + discarded_on_close`.
+`connections_opened = clients + closed_totals.connections + closed_unresolved` also holds.
 (Revised 2026-09-27, from the M1 final review: an event being sent when a forced close happened was counted as
 discarded even when it reached the client, which would have made P5(d) fail.)
 
@@ -408,7 +438,10 @@ counts as `sent` if it reached the client and as `discarded_on_close` if it did 
 - Milestone 3b vendors **uPlot** (MIT) for per-signal sparklines, with its licence file
   and pinned version. The MVP (3a) works without it.
 - Decoding stays in Python (§5), so the JavaScript only renders. The frontend is checked
-  by a manual acceptance list at M4 and by the API tests that produce what it renders.
+  by the API tests that produce what it renders and, **in M3**, by tests that every
+  frontend file is served with its content type, and by the owner's manual rendering
+  checklist, which is the M3a and M3b exit (revised 2026-09-27; this was at M4). M2
+  serves one placeholder page and tests only that page.
   There is no JavaScript test framework in v1.
 
 ## 8. The future control boundary (designed, not built)
@@ -483,7 +516,7 @@ the events' `dispatch_us`.
 | P2 | p99 wire latency, conditions 2, 3 and 4 | ≤ condition 1's p99 **+ 0.50 ms**, on pooled samples, in every round |
 | P3 | Lost replies, every condition | **Exactly 0.** A lost reply is a request frame with no reply frame before the next request, or within 1 s |
 | P4 | Throughput, condition 5 | Requests answered per second ≥ **90 %** of the same tester's maximum rate with the API off (measured the same way in each round) |
-| P5 | Drop and delivery accounting (reconciliation) | Checked after the run has **quiesced**: tester stopped, `HandOff` drained, every open connection's `queued` = 0. All of the following must hold **exactly**: (a) `issued_seq = published + handoff_dropped`. A record whose encoding failed counts in `published`, because it was published as its fallback event (§5). (b) For every connection, open or closed, the §5.1 identities hold. (c) Summed over every connection that was open for the whole run, `offered` equals the growth of `published` over the run, measured by the harness from `GET /status` before and after. (d) On the harness side, the `exchange` messages a connection received have strictly increasing `seq` and no duplicates. For an **open** connection, received live events = `sent`. For a **closed** connection, received live events ≤ `sent`, and the difference (sent but still in transit when the socket closed) is reported per connection. (e) Closes with code 1013 seen by the harness = `forced_disconnects`, closes with code 1011 = `fanout_failed`, and HTTP 503 refusals seen = `refused_clients`. **Any unexplained difference fails** |
+| P5 | Drop and delivery accounting (reconciliation) | Checked after the run has **quiesced**: tester stopped, `HandOff` drained, every open connection's `queued` = 0. All of the following must hold **exactly**: (a) `issued_seq = published + handoff_dropped`. A record whose encoding failed counts in `published`, because it was published as its fallback event (§5). (b) For every connection, open or closed, the §5.1 identities hold. (c) Summed over every connection that was open for the whole run, `offered` equals the growth of `published` over the run, measured by the harness from `GET /status` before and after. (d) On the harness side, the `exchange` messages a connection received have strictly increasing `seq` and no duplicates. For an **open** connection, received live events = `sent`. For a **closed** connection, received live events ≤ `sent`, and the difference (sent but still in transit when the socket closed) is reported per connection. (e) Closes with code 1013 seen by the harness = `forced_disconnects`, closes with code 1011 = `fanout_failed`, and HTTP 503 refusals seen = `refused_clients`. (f) Every closed connection is accounted for, including those no longer among the 64 retained: `closed_unresolved` = 0, `connections_opened = clients + closed_totals.connections`, the summed identities of §5.1 hold on `closed_totals`, and `closed_totals.close_codes["1013"]` = `forced_disconnects`. (g) **Durable output:** the harness appends every `GET /status` poll (at most 1 s apart) and every close it observes to JSONL files committed with the results. The union of `closed_connections` ids across the polls must be exactly `1..connections_opened` minus the open ones. A missing id means the polls were too far apart, and the run is reported inconclusive, not passed. **Any unexplained difference fails** |
 | P6 | Drops where none should occur | In conditions 2 and 3, and for the 3 reading clients in condition 4: `handoff_dropped` = 0, `client_dropped` = 0 and `discarded_on_close` = 0. In **every** condition, `encode_failed` = 0 and `fanout_failed` = 0. Drops, discards and in-transit losses are allowed only on the stalled client's connections, and only where P5 accounts for them |
 | P7 | Memory (RSS trend) | A 10-minute soak under condition 4 load, sampling the simulator's RSS every 5 s. Samples in the first 60 s are discarded as warm-up. **Pass if** the least-squares slope of RSS against time over the remaining samples is **≤ 0.1 MiB per minute**, **and** the final sample exceeds the first post-warm-up sample by **≤ 2 MiB**. Separately, the peak RSS increase over condition 1 must stay within the §4.3 bound of about 19 MiB plus 10 MiB for code and libraries |
 | P8 | Noise guard | If condition 1's own p99 differs by more than 0.50 ms between rounds, the benchmark is **inconclusive**. It is reported as such and does not pass |
@@ -502,12 +535,20 @@ pass.
 | Ledger tests (§5.1): the identities hold after enqueue, send, overflow, and voluntary and forced close; closed ledgers are retained and final | nothing | **Yes**, every job |
 | Observation of the two-socket case (§4.4): one request delivered to two fake sockets gives two exchanges | nothing | **Yes**, every job |
 | API-off proofs (§9.1) | nothing | **Yes**. In the `.[dev]` jobs, without aiohttp installed. In the `.[dev,gui]` job, the "not imported" form only |
-| `api` tests with aiohttp's test client over loopback: every route, 405 on every other method, `Host` 421, `Origin` 403, 503 for a 5th client, 1008 on an incoming data message, the WebSocket stream and its ordering, static files | `.[dev,gui]` and loopback | **Yes**, in a CI job that installs `.[dev,gui]`. Loopback exists on hosted runners |
+| `api` tests with aiohttp's test client over loopback: every route, 405 on every other method (including `HEAD`), `Host` 421, `Origin` 403, no CORS headers, 413, 503 for a 5th client, 1008 on an incoming data message, a forced 1013 for a stalled client, the WebSocket stream and its ordering, the initial `state`, the one placeholder page M2 serves | `.[dev,gui]` and loopback | **Yes**, in a CI job that installs `.[dev,gui]`. Loopback exists on hosted runners |
 | vcan integration: a real ISO-TP request produces the matching WebSocket `exchange` event | `.[dev,gui]` and a kernel with `CAN_ISOTP` | **No.** It skips on hosted runners (`linux-azure` has no `can_isotp`). It is **pending a compatible runner** ([0009](0009-self-hosted-vcan-runner.md)), runs locally, and is **never counted as validated from a CI run that skipped it** |
 | Performance (§9.2) | vcan and `CAN_ISOTP` | No. Local, recorded evidence |
 
-The one CI change is a job installing `.[dev,gui]` for the `api` tests. Integration and
-performance results are reported as local results, with their commands.
+| Frontend files (M3): every file M3 adds is served with its content type, and nothing else is | `.[dev,gui]` and loopback | **Yes**, in the `.[dev,gui]` job, from M3 |
+
+The CI changes, made on branch `gui` only:
+- a job installing `.[dev,gui]` for the `api` tests;
+- `gui` added to the push branches (owner, 2026-09-27);
+- every job's annotation lists its skip reasons by name, so the vcan tests show the
+  CAN_ISOTP reason on hosted runners.
+
+The `modernization` workflow is unchanged. Integration and performance results are
+reported as local results, with their commands.
 
 ## 10. Milestones
 
@@ -515,8 +556,8 @@ performance results are reported as local results, with their commands.
 |---|---|---|---|
 | **M0** | This record, approved. **After approval**, a roadmap note in `modernization-plan.md` on branch `gui`: the GUI is a separate track, and the V1.0 non-goal and the 8b gate are unchanged | no | Owner approves this record |
 | **M1** | `observe`: `HandOff`, `ObservedDispatcher`, `Publisher`, snapshots, sequence and watermark; the §9.1 proofs, including the differential comparison; the ordering tests; the M1 early check | yes, core, no dependencies | Tests green in CI; differential comparison clean; M1 early check reported |
-| **M2** | `ApiServer`, `--api`, the `[gui]` extra, §6 security, §4.3 limits, API tests, the CI job; the M2 early check | yes | API tests green in CI; M2 early check reported |
-| **M3a** | Frontend MVP: status, vehicle, DTCs, exchange log with gap markers | yes | Owner runs the manual view checklist |
+| **M2** | `ApiServer`, `--api`, the `[gui]` extra, §6 security, §4.3 limits, API tests, the CI job; the M2 early check | yes | API tests green in CI on a `gui` push; M2 early check reported |
+| **M3a** | Frontend MVP: status, vehicle, DTCs, exchange log with gap markers | yes | Frontend file tests green in CI; owner runs the manual rendering checklist |
 | **M3b** | Sparklines with vendored uPlot | yes | Owner runs the manual view checklist for sparklines |
 | **M4** | Full benchmark (§9.2) and MVP acceptance report | benchmark scripts only | P1–P9 met, or failures reported; owner accepts |
 | Later | Raw CAN frame panel (optional, read-only, a raw CAN socket in the API process) | — | Separate approval |
