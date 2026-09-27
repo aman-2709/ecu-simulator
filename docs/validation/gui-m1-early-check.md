@@ -114,3 +114,29 @@ none is an `observe` test:
 | Two-socket observation (§4.4) | Written, same status. It **observes** the DEV-25 shape and does not characterise DEV-25, which remains separate work |
 | API-off proofs (§9.1) | The differential comparison is written (46,125 requests). The two `run()` wiring proofs are **deferred to M2**, because M1 builds no `run()` wiring. The owner accepted this on 2026-09-26 |
 | `api` tests, vcan integration, performance | **Not applicable** until M2 and M4 |
+
+## Addendum, 2026-09-27: after the M1 final review
+
+A fresh-context review of `b026c4d..667f072` found four defects in connection lifecycle
+and ledger accounting. None affects replies. They are fixed in `31eb6e4`, each with a
+test that failed first, and 0010 §5.1 is revised to match (see that commit). The figures
+above were taken before the fix. They are left as recorded, and these supersede the
+counts:
+
+| Gate | Result at `31eb6e4` |
+|---|---|
+| Full suite, host with `vcan0` | **1081 passed, 2 xfailed**, 0 skipped. M1 now adds 55 tests |
+| CI shape (fresh clone, `.[dev]` only, `unshare -r -n`, `lo` up) | **992 passed, 55 skipped, 2 xfailed**. The same 55 skips as above; none is an `observe` test |
+| Lint, types | ruff clean; mypy clean, 54 source files |
+| Early check, one further run | overhead median 6.59 µs, p99 6.16 µs; longest turn 1.011 ms over 65 turns; within limits |
+
+The fix does not touch the publisher's drain path, which is what the early check
+measures. Integration was not re-run, because nothing outside `observe` changed.
+
+Two points from the review about the early check's method, which 0010 §9.2 prescribes:
+- the script's wrapper uses `wake=lambda: None`, so the cost of `asyncio.Event.set()` is
+  not measured;
+- "p99 overhead" is a difference of two p99s, not a p99 of differences, so it is noisy.
+  The reviewer's own run printed −0.09 µs.
+
+M2 measures both on vcan.
