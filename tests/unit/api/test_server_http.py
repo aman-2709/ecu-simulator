@@ -1,4 +1,6 @@
+import asyncio
 import socket
+import time
 
 import pytest
 
@@ -127,3 +129,50 @@ def test_an_oversized_state_refuses_to_construct(monkeypatch):
     monkeypatch.setattr(snapshots, "STATE_MAX_BYTES", 10)
     with pytest.raises(ApiStartupError, match="256 KiB"):
         build()
+
+
+@pytest.mark.asyncio
+async def test_a_body_stalled_mid_chunk_is_408(session):  # 0010 §4.3
+    s = build(body_timeout_s=0.2)
+    await s.start()
+    try:
+        request = (
+            f"GET /api/v1/status HTTP/1.1\r\nHost: 127.0.0.1:{s.port}\r\n"
+            "Transfer-Encoding: chunked\r\n\r\n800\r\n"
+        ).encode() + b"x" * 100                                            # then silence
+        reply = await asyncio.wait_for(raw_request(s.port, request), 2)
+        assert reply.startswith(b"HTTP/1.1 408"), reply[:40]
+        async with session.get(url(s, "/api/v1/status")) as r:            # the server is not wedged
+            assert r.status == 200
+    finally:
+        await s.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_bad_host_with_a_chunked_body_is_421_without_reading_it(server):
+    # The body is announced and never sent: the 421 must not wait for it, nor for the
+    # body timeout (2 s here, so a 408 would mean the body was waited for).
+    request = (
+        f"GET /api/v1/status HTTP/1.1\r\nHost: evil.example:{server.port}\r\n"
+        "Transfer-Encoding: chunked\r\n\r\n800\r\n"
+    ).encode()
+    started = time.monotonic()
+    reply = await asyncio.wait_for(raw_request(server.port, request), 2)
+    assert reply.startswith(b"HTTP/1.1 421"), reply[:40]
+    assert time.monotonic() - started < 1
+
+
+@pytest.mark.asyncio
+async def test_a_chunked_body_over_1_kib_sent_in_pieces_is_413(server):
+    # One read returns only what has arrived: the 1 KiB check must read on until it knows.
+    reader, writer = await asyncio.open_connection("127.0.0.1", server.port)
+    writer.write((f"GET /api/v1/status HTTP/1.1\r\nHost: 127.0.0.1:{server.port}\r\n"
+                  "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n800\r\n").encode() + b"x" * 100)
+    await writer.drain()
+    await asyncio.sleep(0.1)
+    writer.write(b"x" * 1948 + b"\r\n0\r\n\r\n")
+    await writer.drain()
+    reply = await asyncio.wait_for(reader.read(65536), 2)
+    writer.close()
+    await writer.wait_closed()
+    assert reply.startswith(b"HTTP/1.1 413"), reply[:40]

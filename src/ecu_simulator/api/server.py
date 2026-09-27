@@ -34,6 +34,7 @@ MAX_BODY = 1024                 # 0010 §4.3: incoming HTTP body
 WS_CLOSE_TIMEOUT_S = 2.0        # a stalled client cannot answer the close handshake
 WS_WRITER_LIMIT = 64 * 1024     # explicit: the default differs between aiohttp 3.13 and 3.14
 WRITER_GRACE_S = 2.0            # a send under way when the socket closes gets this long to resolve
+BODY_TIMEOUT_S = 2.0            # a length-less request body must arrive within this, or 408
 EVENTS = "/api/v1/events"
 INT = re.compile(r"-?[0-9]{1,19}")
 # Close codes the server sends when the Publisher, or a dead writer, closed the connection.
@@ -91,6 +92,20 @@ def _abort(request: web.Request) -> None:
         transport.abort()
 
 
+async def _body_size(content: Any) -> int:
+    """Bytes of a request body, read to its end or to ``MAX_BODY + 1``, whichever is first.
+
+    One ``read(n)`` returns only what has arrived, so a body sent in pieces needs the loop.
+    """
+    size = 0
+    while size <= MAX_BODY:
+        chunk = await content.read(MAX_BODY + 1 - size)
+        if not chunk:
+            break
+        size += len(chunk)
+    return size
+
+
 def _log_if_failed(task: asyncio.Task[None]) -> None:
     # The Publisher's tasks run until stop(): one that ends early is a fault, reported at once.
     if not task.cancelled() and (error := task.exception()) is not None:
@@ -106,6 +121,7 @@ class ApiServer:
         *,
         state_interval_s: float = STATE_MIN_INTERVAL_S,
         connection_options: Mapping[str, Any] | None = None,
+        body_timeout_s: float = BODY_TIMEOUT_S,
     ) -> None:
         try:
             snapshots.check_state_size(runtime)
@@ -122,6 +138,7 @@ class ApiServer:
         self.started_at = time.time()
         self.port: int | None = None
         self._state_interval_s = state_interval_s
+        self._body_timeout_s = body_timeout_s
         self._allowed: frozenset[str] = frozenset()
         self._runner: web.AppRunner | None = None
         self._tasks: list[asyncio.Task[None]] = []
@@ -139,10 +156,15 @@ class ApiServer:
                 raise web.HTTPRequestEntityTooLarge(max_size=MAX_BODY, actual_size=request.content_length)
             if request.body_exists and request.content_length is None:
                 # Chunked (or otherwise length-less) bodies bypass client_max_size, which
-                # only enforces Content-Length: read a bounded probe ourselves (0010 §4.3).
-                data = await request.content.read(MAX_BODY + 1)
-                if len(data) > MAX_BODY:
-                    raise web.HTTPRequestEntityTooLarge(max_size=MAX_BODY, actual_size=len(data))
+                # only enforces Content-Length: read a bounded probe ourselves (0010 §4.3),
+                # to the end or past the limit, within a deadline so a stalled body cannot hold it.
+                try:
+                    size = await asyncio.wait_for(_body_size(request.content), self._body_timeout_s)
+                except TimeoutError:
+                    message = "request body not received in time (decisions/0010 §4.3)"
+                    raise web.HTTPRequestTimeout(text=message) from None
+                if size > MAX_BODY:
+                    raise web.HTTPRequestEntityTooLarge(max_size=MAX_BODY, actual_size=size)
             upgrade = request.path == EVENTS and request.method == "GET"
             # Same-origin against THIS request's validated Host: localhost and 127.0.0.1 are
             # different origins and are never substituted for one another (owner, 2026-09-27).
