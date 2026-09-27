@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
@@ -21,7 +22,7 @@ class ApiOptions:
 
 def parse_api(value: str, profile: str, version: str) -> ApiOptions:
     host, sep, port_text = value.rpartition(":")
-    if not sep:
+    if not sep or not host:
         raise ApiStartupError(f"--api expects HOST:PORT, got {value!r}")
     if host.startswith("[") and host.endswith("]"):
         host = host[1:-1]
@@ -29,7 +30,7 @@ def parse_api(value: str, profile: str, version: str) -> ApiOptions:
         raise ApiStartupError(
             f"--api host must be 127.0.0.1, ::1 or localhost (loopback only, decisions/0010 §6), got {host!r}"
         )
-    if not port_text.isdigit() or int(port_text) > 65535:
+    if not re.fullmatch(r"[0-9]{1,5}", port_text) or int(port_text) > 65535:
         raise ApiStartupError(f"--api port must be 0-65535, got {port_text!r}")
     # "localhost" binds IPv4 only, so the bound address and the Host allowlist are exact.
     return ApiOptions("127.0.0.1" if host == "localhost" else host, int(port_text), profile, version)
