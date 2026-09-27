@@ -58,10 +58,15 @@ def check_state_size(runtime: app.Runtime) -> None:
         raise ValueError(f"state message is {size} bytes, over the 256 KiB limit (decisions/0010 §4.3)")
 
 
-def status(runtime: app.Runtime, publisher: Any, issued: int, started_at: float, version: str) -> dict[str, Any]:
+def status(
+    runtime: app.Runtime, publisher: Any, issued: int, started_at: float, version: str, profile: str,
+) -> dict[str, Any]:
+    """``GET /status`` (0010 §5). ``profile`` is passed in because the Runtime does not know
+    where its profile came from: M2 passes the path the command line loaded.
+    """
     runner = runtime.runner
     return {
-        "version": version, "interface": runtime.config.interface,
+        "version": version, "interface": runtime.config.interface, "profile": profile,
         "started_at": started_at, "uptime_s": time.time() - started_at,
         "scenario": {"enabled": runner is not None,
                      "t_last_applied": runner.last_applied if runner else None,

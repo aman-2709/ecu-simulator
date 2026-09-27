@@ -7,6 +7,8 @@ import pytest
 from ecu_simulator import app
 from ecu_simulator.config import load_profile
 from ecu_simulator.observe import snapshots
+from ecu_simulator.observe.handoff import HandOff
+from ecu_simulator.observe.publisher import Publisher
 
 PROFILES = Path(app.__file__).parent / "profiles"
 
@@ -60,3 +62,15 @@ def test_oversized_state_is_refused():
     rt.vehicle.common.vin = "V" * (300 * 1024)   # test-only object, discarded after the test
     with pytest.raises(ValueError, match="256 KiB"):
         snapshots.check_state_size(rt)
+
+
+def test_status_has_every_section_5_field_including_profile():
+    rt = runtime("ice_scenario.yaml")
+    publisher = Publisher(HandOff(), rt.router, {})
+    path = str(PROFILES / "ice_scenario.yaml")
+    status = snapshots.status(rt, publisher, issued=0, started_at=1_790_000_000.0, version="9.9.9", profile=path)
+    json.dumps(status)
+    assert set(status) == {"version", "interface", "profile", "started_at", "uptime_s", "scenario", "api"}
+    assert (status["profile"], status["version"], status["interface"]) == (path, "9.9.9", "vcan0")
+    assert status["scenario"] == {"enabled": True, "t_last_applied": None, "pending_events": rt.runner.pending_events}
+    assert status["api"]["issued_seq"] == 0 and status["api"]["clients"] == 0
