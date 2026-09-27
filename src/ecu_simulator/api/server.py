@@ -8,6 +8,7 @@ WebSocket client receives it (0010 §4.5).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
 import time
@@ -15,15 +16,17 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from importlib import resources
 from typing import Any
 
-from aiohttp import WSCloseCode, web
+from aiohttp import WSCloseCode, WSMsgType, web
 
 from ecu_simulator import app
 from ecu_simulator.api.options import ApiOptions, ApiStartupError, allowed_hosts
 from ecu_simulator.observe import snapshots
+from ecu_simulator.observe.connection import Connection
 from ecu_simulator.observe.handoff import HandOff
-from ecu_simulator.observe.limits import STATE_MIN_INTERVAL_S
-from ecu_simulator.observe.publisher import Publisher
+from ecu_simulator.observe.limits import CLOSE_TOO_SLOW, STATE_MIN_INTERVAL_S
+from ecu_simulator.observe.publisher import Publisher, TooManyClients
 from ecu_simulator.observe.wrapper import ObservedDispatcher
+from ecu_simulator.observe.writer import NotDelivered, Send, run_writer
 from ecu_simulator.transport.socketcan import EndpointConfig
 
 logger = logging.getLogger(__name__)
@@ -44,6 +47,35 @@ def _query_int(request: web.Request, name: str) -> int | None:
     if not INT.fullmatch(value):
         raise web.HTTPBadRequest(text=f"{name} must be an integer")
     return int(value)
+
+
+def send_via(ws: Any, request: Any) -> Send:
+    """``ws.send_str`` with the one known non-delivery made explicit (owner decision 8).
+
+    With compression off, ``send_str`` reaches ``transport.write()`` without suspending, and
+    its own pre-write refusals are the two checked here, synchronously. So a refusal here
+    means nothing was written (``NotDelivered``); any exception from ``send_str`` itself
+    arises at or after the write, and the writer records it as delivery_unknown.
+    """
+    async def send(text: str) -> None:
+        transport = request.transport
+        if ws.closed or transport is None or transport.is_closing():
+            raise NotDelivered("socket closed or closing: nothing written")
+        await ws.send_str(text)
+    return send
+
+
+async def _close_or_abort(ws: web.WebSocketResponse, request: web.Request, code: int, message: bytes) -> None:
+    """``ws.close``, bounded. aiohttp's close drains the socket first, with no timeout, so a
+    client that stopped reading would hold it forever; after ``WS_CLOSE_TIMEOUT_S`` the socket
+    is aborted, which discards its unsent backlog and ends every task waiting on it.
+    """
+    try:
+        await asyncio.wait_for(ws.close(code=code, message=message), WS_CLOSE_TIMEOUT_S)
+    except TimeoutError:
+        transport = request.transport
+        if transport is not None:
+            transport.abort()
 
 
 class ApiServer:
@@ -74,7 +106,7 @@ class ApiServer:
         self._allowed: frozenset[str] = frozenset()
         self._runner: web.AppRunner | None = None
         self._tasks: list[asyncio.Task[None]] = []
-        self._sockets: set[web.WebSocketResponse] = set()
+        self._sockets: dict[web.WebSocketResponse, tuple[web.Request, Connection]] = {}
         self._page = resources.files("ecu_simulator.api").joinpath("static/index.html").read_bytes()
 
     def application(self) -> web.Application:
@@ -133,8 +165,11 @@ class ApiServer:
         logger.info("observer API on http://%s/", sorted(self._allowed)[0])
 
     async def stop(self) -> None:
-        for ws in list(self._sockets):
-            await ws.close(code=WSCloseCode.GOING_AWAY, message=b"server shutdown")
+        closing = []
+        for ws, (request, conn) in list(self._sockets.items()):
+            self.publisher.disconnect(conn, WSCloseCode.GOING_AWAY)   # the ledger records the code sent
+            closing.append(_close_or_abort(ws, request, WSCloseCode.GOING_AWAY, b"server shutdown"))
+        await asyncio.gather(*closing)
         for task in self._tasks:
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
@@ -174,4 +209,47 @@ class ApiServer:
         return web.Response(text=body, content_type="application/json")
 
     async def _events(self, request: web.Request) -> web.StreamResponse:
-        raise web.HTTPNotImplemented(text="Task 5")
+        after = _query_int(request, "after")
+        try:
+            conn, hello, history = self.publisher.connect(after)
+        except TooManyClients:
+            raise web.HTTPServiceUnavailable(text="too many clients (decisions/0010 §4.3)") from None
+        except (TypeError, ValueError) as error:
+            raise web.HTTPBadRequest(text=str(error)) from error
+        ws = web.WebSocketResponse(timeout=WS_CLOSE_TIMEOUT_S, compress=False, max_msg_size=MAX_BODY,
+                                   writer_limit=WS_WRITER_LIMIT)
+        try:
+            await ws.prepare(request)
+        except BaseException:
+            self.publisher.disconnect(conn, WSCloseCode.ABNORMAL_CLOSURE)   # recorded, never sent
+            raise
+        self._sockets[ws] = (request, conn)
+        writer = asyncio.create_task(run_writer(conn, send_via(ws, request), hello, history))
+        closer = asyncio.create_task(self._close_when_forced(conn, ws, request))
+        try:
+            async for msg in ws:
+                if msg.type in (WSMsgType.TEXT, WSMsgType.BINARY):
+                    self.publisher.disconnect(conn, WSCloseCode.POLICY_VIOLATION)   # the ledger records the code sent
+                    await _close_or_abort(ws, request, WSCloseCode.POLICY_VIOLATION, b"v1 accepts no client messages")
+                    break
+        finally:
+            self._sockets.pop(ws, None)
+            # The first close code wins: a forced 1013, a 1008 or a shutdown 1001 stays as recorded.
+            self.publisher.disconnect(conn, ws.close_code or WSCloseCode.GOING_AWAY)
+            closer.cancel()
+            try:
+                await asyncio.wait_for(writer, WRITER_GRACE_S)   # a timeout cancels it: delivery_unknown
+            except (TimeoutError, asyncio.CancelledError):
+                pass
+            except Exception as error:     # raised by send: the writer has already resolved its ledger
+                logger.debug("writer for connection %d ended: %r", conn.id, error)
+            with contextlib.suppress(asyncio.CancelledError):
+                await closer
+        return ws
+
+    async def _close_when_forced(self, conn: Connection, ws: web.WebSocketResponse, request: web.Request) -> None:
+        # The writer may be blocked in send_str on a client that stopped reading, so the
+        # forced close cannot wait for it (Review Focus 1).
+        await conn.wait_closed()
+        if conn.close_code == CLOSE_TOO_SLOW:
+            await _close_or_abort(ws, request, WSCloseCode.TRY_AGAIN_LATER, b"client too slow")

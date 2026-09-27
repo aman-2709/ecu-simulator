@@ -1,0 +1,260 @@
+import asyncio
+import json
+import socket
+import time
+
+import pytest
+
+aiohttp = pytest.importorskip("aiohttp", reason="needs the optional [gui] extra (aiohttp)")
+
+from ecu_simulator.observe import snapshots  # noqa: E402
+from ecu_simulator.transport import DiagnosticRequest  # noqa: E402
+from tests.unit.api.support import build, url  # noqa: E402
+
+REQ = DiagnosticRequest(b"\x01\x0c", 0x7DF, functional=True)
+
+
+def origin(server):
+    return f"http://127.0.0.1:{server.port}"
+
+
+async def next_json(ws):
+    msg = await asyncio.wait_for(ws.receive(), 2)
+    assert msg.type == aiohttp.WSMsgType.TEXT, msg
+    return json.loads(msg.data)
+
+
+async def next_exchange(ws):
+    # run_state sets a one-slot `dropped` notice every 250 ms (0010 §4.3); it may come first.
+    while (event := await next_json(ws))["type"] != "exchange":
+        assert event["type"] == "dropped", event
+    return event
+
+
+async def publish(server, n):
+    for _ in range(n):
+        server.handler(REQ)
+    for _ in range(50):
+        await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_hello_state_history_then_live(server, session):
+    await publish(server, 2)                                          # seq 1, 2 go to history
+    async with session.ws_connect(url(server, "/api/v1/events"), origin=origin(server)) as ws:
+        hello = await next_json(ws)
+        assert hello == {"type": "hello", "api": 1, "watermark": 2, "oldest_seq": 1}
+        assert await next_json(ws) == json.loads(snapshots.state_message(server.runtime))
+        assert [(await next_json(ws))["seq"] for _ in range(2)] == [1, 2]   # history is sent directly
+        await publish(server, 1)
+        live = await next_exchange(ws)
+        assert (live["type"], live["seq"], live["outcome"]) == ("exchange", 3, "responded")
+
+
+@pytest.mark.asyncio
+async def test_origin_missing_or_foreign_is_403_before_the_upgrade(server, session):
+    for bad in (None, "http://evil.example", f"http://127.0.0.1:{server.port + 1}"):
+        with pytest.raises(aiohttp.WSServerHandshakeError) as info:
+            await session.ws_connect(url(server, "/api/v1/events"), origin=bad)
+        assert info.value.status == 403, bad
+    assert server.publisher.stats(issued=0)["connections_opened"] == 0
+
+
+@pytest.mark.asyncio
+async def test_origin_must_match_the_host_of_the_same_request(server, session):
+    port = server.port
+    events = url(server, "/api/v1/events")
+    for host, good, bad in ((f"127.0.0.1:{port}", f"http://127.0.0.1:{port}", f"http://localhost:{port}"),
+                            (f"localhost:{port}", f"http://localhost:{port}", f"http://127.0.0.1:{port}")):
+        with pytest.raises(aiohttp.WSServerHandshakeError) as info:     # the other loopback name: refused
+            await session.ws_connect(events, origin=bad, headers={"Host": host})
+        assert info.value.status == 403, (host, bad)
+        async with session.ws_connect(events, origin=good, headers={"Host": host}) as ws:   # its own origin: accepted
+            assert (await next_json(ws))["type"] == "hello"
+    with pytest.raises(aiohttp.WSServerHandshakeError) as info:
+        await session.ws_connect(events, origin=f"https://127.0.0.1:{port}")           # scheme is part of the origin
+    assert info.value.status == 403
+
+
+@pytest.mark.asyncio
+async def test_a_fifth_client_is_503_before_the_upgrade(server, session):
+    sockets = [await session.ws_connect(url(server, "/api/v1/events"), origin=origin(server)) for _ in range(4)]
+    with pytest.raises(aiohttp.WSServerHandshakeError) as info:
+        await session.ws_connect(url(server, "/api/v1/events"), origin=origin(server))
+    assert info.value.status == 503 and server.publisher.refused_clients == 1
+    for ws in sockets:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_bad_after_is_400_before_the_upgrade(server, session):
+    for query in ("after=-1", "after=x"):
+        with pytest.raises(aiohttp.WSServerHandshakeError) as info:
+            await session.ws_connect(url(server, f"/api/v1/events?{query}"), origin=origin(server))
+        assert info.value.status == 400, query
+
+
+@pytest.mark.asyncio
+async def test_a_client_data_message_closes_1008(server, session):
+    async with session.ws_connect(url(server, "/api/v1/events"), origin=origin(server)) as ws:
+        await next_json(ws)                                           # hello
+        await ws.send_str("hi")
+        while (await asyncio.wait_for(ws.receive(), 2)).type == aiohttp.WSMsgType.TEXT:
+            pass
+        assert ws.close_code == 1008
+    deadline = time.monotonic() + 3                                   # the ledger records the code sent
+    while not server.publisher.stats(issued=0)["closed_totals"]["connections"] and time.monotonic() < deadline:
+        await asyncio.sleep(0.01)
+    assert server.publisher.stats(issued=0)["closed_totals"]["close_codes"] == {"1008": 1}
+
+
+@pytest.mark.asyncio
+async def test_a_client_that_disconnects_mid_stream_is_retired_cleanly(server, session, caplog):  # Review Focus 2
+    ws = await session.ws_connect(url(server, "/api/v1/events"), origin=origin(server))
+    await next_json(ws)
+    await ws.close()
+    await publish(server, 200)
+    deadline = time.monotonic() + 3
+    while server.publisher.stats(issued=server.handler.issued)["clients"] and time.monotonic() < deadline:
+        await asyncio.sleep(0.01)
+    stats = server.publisher.stats(issued=server.handler.issued)
+    assert stats["clients"] == 0 and stats["closed_unresolved"] == 0 and stats["closed_totals"]["connections"] == 1
+    totals = stats["closed_totals"]
+    assert totals["enqueued"] == totals["sent"] + totals["delivery_unknown"] + totals["discarded_on_close"]
+    assert "Task exception was never retrieved" not in caplog.text
+
+
+STALLED_FINDING: dict[str, int] = {}
+
+
+@pytest.mark.asyncio
+async def test_a_stalled_client_is_closed_1013_and_frees_its_slot():  # Review Focus 1
+    s = build(connection_options={"max_messages": 4, "overflow_disconnect_s": 0.2})
+    await s.start()
+    raw = socket.socket()
+    raw.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+    raw.connect(("127.0.0.1", s.port))
+    raw.sendall(
+        f"GET /api/v1/events HTTP/1.1\r\nHost: 127.0.0.1:{s.port}\r\nOrigin: http://127.0.0.1:{s.port}\r\n"
+        "Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n\r\n".encode()
+    )                                                                 # then never reads again
+    try:
+        deadline = time.monotonic() + 20
+        while s.publisher.forced_disconnects == 0 and time.monotonic() < deadline:
+            await publish(s, 1000)                                    # enough to fill every buffer
+        assert s.publisher.forced_disconnects == 1
+        # clients drops to 0 as soon as the Publisher retires the connection; the totals fold
+        # only once the writer's blocked send has resolved (closed_unresolved back to 0).
+        while ((stats := s.publisher.stats(issued=s.handler.issued))["clients"] or stats["closed_unresolved"]) \
+                and time.monotonic() < deadline:
+            await asyncio.sleep(0.05)
+        assert stats["clients"] == 0 and stats["closed_unresolved"] == 0
+        assert stats["closed_totals"]["close_codes"] == {"1013": 1}
+        totals = stats["closed_totals"]
+        assert totals["enqueued"] == totals["sent"] + totals["delivery_unknown"] + totals["discarded_on_close"]
+        STALLED_FINDING["delivery_unknown"] = totals["delivery_unknown"]    # read by the next test
+        async with aiohttp.ClientSession() as session:                # the slot is free again
+            async with session.ws_connect(url(s, "/api/v1/events"), origin=origin(s)) as ws:
+                assert (await next_json(ws))["type"] == "hello"
+    finally:
+        raw.close()
+        await s.stop()
+
+
+@pytest.mark.xfail(strict=True, reason="stalled-client finding: blocked send resolves as delivery_unknown=1; "
+                                       "M4 condition 4 P5(h) decision pending")
+def test_a_stalled_clients_blocked_send_is_not_delivery_unknown():
+    # The measurement behind 0010 P5(h) for M4 condition 4: if a stalled client's blocked
+    # send resolves as delivery_unknown, every condition-4 run is inconclusive. Kept separate
+    # so the lifecycle test above stays a clean pass or fail.
+    if "delivery_unknown" not in STALLED_FINDING:
+        pytest.skip("the stalled-client lifecycle test did not run in this session")
+    assert STALLED_FINDING["delivery_unknown"] == 0
+
+
+class FakeTransport:
+    def __init__(self, closing):
+        self.closing = closing
+
+    def is_closing(self):
+        return self.closing
+
+
+class FakeWs:
+    def __init__(self, closed=False, error=None):
+        self.closed, self.error, self.sent = closed, error, []
+
+    async def send_str(self, text):
+        if self.error:
+            raise self.error
+        self.sent.append(text)
+
+
+class FakeRequest:
+    def __init__(self, closing=False, transport=True):
+        self.transport = FakeTransport(closing) if transport else None
+
+
+@pytest.mark.asyncio
+async def test_send_via_raises_not_delivered_only_when_nothing_can_be_written():  # owner decision 8
+    from ecu_simulator.api.server import send_via
+    from ecu_simulator.observe.writer import NotDelivered
+    for ws, request in ((FakeWs(closed=True), FakeRequest()), (FakeWs(), FakeRequest(closing=True)),
+                        (FakeWs(), FakeRequest(transport=False))):
+        with pytest.raises(NotDelivered):
+            await send_via(ws, request)("x")
+        assert ws.sent == []                                            # send_str was never called
+    ok = FakeWs()
+    await send_via(ok, FakeRequest())("x")
+    assert ok.sent == ["x"]
+    with pytest.raises(ConnectionResetError):                            # after the pre-check: not NotDelivered
+        await send_via(FakeWs(error=ConnectionResetError("Connection lost")), FakeRequest())("x")
+
+
+@pytest.mark.asyncio
+async def test_shutdown_closes_clients_with_1001(session):  # Review Focus 5
+    s = build()
+    await s.start()
+    ws = await session.ws_connect(url(s, "/api/v1/events"), origin=origin(s))
+    await next_json(ws)
+    started = time.monotonic()
+    await s.stop()
+    while (msg := await asyncio.wait_for(ws.receive(), 3)).type == aiohttp.WSMsgType.TEXT:
+        pass
+    # The code in the close frame the server sent. ws.close_code is not used: the server
+    # closes the socket without awaiting the reply (its reader task is busy), and the aiohttp
+    # client then overwrites the received 1001 with 1006 when its own reply cannot be written.
+    assert (msg.type, msg.data) == (aiohttp.WSMsgType.CLOSE, 1001) and time.monotonic() - started < 5
+    assert s.publisher.stats(issued=0)["closed_totals"]["close_codes"] == {"1001": 1}
+
+
+@pytest.mark.asyncio
+async def test_shutdown_is_bounded_with_a_stalled_client():
+    # aiohttp's ws.close drains first, with no timeout: without the bound, stop() would wait
+    # for a client that never reads (the socket is aborted after WS_CLOSE_TIMEOUT_S instead).
+    s = build(connection_options={"max_messages": 4, "overflow_disconnect_s": 60})
+    await s.start()
+    raw = socket.socket()
+    raw.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+    raw.connect(("127.0.0.1", s.port))
+    raw.sendall(
+        f"GET /api/v1/events HTTP/1.1\r\nHost: 127.0.0.1:{s.port}\r\nOrigin: http://127.0.0.1:{s.port}\r\n"
+        "Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n\r\n".encode()
+    )
+    try:
+        deadline = time.monotonic() + 20
+        while not (s._sockets and next(iter(s._sockets.values()))[0].protocol.writing_paused) \
+                and time.monotonic() < deadline:
+            await publish(s, 1000)
+        assert s._sockets and next(iter(s._sockets.values()))[0].protocol.writing_paused
+        started = time.monotonic()
+        await s.stop()
+        assert time.monotonic() - started < 5
+        stats = s.publisher.stats(issued=s.handler.issued)
+        assert stats["clients"] == 0 and stats["closed_unresolved"] == 0
+        assert stats["closed_totals"]["close_codes"] == {"1001": 1}
+    finally:
+        raw.close()
+        await s.stop()
