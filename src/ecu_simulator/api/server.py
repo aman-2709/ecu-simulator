@@ -22,7 +22,7 @@ from ecu_simulator.api.options import ApiOptions, ApiStartupError, allowed_hosts
 from ecu_simulator.observe import snapshots
 from ecu_simulator.observe.connection import Connection
 from ecu_simulator.observe.handoff import HandOff
-from ecu_simulator.observe.limits import CLOSE_TOO_SLOW, STATE_MIN_INTERVAL_S
+from ecu_simulator.observe.limits import CLOSE_INTERNAL_ERROR, CLOSE_TOO_SLOW, STATE_MIN_INTERVAL_S
 from ecu_simulator.observe.publisher import Publisher, TooManyClients
 from ecu_simulator.observe.wrapper import ObservedDispatcher
 from ecu_simulator.observe.writer import NotDelivered, Send, run_writer
@@ -36,6 +36,8 @@ WS_WRITER_LIMIT = 64 * 1024     # explicit: the default differs between aiohttp 
 WRITER_GRACE_S = 2.0            # a send under way when the socket closes gets this long to resolve
 EVENTS = "/api/v1/events"
 INT = re.compile(r"-?[0-9]{1,19}")
+# Close codes the server sends when the Publisher, or a dead writer, closed the connection.
+CLOSE_REASONS = {CLOSE_TOO_SLOW: b"client too slow", CLOSE_INTERNAL_ERROR: b"internal error"}
 Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 
 
@@ -236,7 +238,8 @@ class ApiServer:
             raise
         self._sockets[ws] = (request, conn)
         writer = asyncio.create_task(run_writer(conn, send_via(ws, request), hello, history))
-        closer = asyncio.create_task(self._close_when_forced(conn, ws, request))
+        writer.add_done_callback(lambda task: self._writer_ended(task, conn, request))
+        closer = asyncio.create_task(self._close_when_closed(conn, ws, request))
         try:
             async for msg in ws:
                 if msg.type in (WSMsgType.TEXT, WSMsgType.BINARY):
@@ -258,9 +261,22 @@ class ApiServer:
             await closer
         return ws
 
-    async def _close_when_forced(self, conn: Connection, ws: web.WebSocketResponse, request: web.Request) -> None:
-        # The writer may be blocked in send_str on a client that stopped reading, so the
-        # forced close cannot wait for it (Review Focus 1).
+    def _writer_ended(self, task: asyncio.Task[None], conn: Connection, request: web.Request) -> None:
+        # A writer that dies while its socket is healthy is a server fault, not a slow client:
+        # close that connection with 1011 now, rather than leave it registered until overflow
+        # forces a misattributed 1013. A socket already going away is the handler's to record.
+        if task.cancelled() or task.exception() is None or conn.closed:
+            return
+        transport = request.transport
+        if transport is not None and not transport.is_closing():
+            logger.error("writer for connection %d failed; closing it with 1011", conn.id, exc_info=task.exception())
+            self.publisher.disconnect(conn, CLOSE_INTERNAL_ERROR)
+
+    async def _close_when_closed(self, conn: Connection, ws: web.WebSocketResponse, request: web.Request) -> None:
+        # Sends the close the Publisher or a dead writer decided: 1013 for a forced disconnect,
+        # 1011 for a failed offer or writer (0010 §4.3, §5). The writer may be blocked in
+        # send_str on a client that stopped reading, so this cannot wait for it (Review Focus 1).
         await conn.wait_closed()
-        if conn.close_code == CLOSE_TOO_SLOW:
-            await _close_or_abort(ws, request, WSCloseCode.TRY_AGAIN_LATER, b"client too slow")
+        reason = CLOSE_REASONS.get(conn.close_code or 0)
+        if reason is not None:
+            await _close_or_abort(ws, request, conn.close_code or 0, reason)

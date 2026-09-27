@@ -300,3 +300,57 @@ async def test_a_data_frame_during_a_forced_close_still_ends_in_an_abort():
     finally:
         raw.close()
         await s.stop()
+
+
+async def wait_until(condition, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while not condition() and time.monotonic() < deadline:
+        await asyncio.sleep(0.01)
+    return condition()
+
+
+async def closing_frame(ws):
+    # The close frame the server sent; ws.close_code may be overwritten by a failed reply (above).
+    while (msg := await asyncio.wait_for(ws.receive(), 5)).type == aiohttp.WSMsgType.TEXT:
+        pass
+    return msg.type, msg.data
+
+
+@pytest.mark.asyncio
+async def test_a_connection_the_publisher_abandons_is_closed_1011(server, session):  # 0010 §5
+    async with session.ws_connect(url(server, "/api/v1/events"), origin=origin(server)) as ws:
+        await next_json(ws)
+        (conn,) = server.publisher.connections
+
+        def offer(text):
+            raise RuntimeError("offer failed")
+        conn.offer = offer
+        await publish(server, 1)
+        assert await closing_frame(ws) == (aiohttp.WSMsgType.CLOSE, 1011)
+    assert await wait_until(lambda: not server._sockets)
+    stats = server.publisher.stats(issued=server.handler.issued)
+    assert stats["fanout_failed"] == 1 and stats["closed_totals"]["close_codes"] == {"1011": 1}
+
+
+@pytest.mark.asyncio
+async def test_a_writer_that_dies_on_an_open_socket_closes_it_1011(server, session, monkeypatch):
+    from ecu_simulator.api import server as server_module
+    real = server_module.send_via
+
+    def failing_send_via(ws, request):
+        send = real(ws, request)
+
+        async def wrapped(text):
+            if '"type":"exchange"' in text:
+                raise RuntimeError("writer bug")        # not NotDelivered, and the socket is healthy
+            await send(text)
+        return wrapped
+    monkeypatch.setattr(server_module, "send_via", failing_send_via)
+    async with session.ws_connect(url(server, "/api/v1/events"), origin=origin(server)) as ws:
+        await next_json(ws)
+        await publish(server, 1)
+        assert await closing_frame(ws) == (aiohttp.WSMsgType.CLOSE, 1011)
+    assert await wait_until(lambda: not server._sockets)
+    stats = server.publisher.stats(issued=server.handler.issued)
+    assert stats["clients"] == 0 and stats["closed_totals"]["close_codes"] == {"1011": 1}
+    assert stats["closed_totals"]["delivery_unknown"] == 1              # owner decision 8: any other exception
