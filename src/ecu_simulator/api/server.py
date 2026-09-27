@@ -91,6 +91,12 @@ def _abort(request: web.Request) -> None:
         transport.abort()
 
 
+def _log_if_failed(task: asyncio.Task[None]) -> None:
+    # The Publisher's tasks run until stop(): one that ends early is a fault, reported at once.
+    if not task.cancelled() and (error := task.exception()) is not None:
+        logger.error("%s task failed; the observer API is degraded until restart", task.get_name(), exc_info=error)
+
+
 class ApiServer:
     def __init__(
         self,
@@ -172,9 +178,11 @@ class ApiServer:
         self._allowed = allowed_hosts(self.options.host, self.port)
         state = lambda: snapshots.state_message(self.runtime)  # noqa: E731
         self._tasks = [
-            asyncio.create_task(self.publisher.run()),
-            asyncio.create_task(self.publisher.run_state(state, self._state_interval_s)),
+            asyncio.create_task(self.publisher.run(), name="observer publisher"),
+            asyncio.create_task(self.publisher.run_state(state, self._state_interval_s), name="observer state"),
         ]
+        for task in self._tasks:
+            task.add_done_callback(_log_if_failed)
         logger.info("observer API on http://%s/", sorted(self._allowed)[0])
 
     async def stop(self) -> None:

@@ -449,3 +449,17 @@ async def test_a_client_reset_while_backpressured_is_delivery_unknown_once():  #
         finally:
             await s.stop()
     assert errors.calls == []
+
+
+@pytest.mark.asyncio
+async def test_a_publisher_task_that_fails_is_logged_at_once(caplog, monkeypatch):
+    s = build()
+    monkeypatch.setattr(snapshots, "state_message", lambda runtime: 1 / 0)   # run_state's snapshot raises
+    await s.start()
+    try:
+        assert await wait_until(lambda: any(
+            r.name == "ecu_simulator.api.server" and r.levelname == "ERROR" and r.exc_info
+            and isinstance(r.exc_info[1], ZeroDivisionError) for r in caplog.records), timeout=2)
+    finally:
+        await s.stop()
+    assert not [r for r in caplog.records if "never retrieved" in r.getMessage()]
