@@ -312,3 +312,60 @@ def test_abandon_keeps_the_ledger_exact_when_the_clock_also_fails():  # final re
     assert closed["closed_at"] is None and closed["published_at_close"] == 1
     assert closed["offered"] == closed["published_at_close"] - closed["published_at_open"]
     assert closed["offered"] == closed["enqueued"] + closed["client_dropped"]
+
+
+def test_totals_reconcile_beyond_the_64_retained_ledgers():
+    handoff = HandOff()
+    p = Publisher(handoff, Router(), {}, encode=lambda rec, *_: json.dumps({"seq": rec.seq}),
+                  connection_options={"max_messages": 2, "overflow_disconnect_s": 0.0})
+    seq = 1
+    for i in range(200):
+        c, _, _ = p.connect()
+        fill(handoff, 3, start=seq)
+        seq += 3
+        p.drain_turn()                                   # 3 offered: 2 enqueued, then a forced 1013 on the 3rd
+        if i % 2:
+            p.disconnect(c, 1000)                        # already forced: stays 1013, idempotent
+    stats = p.stats(issued=seq - 1)
+    totals = stats["closed_totals"]
+    assert len(stats["closed_connections"]) == 64 and totals["connections"] == 200
+    assert stats["connections_opened"] == stats["clients"] + totals["connections"] + stats["closed_unresolved"] == 200
+    assert totals["offered"] == totals["published_span"] == totals["enqueued"] + totals["client_dropped"]
+    assert totals["enqueued"] == totals["sent"] + totals["delivery_unknown"] + totals["discarded_on_close"]
+    assert totals["delivery_unknown"] == 0
+    assert totals["close_codes"] == {"1013": 200} and stats["forced_disconnects"] == 200
+
+
+def test_an_unresolved_close_is_added_to_the_totals_only_when_it_resolves():
+    handoff = HandOff()
+    p = publisher(handoff)
+    c, _, _ = p.connect()
+    fill(handoff, 1)
+    p.drain_turn()
+    c.next_message()                                      # in flight
+    p.disconnect(c, 1001)
+    stats = p.stats(issued=1)
+    assert (stats["closed_unresolved"], stats["closed_totals"]["connections"]) == (1, 0)
+    c.mark_sent()
+    stats = p.stats(issued=1)
+    assert (stats["closed_unresolved"], stats["closed_totals"]["connections"], stats["closed_totals"]["sent"]) == (0, 1, 1)
+
+
+def test_delivery_unknown_is_carried_into_the_totals():
+    handoff = HandOff()
+    p = publisher(handoff)
+    c, _, _ = p.connect()
+    fill(handoff, 1)
+    p.drain_turn()
+    c.next_message()
+    p.disconnect(c, 1001)
+    c.mark_unknown()
+    totals = p.stats(issued=1)["closed_totals"]
+    assert (totals["connections"], totals["sent"], totals["delivery_unknown"]) == (1, 0, 1)
+    assert totals["enqueued"] == totals["sent"] + totals["delivery_unknown"] + totals["discarded_on_close"]
+
+
+def test_connection_options_reach_every_connection():
+    p = Publisher(HandOff(), Router(), {}, connection_options={"max_messages": 1})
+    c, _, _ = p.connect()
+    assert c.offer("a") and c.offer("b") is False

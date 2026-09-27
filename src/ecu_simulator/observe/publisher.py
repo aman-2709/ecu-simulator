@@ -28,6 +28,14 @@ from ecu_simulator.transport.socketcan import EndpointConfig
 
 logger = logging.getLogger(__name__)
 
+TOTAL_FIELDS = (
+    "history_sent", "offered", "client_dropped", "enqueued", "sent", "delivery_unknown", "discarded_on_close",
+)
+
+
+def _empty_totals() -> dict[str, Any]:
+    return {"connections": 0, "published_span": 0, **dict.fromkeys(TOTAL_FIELDS, 0), "close_codes": {}}
+
 
 class TooManyClients(Exception):
     """The client limit is reached. M2 turns this into HTTP 503 before the upgrade."""
@@ -46,6 +54,7 @@ class Publisher:
         max_turn_s: float = TURN_MAX_S,
         max_clients: int = MAX_CLIENTS,
         history: HistoryRing | None = None,
+        connection_options: Mapping[str, Any] | None = None,
     ) -> None:
         self._handoff = handoff
         self._router = router
@@ -71,6 +80,10 @@ class Publisher:
         self.encode_failed = 0
         self.fanout_failed = 0
         self._logged: set[tuple[str, str]] = set()
+        self._connection_options = dict(connection_options or {})
+        self.connections_opened = 0
+        self._unresolved: list[Connection] = []
+        self._totals = _empty_totals()
 
     def wake(self) -> None:
         self._event.set()
@@ -152,11 +165,12 @@ class Publisher:
         watermark = self.history.last_seq
         texts, gap = self.history.since(after)       # raises on a bad after=, before anything is registered
         self._next_id += 1
-        conn = Connection(self._next_id, watermark, self.published, now=self._monotonic)
+        conn = Connection(self._next_id, watermark, self.published, now=self._monotonic, **self._connection_options)
         conn.history_sent = len(texts)
         if self._last_state is not None:
             conn.set_state(self._last_state)       # a new client gets the current state, changed or not
         self.connections.append(conn)
+        self.connections_opened += 1
         hello: dict[str, Any] = {
             "type": "hello", "api": 1, "watermark": watermark, "oldest_seq": self.history.oldest_seq,
         }
@@ -174,6 +188,8 @@ class Publisher:
             if conn.close_code == CLOSE_TOO_SLOW:
                 self.forced_disconnects += 1
             self.closed.append(conn)
+            self._unresolved.append(conn)
+            self._fold()
 
     def _retire_closed(self) -> None:
         # A connection closed outside the Publisher (M2's writer task) must not hold a client
@@ -181,8 +197,26 @@ class Publisher:
         for conn in [c for c in self.connections if c.closed]:
             self._retire(conn)
 
+    def _fold(self) -> None:
+        # 0010 §5.1, cumulative: every closed connection, once, when its in-flight send has resolved.
+        waiting = []
+        for conn in self._unresolved:
+            ledger = conn.ledger(self.published)
+            if ledger["queued"]:
+                waiting.append(conn)
+                continue
+            totals = self._totals
+            totals["connections"] += 1
+            totals["published_span"] += ledger["published_at_close"] - ledger["published_at_open"]
+            for field in TOTAL_FIELDS:
+                totals[field] += ledger[field]
+            code = str(ledger["close_code"])
+            totals["close_codes"][code] = totals["close_codes"].get(code, 0) + 1
+        self._unresolved = waiting
+
     def stats(self, issued: int) -> dict[str, Any]:
         self._retire_closed()
+        self._fold()
         return {
             "clients": len(self.connections), "issued_seq": issued, "published": self.published,
             "last_published_seq": self.history.last_seq, "oldest_seq": self.history.oldest_seq,
@@ -191,6 +225,9 @@ class Publisher:
             "encode_failed": self.encode_failed, "fanout_failed": self.fanout_failed,
             "connections": [c.ledger(self.published) for c in self.connections],
             "closed_connections": [c.ledger(self.published) for c in self.closed],
+            "connections_opened": self.connections_opened,
+            "closed_totals": {**self._totals, "close_codes": dict(self._totals["close_codes"])},
+            "closed_unresolved": len(self._unresolved),
         }
 
     def push_state(self, text: str) -> None:
