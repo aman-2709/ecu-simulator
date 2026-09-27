@@ -92,6 +92,25 @@ def _abort(request: web.Request) -> None:
         transport.abort()
 
 
+def _too_large(size: int) -> str:
+    return f"Maximum request body size {MAX_BODY} exceeded, actual body size {size} (decisions/0010 §4.3)"
+
+
+async def _refuse_and_close(request: web.Request, status: int, text: str) -> web.StreamResponse:
+    """Answer a request body the server will not take, then close the socket at once.
+
+    ``Connection: close``, and no keep-alive: otherwise aiohttp lingers up to 10 s reading
+    the rest of the body before it closes (0010 §4.3). A plain Response: returning an
+    HTTPException is deprecated in aiohttp.
+    """
+    response = web.Response(status=status, text=text)
+    response.force_close()
+    await response.prepare(request)
+    await response.write_eof()
+    request.protocol.force_close()      # flushes the response, then closes; skips the lingering read
+    return response
+
+
 async def _body_size(content: Any) -> int:
     """Bytes of a request body, read to its end or to ``MAX_BODY + 1``, whichever is first.
 
@@ -153,7 +172,7 @@ class ApiServer:
             if host not in self._allowed:
                 raise web.HTTPMisdirectedRequest(text="Host not allowed (decisions/0010 §6)")
             if request.content_length is not None and request.content_length > MAX_BODY:
-                raise web.HTTPRequestEntityTooLarge(max_size=MAX_BODY, actual_size=request.content_length)
+                return await _refuse_and_close(request, 413, _too_large(request.content_length))
             if request.body_exists and request.content_length is None:
                 # Chunked (or otherwise length-less) bodies bypass client_max_size, which
                 # only enforces Content-Length: read a bounded probe ourselves (0010 §4.3),
@@ -162,9 +181,9 @@ class ApiServer:
                     size = await asyncio.wait_for(_body_size(request.content), self._body_timeout_s)
                 except TimeoutError:
                     message = "request body not received in time (decisions/0010 §4.3)"
-                    raise web.HTTPRequestTimeout(text=message) from None
+                    return await _refuse_and_close(request, 408, message)
                 if size > MAX_BODY:
-                    raise web.HTTPRequestEntityTooLarge(max_size=MAX_BODY, actual_size=size)
+                    return await _refuse_and_close(request, 413, _too_large(size))
             upgrade = request.path == EVENTS and request.method == "GET"
             # Same-origin against THIS request's validated Host: localhost and 127.0.0.1 are
             # different origins and are never substituted for one another (owner, 2026-09-27).

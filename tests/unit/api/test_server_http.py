@@ -212,17 +212,25 @@ async def test_a_slow_drip_body_is_408_at_the_deadline():
 
 @pytest.mark.asyncio
 async def test_a_body_over_1_kib_in_40_chunks_of_64_bytes_is_413(server):
-    reader, writer = await asyncio.open_connection("127.0.0.1", server.port)
-    writer.write(chunked_head(server.port, keep_alive=False))
-    for _ in range(40):                                                  # 2560 bytes, one chunk per write
-        writer.write(b"40\r\n" + b"x" * 64 + b"\r\n")
-        await writer.drain()
-        await asyncio.sleep(0.005)
-    writer.write(b"0\r\n\r\n")
-    await writer.drain()
-    reply = await asyncio.wait_for(reader.read(65536), 2)
-    writer.close()
-    assert reply.startswith(b"HTTP/1.1 413"), reply[:40]
+    # A raw socket: the server answers past 1 KiB and closes, so the later chunks may meet a
+    # reset; the 413 is still in the receive buffer (asyncio streams would hide it).
+    loop = asyncio.get_running_loop()
+    raw = socket.socket()
+    raw.setblocking(False)
+    try:
+        await loop.sock_connect(raw, ("127.0.0.1", server.port))
+        try:
+            await loop.sock_sendall(raw, chunked_head(server.port, keep_alive=False))
+            for _ in range(40):                                          # 2560 bytes, one chunk per write
+                await loop.sock_sendall(raw, b"40\r\n" + b"x" * 64 + b"\r\n")
+                await asyncio.sleep(0.005)
+            await loop.sock_sendall(raw, b"0\r\n\r\n")
+        except (ConnectionResetError, BrokenPipeError):
+            pass                                                         # answered past 1 KiB and closed
+        reply = await asyncio.wait_for(loop.sock_recv(raw, 65536), 2)
+        assert reply.startswith(b"HTTP/1.1 413"), reply[:40]
+    finally:
+        raw.close()
 
 
 @pytest.mark.asyncio
@@ -246,3 +254,56 @@ async def test_20_concurrent_stalled_bodies_do_not_wedge_the_server(session):
         for _, writer in stalled:
             writer.close()
         await s.stop()
+
+
+async def reply_then_eof(reader) -> tuple[bytes, float]:
+    """The response, then the seconds from its arrival until the server closed the socket."""
+    reply = await asyncio.wait_for(reader.read(65536), 3)
+    arrived = time.monotonic()
+    try:
+        while await asyncio.wait_for(reader.read(65536), 3):
+            pass
+    except ConnectionResetError:
+        pass
+    return reply, time.monotonic() - arrived
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["408 stalled chunked", "413 oversized chunked", "413 oversized length"])
+async def test_a_refused_body_is_answered_with_connection_close_and_the_socket_closed(case):
+    # No keep-alive after a body the server will not take: without it aiohttp lingers up to
+    # 10 s reading the rest (0010 §4.3).
+    s = build(body_timeout_s=0.3)
+    await s.start()
+    reader, writer = await asyncio.open_connection("127.0.0.1", s.port)
+    try:
+        if case == "413 oversized length":
+            writer.write((f"GET /api/v1/status HTTP/1.1\r\nHost: 127.0.0.1:{s.port}\r\nContent-Length: 5000\r\n\r\n")
+                         .encode() + b"x" * 100)                             # the rest never comes
+        else:
+            size = 10 if case.startswith("408") else 1100
+            writer.write(chunked_head(s.port) + b"800\r\n" + b"x" * size)    # the rest never comes
+        await writer.drain()
+        reply, closed_after = await reply_then_eof(reader)
+        assert reply.startswith(b"HTTP/1.1 " + case[:3].encode()), reply[:40]
+        assert b"\r\nConnection: close\r\n" in reply.split(b"\r\n\r\n")[0] + b"\r\n"
+        assert closed_after < 1, closed_after
+    finally:
+        writer.close()
+        await s.stop()
+
+
+@pytest.mark.asyncio
+async def test_ordinary_gets_keep_the_connection_alive(server):
+    reader, writer = await asyncio.open_connection("127.0.0.1", server.port)
+    try:
+        for _ in range(2):
+            writer.write(f"GET /api/v1/status HTTP/1.1\r\nHost: 127.0.0.1:{server.port}\r\n\r\n".encode())
+            await writer.drain()
+            head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 2)
+            assert head.startswith(b"HTTP/1.1 200") and b"Connection: close" not in head
+            length = int(next(line.split(b":")[1] for line in head.split(b"\r\n")
+                              if line.lower().startswith(b"content-length")))
+            await reader.readexactly(length)
+    finally:
+        writer.close()
