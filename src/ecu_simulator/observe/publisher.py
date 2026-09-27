@@ -20,6 +20,7 @@ from ecu_simulator.observe.limits import (
     CLOSE_TOO_SLOW,
     CLOSED_LEDGERS_KEPT,
     MAX_CLIENTS,
+    STATE_MIN_INTERVAL_S,
     TURN_MAX_RECORDS,
     TURN_MAX_S,
 )
@@ -188,3 +189,14 @@ class Publisher:
             conn.set_dropped(json.dumps({"type": "dropped", "handoff_dropped": self._handoff.dropped,
                                          "client_dropped": conn.client_dropped,
                                          "forced_disconnects": self.forced_disconnects}, separators=(",", ":")))
+
+    async def run_state(self, snapshot: Callable[[], str], interval_s: float = STATE_MIN_INTERVAL_S) -> None:
+        """Push ``state`` at most every ``interval_s``, and only when it changed (0010 §4.3)."""
+        last: str | None = None
+        while True:
+            text = snapshot()
+            if text != last:
+                self.push_state(text)
+                last = text
+            self.push_dropped()
+            await asyncio.sleep(interval_s)

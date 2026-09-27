@@ -226,3 +226,28 @@ def test_a_bad_after_registers_nothing():  # (amended)
     with pytest.raises(ValueError):
         p.connect(after=-1)
     assert p.connections == [] and p.refused_clients == 0
+
+
+@pytest.mark.asyncio
+async def test_state_is_pushed_only_when_it_changes_and_dropped_follows_it():
+    p = publisher(HandOff())
+    conn, _, _ = p.connect()
+    texts = iter(["a", "a", "b"])
+    calls: list[str] = []
+    def snapshot() -> str:
+        calls.append(text := next(texts))
+        return text
+    pushed: list[str] = []
+    real_push = p.push_state
+    def spy(text: str) -> None:
+        pushed.append(text)
+        real_push(text)
+    p.push_state = spy
+    task = asyncio.create_task(p.run_state(snapshot, interval_s=0))
+    while len(calls) < 3:
+        await asyncio.sleep(0)
+    task.cancel()
+    assert pushed == ["a", "b"]                                 # the repeated "a" was not pushed
+    assert conn.next_message() == "b"                           # one slot: "b" replaced "a"
+    assert json.loads(conn.next_message())["type"] == "dropped"
+    assert conn.next_message() is None
