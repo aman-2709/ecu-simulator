@@ -20,6 +20,9 @@ cd "$(dirname "$0")/.."
 mkdir -p "$1"
 OUTDIR="$(cd "$1" && pwd)"
 PYTHON="${PYTHON:-.venv/bin/python}"
+# The capture script refuses to run unless its network namespace differs from this one.
+GUI_DEMO_HOST_NETNS="$(readlink /proc/self/ns/net)"
+export GUI_DEMO_HOST_NETNS
 exec unshare -r -n bash -euo pipefail -c '
     ip link set lo up
     ip link add dev vcan0 type vcan

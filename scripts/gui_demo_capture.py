@@ -44,6 +44,7 @@ API = "127.0.0.1:8765"
 PAGE = f"http://{API}/"
 DEVTOOLS_PORT = 9222
 WIDE = (1440, 900)
+OWNER_WIDE = (2000, 1100)
 NARROW = (390, 844)
 TRAFFIC_RATE = "4"
 
@@ -300,6 +301,11 @@ async def session(run: Run, chrome: str, profile_dir: str) -> None:
             await cdp.shot(run, "b1-live.png")
             await until_scenario(31)
             await cdp.shot(run, "b2-live-7s-later.png")
+            # The two supported-PID range requests, 01 20 then 01 00, near the newest row.
+            await cdp.wait_for("(function(){var r=document.querySelector('#log-body tr:last-child');"
+                               " return !!r && r.textContent.indexOf('supported PIDs 01') >= 0;})()", timeout=10)
+            await asyncio.sleep(0.6)
+            await cdp.shot(run, "b3-live-supported-pid-ranges.png")
 
             # d. A filter, then the paused view with held rows counted.
             await cdp.js("(function(){var s=document.getElementById('f-service'); s.value='19';"
@@ -337,6 +343,10 @@ async def session(run: Run, chrome: str, profile_dir: str) -> None:
             await asyncio.sleep(1.5)
             await cdp.shot(run, "g1-narrow-390.png")
             await cdp.shot(run, "g2-narrow-390-full-page.png", full_page=True)
+            # The owner's own desktop width.
+            await cdp.viewport(*OWNER_WIDE)
+            await asyncio.sleep(1.5)
+            await cdp.shot(run, "w-desktop-2000x1100.png")
             await cdp.viewport(*WIDE)
             await asyncio.sleep(1.0)
 
@@ -394,7 +404,19 @@ def find_chrome() -> str:
     raise SystemExit("no Chrome or Chromium found; set CHROME=/path/to/chrome")
 
 
+def require_private_namespace() -> None:
+    """Refuse to run on the host network: it would start a simulator on the host's vcan0
+    and take 127.0.0.1:8765. run_gui_demo.sh records the host's network namespace before
+    unshare; this process must be in a different one."""
+    host = os.environ.get("GUI_DEMO_HOST_NETNS")
+    here = os.readlink("/proc/self/ns/net")
+    if not host or host == here:
+        raise SystemExit("gui_demo_capture.py runs only inside scripts/run_gui_demo.sh's private "
+                         f"network namespace (host {host or 'unknown'}, here {here}); refusing")
+
+
 def main(argv: list[str] | None = None) -> int:
+    require_private_namespace()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("outdir", type=Path, help="directory for the screenshots and logs")
     args = parser.parse_args(argv)
