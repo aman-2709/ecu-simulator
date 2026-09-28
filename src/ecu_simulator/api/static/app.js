@@ -57,7 +57,7 @@
     ws: null, wsOpenedAt: null, hello: null, lastClose: null,
     gen: 0, connecting: false,       // the current attempt's token; an attempt is under way
     runStartedAt: null,
-    status: null, vehicle: null, dtcs: null, ecus: null,
+    status: null, statusAt: null, vehicle: null, dtcs: null, ecus: null,
     dropped: null,           // this connection's latest `dropped` message
     lastSeq: null,           // highest seq received, over every event, filtered or not
     entries: [], nextId: 1, exCount: 0, trimmed: 0, trimmedGaps: 0, trimmedNotes: 0, duplicates: 0,
@@ -155,7 +155,7 @@
       var first = S.vehicle == null || restarted;
       // While stale, the views keep their data as of the drop; a fresh status waits for the hello,
       // unless this is the first data, or the first of a new run.
-      if (first || !isStale()) S.status = status;
+      if (first || !isStale()) { S.status = status; S.statusAt = Date.now(); }
       return (first ? Promise.all([getJSON("/vehicle"), getJSON("/dtcs"), getJSON("/ecus")]) : Promise.resolve(null))
         .then(function (initial) {
           if (gen !== S.gen) return;
@@ -245,7 +245,7 @@
       if (gen !== S.gen) return;
       getJSON("/status").then(function (status) {
         if (gen !== S.gen || !isLive()) return;
-        S.status = status; S.lastLive = Date.now();
+        S.status = status; S.statusAt = Date.now(); S.lastLive = Date.now();
         renderStatus();
         poll(STATUS_POLL_MS, gen);
       }).catch(function (err) {
@@ -375,11 +375,13 @@
   }
 
   function renderStatus() {
-    var root = $("status");
-    var connBox = root.firstElementChild;
-    while (connBox.nextSibling) root.removeChild(connBox.nextSibling);
+    var root = $("status-polled");
+    root.textContent = "";
     var s = S.status;
+    $("polled").hidden = !s;
     if (!s) return;
+    $("polled-text").textContent = "Polled every " + STATUS_POLL_MS / 1000 + " s from /status" +
+      (S.statusAt ? ", last at " + utc(S.statusAt).replace(" UTC", "") : "") + "; may trail the live log";
     $("status-sub").textContent = "read-only observer " + s.version;
     var a = s.api, d = dropCounters();
     var sc = s.scenario;
@@ -699,7 +701,7 @@
     var h = S.hello;
     $("log-count").textContent = !h && S.lastSeq == null ? "" :
       (shown === inView ? inView + " exchanges" : shown + " of " + inView + " shown") +
-      (S.lastSeq != null ? ", last seq " + S.lastSeq : "") + (S.duplicates ? ", " + S.duplicates + " duplicates ignored" : "");
+      (S.lastSeq != null ? ", last seq " + S.lastSeq + (isLive() ? " (live)" : "") : "") + (S.duplicates ? ", " + S.duplicates + " duplicates ignored" : "");
   }
   function atBottom(wrap) { return wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 4; }
   function toBottom() { var wrap = $("logwrap"); wrap.scrollTop = wrap.scrollHeight; }

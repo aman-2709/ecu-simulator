@@ -16,12 +16,22 @@
     <h1>ecu-simulator</h1>
     <span class="statusbar__sub" id="status-sub">read-only observer</span>
   </div>
-  <dl class="readouts" id="status">
-    <div class="readout readout--conn">
-      <dt>Connection</dt>
-      <dd><span class="conn conn--loading" id="conn"><span class="conn__lamp" aria-hidden="true"></span><span id="conn-text">Connecting</span></span></dd>
-    </div>
-  </dl>
+  <div class="statusbar__data">
+    <dl class="readouts" id="status">
+      <div class="readout readout--conn">
+        <dt>Connection</dt>
+        <dd><span class="conn conn--loading" id="conn"><span class="conn__lamp" aria-hidden="true"></span><span id="conn-text">Connecting</span></span></dd>
+      </div>
+    </dl>
+    <section class="polled" id="polled" aria-labelledby="polled-cap" hidden
+             title="Refreshed from GET /status every 2 s; may trail the live exchange log by a few seqs.">
+      <p class="polled__cap" id="polled-cap">
+        <svg class="polled__icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.5V8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span id="polled-text">Polled every 2 s; may trail the live log</span>
+      </p>
+      <dl class="readouts" id="status-polled"></dl>
+    </section>
+  </div>
 </header>
 
 <div class="linkstate" id="linkstate" role="status" aria-live="polite" hidden></div>
