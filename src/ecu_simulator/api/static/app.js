@@ -508,8 +508,10 @@
 
   // ---------- rendering: DTCs ----------
   function flag(on, label) {
-    return el("td", { cls: "flag " + (on ? "flag--on" : "flag--off"), title: label + ": " + on }, [
-      el("span", { cls: "flag__mark", "aria-hidden": "true" }), el("span", { text: on ? "yes" : "no" }), el("span", { cls: "vh", text: " " + label })
+    // A mark only (filled: yes, hollow: no), so the table fits the sidebar; the words are
+    // there for screen readers and in the tooltip.
+    return el("td", { cls: "flag " + (on ? "flag--on" : "flag--off"), title: label + ": " + (on ? "yes" : "no") }, [
+      el("span", { cls: "flag__mark", "aria-hidden": "true" }), el("span", { cls: "vh", text: (on ? "yes" : "no") + ", " + label })
     ]);
   }
   function codeState(c) { return c.confirmed ? "Confirmed" : c.pending ? "Pending" : "Not set"; }
@@ -540,8 +542,10 @@
         var table = el("table", { cls: "dtc" });
         table.appendChild(el("thead", null, [el("tr", null, [
           el("th", { scope: "col", text: "Code" }), el("th", { scope: "col", text: "State" }),
-          el("th", { scope: "col", text: "Pending" }), el("th", { scope: "col", text: "Confirmed" }),
-          el("th", { scope: "col" }, [el("abbr", { title: "indicator_requested: the code asks for the MIL" }, ["Lamp"])])
+          // Short headers, full text in the title, so the table fits the sidebar at every width.
+          el("th", { scope: "col", cls: "flag-h" }, [el("abbr", { title: "pending: the code is pending" }, ["Pend."])]),
+          el("th", { scope: "col", cls: "flag-h" }, [el("abbr", { title: "confirmed: the code is confirmed" }, ["Conf."])]),
+          el("th", { scope: "col", cls: "flag-h" }, [el("abbr", { title: "indicator_requested: the code asks for the MIL" }, ["Lamp"])])
         ])]));
         var tb = el("tbody");
         codes.forEach(function (c) {

@@ -187,7 +187,10 @@ table { border-collapse: collapse; width: 100%; }
 .mil--on .mil__lamp { background: #fff3c4; border-color: var(--mil-ink); box-shadow: 0 0 0 3px rgba(255, 243, 196, .6); }
 .mil--off { color: var(--ink-2); }
 
-.dtc th, .dtc td { padding: 0.357rem 0.429rem; border-bottom: 1px solid var(--panel-2); text-align: left; }
+.dtc th, .dtc td { padding: 0.357rem 0.357rem; border-bottom: 1px solid var(--panel-2); text-align: left; }
+/* Never clipped: the table is sized to fit; if a future profile's codes still do not, the
+   ECU block scrolls sideways instead of cutting columns off. */
+.ecu { overflow-x: auto; }
 .dtc thead th { white-space: nowrap; font-size: 0.857rem; font-weight: 600; color: var(--ink-2); border-bottom: 1px solid var(--rule); }
 .dtc__code { font-weight: 700; font-size: 1rem; }
 .dtc__state { font-weight: 600; white-space: nowrap; }
@@ -195,8 +198,9 @@ table { border-collapse: collapse; width: 100%; }
 .dtc__row--pending .dtc__state { color: var(--nr); }
 .dtc__row--not-set { color: var(--ink-2); }
 .dtc__row--not-set .dtc__code { font-weight: 400; }
+.dtc th.flag-h, .dtc td.flag { text-align: center; }
 .flag { white-space: nowrap; font-size: 0.929rem; }
-.flag__mark { display: inline-block; width: 0.643rem; height: 0.643rem; margin-right: 0.357rem; border-radius: 50%; border: 1.5px solid currentColor; vertical-align: 0; }
+.flag__mark { display: inline-block; width: 0.714rem; height: 0.714rem; border-radius: 50%; border: 1.5px solid currentColor; vertical-align: -0.071rem; }
 .flag--on { color: var(--ink); font-weight: 600; }
 .flag--on .flag__mark { background: currentColor; }
 .flag--off { color: var(--ink-2); }
