@@ -300,7 +300,47 @@ The stdout of each run is committed verbatim (`c8fbe22`):
 [run-3.txt](gui-m2-early-check-runs/run-3.txt). Each file starts with two `#` lines
 (run, commit, start time, load average; the command) and ends with `# exit status: 1`.
 The lines between are the script's stdout. The `candump` captures were written to the
-`/tmp` directories each file names; they are not committed.
+`/tmp` directories each file names, from each file's "captures in" line: run 1 to
+`/tmp/gui-m2-faqya9ej`, run 2 to `/tmp/gui-m2-heyjapm3`, run 3 to `/tmp/gui-m2-v83b5uai`.
+**They are not committed**, they are about 4.3 MB per run (9 files, one per condition and
+round), and they will not survive a reboot (`/tmp`). Keeping them, or capturing them again
+under a committed path, is for the owner to decide. Their `sha256sum` at the time this
+section was written:
+
+```text
+/tmp/gui-m2-faqya9ej (run 1):
+9447e9c599a8f4d773d7a48d306e7cdebc9a6fb9984c0ba2d7473e4a5479a0dc  candump-0-00.log
+404a062af56f23c72f1008d1c358315bac784f3d84f103cc61c985b51ba7e12c  candump-0-10.log
+d535a96636a45f7c11a49761e5428c8100e909cf5f79be77c33d470b660ca9c5  candump-0-11.log
+7936dfa0c704887ba25c934b188c377f9318b882a6cb78dff92e7f4f63953878  candump-1-00.log
+7907059dda63e9f4757bf837b5c961189c3243a20af13bf4a9e64fd09d69ea00  candump-1-10.log
+7759d8e455da90a9f6b13776333c377102706898026899491557b1bdb68c6792  candump-1-11.log
+496e3f1a6b7aa72d1d386c87c0eb73f6336aea0cc7445e3f0e6068fcef371b8e  candump-2-00.log
+b7a786328fecaab7188ef1ac5afc791e6830d90f75f4a0e70177fa72a57df0d2  candump-2-10.log
+b288a6bd3d7f41d91306564a104d638fbfdae54316b677b71c4a18274d3b93b7  candump-2-11.log
+
+/tmp/gui-m2-heyjapm3 (run 2):
+0fa5edb35d8cd44c3806c4b7027f5f6b27e6ef6311c2e323c20d540c77862b37  candump-0-00.log
+c6c0d8590214435f9740127d0bd7265432b759deb2e948f0541f6876ceaf08ab  candump-0-10.log
+fd0e4095380e09e033160db99e7b007fe3368326c387db49efc0c05dd3198c93  candump-0-11.log
+31497f65c3bfb5e1f8c6e6910c2762ec432e39d4ece249409af03c7437897df6  candump-1-00.log
+4530d09437d67087ab04d1fa48550f9b3a441fc4315cfa044c8073f0ffefc0f4  candump-1-10.log
+aa4a5c0c10bb9673619ffe8458f68a6e9ae7d367d57ef8b34af3f25a155a7d9d  candump-1-11.log
+00b222a4335a296b10e73ce919fe390803b8a355bc8eb974e636b6e470ed7b24  candump-2-00.log
+e8a72d86c164f96a24b67ecb976ae7570a32d2b7648f5025aada7f99976780db  candump-2-10.log
+a6a37949596bba47dbe6fd7032788e90bca74c82b1ca6a034d2b61125b40648d  candump-2-11.log
+
+/tmp/gui-m2-v83b5uai (run 3):
+c9e3d70a4f6e8e306de4595fede368ff6f4b98f8152df822aa5e73d579be455e  candump-0-00.log
+0f7871365721e59bc16b4611f36b92dc876c7381a5401c5da852be9637a3acf5  candump-0-10.log
+53ac3c5e73ddf9a419f56bbb7896cf04bd0ade6209060fa702289a1c4fc53001  candump-0-11.log
+17ce3a7b614e190d2868c434c8c9c9798bb14aa558c0bb423aa546f8a397e018  candump-1-00.log
+1db6103f28c3dff24311768ceafeb4b33b898be55ad30272ace86222bc8c85a1  candump-1-10.log
+2135e989075848724fc11aac3891429ce989ad2704592feae690a9ddc1f60c0f  candump-1-11.log
+5b18eddd576167f17a555a4d3efff24592c2bfa3efd852801fd2f1fe46ff69ed  candump-2-00.log
+27faf80790dbeed2e7fbc7cdf2ce207c088b28ba623810854e29931951a358e4  candump-2-10.log
+b27a1ec31c2f8d15781b6444c6d41cb8441ea435b110b3c7d37cb5ba98eeaec8  candump-2-11.log
+```
 
 Every round's verdict, as printed:
 
@@ -394,13 +434,16 @@ Medians and excesses (ms) by position, in run order 1, 2, 3:
 | 4, excess | +0.109, +0.103, +0.106 | +0.120, +0.139, +0.092 | +0.065, +0.110, +0.112 |
 | 4, mean excess | **+0.106** | **+0.117** | **+0.096** |
 
-- **The load test is met in 7 of the 9 rounds.** Condition 4's excess is above +0.10 ms in 7 of the 9 rounds,
-  and its mean per position is +0.096 to +0.117 ms. The two rounds below it are run 1
-  round 0 (+0.065, position 3) and run 3 round 1 (+0.092, position 2). In both, condition
-  1 had the two highest medians of the nine (0.159 and 0.143 ms, against 0.117–0.127 in
-  the other seven). Condition 4 in those rounds was 0.224 ms (the lowest of the nine, but
+- **The load test (per position, plan wording): above +0.10 ms, or near it, in every
+  position.** Condition 4's per-position mean excess is +0.096 to +0.117 ms — above
+  +0.10 ms at two of the three positions, and close to it at the third. Round by round,
+  the excess is above +0.10 ms in 7 of the 9 rounds. The other two are +0.065 (run 1
+  round 0, position 3) and +0.092 (run 3 round 1, position 2). In both, condition 1 had
+  the two highest medians of the nine (0.159 and 0.143 ms, against 0.117–0.127 in the
+  other seven). Condition 4 in those rounds was 0.224 ms (the lowest of the nine, but
   only 0.005 ms below the next) and 0.235 ms (mid-range). So those two rounds are within
-  the limit mainly because condition 1 was slow, not because condition 4 was fast.
+  the limit mainly because condition 1 was slow, not because condition 4 was fast. None
+  of this is a pass: the stop rule applies per round, and two of the nine miss it.
 - **The order test is not met.** No condition is consistently slower in any position.
   Condition 1's two high medians came at position 1 (the first condition of run 1) and
   at position 3. In **every** one of the nine rounds, whatever the order, the medians rank
@@ -640,7 +683,7 @@ client overflows under all four.
 | Option | Honest latency condition? | Timed condition 4 holds | Forced closes | 1013 proven on vcan with production limits? | Extra runtime per M4 run | 0010 text |
 |---|---|---|---|---|---|---|
 | (a) | yes | overflow, sooner; 0–1 close | 0–1 per round at best | only if a close happens | none | none; to make it work, *Runs* or §4.3 (not proposed) |
-| (b) | yes | overflow from ~6,000 messages, no close (the same every round above ~2,800 req/s) | k per round, required, in the sub-run | yes, outside the timed window | ~1 min for k = 3 | condition 4 row, *Runs*, P5(e) |
+| (b) | yes | overflow from ~6,000 messages, no close (the same every round above ~2,800 req/s, if the M2 rates and absorption hold at 20,000 requests (unmeasured; see above)) | k per round, required, in the sub-run | yes, outside the timed window | ~1 min for k = 3 | condition 4 row, *Runs*, P5(e) |
 | (c) | yes | overflow from the first timed request; one close, then the reconnect and a fresh connection; timing-dependent | ~1 per round | yes, inside the timed window | ~6 s | condition 4 row, *Runs*, *Measurement* |
 | (d) | yes | as (b) | none | no: loopback, with injected limits | none | condition 4 row, P5(e) |
 
@@ -660,7 +703,8 @@ Why:
 - It is the only option that **requires** forced closes on vcan with the production
   limits, and so makes P5(e)'s 1013 reconciliation non-trivial every round.
 - The timed condition 4 holds the same thing in every round (overflow, no close) at any
-  rate above about 2,800 requests/s. Under (c), one close falls at a timing-dependent
+  rate above about 2,800 requests/s, if the M2 rates and absorption hold at 20,000
+  requests (unmeasured; see above). Under (c), one close falls at a timing-dependent
   point, so rounds can differ.
 - It costs about a minute per M4 run.
 - (a) cannot produce closes reliably at 20,000 requests, whatever the buffer. (c) gives
@@ -734,8 +778,19 @@ Open details for the owner, if (b) is chosen:
 
 ## Gates
 
-All on `73e9e9f` (the final tree; the commit that adds this record changes only this
-file).
+**`b27cf60` — local-only, unpushed.** Run by the controller, in this worktree, at commit
+`b27cf60` on branch `gui` (not on `origin/gui`, which is at `e0c8445`). These are local
+results, not a hosted CI run: see "Hosted CI" and "Local vcan results" below.
+
+| Gate | Command | Result |
+|---|---|---|
+| Namespace suite (private namespace, `lo` up) | `unshare -r -n bash -c 'ip link set lo up && .venv/bin/python -m pytest -p no:cacheprovider -q -rsx'` | **1159 passed, 69 skipped, 2 xfailed** |
+| Lint | `ruff check .` | all checks passed |
+| Types | `mypy` | no issues in 58 source files. It checks `src/` only (`files = ["src"]` in `pyproject.toml`); `scripts/` and the new `tests/unit/test_gui_m2_early_check.py` are not type-checked |
+| vcan integration (private `vcan0`) | `scripts/run_integration_tests.sh` | **69 passed** |
+
+**`73e9e9f` — history.** All on `73e9e9f` (the tree at the time these gates were run; the
+commit that added this record changed only this file).
 
 | Gate | Command | Result |
 |---|---|---|
@@ -750,6 +805,14 @@ Earlier, on `334ecf4` before `6a04ee5`, the first full-suite run had 1 failure,
 `test_encode_failure_publishes_a_fallback_and_seq_stays_contiguous` (`drain_turn()`
 returned 2, not 4, when the real 1 ms turn budget truncated the turn under load); a rerun
 passed. `6a04ee5` fixed that test with a fixed clock, and it passed in every run above.
+
+**Expected effect on the next hosted `.[dev]` run.** `tests/unit/test_gui_m2_early_check.py`
+(committed at `5f1f202`) imports aiohttp via `pytest.importorskip`, one module-level skip,
+reason "needs the optional [gui] extra (aiohttp)" — the same reason the three existing
+`tests/unit/api` module skips give. Without the `[gui]` extra it is a fourth such module.
+So the next hosted `.[dev]` run is **expected** to show 60 skipped with 4x "needs [gui]",
+not the 59 skipped and 3x recorded below. This is an expectation, not a result: no hosted
+run has confirmed it yet, and the "Hosted CI" figures below are left as recorded.
 
 ## Hosted CI
 
@@ -768,7 +831,9 @@ runs' harness (`a7431be`): they are not pushed.
 
 Hosted skips: 54x "kernel cannot create CAN_ISOTP sockets (CONFIG_CAN_ISOTP not built,
 e.g. GitHub-hosted Azure kernels)"; 3x [gui] (`.[dev]` only); 2x [hardware]; 1x
-aiohttp-installed, by name (api job only).
+aiohttp-installed, by name (api job only). As recorded for run 36363466270; see "Gates"
+above for why the next hosted `.[dev]` run is expected to add a fourth [gui] skip (60
+skipped, 4x), not yet confirmed by a hosted run.
 
 **The 54 vcan tests are skipped on hosted runners and never validated there**
 ([decisions/0009](../decisions/0009-self-hosted-vcan-runner.md)).
@@ -791,6 +856,11 @@ Local CI-shaped `.[dev]` (59):
 | 54 | CAN interface 'vcan0' does not exist (no `vcan0` in the namespace) |
 | 3 | needs the optional [gui] extra (aiohttp): `tests/unit/api/test_run_with_api.py`, `test_server_http.py`, `test_server_ws.py`, one module skip each — every `tests/unit/api` module |
 | 2 | needs the optional [hardware] extra: `tests/unit/test_elm327_serial.py`, `tests/integration/test_elm327_simulated.py` |
+
+As of `73e9e9f`. `tests/unit/test_gui_m2_early_check.py` (committed later, at `5f1f202`)
+gives a fourth "needs the optional [gui] extra" module skip; the next hosted `.[dev]` run
+is expected to show 60 skipped, 4x, not 59 and 3x (see "Gates" above). Not yet confirmed
+by a hosted run.
 
 Local CI-shaped `.[dev,gui]` (57):
 
