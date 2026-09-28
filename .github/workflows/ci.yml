@@ -53,13 +53,15 @@ jobs:
           # public API without a signed-in session, unlike logs and artifacts.
           summary=$(grep -E 'passed|failed|error' pytest.log | tail -1 | sed -E 's/^=+ *//; s/ *=+$//' || true)
           total=$(grep -E '^TOTAL' pytest.log | tr -s ' ' || true)
-          skips=$(grep -oE 'SKIPPED \[[0-9]+\] [^:]+:[0-9]+: .*' pytest.log | sed -E 's/^SKIPPED \[([0-9]+)\] [^:]+:[0-9]+: /\1\t/' | awk -F'\t' '{n[$2]+=$1} END{for (k in n) print n[k] "x " k}' | sort -rn | paste -sd ';' - || true)
+          skips=$(grep -oE 'SKIPPED \[[0-9]+\] [^:]+(:[0-9]+)?: .*' pytest.log | sed -E 's/^SKIPPED \[([0-9]+)\] [^:]+(:[0-9]+)?: /\1\t/' | awk -F'\t' '{n[$2]+=$1} END{for (k in n) print n[k] "x " k}' | sort -rn | paste -sd ';' - || true)
           failed=$(grep -E '^(FAILED|ERROR) ' pytest.log | cut -c1-180 | head -25 | paste -sd ';' - || true)
           # A collection error or a conftest import failure has no FAILED/ERROR summary
           # line; fall back to the traceback's "E ..." lines and pytest's own
           # "Interrupted: ..." line so the reason is still visible, without letting those
-          # lines crowd out real FAILED test names when both exist.
-          if [ -z "$failed" ]; then
+          # lines crowd out real FAILED test names when both exist. Only on a failing
+          # run: a passing log can contain an unrelated "E " line (e.g. inside a captured
+          # log or docstring) that must not be reported as a failure.
+          if [ "$status" -ne 0 ] && [ -z "$failed" ]; then
             failed=$(grep -E '^E |Interrupted:' pytest.log | cut -c1-180 | head -25 | paste -sd ';' - || true)
           fi
           echo "::notice title=pytest (Python ${{ matrix.python-version }})::${summary} | coverage ${total}${skips:+ | skips: $skips}${failed:+ | failed: $failed}"
@@ -92,11 +94,12 @@ jobs:
           status=${PIPESTATUS[0]}
           set -e
           summary=$(grep -E 'passed|failed|error' pytest-gui.log | tail -1 | sed -E 's/^=+ *//; s/ *=+$//' || true)
-          skips=$(grep -oE 'SKIPPED \[[0-9]+\] [^:]+:[0-9]+: .*' pytest-gui.log | sed -E 's/^SKIPPED \[([0-9]+)\] [^:]+:[0-9]+: /\1\t/' | awk -F'\t' '{n[$2]+=$1} END{for (k in n) print n[k] "x " k}' | sort -rn | paste -sd ';' - || true)
+          skips=$(grep -oE 'SKIPPED \[[0-9]+\] [^:]+(:[0-9]+)?: .*' pytest-gui.log | sed -E 's/^SKIPPED \[([0-9]+)\] [^:]+(:[0-9]+)?: /\1\t/' | awk -F'\t' '{n[$2]+=$1} END{for (k in n) print n[k] "x " k}' | sort -rn | paste -sd ';' - || true)
           failed=$(grep -E '^(FAILED|ERROR) ' pytest-gui.log | cut -c1-180 | head -25 | paste -sd ';' - || true)
           # See the test job's pytest step: fall back to traceback/"Interrupted:" lines
-          # only when there is no FAILED/ERROR summary line to show instead.
-          if [ -z "$failed" ]; then
+          # only on a failing run, and only when there is no FAILED/ERROR summary line
+          # to show instead.
+          if [ "$status" -ne 0 ] && [ -z "$failed" ]; then
             failed=$(grep -E '^E |Interrupted:' pytest-gui.log | cut -c1-180 | head -25 | paste -sd ';' - || true)
           fi
           echo "::notice title=pytest [gui] (Python 3.12)::${summary}${skips:+ | skips: $skips}${failed:+ | failed: $failed}"
