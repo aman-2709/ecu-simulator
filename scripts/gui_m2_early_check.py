@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """GUI M2 early check (decisions/0010 §9.2) -- run through scripts/run_gui_m2_early_check.sh.
 
-On vcan, in a namespace: conditions 1, 2 and 4 at N requests each, over R rounds with the
+On vcan, in a namespace: client configurations at N requests each, over R rounds with the
 condition order rotated each round (§9.2's condition rotation, taken early). Wire latency
 comes from candump -L, pairing each 0x7DF request with the first 0x7E8 frame before the
-next request. Dispatch latency comes from the events' dispatch_us. It prints one JSON line
-per condition per round, a P5 quiesce check, and "STOP" if an M4 latency criterion is
-already missed, judged against that round's own condition 1. Early, not acceptance:
-P1-P9 are judged at M4.
+next request. Dispatch latency comes from the events' dispatch_us, harvested during fixed
+pauses between request segments so the whole run's dispatch_us is captured without adding
+load during a request (task-12). It prints one JSON line per condition per round, incremental
+per-step cost lines, a P5 quiesce check, and "STOP" if an M4 latency criterion is already
+missed, judged against that round's own condition 1. Early, not acceptance: P1-P9 are judged
+at M4.
 """
 
 from __future__ import annotations
@@ -41,11 +43,32 @@ MIX = [b"\x01\x0d", b"\x01\x10"]
 EVERY_100 = [b"\x01\x00", b"\x01\x20", b"\x01\x40", b"\x09\x02"]
 FRAME = re.compile(r"\((\d+\.\d+)\)\s+\S+\s+([0-9A-F]{3})#([0-9A-F]*)")
 
-ROTATION_BASE = (1, 2, 4)
 MEDIAN_LIMIT_MS = 0.10          # 0010 §9.2 P1
 P99_LIMIT_MS = 0.50             # 0010 §9.2 P2
 UPGRADE_DEADLINE_S = 5.0
 CPU_ROOT = Path("/sys/devices/system/cpu")
+
+# task-12 item 3: --conditions labels -> (api, readers, stalled_client). 1 and 2 are the
+# original M2 early check; r1/r3 isolate the cost of reading clients alone; 4 is today's
+# condition 4 (3 readers + 1 stalled), unchanged.
+CONDITIONS: dict[str, tuple[bool, int, bool]] = {
+    "1": (False, 0, False),
+    "2": (True, 0, False),
+    "r1": (True, 1, False),
+    "r3": (True, 3, False),
+    "4": (True, 3, True),
+}
+DEFAULT_CONDITIONS = ("1", "2", "4")          # today's early check, unchanged (task-12 item 3)
+STEP_ORDER = ("1", "2", "r1", "r3", "4")      # the fixed cost order for incremental steps (item 5)
+
+# task-12 item 4: requests go out in SEGMENTS equal-ish segments (500 each at n=5000), each
+# followed by a fixed pause. In every API condition the pause harvests
+# GET /api/v1/exchanges?after=&limit=HARVEST_LIMIT (<= observe/limits.py EXCHANGES_MAX_LIMIT
+# and HISTORY_MAX_EVENTS, both 500): at n=5000 a segment is exactly one harvest's worth, so
+# nothing is evicted from the 500-event history between harvests if nothing else consumes it.
+SEGMENTS = 10
+PAUSE_S = 0.05
+HARVEST_LIMIT = 500
 
 
 def requests(n: int) -> list[bytes]:
@@ -53,6 +76,14 @@ def requests(n: int) -> list[bytes]:
     while len(out) < n:
         out.extend(EVERY_100 if len(out) % 100 == 0 and out else [MIX[len(out) % 2]])
     return out[:n]
+
+
+def segment_sizes(n: int, segments: int = SEGMENTS) -> list[int]:
+    """n split into `segments` parts, as equal as possible (task-12 item 4: "10 equal
+    segments, 500 each at 5,000"); any remainder is spread one-per-segment from the front,
+    so every size differs from every other by at most 1."""
+    base, extra = divmod(n, segments)
+    return [base + 1 if i < extra else base for i in range(segments)]
 
 
 class Tester:
@@ -126,36 +157,82 @@ def dispatch_summary(values_us: Sequence[int]) -> dict[str, float] | None:
             "n": len(ms)}
 
 
-def rotate(order: tuple[int, ...], round_index: int) -> tuple[int, ...]:
+def harvest_problem(body: dict, after: int) -> str | None:
+    """A gap or a missing seq in one harvest response (task-12 item 4): a hole in
+    dispatch_us cannot be filled after the fact, so this always stops the run. `body` is
+    the parsed GET /api/v1/exchanges response (`watermark`, `oldest_seq`, `gap`, `events`)."""
+    if body["gap"]:
+        return f"harvest gap: after={after} oldest_seq={body['oldest_seq']}"
+    want = after
+    for event in body["events"]:
+        want += 1
+        if event["seq"] != want:
+            return f"harvest missed a seq: after={after} expected {want}, got {event['seq']}"
+    return None
+
+
+async def harvest(after: int, dispatch: list[int], limit: int = HARVEST_LIMIT) -> tuple[int, str | None]:
+    """One GET /api/v1/exchanges?after=&limit= during a pause (never while a request is in
+    flight, task-12 item 4): extends `dispatch` with every harvested exchange's dispatch_us,
+    in order, and returns the new watermark and any gap/miss problem. Never raises -- a bad
+    harvest is folded into p5_problems like every other check, so the run still finishes and
+    reports the rest of its numbers."""
+    async with aiohttp.ClientSession() as s, s.get(f"{BASE}/api/v1/exchanges?after={after}&limit={limit}") as r:
+        body = await r.json()
+    problem = harvest_problem(body, after)
+    dispatch.extend(e["dispatch_us"] for e in body["events"])
+    new_after = body["events"][-1]["seq"] if body["events"] else after
+    return new_after, problem
+
+
+def rotate(order: tuple[str, ...], round_index: int) -> tuple[str, ...]:
     """Rotation r of the base order (0010 §9.2): round 0 unchanged, round 1 shifted left by
     one, and so on, wrapping after len(order) rounds."""
     k = round_index % len(order)
     return order[k:] + order[:k]
 
 
-def parse_order(text: str) -> tuple[int, ...]:
-    """--order as an explicit, fixed order, e.g. "2,4,1"; it must be a permutation of the
-    three M4 conditions this harness runs."""
-    order = tuple(int(x) for x in text.split(","))
-    if sorted(order) != sorted(ROTATION_BASE):
-        raise ValueError(f"--order must be a permutation of {ROTATION_BASE}, got {text!r}")
+def parse_conditions(text: str) -> tuple[str, ...]:
+    """--conditions as a comma list of labels (task-12 item 3), chosen from CONDITIONS.
+    Condition 1 must be present -- every other condition is judged against its own round's
+    condition 1 -- and each label at most once, so the rotation and the position/step
+    summaries stay well defined."""
+    labels = tuple(text.split(","))
+    unknown = [label for label in labels if label not in CONDITIONS]
+    if unknown:
+        raise ValueError(f"unknown condition(s) {unknown}, choose from {sorted(CONDITIONS)}")
+    if len(set(labels)) != len(labels):
+        raise ValueError(f"--conditions must not repeat a condition: {text!r}")
+    if "1" not in labels:
+        raise ValueError("--conditions must include condition 1 (every other condition is judged against it)")
+    return labels
+
+
+def parse_order(text: str, allowed: tuple[str, ...]) -> tuple[str, ...]:
+    """--order as an explicit, fixed order, e.g. "r1,4,2,1"; it must be a permutation of
+    `allowed` (the labels this run's --conditions gave)."""
+    order = tuple(text.split(","))
+    if sorted(order) != sorted(allowed):
+        raise ValueError(f"--order must be a permutation of {allowed}, got {text!r}")
     return order
 
 
-def round_order(round_index: int, order_override: tuple[int, ...] | None) -> tuple[int, ...]:
+def round_order(
+    round_index: int, conditions: tuple[str, ...], order_override: tuple[str, ...] | None,
+) -> tuple[str, ...]:
     """The order for one round. --order is the fixed-order control: given, it is used
-    unchanged for every round ("instead" of the rotation). Absent, round r rotates the
-    base (1, 2, 4) by r (0010 §9.2)."""
+    unchanged for every round ("instead" of the rotation). Absent, round r rotates
+    `conditions` by r (0010 §9.2)."""
     if order_override is not None:
         return order_override
-    return rotate(ROTATION_BASE, round_index)
+    return rotate(conditions, round_index)
 
 
-def judge(base: dict, r: dict, number: int) -> list[str]:
+def judge(base: dict, r: dict, label: str) -> list[str]:
     """Stop reasons for one condition, judged against its own round's condition 1
     (0010 §9.2 P1-P3). Never compares condition 1's latency to itself."""
     reasons = []
-    if number != 1:
+    if label != "1":
         if r["median_ms"] > base["median_ms"] + MEDIAN_LIMIT_MS:
             reasons.append(f"median {r['median_ms']} > condition 1's {base['median_ms']} + {MEDIAN_LIMIT_MS}")
         if r["p99_ms"] > base["p99_ms"] + P99_LIMIT_MS:
@@ -167,16 +244,81 @@ def judge(base: dict, r: dict, number: int) -> list[str]:
     return reasons
 
 
-def position_summary(records: list[dict]) -> dict[tuple[int, int], dict[str, float]]:
+def reader_problems(readers: list[dict], issued_seq: int) -> list[str]:
+    """Reasons a reader's run isn't trustworthy (task-12 item 2): it ended some way other
+    than "stopped", or it received fewer exchanges than the condition published.
+
+    "The condition published" is taken as `issued_seq` from the final /status, not the
+    harvested seq count: it is already available at quiesce (no dependency on the harvest
+    succeeding, which this same run also checks independently), and it is the quantity
+    P5(a) already reconciles (`issued_seq = published + handoff_dropped`). In every reader
+    condition here P6 requires `handoff_dropped = 0`, so `issued_seq` equals `published` in
+    practice; using it is the more conservative (never smaller) of the two choices the
+    brief allows.
+    """
+    problems = []
+    for i, r in enumerate(readers):
+        if r["ended"] != "stopped":
+            problems.append(f"reader {i} ended: {r['ended']}")
+        if issued_seq > 0 and r["exchanges"] < issued_seq:
+            problems.append(f"reader {i} exchanges {r['exchanges']} < issued_seq {issued_seq}")
+    return problems
+
+
+def steps(conditions: tuple[str, ...]) -> list[tuple[str, str]]:
+    """Consecutive pairs from the fixed cost order (1, 2, r1, r3, 4) that are both present
+    in this run's --conditions (task-12 item 5: "as present")."""
+    present = [c for c in STEP_ORDER if c in conditions]
+    return list(zip(present, present[1:], strict=False))
+
+
+def incremental(a: dict, b: dict) -> dict:
+    """The incremental wire and dispatch cost of one step a->b, from two condition results
+    of the same round (task-12 item 5). Dispatch is omitted when either side has none
+    (condition 1 has no API and so no `dispatch_all_ms`)."""
+    out = {
+        "median_wire_ms": round(b["median_ms"] - a["median_ms"], 3),
+        "p99_wire_ms": round(b["p99_ms"] - a["p99_ms"], 3),
+    }
+    da, db = a.get("dispatch_all_ms"), b.get("dispatch_all_ms")
+    if da is not None and db is not None:
+        out["median_dispatch_ms"] = round(db["median_ms"] - da["median_ms"], 3)
+        out["p99_dispatch_ms"] = round(db["p99_ms"] - da["p99_ms"], 3)
+    return out
+
+
+def step_summary(records: list[dict]) -> dict[str, dict[str, float]]:
+    """Mean and range of one step's incremental-cost fields across rounds (task-12 item 5)."""
+    keys: set[str] = set()
+    for r in records:
+        keys.update(r)
+    out = {}
+    for key in sorted(keys):
+        vals = [r[key] for r in records if key in r]
+        if not vals:
+            continue
+        out[key] = {"mean": round(statistics.mean(vals), 3), "min": min(vals), "max": max(vals)}
+    return out
+
+
+def position_summary(records: list[dict]) -> dict[tuple[str, int], dict[str, float]]:
     """For each (condition, position) seen across rounds: the median of its per-round
-    medians and of its excess over that round's own condition 1, so load (condition) and
-    order (position) can be read off directly (0010 §9.2)."""
-    groups: dict[tuple[int, int], list[tuple[float, float]]] = {}
+    medians, its median and p99 excess over that round's own condition 1, how many rounds
+    it stopped, and the sample count -- so load (condition) and order (position) can be
+    read off directly (0010 §9.2)."""
+    groups: dict[tuple[str, int], list[dict]] = {}
     for rec in records:
-        groups.setdefault((rec["number"], rec["position"]), []).append((rec["median_ms"], rec["excess_ms"]))
-    return {key: {"median_ms": round(statistics.median(m for m, _ in vals), 3),
-                  "excess_ms": round(statistics.median(e for _, e in vals), 3), "n": len(vals)}
-            for key, vals in groups.items()}
+        groups.setdefault((rec["number"], rec["position"]), []).append(rec)
+    out = {}
+    for key, recs in groups.items():
+        out[key] = {
+            "median_ms": round(statistics.median(r["median_ms"] for r in recs), 3),
+            "excess_ms": round(statistics.median(r["excess_ms"] for r in recs), 3),
+            "p99_excess_ms": round(statistics.median(r["p99_excess_ms"] for r in recs), 3),
+            "n": len(recs),
+            "stops": sum(1 for r in recs if r["verdict"] == "STOP"),
+        }
+    return out
 
 
 def cpu_governors(root: Path = CPU_ROOT) -> list[str]:
@@ -201,7 +343,8 @@ def host_info() -> dict:
 
 async def reader(stop: asyncio.Event, seen: list[int], dispatch: list[int] | None = None) -> str:
     """Read until told to stop; return how it ended, so a reader that died is never silent.
-    When given, `dispatch` collects every exchange's dispatch_us (reader 0, for condition 4)."""
+    When given, `dispatch` collects every exchange's dispatch_us (reader 0, as a cross-check
+    against the full-run harvest)."""
     async with aiohttp.ClientSession() as s, s.ws_connect(f"{BASE}/api/v1/events", origin=BASE) as ws:
         while not stop.is_set():
             try:
@@ -260,15 +403,6 @@ def upgrade_ok(data: bytes) -> str | None:
 async def status() -> dict:
     async with aiohttp.ClientSession() as s, s.get(f"{BASE}/api/v1/status") as r:
         return (await r.json())["api"]
-
-
-async def last500_dispatch() -> dict[str, float] | None:
-    """Dispatch latency from the one final GET /exchanges?limit=500, taken after the tester
-    finishes (the history keeps 500 events). Conditions 2 and 4 only; never polled or
-    fetched mid-run, so as not to change condition 2 (0010 §9.2)."""
-    async with aiohttp.ClientSession() as s, s.get(f"{BASE}/api/v1/exchanges?limit=500") as r:
-        body = await r.json()
-    return dispatch_summary([e["dispatch_us"] for e in body["events"]])
 
 
 async def open_stalled(ids: list[int]) -> socket.socket:
@@ -418,19 +552,26 @@ async def _teardown(
 
 
 async def condition(
-    n: int, api: bool, clients: bool, workdir: Path, *,
+    n: int, api: bool, readers: int, stalled_client: bool, workdir: Path, *,
     round_index: int = 0,
+    pause_s: float = PAUSE_S,
     start_dump: Callable[[Path], tuple[subprocess.Popen[str], Any]] = _default_start_dump,
     start_sim: Callable[[bool], subprocess.Popen[str]] = start_simulator,
     make_tester: Callable[[], Any] = Tester,
 ) -> dict:
-    """Run one M4 condition on vcan. Stops the simulator, candump, the reader and
-    stalled-client tasks and the tester's sockets on every exit, including an exception at
-    any step (0010 §9.2), via `_teardown`. `start_dump`, `start_sim` and `make_tester` are
-    injectable so the cleanup path can be unit-tested with fakes, never real processes.
-    `round_index` keeps each round's raw capture as a separate file, so a later round
-    never overwrites an earlier one's evidence."""
-    log = workdir / f"candump-{round_index}-{int(api)}{int(clients)}.log"
+    """Run one client configuration on vcan (task-12 item 3): `readers` reading WebSocket
+    clients (0, 1 or 3) and, if `stalled_client`, one raw socket that never reads (today's
+    condition 4 is readers=3, stalled_client=True). Requests go out in SEGMENTS equal-ish
+    segments (task-12 item 4); each is followed by a `pause_s` pause, during which -- never
+    while a request is in flight -- every API condition harvests
+    GET /api/v1/exchanges?after=&limit=HARVEST_LIMIT and keeps each exchange's dispatch_us.
+    Stops the simulator, candump, the reader and stalled-client tasks and the tester's
+    sockets on every exit, including an exception at any step (0010 §9.2), via `_teardown`.
+    `start_dump`, `start_sim` and `make_tester` are injectable so the cleanup path can be
+    unit-tested with fakes, never real processes. `round_index` keeps each round's raw
+    capture as a separate file, so a later round never overwrites an earlier one's evidence.
+    """
+    log = workdir / f"candump-{round_index}-{int(api)}{readers}{int(stalled_client)}.log"
     dump, dump_log_fh = start_dump(log)
     sim: subprocess.Popen[str] | None = None
     tester: Any | None = None
@@ -439,30 +580,66 @@ async def condition(
     result: dict = {}
     try:
         sim = start_sim(api)
-        seen: list[list[int]] = [[], [], []]
+        seen: list[list[int]] = [[] for _ in range(readers)]
         dispatch0: list[int] = []
+        dispatch_all: list[int] = []
         reconnects: list[int] = []
         stalled_ids: list[int] = []
-        if clients:
-            tasks = [asyncio.create_task(reader(stop, seen[i], dispatch0 if i == 0 else None)) for i in range(3)]
-            for _ in range(40):                                          # readers first, so the stalled id is known
-                if (await status())["clients"] >= 3:
-                    break
-                await asyncio.sleep(0.05)
-            tasks.append(asyncio.create_task(stalled(stop, reconnects, stalled_ids)))
+        harvest_problems: list[str] = []
+        overruns_ms: list[float] = []
+        if readers or stalled_client:
+            tasks = [asyncio.create_task(reader(stop, seen[i], dispatch0 if i == 0 else None))
+                     for i in range(readers)]
+            if readers:
+                for _ in range(40):                                     # readers first, so the stalled id is known
+                    if (await status())["clients"] >= readers:
+                        break
+                    await asyncio.sleep(0.05)
+                else:
+                    raise RuntimeError(f"readers never reached {readers} in /status (the wait must fail loudly)")
+            if stalled_client:
+                tasks.append(asyncio.create_task(stalled(stop, reconnects, stalled_ids)))
             await asyncio.sleep(0.5)
         tester = make_tester()
-        started = time.monotonic()
-        tester_lost = await asyncio.to_thread(tester.run, requests(n))
-        elapsed = time.monotonic() - started
+        reqs = requests(n)
+        offset = 0
+        run_elapsed = 0.0
+        last_seq = 0
+        tester_lost = 0
+        for size in segment_sizes(n):
+            chunk = reqs[offset:offset + size]
+            offset += size
+            started = time.monotonic()
+            tester_lost += await asyncio.to_thread(tester.run, chunk)
+            run_elapsed += time.monotonic() - started
+            pause_started = time.monotonic()
+            if api:
+                last_seq, problem = await harvest(last_seq, dispatch_all)
+                if problem:
+                    harvest_problems.append(problem)
+            spent = time.monotonic() - pause_started
+            remaining = pause_s - spent
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+            else:
+                overruns_ms.append(round((spent - pause_s) * 1000, 3))    # the fetch alone overran the pause
         tester.close()
         tester = None
-        await asyncio.sleep(1.0)                                         # let the publisher drain
-        result.update(api=api, clients=clients, requests=n, seconds=round(elapsed, 2),
-                       rate_rps=round(n / elapsed, 1), tester_timeouts=tester_lost)
+        await asyncio.sleep(1.0)                                          # let the publisher drain
         if api:
-            result["dispatch_last500_ms"] = await last500_dispatch()     # 0010 §9.2: last 500, after the tester
-            if clients:
+            last_seq, problem = await harvest(last_seq, dispatch_all)     # the tail after the last segment
+            if problem:
+                harvest_problems.append(problem)
+        # "readers" (the int count) is deliberately not a top-level field here: the existing
+        # "readers" field name is the per-reader detail list added below, and task-12's "do
+        # not rename existing fields" rule means that name stays the list, not this count.
+        result.update(api=api, clients=bool(readers or stalled_client), reader_count=readers,
+                       stalled=stalled_client, requests=n, seconds=round(run_elapsed, 2),
+                       rate_rps=round(n / run_elapsed, 1), tester_timeouts=tester_lost,
+                       pause_s=pause_s, pause_overruns_ms=overruns_ms)
+        if api:
+            result["dispatch_all_ms"] = dispatch_summary(dispatch_all)    # 0010 §9.2: the whole run, not just 500
+            if stalled_client:
                 result["stalled_before_stop"] = ledgers_of(await status(), stalled_ids)
             stop.set()
             ended = await asyncio.gather(*tasks, return_exceptions=True)
@@ -472,25 +649,30 @@ async def condition(
                 if state["clients"] == 0 and state["closed_unresolved"] == 0:
                     break
                 await asyncio.sleep(0.25)
-            result["p5_problems"] = p5(state)
+            result["p5_problems"] = p5(state) + harvest_problems
             if state["clients"] != 0:
                 result["p5_problems"].append(f"quiesce timed out: clients = {state['clients']}")
-            if len(reconnects) > state["forced_disconnects"]:
-                result["p5_problems"].append(f"P5(e) harness reconnects {len(reconnects)} > forced_disconnects")
             result["inconclusive"] = unresolved(state)
             result["delivery_unknown_allowed"] = allowed_unknown(state)  # reported, never silently passed
             result["forced_disconnects"] = state["forced_disconnects"]
             result["connections_opened"] = state["connections_opened"]
-            result["reader_seq_ok"] = all(s == sorted(set(s)) for s in seen)
-            if clients:
-                result["reconnects"] = len(reconnects)
+            result["reader_seq_ok"] = all(
+                s == sorted(set(s)) and (state["issued_seq"] == 0 or s) for s in seen
+            )                                                             # empty is not ok once exchanges publish
+            if readers:
                 result["readers"] = [{"exchanges": len(seen[i]), "ended": e if isinstance(e, str) else repr(e)}
-                                     for i, e in enumerate(ended[:3])]
+                                     for i, e in enumerate(ended[:readers])]
+                result["dispatch_reader0_ms"] = dispatch_summary(dispatch0)
+                result["p5_problems"].extend(reader_problems(result["readers"], state["issued_seq"]))
+            if stalled_client:
+                result["reconnects"] = len(reconnects)
                 result["stalled_ids"] = stalled_ids
                 result["stalled_at_quiesce"] = ledgers_of(state, stalled_ids)
-                result["dispatch_reader0_ms"] = dispatch_summary(dispatch0)
-                if isinstance(ended[3], BaseException):
-                    result["p5_problems"].append(f"stalled-client task raised {ended[3]!r}")
+                if len(reconnects) > state["forced_disconnects"]:
+                    result["p5_problems"].append(f"P5(e) harness reconnects {len(reconnects)} > forced_disconnects")
+                stalled_result = ended[readers]
+                if isinstance(stalled_result, BaseException):
+                    result["p5_problems"].append(f"stalled-client task raised {stalled_result!r}")
     finally:
         await _teardown(tester, tasks, stop, sim, dump, dump_log_fh)
     samples, lost = latencies(log)
@@ -501,38 +683,73 @@ async def condition(
     return result
 
 
-async def main() -> int:
+def positive_int(text: str) -> int:
+    """--rounds must be at least 1 (task-12 item 1): an argparse error (exit 2), never a
+    silent fall-through to "within the limits" for a run that did nothing."""
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"--rounds must be at least 1, not {value}")
+    return value
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", type=int, default=5000)
-    parser.add_argument("--rounds", type=int, default=1)
+    parser.add_argument("--rounds", type=positive_int, default=1)
+    parser.add_argument("--conditions", type=str, default=",".join(DEFAULT_CONDITIONS),
+                         help="comma list from 1,2,r1,r3,4 (default: 1,2,4); must include 1")
     parser.add_argument("--order", type=str, default=None,
-                         help="a fixed order used every round, e.g. 2,4,1 (default: rotate 1,2,4 each round)")
-    args = parser.parse_args()
-    order_override = parse_order(args.order) if args.order else None
-    work = Path(tempfile.mkdtemp(prefix="gui-m2-"))
+                         help="a fixed order used every round, e.g. r1,4,2,1 (default: rotate --conditions)")
+    parser.add_argument("--captures", type=Path, default=None,
+                         help="write candump logs here instead of a temp dir")
+    return parser
+
+
+async def main() -> int:
+    args = build_parser().parse_args()
+    conditions = parse_conditions(args.conditions)
+    order_override = parse_order(args.order, conditions) if args.order else None
+    work = args.captures if args.captures is not None else Path(tempfile.mkdtemp(prefix="gui-m2-"))
+    work.mkdir(parents=True, exist_ok=True)
     print(f"host: {json.dumps(host_info())}")
+    print(f"pause_s: {PAUSE_S}")
     stop = inconclusive = False
     records: list[dict] = []
+    step_records: dict[tuple[str, str], list[dict]] = {}
     for round_index in range(args.rounds):
-        order = round_order(round_index, order_override)
-        by_number: dict[int, dict] = {}
-        for position, number in enumerate(order, start=1):
-            r = await condition(args.n, number != 1, number == 4, work, round_index=round_index)
-            r["round"], r["position"], r["number"] = round_index, position, number
+        order = round_order(round_index, conditions, order_override)
+        by_label: dict[str, dict] = {}
+        for position, label in enumerate(order, start=1):
+            api, readers, stalled_client = CONDITIONS[label]
+            r = await condition(args.n, api, readers, stalled_client, work, round_index=round_index)
+            r["round"], r["position"], r["number"] = round_index, position, label
             print(json.dumps(r))
-            by_number[number] = r
-        base = by_number[1]
-        for number, r in by_number.items():
-            reasons = judge(base, r, number)
+            by_label[label] = r
+        base = by_label["1"]
+        for label, r in by_label.items():
+            reasons = judge(base, r, label)
+            verdict = "STOP" if reasons else "within limits"
             if reasons:
-                print(f"STOP reasons, round {round_index} condition {number}: {reasons}")
+                print(f"STOP reasons, round {round_index} condition {label}: {reasons}")
             stop |= bool(reasons)
             inconclusive |= bool(r.get("inconclusive"))
-            records.append({"number": number, "position": order.index(number) + 1,
-                            "median_ms": r["median_ms"], "excess_ms": round(r["median_ms"] - base["median_ms"], 3)})
+            records.append({"number": label, "position": order.index(label) + 1,
+                            "median_ms": r["median_ms"], "excess_ms": round(r["median_ms"] - base["median_ms"], 3),
+                            "p99_ms": r["p99_ms"], "p99_excess_ms": round(r["p99_ms"] - base["p99_ms"], 3),
+                            "verdict": verdict})
+            excess = {"median_excess_ms": records[-1]["excess_ms"],
+                      "p99_excess_ms": records[-1]["p99_excess_ms"], "verdict": verdict}
+            print(f"excess round {round_index} condition {label}: {json.dumps(excess)}")
+        for a, b in steps(conditions):
+            if a in by_label and b in by_label:
+                inc = incremental(by_label[a], by_label[b])
+                print(f"incremental {a}->{b} round {round_index}: {json.dumps(inc)}")
+                step_records.setdefault((a, b), []).append(inc)
     print(f"captures in {work}")
     for (number, position), stats in sorted(position_summary(records).items()):
         print(f"summary condition {number} position {position}: {json.dumps(stats)}")
+    for (a, b), vals in step_records.items():
+        print(f"incremental summary {a}->{b}: {json.dumps(step_summary(vals))}")
     if stop:
         print("STOP: report before M3")
         return 1
