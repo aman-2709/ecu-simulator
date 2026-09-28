@@ -8,8 +8,9 @@
 #   scripts/run_gui_demo.sh <outdir>
 #
 # Every process is stopped on every path: the capture script stops what it started by
-# exact PID, and the trap below stops the capture script's whole process group (its own
-# session, started with setsid) if anything is left.
+# exact PID, and the trap below then signals the capture script's whole process group
+# (its own session, started with setsid, so the group id is its PID) on every exit, which
+# also covers the capture script itself being killed with SIGKILL.
 set -euo pipefail
 if [[ $# -ne 1 ]]; then
     echo "usage: $0 <outdir>" >&2
@@ -26,10 +27,14 @@ exec unshare -r -n bash -euo pipefail -c '
     capture=""
     cleanup() {
         trap - EXIT INT TERM
-        if [[ -n "$capture" ]] && kill -0 "$capture" 2>/dev/null; then
+        # A process group outlives its leader: by now wait has usually reaped the capture
+        # script, but if it died hard (SIGKILL, OOM, a crash past its finally) its children
+        # are still in the group. So signal the group unconditionally; kill -0 on the group
+        # is only the wait for it to empty.
+        if [[ -n "$capture" ]]; then
             kill -TERM -- "-$capture" 2>/dev/null || true
             for _ in 1 2 3 4 5 6 7 8 9 10; do
-                kill -0 "$capture" 2>/dev/null || break
+                kill -0 -- "-$capture" 2>/dev/null || break
                 "$0" -c "import time; time.sleep(0.5)"
             done
             kill -KILL -- "-$capture" 2>/dev/null || true

@@ -6,10 +6,11 @@ P1–P9 ([decisions/0010 §9.2](../decisions/0010-gui-observer-api.md)). The M2 
 relieves it. The `dispatch_us` values visible in the screenshots are dispatcher time from a
 single run at a human request rate, and are not evidence about latency.
 
-**The V1.0 and Phase 8b gates are untouched.** No simulator, protocol, profile or API code
-changed for this record. The page was fixed in `4b92c9a` (see "Findings"), and these
-screenshots were then retaken against it. The other new files are the demo scripts and
-this record.
+**The V1.0 and Phase 8b gates are untouched.** No simulator, protocol, profile, API
+endpoint or server code changed in this task. The page fix is in the static files under
+`src/ecu_simulator/api/static/` (`app.css`, `app.js`, `index.html`; `4b92c9a`, see
+"Findings"), and these screenshots were then retaken against it. Apart from that fix, the
+changes are the demo scripts and this record.
 
 ## What was run
 
@@ -190,14 +191,31 @@ scripts/run_gui_demo.sh <outdir>
 It takes about 100 s and needs `unshare -r -n` (unprivileged user namespaces) and Google
 Chrome or Chromium; set `CHROME=/path/to/chrome` if it is not on `PATH`. It writes the
 screenshots above, plus `capture.log`, `traffic.log`, `simulator-{1,2,3}.log` and
-`chrome.log`, to `<outdir>`. The capture script stops every process it started by exact
-PID. A trap in the wrapper stops the capture script's own process group if anything
-remains, on Ctrl-C, an error, or a normal exit.
+`chrome.log`, to `<outdir>`.
+
+Process cleanup:
+
+- The capture script stops every process it started, by exact PID.
+- The capture script runs in its own session (`setsid`), so its process-group id is its
+  PID.
+- On every exit of the wrapper (normal, an error, Ctrl-C, or the capture script itself
+  killed), the wrapper's trap signals that whole group unconditionally: TERM, a wait of up
+  to 5 s for the group to empty, then KILL. A process group outlives its leader, so this
+  also stops the simulator, the traffic generator and Chrome if the capture script dies
+  hard.
+- This was checked once: the capture script was sent SIGKILL mid-run, and afterwards `ps`
+  showed no process left in its group, and no demo simulator, traffic or Chrome process.
+
+One thing is left behind in that case: the Chrome profile directory
+(`$TMPDIR/gui-demo-chrome-*`), which the capture script removes only on its own exit.
 
 ## Not exercised by this live session: a manual checklist for the owner
 
-These were not produced live here, nor in Task 17's checks (task-17 report, "Known limits").
-Please check them by hand, or accept them as reviewed from code only:
+Please check these by hand, or accept them as reviewed from code only:
+
+- The first six items were not produced live here, nor in Task 17's checks (task-17
+  report, "Known limits").
+- The last item was produced live in Task 17, but not in this session.
 
 - [ ] A **1013** close (the simulator forces off a slow client). The message, and the
       backoff that keeps doubling until a connection lasts 30 s.

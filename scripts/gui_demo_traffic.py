@@ -9,8 +9,8 @@ profiles route (ice_default.yaml, ice_scenario.yaml):
 - UDS reads go out physically, on 0x7E0 (answered on 0x7E8) and 0x7E1 (answered on 0x7E9).
 
 It only reads. It never sends a write, a clear or a session change: no OBD 04, no UDS
-0x14, 0x2E, 0x31 or 0x10. A request that gets no answer within the timeout is printed as
-such and the cycle goes on.
+0x14, 0x2E, 0x31 or 0x10; an allowlist of read services is checked at import. A
+request that gets no answer within the timeout is printed as such and the cycle goes on.
 
 Two requests in the cycle are there on purpose although today's simulator does not serve
 them: UDS 0x22 is answered with NRC 0x11 (service not supported), and OBD mode 07 gets no
@@ -58,8 +58,12 @@ CYCLE: tuple[tuple[str, bytes], ...] = (
     (FUNCTIONAL, bytes.fromhex("0110")),     # mass air flow
 )
 
-FORBIDDEN_SERVICES = frozenset({0x04, 0x10, 0x14, 0x2E, 0x31})
-assert not any(request[0] in FORBIDDEN_SERVICES for _, request in CYCLE), "the cycle must only read"
+# The only services the cycle may use, all reads. Checked with a raise, not an assert, so
+# `python -O` cannot remove it. OBD 04 and UDS 0x10, 0x14, 0x2E and 0x31 are never here.
+READ_SERVICES = frozenset({0x01, 0x03, 0x07, 0x09, 0x19, 0x22})
+if any(request[0] not in READ_SERVICES for _, request in CYCLE):
+    raise RuntimeError("the traffic cycle may only use the read services " + ", ".join(
+        f"0x{sid:02X}" for sid in sorted(READ_SERVICES)))
 
 
 def physical_socket(interface: str, txid: int, rxid: int, timeout: float) -> isotp.socket:
