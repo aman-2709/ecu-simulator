@@ -1,0 +1,30 @@
+[   0.00 s] gui demo capture, 2026-09-28T21:46:01+00:00
+[   0.00 s] start simulator: --profile src/ecu_simulator/profiles/ice_scenario.yaml --interface vcan0 --api 127.0.0.1:8765
+[   0.40 s] start headless Chrome: /usr/bin/google-chrome
+[   1.45 s] holding 1 API request(s) for the loading shot
+[   1.50 s] screenshot a-loading.png: Connecting | 
+[   3.31 s] screenshot h1-empty-fresh-start.png: Live | 0 exchanges, last seq 0
+[   3.31 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[   3.31 s] waiting 21.1 s, until about scenario t = 24 s
+[  24.53 s] screenshot b1-live.png: Live | 81 exchanges, last seq 81
+[  24.53 s] waiting 6.9 s, until about scenario t = 31 s
+[  31.53 s] screenshot b2-live-7s-later.png: Live | 107 exchanges, last seq 107
+[  32.64 s] screenshot d1-filter-service-0x19.png: Live | 12 of 112 shown, last seq 112
+[  37.79 s] screenshot d2-paused-held-rows.png: Live | 112 exchanges, last seq 131
+[  40.91 s] screenshot d3-resumed-log-not-following.png: Live | 143 exchanges, last seq 143
+[  40.91 s] waiting 3.5 s, until about scenario t = 44 s
+[  44.53 s] screenshot c1-dtc-pending.png: Live | 157 exchanges, last seq 157
+[  44.53 s] waiting 35.9 s, until about scenario t = 80 s
+[  80.56 s] screenshot c2-dtc-confirmed-mil.png: Live | 293 exchanges, last seq 293
+[  82.23 s] screenshot g1-narrow-390.png: Live | 300 exchanges, last seq 300
+[  82.42 s] screenshot g2-narrow-390-full-page.png: Live | 301 exchanges, last seq 301
+[  83.49 s] stop traffic, then SIGTERM the simulator
+[  87.75 s] screenshot e-disconnected-stale.png: Disconnected, retry in 4 s | 304 exchanges, last seq 304
+[  87.75 s] start simulator: --profile src/ecu_simulator/profiles/ice_scenario.yaml --interface vcan0 --api 127.0.0.1:8765
+[  88.05 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[  94.54 s] screenshot f-reconnected-after-restart.png: Live | 329 exchanges, last seq 25
+[  94.54 s] stop traffic and simulator; start the no-scenario profile
+[  94.69 s] start simulator: --profile src/ecu_simulator/profiles/ice_default.yaml --interface vcan0 --api 127.0.0.1:8765
+[  98.57 s] screenshot h2-no-scenario.png: Live | 0 exchanges, last seq 0
+[  98.57 s] resources from other origins on the final load: 0
+[  98.57 s] done
