@@ -15,6 +15,8 @@ import asyncio
 import importlib.util
 import os
 import subprocess
+import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -139,29 +141,45 @@ def test_round_order_is_the_same_fixed_order_every_round_when_overridden():
 
 
 # ---------------------------------------------------------------------------
-# Segmenting (task-12 item 4): equal-ish segments, 500 each at n=5000
+# Segmenting (task-12 item 4, capped in fix round 1, I3): segments of at most
+# SEGMENT_SIZE (250), the last one shorter if n isn't a multiple. No empty segments.
 # ---------------------------------------------------------------------------
 
-def test_segment_sizes_splits_evenly_at_5000():
+def test_segment_sizes_is_twenty_segments_of_250_at_5000():
     sizes = gmec.segment_sizes(5000)
-    assert sizes == [500] * 10
+    assert sizes == [250] * 20
+    assert gmec.SEGMENT_SIZE == 250
 
 
-def test_segment_sizes_is_ten_segments_at_300():
+def test_segment_sizes_is_two_segments_at_300():
     sizes = gmec.segment_sizes(300)
-    assert sizes == [30] * 10
+    assert sizes == [250, 50]
+    assert sum(sizes) == 300
 
 
-def test_segment_sizes_spreads_the_remainder_from_the_front():
-    sizes = gmec.segment_sizes(23, segments=5)
-    assert sizes == [5, 5, 5, 4, 4]
+def test_segment_sizes_spreads_no_remainder_when_exact():
+    sizes = gmec.segment_sizes(1000, segment_size=250)
+    assert sizes == [250, 250, 250, 250]
+
+
+def test_segment_sizes_last_segment_is_the_remainder():
+    sizes = gmec.segment_sizes(23, segment_size=5)
+    assert sizes == [5, 5, 5, 5, 3]
     assert sum(sizes) == 23
 
 
-def test_segment_sizes_handles_fewer_requests_than_segments():
-    sizes = gmec.segment_sizes(3, segments=10)
-    assert sizes == [1, 1, 1, 0, 0, 0, 0, 0, 0, 0]
+def test_segment_sizes_handles_fewer_requests_than_one_segment():
+    sizes = gmec.segment_sizes(3, segment_size=10)
+    assert sizes == [3]                 # one short segment, never nine empty ones
     assert sum(sizes) == 3
+
+
+def test_segment_sizes_is_empty_for_zero_requests():
+    assert gmec.segment_sizes(0) == []
+
+
+def test_segment_size_leaves_margin_under_the_harvest_limit():
+    assert gmec.SEGMENT_SIZE <= gmec.HARVEST_LIMIT
 
 
 # ---------------------------------------------------------------------------
@@ -228,29 +246,87 @@ async def test_harvest_extends_dispatch_and_returns_the_new_watermark(monkeypatc
 
 
 # ---------------------------------------------------------------------------
-# Reader completeness (task-12 item 2), pure logic
+# harvest_dispatch_values (fix round 1 minor): a fallback/encode_failed event has no
+# dispatch_us; that must raise a clear error, not a bare KeyError, and harvest()'s docstring
+# must not claim it "never raises".
+# ---------------------------------------------------------------------------
+
+def test_harvest_dispatch_values_returns_values_in_order():
+    events = [{"seq": 1, "dispatch_us": 100}, {"seq": 2, "dispatch_us": 200}]
+    assert gmec.harvest_dispatch_values(events) == [100, 200]
+
+
+def test_harvest_dispatch_values_raises_clearly_for_a_fallback_event():
+    events = [{"seq": 1, "dispatch_us": 100}, {"seq": 2, "outcome": "encode_failed"}]
+    with pytest.raises(RuntimeError, match="seq=2"):
+        gmec.harvest_dispatch_values(events)
+
+
+@pytest.mark.asyncio
+async def test_harvest_raises_for_a_fallback_event_with_no_dispatch_us(monkeypatch):
+    class _FakeResponse:
+        async def json(self) -> dict:
+            return {"gap": False, "oldest_seq": 1, "events": [{"seq": 1, "outcome": "encode_failed"}]}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class _FakeSession:
+        def get(self, _url: str) -> Any:
+            return _FakeResponse()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(gmec.aiohttp, "ClientSession", lambda: _FakeSession())
+    with pytest.raises(RuntimeError, match="seq=1"):
+        await gmec.harvest(0, [])
+
+
+# ---------------------------------------------------------------------------
+# Reader completeness (task-12 item 2, tightened in fix round 1, I2), pure logic
 # ---------------------------------------------------------------------------
 
 def test_reader_problems_empty_when_all_stopped_and_complete():
-    readers = [{"exchanges": 10, "ended": "stopped"}, {"exchanges": 10, "ended": "stopped"}]
-    assert gmec.reader_problems(readers, 10) == []
+    seen = [list(range(1, 11)), list(range(1, 11))]
+    ended = ["stopped", "stopped"]
+    assert gmec.reader_problems(seen, ended, 10) == []
 
 
 def test_reader_problems_flags_an_ending_other_than_stopped():
-    readers = [{"exchanges": 10, "ended": "ended early: WSMsgType.CLOSE 1006"}]
-    problems = gmec.reader_problems(readers, 10)
+    seen = [list(range(1, 11))]
+    ended = ["ended early: WSMsgType.CLOSE 1006"]
+    problems = gmec.reader_problems(seen, ended, 10)
     assert any("ended" in p for p in problems)
 
 
 def test_reader_problems_flags_fewer_exchanges_than_issued_seq():
-    readers = [{"exchanges": 7, "ended": "stopped"}]
-    problems = gmec.reader_problems(readers, 10)
-    assert any("7 < issued_seq 10" in p for p in problems)
+    seen = [list(range(1, 8))]            # 7 of 10
+    ended = ["stopped"]
+    problems = gmec.reader_problems(seen, ended, 10)
+    assert any("7 received" in p and "3 missing" in p for p in problems)
 
 
 def test_reader_problems_ignores_shortfall_when_nothing_was_issued():
-    readers = [{"exchanges": 0, "ended": "stopped"}]
-    assert gmec.reader_problems(readers, 0) == []
+    seen = [[]]
+    ended = ["stopped"]
+    assert gmec.reader_problems(seen, ended, 0) == []
+
+
+def test_reader_problems_flags_a_duplicate_plus_a_missing_seq_of_the_same_length():
+    """fix round 1, I2: length equals issued_seq (10) -- one duplicate (seq 1 twice) and one
+    missing (seq 10 never arrives). The old "count < issued_seq" check missed this because
+    the count matched; comparing the whole sequence catches it."""
+    seen = [[1, 1, 2, 3, 4, 5, 6, 7, 8, 9]]
+    ended = ["stopped"]
+    problems = gmec.reader_problems(seen, ended, 10)
+    assert any("1 missing, 1 duplicate" in p for p in problems)
 
 
 # ---------------------------------------------------------------------------
@@ -980,7 +1056,7 @@ async def test_a_reader_short_of_issued_seq_produces_a_p5_problems_line(tmp_path
         start_dump=lambda _log: (dump, None), start_sim=lambda _api: sim, make_tester=lambda: tester,
     )
 
-    assert any("< issued_seq" in p for p in result["p5_problems"])
+    assert any("3 received" in p and "2 missing" in p for p in result["p5_problems"])
     assert result["reader_seq_ok"] is True     # strictly increasing, just short -- caught by reader_problems instead
 
 
@@ -1069,9 +1145,14 @@ async def test_dispatch_all_ms_collects_every_harvested_sample(tmp_path, monkeyp
     dump = _FakeProc()
     sim = _FakeProc()
     tester = _FakeTester(fail=False)
+    n = 2
+    expected_calls = len(gmec.segment_sizes(n)) + 1     # one harvest per segment, plus the tail
+    expected_total = 2 * expected_calls
 
     async def fake_status() -> dict:
-        return _empty_status()
+        state = _empty_status()
+        state["issued_seq"] = expected_total     # fix round 1, I1: matches what the harvest actually collects
+        return state
 
     async def fake_harvest(after: int, dispatch: list[int]) -> tuple[int, str | None]:
         dispatch.extend([100, 200])
@@ -1081,12 +1162,51 @@ async def test_dispatch_all_ms_collects_every_harvested_sample(tmp_path, monkeyp
     monkeypatch.setattr(gmec, "harvest", fake_harvest)
 
     result = await gmec.condition(
+        n, True, 0, False, tmp_path, round_index=0, pause_s=0.0,
+        start_dump=lambda _log: (dump, None), start_sim=lambda _api: sim, make_tester=lambda: tester,
+    )
+
+    assert result["dispatch_all_ms"]["n"] == expected_total
+    assert "dispatch_last500_ms" not in result                          # dropped in favor of dispatch_all_ms
+    assert not any("harvest tail" in p for p in result["p5_problems"])  # I1: complete harvest, no complaint
+
+
+@pytest.mark.asyncio
+async def test_a_harvest_tail_shortfall_produces_p5_problems_lines_and_a_stop(tmp_path, monkeypatch):
+    """fix round 1, I1: a harvest that never sees a mid-stream gap can still fall short at
+    the tail -- the handoff drops the final record(s) (P5(a) still balances elsewhere), or an
+    exchange publishes after the tail harvest ran. harvest_problem()'s in-stream contiguity
+    check misses both, so last_seq/dispatch_all is compared against issued_seq instead."""
+    log = _log_path(tmp_path, True, 0, False)
+    log.write_text(
+        "(1.000000) vcan0 7DF#0201000000000000\n"
+        "(1.001000) vcan0 7E8#0341000000000000\n"
+    )
+    dump = _FakeProc()
+    sim = _FakeProc()
+    tester = _FakeTester(fail=False)
+
+    async def fake_status() -> dict:
+        state = _empty_status()
+        state["issued_seq"] = 10          # higher than anything the fake harvest ever reaches
+        return state
+
+    async def fake_harvest(after: int, dispatch: list[int]) -> tuple[int, str | None]:
+        dispatch.extend([100, 200])
+        return after + 2, None            # last_seq tops out below issued_seq = 10
+
+    monkeypatch.setattr(gmec, "status", fake_status)
+    monkeypatch.setattr(gmec, "harvest", fake_harvest)
+
+    result = await gmec.condition(
         2, True, 0, False, tmp_path, round_index=0, pause_s=0.0,
         start_dump=lambda _log: (dump, None), start_sim=lambda _api: sim, make_tester=lambda: tester,
     )
 
-    assert result["dispatch_all_ms"]["n"] == 2 * (gmec.SEGMENTS + 1)     # SEGMENTS pauses + the tail harvest
-    assert "dispatch_last500_ms" not in result                          # dropped in favor of dispatch_all_ms
+    assert any("last_seq" in p and "!= issued_seq" in p for p in result["p5_problems"])
+    assert any("dispatch_all has" in p for p in result["p5_problems"])
+    base = {"median_ms": 0.0, "p99_ms": 0.0, "lost": 0}
+    assert gmec.judge(base, result, "2") != []
 
 
 # ---------------------------------------------------------------------------
@@ -1147,3 +1267,90 @@ async def test_a_fast_harvest_never_overruns_the_pause(tmp_path, monkeypatch):
     )
 
     assert result["pause_overruns_ms"] == []
+
+
+@pytest.mark.asyncio
+async def test_condition_1_pauses_per_segment_without_harvesting(tmp_path, monkeypatch):
+    """fix round 1 minor: condition 1 (api=False) makes the same fixed pause as every API
+    condition, for every segment, but must never call harvest() -- there is nothing to
+    fetch with no API running."""
+    log = _log_path(tmp_path, False, 0, False)
+    log.write_text(
+        "(1.000000) vcan0 7DF#0201000000000000\n"
+        "(1.001000) vcan0 7E8#0341000000000000\n"
+    )
+    dump = _FakeProc()
+    sim = _FakeProc()
+    tester = _FakeTester(fail=False)
+    calls = {"n": 0}
+
+    async def spy_harvest(after: int, dispatch: list[int]) -> tuple[int, str | None]:
+        calls["n"] += 1
+        return after, None
+
+    monkeypatch.setattr(gmec, "harvest", spy_harvest)
+
+    n = 4
+    pause_s = 0.02
+    segments = len(gmec.segment_sizes(n))
+    started = time.monotonic()
+    result = await gmec.condition(
+        n, False, 0, False, tmp_path, pause_s=pause_s,
+        start_dump=lambda _log: (dump, None), start_sim=lambda _api: sim, make_tester=lambda: tester,
+    )
+    elapsed = time.monotonic() - started
+
+    assert calls["n"] == 0                                     # never harvests when api=False
+    assert result["pause_overruns_ms"] == []                    # no fetch, so never overruns
+    assert elapsed >= segments * pause_s * 0.9                  # paused ~pause_s per segment (10% slack)
+
+
+# ---------------------------------------------------------------------------
+# CLI-level errors (fix round 1 minors): a bad --conditions/--order exits 2 through
+# argparse (parser.error), never an uncaught traceback; --captures refuses a directory
+# that already has candump logs in it, before any condition starts. Real subprocess
+# invocations -- no CAN, no simulator, since parsing/validation fails before either starts.
+# ---------------------------------------------------------------------------
+
+def test_bad_conditions_exits_2_with_no_traceback():
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--conditions", "bogus"],
+        capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == 2
+    assert "Traceback" not in result.stderr
+
+
+def test_bad_order_exits_2_with_no_traceback():
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--order", "1,2,3"],
+        capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == 2
+    assert "Traceback" not in result.stderr
+
+
+def test_captures_dir_with_existing_logs_is_refused(tmp_path):
+    captures = tmp_path / "cap"
+    captures.mkdir()
+    (captures / "candump-0-100.log").write_text("stub")
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--captures", str(captures), "--rounds", "1", "-n", "10"],
+        capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == 2
+    assert "Traceback" not in result.stderr
+    assert "candump" in result.stderr
+
+
+def test_captures_check_is_specific_to_existing_log_files(tmp_path):
+    """The refusal is specific to *.log files already present, not the directory's mere
+    existence or other files in it (fix round 1 minor: glob("candump-*.log") must not
+    over-match). This only checks the pure predicate directly -- it never launches the
+    script as a subprocess here, since past the --captures check a real run would start a
+    simulator and candump against whatever vcan0 the environment has, which is only safe
+    inside the namespace (see scripts/run_gui_m2_early_check.sh)."""
+    captures = tmp_path / "cap"
+    captures.mkdir()
+    (captures / "notes.txt").write_text("not a candump log")
+    assert list(captures.glob("candump-*.log")) == []

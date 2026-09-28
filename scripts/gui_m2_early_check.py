@@ -61,12 +61,15 @@ CONDITIONS: dict[str, tuple[bool, int, bool]] = {
 DEFAULT_CONDITIONS = ("1", "2", "4")          # today's early check, unchanged (task-12 item 3)
 STEP_ORDER = ("1", "2", "r1", "r3", "4")      # the fixed cost order for incremental steps (item 5)
 
-# task-12 item 4: requests go out in SEGMENTS equal-ish segments (500 each at n=5000), each
-# followed by a fixed pause. In every API condition the pause harvests
+# task-12 item 4, tightened in fix round 1 (I3): requests go out in equal-ish segments of
+# SEGMENT_SIZE, each followed by a fixed pause. In every API condition the pause harvests
 # GET /api/v1/exchanges?after=&limit=HARVEST_LIMIT (<= observe/limits.py EXCHANGES_MAX_LIMIT
-# and HISTORY_MAX_EVENTS, both 500): at n=5000 a segment is exactly one harvest's worth, so
-# nothing is evicted from the 500-event history between harvests if nothing else consumes it.
-SEGMENTS = 10
+# and HISTORY_MAX_EVENTS, both 500). A segment sized to exactly fill (or, at M4's 20,000
+# requests, exceed) the 500-event history/harvest window leaves no margin: one late
+# publication turns into a false "gap" STOP. SEGMENT_SIZE is capped well under that limit
+# instead, so headroom holds regardless of n; the number of segments is ceil(n /
+# SEGMENT_SIZE) (20 at n=5000), and the last one is shorter if n isn't a multiple.
+SEGMENT_SIZE = 250
 PAUSE_S = 0.05
 HARVEST_LIMIT = 500
 
@@ -78,12 +81,18 @@ def requests(n: int) -> list[bytes]:
     return out[:n]
 
 
-def segment_sizes(n: int, segments: int = SEGMENTS) -> list[int]:
-    """n split into `segments` parts, as equal as possible (task-12 item 4: "10 equal
-    segments, 500 each at 5,000"); any remainder is spread one-per-segment from the front,
-    so every size differs from every other by at most 1."""
-    base, extra = divmod(n, segments)
-    return [base + 1 if i < extra else base for i in range(segments)]
+def segment_sizes(n: int, segment_size: int = SEGMENT_SIZE) -> list[int]:
+    """n split into ceil(n / segment_size) segments of `segment_size`, the last one shorter
+    if n isn't a multiple (task-12 fix round 1, I3): 20 segments of 250 at n=5,000. Never
+    empty chunks: a small n gets fewer, smaller segments, not `segment_size`-many mostly-
+    empty ones."""
+    if n <= 0:
+        return []
+    segments, remainder = divmod(n, segment_size)
+    sizes = [segment_size] * segments
+    if remainder:
+        sizes.append(remainder)
+    return sizes
 
 
 class Tester:
@@ -171,16 +180,37 @@ def harvest_problem(body: dict, after: int) -> str | None:
     return None
 
 
+def harvest_dispatch_values(events: list[dict]) -> list[int]:
+    """Every harvested event's dispatch_us, in order (fix round 1, I1/minor). Raises a clear
+    RuntimeError, naming the seq and outcome, if an event has none -- a fallback/encode_failed
+    event (0010 §5, `publisher.py`'s direct-dict path) carries no `dispatch_us` at all, and a
+    bare KeyError there would be confusing, not loud."""
+    out = []
+    for e in events:
+        if "dispatch_us" not in e:
+            raise RuntimeError(
+                f"harvest: event seq={e.get('seq')} outcome={e.get('outcome')!r} has no dispatch_us "
+                "(a fallback/encode_failed event, 0010 §5); dispatch_all_ms cannot include it"
+            )
+        out.append(e["dispatch_us"])
+    return out
+
+
 async def harvest(after: int, dispatch: list[int], limit: int = HARVEST_LIMIT) -> tuple[int, str | None]:
     """One GET /api/v1/exchanges?after=&limit= during a pause (never while a request is in
     flight, task-12 item 4): extends `dispatch` with every harvested exchange's dispatch_us,
-    in order, and returns the new watermark and any gap/miss problem. Never raises -- a bad
-    harvest is folded into p5_problems like every other check, so the run still finishes and
-    reports the rest of its numbers."""
+    in order, and returns the new watermark and any gap/miss problem. A gap or a missing seq
+    is *returned*, not raised, and folded into p5_problems like every other check, so the run
+    still finishes and reports the rest of its numbers. This function is **not** exception-
+    free, though (fix round 1: the previous docstring's "never raises" was wrong): an aiohttp
+    network or decode failure propagates, and so does `harvest_dispatch_values`' clear error
+    for a fallback event with no dispatch_us -- both are real failures the caller should not
+    swallow, and `condition()`'s existing try/finally already tears everything down on any
+    exception, the same as a tester or reader-wait failure."""
     async with aiohttp.ClientSession() as s, s.get(f"{BASE}/api/v1/exchanges?after={after}&limit={limit}") as r:
         body = await r.json()
     problem = harvest_problem(body, after)
-    dispatch.extend(e["dispatch_us"] for e in body["events"])
+    dispatch.extend(harvest_dispatch_values(body["events"]))
     new_after = body["events"][-1]["seq"] if body["events"] else after
     return new_after, problem
 
@@ -244,24 +274,35 @@ def judge(base: dict, r: dict, label: str) -> list[str]:
     return reasons
 
 
-def reader_problems(readers: list[dict], issued_seq: int) -> list[str]:
-    """Reasons a reader's run isn't trustworthy (task-12 item 2): it ended some way other
-    than "stopped", or it received fewer exchanges than the condition published.
+def reader_problems(seen: list[list[int]], ended: list[str], issued_seq: int) -> list[str]:
+    """Reasons a reader's run isn't trustworthy (task-12 item 2; tightened in fix round 1,
+    I2): it ended some way other than "stopped", or its received sequence isn't exactly
+    1..issued_seq, in order, with no gap and no duplicate.
+
+    Fix round 1, I2: a weaker "fewer exchanges than issued_seq" count check (the original
+    task-12 version) passes a reader with one duplicate and one missing seq, because the
+    count still matches -- and nothing else stops the run, since `judge()` never looks at
+    the separate `reader_seq_ok` summary field. Comparing the whole sequence against
+    `list(range(1, issued_seq + 1))` catches a duplicate, a gap, a reorder or a shortfall,
+    all in one check, and feeds the result into p5_problems, which `judge()` does check.
 
     "The condition published" is taken as `issued_seq` from the final /status, not the
     harvested seq count: it is already available at quiesce (no dependency on the harvest
     succeeding, which this same run also checks independently), and it is the quantity
     P5(a) already reconciles (`issued_seq = published + handoff_dropped`). In every reader
     condition here P6 requires `handoff_dropped = 0`, so `issued_seq` equals `published` in
-    practice; using it is the more conservative (never smaller) of the two choices the
-    brief allows.
+    practice.
     """
     problems = []
-    for i, r in enumerate(readers):
-        if r["ended"] != "stopped":
-            problems.append(f"reader {i} ended: {r['ended']}")
-        if issued_seq > 0 and r["exchanges"] < issued_seq:
-            problems.append(f"reader {i} exchanges {r['exchanges']} < issued_seq {issued_seq}")
+    expected = list(range(1, issued_seq + 1))
+    for i, (s, end) in enumerate(zip(seen, ended, strict=True)):
+        if end != "stopped":
+            problems.append(f"reader {i} ended: {end}")
+        if issued_seq > 0 and s != expected:
+            missing = len(set(expected) - set(s))
+            duplicates = len(s) - len(set(s))
+            problems.append(f"reader {i} sequence != 1..{issued_seq}: {len(s)} received, "
+                             f"{missing} missing, {duplicates} duplicate(s)")
     return problems
 
 
@@ -319,6 +360,19 @@ def position_summary(records: list[dict]) -> dict[tuple[str, int], dict[str, flo
             "stops": sum(1 for r in recs if r["verdict"] == "STOP"),
         }
     return out
+
+
+def overrun_summary(records: list[dict]) -> dict[str, dict[str, float]]:
+    """Total pause-overrun count and the largest single overrun, per condition, across every
+    round (fix round 1 minor): surfaced once at the end, in addition to each round's own
+    `excess` line, so a condition whose harvest is creeping past its pause is visible without
+    reading every JSON line."""
+    groups: dict[str, list[dict]] = {}
+    for rec in records:
+        groups.setdefault(rec["number"], []).append(rec)
+    return {label: {"count": sum(r["pause_overruns"] for r in recs),
+                     "max_ms": max((r["max_pause_overrun_ms"] for r in recs), default=0.0)}
+            for label, recs in groups.items()}
 
 
 def cpu_governors(root: Path = CPU_ROOT) -> list[str]:
@@ -561,8 +615,9 @@ async def condition(
 ) -> dict:
     """Run one client configuration on vcan (task-12 item 3): `readers` reading WebSocket
     clients (0, 1 or 3) and, if `stalled_client`, one raw socket that never reads (today's
-    condition 4 is readers=3, stalled_client=True). Requests go out in SEGMENTS equal-ish
-    segments (task-12 item 4); each is followed by a `pause_s` pause, during which -- never
+    condition 4 is readers=3, stalled_client=True). Requests go out in segments of at most
+    SEGMENT_SIZE (task-12 item 4, capped in fix round 1); each is followed by a `pause_s`
+    pause, during which -- never
     while a request is in flight -- every API condition harvests
     GET /api/v1/exchanges?after=&limit=HARVEST_LIMIT and keeps each exchange's dispatch_us.
     Stops the simulator, candump, the reader and stalled-client tasks and the tester's
@@ -602,11 +657,12 @@ async def condition(
             await asyncio.sleep(0.5)
         tester = make_tester()
         reqs = requests(n)
+        sizes = segment_sizes(n)
         offset = 0
         run_elapsed = 0.0
         last_seq = 0
         tester_lost = 0
-        for size in segment_sizes(n):
+        for size in sizes:
             chunk = reqs[offset:offset + size]
             offset += size
             started = time.monotonic()
@@ -636,7 +692,8 @@ async def condition(
         result.update(api=api, clients=bool(readers or stalled_client), reader_count=readers,
                        stalled=stalled_client, requests=n, seconds=round(run_elapsed, 2),
                        rate_rps=round(n / run_elapsed, 1), tester_timeouts=tester_lost,
-                       pause_s=pause_s, pause_overruns_ms=overruns_ms)
+                       pause_s=pause_s, pause_overruns_ms=overruns_ms,
+                       segment_size=SEGMENT_SIZE, segments=len(sizes))       # fix round 1, I3
         if api:
             result["dispatch_all_ms"] = dispatch_summary(dispatch_all)    # 0010 §9.2: the whole run, not just 500
             if stalled_client:
@@ -652,6 +709,17 @@ async def condition(
             result["p5_problems"] = p5(state) + harvest_problems
             if state["clients"] != 0:
                 result["p5_problems"].append(f"quiesce timed out: clients = {state['clients']}")
+            # fix round 1, I1: a harvest that never sees a mid-stream gap can still fall short
+            # at the tail -- the handoff drops the final record(s) (P5(a) still balances: that
+            # is accounted for elsewhere, but dispatch_all_ms would silently be incomplete), or
+            # an exchange publishes after the tail harvest ran. Either way last_seq/dispatch_all
+            # stop short of issued_seq with no gap ever detected; make that loud too.
+            if last_seq != state["issued_seq"]:
+                result["p5_problems"].append(
+                    f"harvest tail: last_seq {last_seq} != issued_seq {state['issued_seq']}")
+            if len(dispatch_all) != state["issued_seq"]:
+                result["p5_problems"].append(
+                    f"harvest tail: dispatch_all has {len(dispatch_all)} != issued_seq {state['issued_seq']}")
             result["inconclusive"] = unresolved(state)
             result["delivery_unknown_allowed"] = allowed_unknown(state)  # reported, never silently passed
             result["forced_disconnects"] = state["forced_disconnects"]
@@ -660,10 +728,10 @@ async def condition(
                 s == sorted(set(s)) and (state["issued_seq"] == 0 or s) for s in seen
             )                                                             # empty is not ok once exchanges publish
             if readers:
-                result["readers"] = [{"exchanges": len(seen[i]), "ended": e if isinstance(e, str) else repr(e)}
-                                     for i, e in enumerate(ended[:readers])]
+                ended_labels = [e if isinstance(e, str) else repr(e) for e in ended[:readers]]
+                result["readers"] = [{"exchanges": len(seen[i]), "ended": ended_labels[i]} for i in range(readers)]
                 result["dispatch_reader0_ms"] = dispatch_summary(dispatch0)
-                result["p5_problems"].extend(reader_problems(result["readers"], state["issued_seq"]))
+                result["p5_problems"].extend(reader_problems(seen, ended_labels, state["issued_seq"]))
             if stalled_client:
                 result["reconnects"] = len(reconnects)
                 result["stalled_ids"] = stalled_ids
@@ -693,6 +761,10 @@ def positive_int(text: str) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    # fix round 1, I3: a self-check, not user input -- SEGMENT_SIZE must leave margin under
+    # the harvest/history cap, or the whole point of capping it is defeated by an edit that
+    # raises it back up without noticing.
+    assert SEGMENT_SIZE <= HARVEST_LIMIT, f"SEGMENT_SIZE {SEGMENT_SIZE} must be <= HARVEST_LIMIT {HARVEST_LIMIT}"
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", type=int, default=5000)
     parser.add_argument("--rounds", type=positive_int, default=1)
@@ -706,13 +778,28 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 async def main() -> int:
-    args = build_parser().parse_args()
-    conditions = parse_conditions(args.conditions)
-    order_override = parse_order(args.order, conditions) if args.order else None
+    parser = build_parser()
+    args = parser.parse_args()
+    try:
+        # fix round 1 minor: a bad --conditions or --order is a usage error (exit 2, no
+        # traceback), like every other argparse error -- not an uncaught ValueError.
+        conditions = parse_conditions(args.conditions)
+        order_override = parse_order(args.order, conditions) if args.order else None
+    except ValueError as error:
+        parser.error(str(error))
     work = args.captures if args.captures is not None else Path(tempfile.mkdtemp(prefix="gui-m2-"))
+    if args.captures is not None and work.exists():
+        # fix round 1 minor: refuse a --captures dir that already has candump logs in it,
+        # before any condition starts -- mixing two runs' captures under one round_index
+        # would silently overwrite or misattribute evidence.
+        existing = sorted(work.glob("candump-*.log"))
+        if existing:
+            parser.error(f"--captures {work} already has {len(existing)} candump-*.log file(s); "
+                         "refusing to mix with a previous run's captures")
     work.mkdir(parents=True, exist_ok=True)
     print(f"host: {json.dumps(host_info())}")
     print(f"pause_s: {PAUSE_S}")
+    print(f"segment_size: {SEGMENT_SIZE}, segments: {len(segment_sizes(args.n))}")
     stop = inconclusive = False
     records: list[dict] = []
     step_records: dict[tuple[str, str], list[dict]] = {}
@@ -733,12 +820,16 @@ async def main() -> int:
                 print(f"STOP reasons, round {round_index} condition {label}: {reasons}")
             stop |= bool(reasons)
             inconclusive |= bool(r.get("inconclusive"))
+            overruns = r.get("pause_overruns_ms", [])
             records.append({"number": label, "position": order.index(label) + 1,
                             "median_ms": r["median_ms"], "excess_ms": round(r["median_ms"] - base["median_ms"], 3),
                             "p99_ms": r["p99_ms"], "p99_excess_ms": round(r["p99_ms"] - base["p99_ms"], 3),
-                            "verdict": verdict})
+                            "verdict": verdict, "pause_overruns": len(overruns),
+                            "max_pause_overrun_ms": max(overruns, default=0.0)})
             excess = {"median_excess_ms": records[-1]["excess_ms"],
-                      "p99_excess_ms": records[-1]["p99_excess_ms"], "verdict": verdict}
+                      "p99_excess_ms": records[-1]["p99_excess_ms"], "verdict": verdict,
+                      "pause_overruns": records[-1]["pause_overruns"],
+                      "max_pause_overrun_ms": records[-1]["max_pause_overrun_ms"]}
             print(f"excess round {round_index} condition {label}: {json.dumps(excess)}")
         for a, b in steps(conditions):
             if a in by_label and b in by_label:
@@ -750,6 +841,8 @@ async def main() -> int:
         print(f"summary condition {number} position {position}: {json.dumps(stats)}")
     for (a, b), vals in step_records.items():
         print(f"incremental summary {a}->{b}: {json.dumps(step_summary(vals))}")
+    for label, stats in sorted(overrun_summary(records).items()):
+        print(f"pause overruns condition {label}: {json.dumps(stats)}")
     if stop:
         print("STOP: report before M3")
         return 1
