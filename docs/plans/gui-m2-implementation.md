@@ -2564,3 +2564,86 @@ Task 5 replaces; Task 5 Step 2 depends on it. There is no other TBD.
 - `stats()` keys `connections_opened`, `closed_totals` and `closed_unresolved`;
 - `Connection.mark_sent` / `mark_failed` / `mark_unknown`, and the ledger key `delivery_unknown`;
 - `NotDelivered` and `send_via(ws, request)`.
+
+## Investigation after the Task 9 STOP (owner, 2026-09-28)
+
+The early check stopped in all six runs: condition 4's median exceeded condition 1's by
+0.107–0.116 ms against +0.10 ms, with the order fixed at 1→2→4, one round each. M3 stays
+paused. These two tasks find out whether the miss follows client load or run order, and
+prepare, without deciding, the 0010 question of how M4 proves a forced 1013 close.
+**Unchanged:** the request mix, 5,000 requests per condition, the median (+0.10 ms) and p99
+(+0.50 ms) limits, lost replies = 0, the P5 checks. Nothing in `src/` changes. The CPU
+governor stays as it is (`powersave`); it is recorded, never changed.
+
+### Task 10: harness hardening (test-first)
+
+**Files:** Modify `scripts/gui_m2_early_check.py`. Create `tests/unit/test_gui_m2_early_check.py`.
+
+1. **Cleanup on every path.** `condition()` must stop the simulator, candump, the reader
+   and stalled-client tasks, the tester's sockets and the stalled raw socket on every exit,
+   including an exception at any step (try/finally, or `contextlib.ExitStack` /
+   `AsyncExitStack`). No process started by a condition outlives it.
+2. **A refused stalled-client connect or reconnect fails the run.**
+   - The raw stalled socket must read the HTTP upgrade response and require
+     `HTTP/1.1 101`; anything else (a 503, a close, no response within a deadline) is a
+     failure carrying the status line.
+   - If the new connection id never appears in `/status`, that is a failure too
+     (`stalled_ids` empty or short of the connects made).
+   - Failure means: the condition's `p5_problems` gets a line naming it, so `main()` prints
+     `STOP` (exit 1), or the condition raises and the run ends non-zero. Never silent.
+3. **Rotated rounds.** `--rounds R` (default 1). Round r (0-based) runs the conditions in
+   rotation r of `(1, 2, 4)`: round 0 = 1,2,4; round 1 = 2,4,1; round 2 = 4,1,2; then
+   repeat. `--order` may instead give an explicit order such as `2,4,1`. Each round is
+   judged on its own condition 1: the same stop rules as today, per round. The output
+   prints every condition of every round as one JSON line, with its round and position.
+4. **Recorded per condition:**
+   - `rate_rps` = requests / elapsed seconds of the tester loop;
+   - wire latency as today (median, p99, paired, lost), from candump;
+   - dispatch latency from the events' `dispatch_us`: for condition 4, every exchange a
+     reader received (reader 0 is enough); for conditions 2 and 4, the final
+     `GET /api/v1/exchanges?limit=500` after the tester finishes (the history keeps 500),
+     labelled as the last 500. Report median and p99 in ms. Condition 1 has no API: none.
+     Do not add a client or a poll to condition 2; that would change the condition.
+   - once per run: the CPU governor of every CPU (from
+     `/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`, "unknown" if unreadable),
+     `nproc`, and the kernel release.
+5. **A summary** after all rounds: for each condition, its median in each position
+   (first, second, third) and the excess over that round's condition 1, so load and order
+   can be read off directly.
+6. **Unit tests without CAN or a simulator**: extract pure helpers and test them:
+   the rotation, the candump pairing (`latencies`, from a small synthetic log), the stop
+   judgment per round, the upgrade-response check (101 accepted; 503, empty and garbage
+   refused), the dispatch summary, and the cleanup path (a condition whose step raises
+   still stops what it started: use fakes or injected starters, not real processes).
+   The module imports aiohttp: the test module must skip with a named reason when the
+   `[gui]` extra is absent (the `.[dev]` CI job), like the other `[gui]` skips.
+7. Gates: the namespace suite, `ruff check .`, `mypy`. One smoke run with `-n 300 --rounds 3`
+   through `scripts/run_gui_m2_early_check.sh`, reported verbatim (its verdict is not
+   the result: 300 requests is a smoke run).
+
+### Task 11: rotated 5,000-request runs, the record, and the M4 forced-close proposal
+
+**Files:** Modify `docs/validation/gui-m2-early-check.md`. Create
+`docs/validation/gui-m2-early-check-runs/` holding each run's stdout verbatim.
+
+1. Run `scripts/run_gui_m2_early_check.sh --rounds 3` (5,000 requests) **three times**:
+   nine rounds, each condition three times in each position. No `src/` edits in the tree
+   while it runs. Keep every run's full stdout verbatim.
+2. Add a section to the record: environment (governor, CPUs, kernel, commit), a table of
+   median/p99 wire latency, dispatch latency and rate per condition per round and
+   position, and the verdict of every round, each as printed.
+3. **Load or order.** State which the data shows, against these tests:
+   - load: condition 4's excess over its round's condition 1 stays above +0.10 ms, or
+     near it, in every position;
+   - order: the excess tracks position (e.g. the condition run first is slower whatever
+     it is).
+   If neither, say "undetermined" and why. State the noise (the spread of condition 1)
+   beside it. Do not tune thresholds; a STOP stays a STOP.
+4. **M4 forced 1013 closes: a proposal for the owner, not a decision.** From the measured
+   buffer absorption (about 4,950 messages; a forced close needs about 23,000–26,000
+   requests), evaluate each option for whether it keeps condition 4 honest as a latency
+   condition, what it proves, what it costs, and what 0010 text changes:
+   (a) a smaller receive buffer for the stalled client; (b) a dedicated forced-close
+   sub-run outside the timed conditions; (c) driving the stalled client to overflow before
+   timing starts; (d) proving the 1013 path by unit and integration tests only, and saying
+   so in P5(e). End with a recommendation, marked as awaiting the owner's decision.
