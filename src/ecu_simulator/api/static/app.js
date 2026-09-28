@@ -54,11 +54,12 @@
     downAt: null,            // ms: when the page stopped being live
     attempt: 0, retryAt: null, retryTimer: null, pollTimer: null,
     ws: null, wsOpenedAt: null, hello: null, lastClose: null,
+    gen: 0, connecting: false,       // the current attempt's token; an attempt is under way
     runStartedAt: null,
     status: null, vehicle: null, dtcs: null, ecus: null,
     dropped: null,           // this connection's latest `dropped` message
     lastSeq: null,           // highest seq received, over every event, filtered or not
-    entries: [], nextId: 1, exCount: 0, trimmed: 0, duplicates: 0,
+    entries: [], nextId: 1, exCount: 0, trimmed: 0, trimmedGaps: 0, trimmedNotes: 0, duplicates: 0,
     counts: { ecu: {}, service: {}, outcome: {} }
   };
   var view = {
@@ -129,11 +130,17 @@
   }
 
   // ---------- connection ----------
+  // One attempt at a time. S.gen changes whenever an attempt starts or the page goes down, so a
+  // fetch, socket or poll left over from an earlier attempt sees a stale token and does nothing.
   function connect() {
+    if (S.connecting || isLive()) return;      // one attempt at a time, and none while live
+    S.connecting = true;
+    var gen = ++S.gen;
     clearTimeout(S.retryTimer);
     S.retryTimer = null; S.retryAt = null;
     renderLink();
     getJSON("/status").then(function (status) {
+      if (gen !== S.gen) return null;
       var restarted = S.runStartedAt != null && status.started_at !== S.runStartedAt;
       if (restarted) {
         addMark("link", "Simulator restarted.", "A new run started at " + utc(status.started_at * 1000) +
@@ -142,56 +149,79 @@
       }
       S.runStartedAt = status.started_at;
       var first = S.vehicle == null || restarted;
-      // While stale, the views keep their data as of the drop; a fresh status waits for the hello.
+      // While stale, the views keep their data as of the drop; a fresh status waits for the hello,
+      // unless this is the first data, or the first of a new run.
       if (first || !isStale()) S.status = status;
       return (first ? Promise.all([getJSON("/vehicle"), getJSON("/dtcs"), getJSON("/ecus")]) : Promise.resolve(null))
         .then(function (initial) {
+          if (gen !== S.gen) return;
           if (initial) {
-            if (!isStale()) S.lastLive = Date.now();
+            // Every view now holds data fetched at this moment: the stale marking says so.
+            S.lastLive = Date.now();
+            if (isStale()) S.downAt = S.lastLive;
             S.ecus = initial[2];
             applyState(initial[0], initial[1]);
+            renderAll();
           }
-          openSocket(status.api.refused_clients);
+          openSocket(status.api.refused_clients, gen);
         });
     }).catch(function (err) {
+      if (gen !== S.gen) return;
       fail(fetchReason(err, "status request failed"), err instanceof HttpError && (err.status === 421 || err.status === 403));
     });
   }
 
-  function openSocket(refusedBefore) {
+  function closeSocket() {
+    if (!S.ws) return;
+    var ws = S.ws;
+    S.ws = null;                        // its handlers now see S.ws !== ws and ignore it
+    try { ws.close(); } catch (e) { /* already closing */ }
+  }
+
+  function openSocket(refusedBefore, gen) {
+    closeSocket();                      // never leave an earlier socket holding a client slot
     var scheme = location.protocol === "https:" ? "wss:" : "ws:";
     var url = scheme + "//" + location.host + API + "/events" + (S.lastSeq != null ? "?after=" + S.lastSeq : "");
     var ws = new WebSocket(url);
     S.ws = ws; S.wsOpenedAt = null; S.hello = null; S.dropped = null;
+    // A handshake that never completes would hold the attempt forever: give it up.
+    setTimeout(function () {
+      if (S.ws === ws && S.wsOpenedAt == null) fail("the WebSocket handshake did not finish within " + FETCH_TIMEOUT_MS / 1000 + " s", false);
+    }, FETCH_TIMEOUT_MS);
     ws.onopen = function () { if (S.ws === ws) S.wsOpenedAt = Date.now(); };
     ws.onmessage = function (ev) { if (S.ws === ws) onMessage(ev.data); };
     ws.onclose = function (ev) {
       if (S.ws !== ws) return;
       S.ws = null;
-      if (S.wsOpenedAt == null) { diagnoseRefusal(refusedBefore); return; }
+      if (S.wsOpenedAt == null) { diagnoseRefusal(refusedBefore, gen); return; }
       S.lastClose = ev.code;
-      if (Date.now() - S.wsOpenedAt >= STABLE_MS) S.attempt = 0;
       fail(CLOSE_REASON[ev.code] || "the socket closed (" + ev.code + (ev.reason ? " " + ev.reason : "") + ")", false);
     };
   }
 
   // The browser does not expose the HTTP status of a refused upgrade, so ask /status whether
   // the simulator counted this attempt as a refused client (503 too many clients).
-  function diagnoseRefusal(refusedBefore) {
+  function diagnoseRefusal(refusedBefore, gen) {
     getJSON("/status").then(function (status) {
+      if (gen !== S.gen) return;
       if (status.api.refused_clients > refusedBefore) {
-        fail("refused: too many clients (503). The simulator serves at most 4 live pages or tools at once; " +
+        fail("refused: too many clients (503). The simulator's client limit is reached; " +
           status.api.clients + " are connected now. Close another observer to free a place.", true);
       } else {
         fail("the WebSocket upgrade was refused before it opened, and the simulator did not count it as too " +
           "many clients. The likely cause is the Origin check (403): the page's origin must match the Host " +
           "it was loaded from.", true);
       }
-    }).catch(function (err) { fail(fetchReason(err, "status request failed"), false); });
+    }).catch(function (err) { if (gen === S.gen) fail(fetchReason(err, "status request failed"), false); });
   }
 
   function fail(reason, refused) {
-    if (S.ws) { var ws = S.ws; S.ws = null; try { ws.close(); } catch (e) { /* already closing */ } }
+    S.gen += 1;                         // ends this attempt and its poll loop
+    S.connecting = false;
+    // A connection that stayed open STABLE_MS resets the backoff, however it ended.
+    if (S.wsOpenedAt != null && Date.now() - S.wsOpenedAt >= STABLE_MS) { S.attempt = 0; S.lastClose = null; }
+    S.wsOpenedAt = null;
+    closeSocket();
     clearTimeout(S.pollTimer); S.pollTimer = null;
     if (!isStale()) { S.downAt = S.lastLive; S.cause = reason; }
     S.phase = refused ? "refused" : "down";
@@ -204,15 +234,18 @@
     renderAll();
   }
 
-  function poll(delay) {
+  // One status loop per live connection, tied to the generation it started in.
+  function poll(delay, gen) {
+    clearTimeout(S.pollTimer);
     S.pollTimer = setTimeout(function () {
+      if (gen !== S.gen) return;
       getJSON("/status").then(function (status) {
-        if (!isLive()) return;
+        if (gen !== S.gen || !isLive()) return;
         S.status = status; S.lastLive = Date.now();
         renderStatus();
-        poll(STATUS_POLL_MS);
+        poll(STATUS_POLL_MS, gen);
       }).catch(function (err) {
-        if (isLive()) fail(fetchReason(err, "status request failed"), false);
+        if (gen === S.gen && isLive()) fail(fetchReason(err, "status request failed"), false);
       });
     }, delay);
   }
@@ -233,6 +266,9 @@
     S.hello = h;
     var resumed = S.lastSeq != null;
     if (!resumed) {
+      // An empty history means nothing has been published (watermark 0): resume from there, so
+      // exchanges evicted while this page is away later show as a gap, not as a fresh start.
+      if (h.oldest_seq == null) S.lastSeq = h.watermark;
       if (h.oldest_seq != null && h.oldest_seq > 1) {
         addMark("note", "History starts at seq " + h.oldest_seq + ".",
           "Seq 1–" + (h.oldest_seq - 1) + " left the simulator's history before this page connected.");
@@ -248,10 +284,10 @@
         S.lastSeq = h.oldest_seq - 1;
       }
     }
+    S.connecting = false;
     S.phase = "live"; S.reason = null; S.cause = null; S.downAt = null;
     if (ESCALATING_CLOSES.indexOf(S.lastClose) < 0) S.attempt = 0;
-    clearTimeout(S.pollTimer);
-    poll(0);
+    poll(0, S.gen);
     renderAll();
   }
 
@@ -296,6 +332,8 @@
     while (S.exCount > MAX_ROWS || (S.entries.length && S.entries[0].kind !== "ex" && S.trimmed > 0)) {
       var old = S.entries.shift();
       rowCache.delete(old.id);
+      if (old.kind === "gap") S.trimmedGaps += 1;
+      else if (old.kind !== "ex") S.trimmedNotes += 1;
       if (old.kind === "ex") {
         S.exCount -= 1; S.trimmed += 1;
         count(S.counts.ecu, ecuKey(old.e), -1);
@@ -383,19 +421,26 @@
         (retry == null ? ", reconnecting" : ", retry in " + retry + " s");
       conn.title = S.reason || "";
     }
-    if (!stale) { box.hidden = true; box.textContent = ""; return; }
+    if (!stale) { box.hidden = true; return; }
     box.hidden = false;
     box.className = "linkstate" + (S.phase === "refused" ? " linkstate--refused" : "");
-    box.textContent = "";
+    // The text is rebuilt every second; the button is not, so a click is never lost to a re-render.
+    var p = $("linkstate-text"), button = $("btn-retry");
+    if (!p) {
+      p = el("p", { id: "linkstate-text" });
+      button = el("button", { type: "button", id: "btn-retry" });
+      box.append(p, button);
+    }
     var lead = S.phase === "refused" ? "Connection refused." : "Disconnected.";
     var since = S.downAt ? " Last live " + utc(S.downAt) + " (" + ago(S.downAt) + "). The views below show data as of then." :
       " No data has been received yet.";
     var reason = S.cause || S.reason || "unknown";
     if (S.reason && S.cause && S.reason !== S.cause) reason = S.cause + (/\.$/.test(S.cause) ? "" : ".") + " Latest retry: " + S.reason;
-    box.appendChild(el("p", null, [el("b", { text: lead }), since + " Reason: " + reason + (/\.$/.test(reason) ? " " : ". ") +
+    p.replaceChildren(el("b", { text: lead }), since + " Reason: " + reason + (/\.$/.test(reason) ? " " : ". ") +
       (retry == null ? "Reconnecting now." : "Retrying in " + retry + " s (" + S.attempt + (S.attempt === 1 ? " failed attempt" : " failed attempts") +
-        "; the wait doubles from " + BACKOFF_START_MS / 1000 + " s to at most " + BACKOFF_CAP_MS / 1000 + " s).")]));
-    box.appendChild(el("button", { type: "button", id: "btn-retry" }, ["Retry now"]));
+        "; the wait doubles from " + BACKOFF_START_MS / 1000 + " s to at most " + BACKOFF_CAP_MS / 1000 + " s)."));
+    button.disabled = S.connecting;
+    button.textContent = S.connecting ? "Retrying" : "Retry now";
   }
 
   // ---------- rendering: vehicle ----------
@@ -619,8 +664,12 @@
       hidden = 0;
     }
     if (S.trimmed && !view.clearedAfter) {
-      frag.appendChild(markRow({ kind: "note", title: S.trimmed + " older rows left this view.",
-        text: "The page keeps the newest " + MAX_ROWS.toLocaleString("en") + " exchanges it received. They were received, so this is not a gap." }));
+      var left = [S.trimmed + (S.trimmed === 1 ? " older row" : " older rows")];
+      if (S.trimmedGaps) left.push(S.trimmedGaps + (S.trimmedGaps === 1 ? " gap marker" : " gap markers"));
+      if (S.trimmedNotes) left.push(S.trimmedNotes + (S.trimmedNotes === 1 ? " connection note" : " connection notes"));
+      var title = (left.length > 1 ? left.slice(0, -1).join(", ") + " and " + left[left.length - 1] : left[0]) + " left this view.";
+      frag.appendChild(markRow({ kind: "note", title: title,
+        text: "The page keeps the newest " + MAX_ROWS.toLocaleString("en") + " exchanges it received. The rows were received, so their removal is not a gap." }));
     }
     S.entries.forEach(function (entry) {
       if (entry.id <= view.clearedAfter) return;
@@ -734,7 +783,7 @@
       }
     });
     $("linkstate").addEventListener("click", function (ev) {
-      if (ev.target instanceof HTMLElement && ev.target.id === "btn-retry") connect();
+      if (ev.target instanceof HTMLElement && ev.target.id === "btn-retry" && isStale()) connect();
     });
     $("foot-limits").textContent = "Filters, pause and clear change this view only; the page sends nothing to the simulator. " +
       "Status refreshes every " + STATUS_POLL_MS / 1000 + " s; signals, trouble codes and exchanges arrive on the live stream. " +
@@ -749,7 +798,16 @@
     OUTCOMES.forEach(function (o) { $("o-" + o).checked = view.outcomes.indexOf(o) >= 0; });
   }
 
-  function renderAll() { renderLink(); renderStatus(); renderLog(); }
+  // Until the first data arrives the panels say whether it is still coming or will not come.
+  function renderPlaceholders() {
+    var text = isStale() ? "Not loaded: the page could not reach the simulator. It retries on its own." : null;
+    [["vehicle", S.vehicle, "Loading vehicle signals"], ["dtcs", S.dtcs, "Loading trouble codes"]].forEach(function (p) {
+      if (p[1] != null) return;
+      $(p[0]).replaceChildren(el("p", { cls: "placeholder", text: text || p[2] }));
+    });
+  }
+
+  function renderAll() { renderLink(); renderPlaceholders(); renderStatus(); renderLog(); }
 
   buildControls();
   renderAll();

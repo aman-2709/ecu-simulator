@@ -103,26 +103,35 @@ async def test_a_raw_dot_dot_path_is_404(server):
 
 
 @pytest.mark.asyncio
-async def test_a_real_file_under_static_that_is_not_listed_is_404(session):
-    static = resources.files("ecu_simulator.api").joinpath("static")
-    extra = static.joinpath("not-listed.txt")
+async def test_a_real_file_under_static_that_is_not_listed_is_404(session, tmp_path, monkeypatch):
+    # A package-data tree of our own, never the installed package: the listed files plus a
+    # real file that is not on the list. Only the server's own lookup is redirected.
+    from types import SimpleNamespace
+
+    from ecu_simulator.api import server as server_module
+
+    static = tmp_path / "static"
+    static.mkdir()
+    bodies = {name: f"tmp {name}".encode() for name, _ in FRONTEND.values()}
+    for name, body in bodies.items():
+        (static / name).write_bytes(body)
+    (static / "not-listed.txt").write_bytes(b"must not be served")
+    (tmp_path / "server.py").write_bytes(b"must not be served")
+    looked_up: list[str] = []
+    fake = SimpleNamespace(files=lambda package: looked_up.append(package) or tmp_path)
+    monkeypatch.setattr(server_module, "resources", fake)
+    s = build()
+    assert looked_up == ["ecu_simulator.api"]
+    await s.start()
     try:
-        with open(str(extra), "wb") as f:           # a real file, present before the server starts
-            f.write(b"must not be served")
-    except OSError:
-        pytest.skip("package static directory is not writable here")
-    try:
-        s = build()
-        await s.start()
-        try:
-            for path in ("/not-listed.txt", "/static/not-listed.txt"):
-                async with session.get(url(s, path)) as r:
-                    assert r.status == 404, path
-        finally:
-            await s.stop()
+        for path, (name, _) in FRONTEND.items():            # the tree really is the one served
+            async with session.get(url(s, path)) as r:
+                assert r.status == 200 and await r.read() == bodies[name], path
+        for path in ("/not-listed.txt", "/static/not-listed.txt", "/static/../server.py", "/server.py"):
+            async with session.get(url(s, path)) as r:
+                assert r.status == 404, path
     finally:
-        import os
-        os.remove(str(extra))
+        await s.stop()
 
 
 @pytest.mark.asyncio
