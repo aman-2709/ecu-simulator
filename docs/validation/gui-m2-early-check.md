@@ -3,10 +3,11 @@
 **An early check on vcan, conditions 1, 2 and 4 only; not the M4 benchmark. P1–P9 are
 judged at M4** ([decisions/0010 §9.2](../decisions/0010-gui-observer-api.md)). It has no
 condition 3 or 5, no RSS soak, and no JSONL output. The first six runs had one round each,
-with no rotation of condition order. The three later runs have three rounds each, with the
-order rotated ("Rotated runs, 2026-09-28" below).
+with no rotation of condition order. The three rotated runs have three rounds each, with the
+order rotated ("Rotated runs, 2026-09-28" below). The three diagnostic runs have five rounds
+each, over five client configurations ("Client-cost diagnostic, 2026-09-28" below).
 
-**Result: `STOP` in all nine runs.**
+**Result: `STOP` in all twelve runs.**
 
 - Six single-round runs, order fixed 1→2→4: three with the script at `cf0cb3a`, three
   after fix round 1. Condition 4's median wire latency exceeded condition 1's median +
@@ -15,8 +16,13 @@ order rotated ("Rotated runs, 2026-09-28" below).
   round's condition 1 median + 0.10 ms in 7 of the 9 rounds. The other two rounds are not
   a pass. The miss follows condition 4's load, not run order; its cause is not
   established.
+- Three diagnostic runs of five rotated rounds, at `b6528b8`: condition 4's median
+  exceeded its own round's condition 1 median + 0.10 ms in **15 of the 15 rounds**. Three
+  reading clients alone (no stalled client) exceeded it in 3 of 15. The wire cost builds
+  up with each client configuration; most of it lies outside the dispatcher's
+  `dispatch_us` window. Its cause is still not established.
 
-Every other early-check criterion held in all nine runs: p99 within condition 1 +
+Every other early-check criterion held in all twelve runs: p99 within condition 1 +
 0.50 ms, 0 lost replies, no P5 problem among those this script checks ((a), (b), (e), (f),
 (h)); (c), (d), (g) and P6 are not checked at M2, and no `delivery_unknown` beyond the
 P5(h) allowance. Per the stop rule this is reported before M3. No threshold was tuned, and no
@@ -25,9 +31,11 @@ condition was lengthened.
 **Condition 4 here is "stalled, not overflowing, never forced off".** The stalled
 connection dropped nothing (`client_dropped = 0`) and was never forced off
 (`forced_disconnects = 0`), so the §4.3 overflow and 1013 path is **not** exercised by this
-check. `forced_disconnects` is 0 in all nine runs. `client_dropped` is 0 in all six runs
-that print the stalled ledger: three after fix round 1, and the three rotated. See "The condition 4 limitation" below, and "M4 forced 1013 closes: a proposal for
-the owner", which awaits the owner's decision.
+check. `forced_disconnects` is 0 in all twelve runs. `client_dropped` is 0 in all nine runs
+that print the stalled ledger: three after fix round 1, the three rotated and the three
+diagnostic. See "The condition 4 limitation" below, and "M4 forced 1013 closes: a proposal for
+the owner". The owner has since decided: 0010's seventh revision adds a forced-close run
+in every M4 round ([0010 §9.2](../decisions/0010-gui-observer-api.md), *Forced-close run*).
 
 ## Host
 
@@ -41,7 +49,7 @@ the owner", which awaits the owner's decision.
 | Namespace | `unshare -r -n`, `lo` up, a private `vcan0`; the host's `can0` and `vcan0` are not touched |
 
 This table is for the first six runs. The rotated runs' environment is in "Rotated runs,
-2026-09-28".
+2026-09-28", and the diagnostic runs' in "Client-cost diagnostic, 2026-09-28".
 
 ### Commits
 
@@ -53,6 +61,10 @@ This table is for the first six runs. The rotated runs' environment is in "Rotat
 | `73e9e9f` | fix round 1 of the script: the stalled ledger, reconnects, readers and quiesce are reported. The second three runs and every gate below ran on this tree |
 | `5f1f202`, `a7431be` | the harness hardened for rotated rounds (Task 10 and its review round 1): cleanup on every path, a refused stalled connect fails the run, `--rounds` and `--order`, `rate_rps`, dispatch latency, the host line and the summary. `src/` unchanged. The three rotated runs ran on `a7431be` |
 | `c8fbe22` | the rotated runs' stdout, verbatim, in `gui-m2-early-check-runs/` |
+| `6bbad2c` | the plan for the client-cost diagnostic, the loud harness failures and the 0010 forced-close revision |
+| `7b5b7ea`, `b6528b8` | the harness for the diagnostic (Task 12 and its fix round 1): client configurations and `--conditions`, segments and pauses, the full-run dispatch harvest, loud failures, completeness checks. `src/` unchanged. The three diagnostic runs ran on `b6528b8` |
+| `c1790bd` | the diagnostic runs' stdout, verbatim, and the committed `candump` captures |
+| `ec0839a`, `c6f9a90` | 0010's seventh revision (the owner's decision): a forced-close run in every M4 round |
 
 ## Method
 
@@ -239,6 +251,9 @@ does not change the condition.
 (Added 2026-09-28: the rotated runs below give the same ledger, and "M4 forced 1013
 closes: a proposal for the owner" sets out the options. It awaits the owner's decision.)
 
+(Updated 2026-09-28: the owner has decided. See 0010 §9.2, *Forced-close run*. The
+diagnostic runs give the same ledger again: see "Client-cost diagnostic, 2026-09-28".)
+
 ## Rotated runs, 2026-09-28: three runs of three rounds
 
 This part answers one question from the plan ("Investigation after the Task 9 STOP",
@@ -341,6 +356,11 @@ c9e3d70a4f6e8e306de4595fede368ff6f4b98f8152df822aa5e73d579be455e  candump-0-00.l
 27faf80790dbeed2e7fbc7cdf2ce207c088b28ba623810854e29931951a358e4  candump-2-10.log
 b27a1ec31c2f8d15781b6444c6d41cb8441ea435b110b3c7d37cb5ba98eeaec8  candump-2-11.log
 ```
+
+(Updated 2026-09-28: run 1's nine logs are now committed, xz-compressed, in
+`gui-m2-early-check-captures/rotated-run-1/`. Their uncompressed hashes match the run 1
+block above. Runs 2 and 3 are not committed. See "Captures" under "Client-cost diagnostic,
+2026-09-28".)
 
 Every round's verdict, as printed:
 
@@ -520,6 +540,10 @@ hypothesis below. None has been tested, and they are not exclusive.
 | **H2. The harness sharing the host.** The harness process runs the tester (in a thread) and, in condition 4, three aiohttp readers that parse every event, and the stalled client's `/status` poll every 0.5 s. Nothing pins the harness or the simulator to CPUs. The wire interval runs from the request frame to the first reply frame, so the tester's own delays fall outside it. The harness can reach it only through the host (CPU placement, caches, frequency), or through `/status`, which the simulator serves on its loop. That is two or three polls per condition, too few to move a median of 5,000 | the slightly larger non-wire cycle time in condition 4 (derived above) | the readers in a separate process; the simulator, tester and readers pinned to separate CPUs (`taskset`) |
 | **H3. Host power management.** Governor `powersave` on all 12 CPUs; load average 5.4–6.6 at each run's start, source not recorded; it includes the preceding run (the runs started 24 s apart). If CPU frequency or wake-up latency differs with how busy the simulator is, wire latency moves with it | nothing specific; it cannot be ruled out on this host | a repeat with the `performance` governor. The plan keeps the governor as it is, so this needs the owner's approval |
 
+(Added 2026-09-28: the diagnostic runs did the first part of H1's test, one reader and
+three readers without the stalled client beside condition 4. The excess scales with
+readers, which H1 and H2 both predict. See "Client-cost diagnostic, 2026-09-28".)
+
 ### Gates and CI for this part
 
 This part adds local vcan evidence only. "Gates" gives the gates at `b27cf60` (local,
@@ -528,7 +552,409 @@ expected change noted. "Hosted CI" adds run 36363466270 at `e0c8445`. **No hoste
 covers `7141045` or any later commit**: they are not pushed (`origin/gui` is at
 `e0c8445`).
 
+(Updated 2026-09-28: `7141045` to `70c4e9f` are now pushed, and hosted run 36436675557
+at `70c4e9f` covers them, including `a7431be`. No hosted run covers `6bbad2c` or any
+later commit. See "Hosted CI".)
+
+## Client-cost diagnostic, 2026-09-28: three runs of five rounds, five client configurations
+
+This part asks where condition 4's excess comes from. It splits condition 4 into its
+parts: the API with no clients, one reader, three readers, and three readers with the
+stalled client. It adds **local vcan evidence only**.
+
+**Result: `STOP` in all three runs** (exit status 1). Condition 4's median exceeded its
+own round's condition 1 median + 0.10 ms in **15 of the 15 rounds**. Three readers without
+the stalled client exceeded it in 3 of the 15. A configuration that printed no stop reason
+in a round is **not a pass**: the stop rule applies to every round. No threshold was tuned, and no
+condition was lengthened. Per the stop rule, this is reported before M3.
+
+**What it finds, in one line:** the wire cost builds up with each client configuration
+(the API, the first reader, two more readers, the stalled client), and most of it lies
+outside `dispatch_us`. It shows where the time is not. It does not show where the time is.
+
+### Environment
+
+| | |
+|---|---|
+| Commit | `b6528b877e22866d3d3d9eb023d67b7077886ca0`, named in each run file's header. `src/` is identical to `334ecf4` (`git diff 334ecf4 b6528b8 -- src` is empty): **the product code is unchanged since the first six runs; the harness changed** |
+| Date | 2026-09-28; the runs started at 08:17:19, 08:18:58 and 08:20:36 local (UTC−7) |
+| CPUs | 12 (`nproc`: the scheduler affinity count), governor `powersave` on all 12, from the `host:` line each run prints |
+| Kernel | `6.8.0-138-generic`, from the same line |
+| Load | 1-minute load average 1.25, 1.94 and 2.51 at the start of runs 1, 2 and 3 (5-minute: 1.11, 1.35, 1.67), from the file headers. Each average after run 1 includes the preceding run. The operator reports the CPUs about **92 % idle** in a `top` snapshot taken just before run 1; that is not in the run files. The rotated runs started at a load average of 5.4–6.6 |
+| Python, aiohttp | the worktree `.venv`: Python 3.12.12, aiohttp 3.14.3, as checked when this section was written. The run files do not record them |
+| Namespace | as before: `unshare -r -n`, `lo` up, a private `vcan0` |
+
+### Method, as changed at `7b5b7ea` and `b6528b8`
+
+- Command, three times:
+  `scripts/run_gui_m2_early_check.sh --rounds 5 --conditions 1,2,r1,r3,4 --captures <dir>`.
+  5,000 requests per configuration (the default `-n`). `--order` was not given.
+- **Client configurations** (`--conditions`), each with its own `candump` and its own
+  simulator process, as before:
+
+  | Label | API | Reading clients | Stalled client | What it is |
+  |---|---|---|---|---|
+  | 1 | off | — | — | condition 1, unchanged |
+  | 2 | on | 0 | no | condition 2, unchanged |
+  | r1 | on | 1 | no | one reader; the client set of 0010's condition 3 |
+  | r3 | on | 3 | no | condition 4 without its stalled client |
+  | 4 | on | 3 | yes | condition 4, unchanged: 3 readers, then the stalled raw socket (4 KiB receive buffer, never read) |
+
+- **Rotation.** Round r runs rotation r of (1, 2, r1, r3, 4). So each run puts each
+  configuration in each of the five positions once, and the three runs give **three
+  samples per (configuration, position)**. As before, a configuration's position is fixed
+  by the round index, so a round effect cannot be told from a position effect.
+- **Segments and pause.** The 5,000 requests go out in **20 segments of 250**. After every
+  segment the harness pauses for a fixed **50 ms**, in **every** configuration, condition
+  1 included (condition 1 only sleeps). No request is in flight during a pause. The plan
+  said 10 segments of 500; Task 12's fix round capped the segment at 250 (`b6528b8`),
+  because 500 equals the 500-event history and leaves no margin.
+- **Dispatch, the whole run.** In every API configuration, each pause makes one
+  `GET /api/v1/exchanges?after=<last seq>&limit=500` and keeps each event's `dispatch_us`.
+  After the last segment and a 1 s drain, one more fetch takes the tail. So
+  `dispatch_all_ms` covers **every** exchange (n = 5,000), not the last 500 as in the
+  rotated runs. `dispatch_reader0_ms` is kept as a cross-check: in all 45 reader rows it is
+  identical to `dispatch_all_ms`. `dispatch_us` is dispatcher time only, not wire latency
+  (0010 §5).
+- **Rate and seconds** count the tester's time inside segments only, not the pauses.
+- **Wire latency**, the pairing and the lost-reply rule are unchanged. They cover all
+  5,000 requests, including the 19 that follow a pause in each configuration (see "The
+  first request after a pause").
+- **Limits, unchanged:** each round is judged against its own condition 1. Median ≤
+  condition 1 + 0.10 ms, p99 ≤ condition 1 + 0.50 ms, lost = 0, and no P5 problem.
+- **Loud failures.** At `7b5b7ea`:
+  - `--rounds 0` is a usage error (exit 2), not a run that does nothing and prints
+    "within";
+  - if the readers never all appear in `/status`, the run raises;
+  - a reader that ends any way other than `stopped` is a P5 problem, so a `STOP`.
+
+  At `b6528b8`:
+  - a bad `--conditions` or `--order` is a usage error (exit 2); `--conditions` must
+    include condition 1, with no label twice;
+  - `--captures` refuses a directory that already holds `candump-*.log` files.
+- **Completeness checks.** Each is a P5 problem, so a `STOP`, unless noted:
+  - each harvest must have no `gap` and consecutive `seq`s (`7b5b7ea`);
+  - at the end, the last harvested `seq` and the number of `dispatch_us` values must
+    both equal `issued_seq` (`b6528b8`);
+  - each reader's received `seq`s must be exactly 1 … `issued_seq`, in order, with no
+    gap and no duplicate (`b6528b8`; at `7b5b7ea` only the count was checked);
+  - an event without `dispatch_us` (a fallback event) stops the run with an error
+    (`b6528b8`).
+- **New lines in the output:** per round, an `excess` line per configuration (median and
+  p99 excess over condition 1, the verdict, pause overruns) and an `incremental` line per
+  step (1→2, 2→r1, r1→r3, r3→4: wire median and p99 and, where both sides have an API,
+  dispatch median and p99). At the end, per-position `summary` lines, `incremental
+  summary` lines over the run's five rounds, and a `pause overruns` line per
+  configuration. The 15-round figures below are computed from the JSON lines of all three
+  files.
+- **Capture names changed.** The logs are now `candump-<round>-<api><readers><stalled>.log`:
+  `000` = 1, `100` = 2, `110` = r1, `130` = r3, `131` = 4. At `a7431be` they were
+  `candump-<round>-<api><clients>.log`: `00` = 1, `10` = 2, `11` = 4. The rotated runs'
+  hash table above uses the old names.
+
+### The runs
+
+The stdout of each run is committed verbatim (`c1790bd`):
+[diag-run-1.txt](gui-m2-early-check-runs/diag-run-1.txt),
+[diag-run-2.txt](gui-m2-early-check-runs/diag-run-2.txt),
+[diag-run-3.txt](gui-m2-early-check-runs/diag-run-3.txt). Each file starts with two `#`
+lines (run, commit, start time, load average; the command) and ends with `# exit status: 1`.
+Each printed `pause_s: 0.05` and `segment_size: 250, segments: 20`, and ended with
+`STOP: report before M3`.
+
+Every configuration in every round, as printed. The verdict is the one in each `excess`
+line. "within limits" is the script's word for a configuration that printed no stop
+reason in that round; it is not a pass. Bold: the 18 medians that printed a stop reason.
+Condition 1 has no API, so no dispatch figure.
+
+| Run | Round | Pos. | Cond. | Wire median (ms) | Wire p99 (ms) | Dispatch median (ms) | Dispatch p99 (ms) | Rate (req/s) | Verdict, as printed |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 0 | 1 | 1 | 0.117 | 0.238 | — | — | 6,597.1 | within limits |
+| 1 | 0 | 2 | 2 | 0.166 | 0.322 | 0.109 | 0.229 | 5,054.6 | within limits |
+| 1 | 0 | 3 | r1 | 0.195 | 0.291 | 0.112 | 0.196 | 4,526.0 | within limits |
+| 1 | 0 | 4 | r3 | **0.221** | 0.354 | 0.118 | 0.216 | 3,868.8 | `STOP` |
+| 1 | 0 | 5 | 4 | **0.231** | 0.459 | 0.119 | 0.263 | 3,525.6 | `STOP` |
+| 1 | 1 | 1 | 2 | 0.161 | 0.264 | 0.107 | 0.184 | 5,268.4 | within limits |
+| 1 | 1 | 2 | r1 | 0.200 | 0.320 | 0.119 | 0.224 | 4,230.6 | within limits |
+| 1 | 1 | 3 | r3 | 0.211 | 0.340 | 0.115 | 0.199 | 4,140.1 | within limits |
+| 1 | 1 | 4 | 4 | **0.230** | 0.372 | 0.120 | 0.208 | 3,713.3 | `STOP` |
+| 1 | 1 | 5 | 1 | 0.122 | 0.242 | — | — | 6,278.5 | within limits |
+| 1 | 2 | 1 | r1 | 0.194 | 0.562 | 0.112 | 0.346 | 4,118.3 | within limits |
+| 1 | 2 | 2 | r3 | 0.213 | 0.345 | 0.116 | 0.198 | 3,991.5 | within limits |
+| 1 | 2 | 3 | 4 | **0.225** | 0.354 | 0.119 | 0.193 | 3,867.5 | `STOP` |
+| 1 | 2 | 4 | 1 | 0.118 | 0.241 | — | — | 6,540.2 | within limits |
+| 1 | 2 | 5 | 2 | 0.166 | 0.294 | 0.108 | 0.222 | 5,049.8 | within limits |
+| 1 | 3 | 1 | r3 | 0.217 | 0.355 | 0.117 | 0.208 | 3,943.1 | within limits |
+| 1 | 3 | 2 | 4 | **0.236** | 0.376 | 0.120 | 0.195 | 3,740.6 | `STOP` |
+| 1 | 3 | 3 | 1 | 0.123 | 0.238 | — | — | 6,405.1 | within limits |
+| 1 | 3 | 4 | 2 | 0.168 | 0.273 | 0.110 | 0.210 | 5,031.7 | within limits |
+| 1 | 3 | 5 | r1 | 0.196 | 0.306 | 0.112 | 0.197 | 4,503.3 | within limits |
+| 1 | 4 | 1 | 4 | **0.236** | 0.466 | 0.124 | 0.262 | 3,480.9 | `STOP` |
+| 1 | 4 | 2 | 1 | 0.121 | 0.241 | — | — | 6,422.7 | within limits |
+| 1 | 4 | 3 | 2 | 0.164 | 0.280 | 0.108 | 0.203 | 5,120.3 | within limits |
+| 1 | 4 | 4 | r1 | 0.201 | 0.334 | 0.120 | 0.226 | 4,225.5 | within limits |
+| 1 | 4 | 5 | r3 | 0.221 | 0.356 | 0.120 | 0.229 | 3,821.7 | within limits |
+| 2 | 0 | 1 | 1 | 0.121 | 0.285 | — | — | 5,773.6 | within limits |
+| 2 | 0 | 2 | 2 | 0.170 | 0.261 | 0.111 | 0.186 | 5,011.0 | within limits |
+| 2 | 0 | 3 | r1 | 0.189 | 0.312 | 0.110 | 0.199 | 4,657.9 | within limits |
+| 2 | 0 | 4 | r3 | 0.218 | 0.358 | 0.116 | 0.207 | 3,983.3 | within limits |
+| 2 | 0 | 5 | 4 | **0.227** | 0.355 | 0.118 | 0.204 | 3,813.4 | `STOP` |
+| 2 | 1 | 1 | 2 | 0.162 | 0.263 | 0.107 | 0.200 | 5,193.8 | within limits |
+| 2 | 1 | 2 | r1 | 0.190 | 0.377 | 0.112 | 0.246 | 4,419.6 | within limits |
+| 2 | 1 | 3 | r3 | 0.211 | 0.325 | 0.114 | 0.189 | 4,139.3 | within limits |
+| 2 | 1 | 4 | 4 | **0.234** | 0.449 | 0.120 | 0.256 | 3,474.1 | `STOP` |
+| 2 | 1 | 5 | 1 | 0.122 | 0.234 | — | — | 6,417.4 | within limits |
+| 2 | 2 | 1 | r1 | 0.195 | 0.314 | 0.112 | 0.203 | 4,431.6 | within limits |
+| 2 | 2 | 2 | r3 | 0.220 | 0.349 | 0.117 | 0.219 | 3,912.2 | within limits |
+| 2 | 2 | 3 | 4 | **0.228** | 0.376 | 0.118 | 0.216 | 3,683.6 | `STOP` |
+| 2 | 2 | 4 | 1 | 0.121 | 0.252 | — | — | 6,240.7 | within limits |
+| 2 | 2 | 5 | 2 | 0.169 | 0.282 | 0.110 | 0.210 | 5,045.9 | within limits |
+| 2 | 3 | 1 | r3 | 0.221 | 0.406 | 0.118 | 0.242 | 3,665.4 | within limits |
+| 2 | 3 | 2 | 4 | **0.231** | 0.356 | 0.119 | 0.195 | 3,806.7 | `STOP` |
+| 2 | 3 | 3 | 1 | 0.123 | 0.246 | — | — | 6,377.9 | within limits |
+| 2 | 3 | 4 | 2 | 0.165 | 0.276 | 0.109 | 0.196 | 5,134.9 | within limits |
+| 2 | 3 | 5 | r1 | 0.187 | 0.281 | 0.110 | 0.184 | 4,729.9 | within limits |
+| 2 | 4 | 1 | 4 | **0.222** | 0.356 | 0.118 | 0.197 | 3,922.8 | `STOP` |
+| 2 | 4 | 2 | 1 | 0.117 | 0.229 | — | — | 6,609.5 | within limits |
+| 2 | 4 | 3 | 2 | 0.164 | 0.276 | 0.109 | 0.198 | 5,130.6 | within limits |
+| 2 | 4 | 4 | r1 | 0.185 | 0.291 | 0.109 | 0.182 | 4,693.7 | within limits |
+| 2 | 4 | 5 | r3 | **0.223** | 0.371 | 0.118 | 0.216 | 3,813.4 | `STOP` |
+| 3 | 0 | 1 | 1 | 0.119 | 0.223 | — | — | 6,444.7 | within limits |
+| 3 | 0 | 2 | 2 | 0.168 | 0.271 | 0.109 | 0.213 | 5,068.1 | within limits |
+| 3 | 0 | 3 | r1 | 0.191 | 0.296 | 0.112 | 0.206 | 4,527.5 | within limits |
+| 3 | 0 | 4 | r3 | 0.206 | 0.317 | 0.114 | 0.180 | 4,210.4 | within limits |
+| 3 | 0 | 5 | 4 | **0.222** | 0.361 | 0.117 | 0.194 | 3,911.7 | `STOP` |
+| 3 | 1 | 1 | 2 | 0.164 | 0.296 | 0.108 | 0.219 | 5,081.5 | within limits |
+| 3 | 1 | 2 | r1 | 0.194 | 0.680 | 0.114 | 0.269 | 3,922.2 | within limits |
+| 3 | 1 | 3 | r3 | 0.213 | 0.331 | 0.116 | 0.196 | 4,043.2 | within limits |
+| 3 | 1 | 4 | 4 | **0.226** | 0.373 | 0.118 | 0.199 | 3,793.2 | `STOP` |
+| 3 | 1 | 5 | 1 | 0.118 | 0.246 | — | — | 6,478.2 | within limits |
+| 3 | 2 | 1 | r1 | 0.192 | 0.309 | 0.112 | 0.207 | 4,489.8 | within limits |
+| 3 | 2 | 2 | r3 | 0.217 | 0.344 | 0.116 | 0.193 | 4,023.5 | within limits |
+| 3 | 2 | 3 | 4 | **0.224** | 0.363 | 0.117 | 0.201 | 3,873.6 | `STOP` |
+| 3 | 2 | 4 | 1 | 0.119 | 0.236 | — | — | 6,548.8 | within limits |
+| 3 | 2 | 5 | 2 | 0.161 | 0.266 | 0.107 | 0.192 | 5,219.7 | within limits |
+| 3 | 3 | 1 | r3 | **0.228** | 0.358 | 0.120 | 0.234 | 3,744.6 | `STOP` |
+| 3 | 3 | 2 | 4 | **0.229** | 0.359 | 0.118 | 0.210 | 3,794.6 | `STOP` |
+| 3 | 3 | 3 | 1 | 0.116 | 0.231 | — | — | 6,704.5 | within limits |
+| 3 | 3 | 4 | 2 | 0.162 | 0.265 | 0.107 | 0.191 | 5,184.9 | within limits |
+| 3 | 3 | 5 | r1 | 0.196 | 0.327 | 0.113 | 0.221 | 4,421.2 | within limits |
+| 3 | 4 | 1 | 4 | **0.231** | 0.365 | 0.118 | 0.204 | 3,711.5 | `STOP` |
+| 3 | 4 | 2 | 1 | 0.120 | 0.270 | — | — | 5,978.4 | within limits |
+| 3 | 4 | 3 | 2 | 0.166 | 0.331 | 0.109 | 0.237 | 4,953.2 | within limits |
+| 3 | 4 | 4 | r1 | 0.189 | 0.313 | 0.110 | 0.204 | 4,720.7 | within limits |
+| 3 | 4 | 5 | r3 | 0.211 | 0.332 | 0.115 | 0.189 | 4,071.5 | within limits |
+
+The 18 stop reasons are all "median … > condition 1's … + 0.1": condition 4 in all 15
+rounds, and r3 in run 1 round 0 (position 4), run 2 round 4 (position 5) and run 3 round
+3 (position 1).
+
+In all 75 rows (15 rounds × 5 configurations):
+
+- Lost replies: 0; 5,000 of 5,000 paired; 0 tester timeouts.
+- `p5_problems` and `inconclusive`: empty in every API configuration. So no harvest gap,
+  no harvest tail short of `issued_seq`, and no reader sequence other than 1 … 5,000.
+- `dispatch_all_ms` has n = 5,000 in all 60 API rows. `reader_seq_ok` is true, and every
+  reader received 5,000 exchanges and ended `stopped`.
+- Pause overruns: 0 in every configuration of every run (the `pause overruns` lines).
+- Allowed `delivery_unknown` (P5(h)), reported explicitly: `{}` for 2, r1 and r3;
+  `{"1006": 1}` for condition 4 in every round, from the stalled socket that the harness
+  closed at the end of the condition. That is within the allowance of one per 1006 close.
+- `forced_disconnects` = 0 and harness `reconnects` = 0 in every condition 4. The stalled
+  connection, just before the harness stopped it: `client_dropped` 0, `queued` 49–51,
+  `sent` 4,949–4,951 of 5,000 `enqueued`; at quiesce, closed 1006 with `queued` 0 and
+  `delivery_unknown` 1. As before, **it never overflowed**, and it was never forced off.
+- p99: within condition 1 + 0.50 ms in every row. The largest p99 excess is r1's
+  +0.434 ms (run 3 round 1, p99 0.680 ms), 0.066 ms from the limit.
+
+Each median and p99 above was recomputed from the `candump` captures with the script's own
+pairing rule, and all 75 match: run 1 from the committed captures, runs 2 and 3 from the
+controller's uncommitted copies.
+
+### Cost of each configuration, over the 15 rounds
+
+Each configuration's excess over its own round's condition 1 (ms):
+
+| Config. | Wire median, range | Median excess, mean (range) | p99 excess, mean (range) | Stop reasons | Dispatch median, range | Dispatch p99, range | Rate (req/s), range |
+|---|---|---|---|---|---|---|---|
+| 1 | 0.116–0.123 | — | — | 0 of 15 | — | — | 5,773.6–6,704.5 |
+| 2 | 0.161–0.170 | +0.045 (+0.039 to +0.049) | +0.038 (−0.024 to +0.084) | 0 of 15 | 0.107–0.111 | 0.184–0.237 | 4,953.2–5,268.4 |
+| r1 | 0.185–0.201 | +0.073 (+0.064 to +0.080) | +0.111 (+0.027 to +0.434) | 0 of 15 | 0.109–0.120 | 0.182–0.346 | 3,922.2–4,729.9 |
+| r3 | 0.206–0.228 | +0.097 (+0.087 to +0.112) | +0.106 (+0.062 to +0.160) | **3 of 15** | 0.114–0.120 | 0.180–0.242 | 3,665.4–4,210.4 |
+| 4 | 0.222–0.236 | +0.109 (+0.103 to +0.115) | +0.139 (+0.070 to +0.225) | **15 of 15** | 0.117–0.124 | 0.193–0.263 | 3,474.1–3,922.8 |
+
+The incremental cost of each step, from two configurations of the same round (ms). A
+"positive" count is the number of rounds in which the step raised the wire median:
+
+| Step | What it adds | Wire median, mean (range) | Positive | Wire p99, mean (range) | Dispatch median, mean (range) | Dispatch p99, mean (range) |
+|---|---|---|---|---|---|---|
+| 1→2 | the API itself, no clients | +0.045 (+0.039 to +0.049) | 15 of 15 | +0.038 (−0.024 to +0.084) | — | — |
+| 2→r1 | the first reader | +0.028 (+0.019 to +0.039) | 15 of 15 | +0.073 (−0.031 to +0.384) | +0.004 (−0.001 to +0.012) | +0.015 (−0.033 to +0.124) |
+| r1→r3 | two more readers | +0.024 (+0.011 to +0.038) | 15 of 15 | −0.005 (−0.349 to +0.125) | +0.004 (−0.004 to +0.009) | −0.013 (−0.148 to +0.058) |
+| r3→4 | the stalled client | +0.012 (−0.001 to +0.023) | 14 of 15 | +0.033 (−0.050 to +0.124) | +0.002 (−0.002 to +0.006) | +0.005 (−0.047 to +0.067) |
+| 2→4 | all four clients, for comparison | +0.064 (+0.054 to +0.072) | 15 of 15 | +0.101 (+0.034 to +0.186) | +0.010 (+0.007 to +0.016) | +0.007 (−0.033 to +0.059) |
+
+- Each run file's `incremental summary` lines cover that run's five rounds only. The
+  figures above cover all 15.
+- The one negative r3→4 step is run 2 round 4: r3 0.223 ms, condition 4 0.222 ms.
+- The p99 steps swing both ways, by up to 0.38 ms. A p99 over 5,000 requests is the
+  4,951st sorted value, so a few dozen slow requests move it. r1's two high p99s (0.562
+  and 0.680 ms) set the 2→r1 and r1→r3 extremes. The p99 steps show no consistent cost.
+
+### What the data say
+
+- **The cost builds up across configurations.** The first three steps raised the wire
+  median in all 15 rounds, and the stalled client in 14. The step means (+0.045, +0.028, +0.024, +0.012 ms) add up to
+  condition 4's mean excess (+0.109 ms). That sum holds by construction, since the steps
+  chain within each round; the finding is that every part adds, and none carries the
+  excess alone. The API with no clients adds the most. The three readers add +0.052 ms,
+  the first reader more than the next two together. The stalled client adds the least.
+- **Dispatch barely moves.** From condition 2 to condition 4, the full-run dispatch
+  median rises by +0.010 ms (mean; +0.007 to +0.016), while the wire median rises by
+  +0.064 ms (+0.054 to +0.072). Over the three client steps (2→r1, r1→r3, r3→4), the
+  dispatch median moves +0.004, +0.004 and +0.002 ms on average, against +0.028, +0.024
+  and +0.012 ms on the wire. So **most of the wire cost of the clients lies
+  outside the `dispatch_us` window**. This now covers all 5,000 exchanges of each
+  configuration, and agrees with the rotated runs' last-500 comparison. It is a statement
+  about medians, not a per-request breakdown. It says nothing about the 1→2 step, since
+  condition 1 has no dispatch figure.
+- **Three readers alone can miss the limit.** r3 printed a stop reason in 3 of 15 rounds
+  (excess +0.104, +0.106 and +0.112 ms), and its mean excess, +0.097 ms, is just under
+  the limit. The stalled client is not needed for a miss.
+- **Order does not matter** (medians by position below). Condition 4's mean median by
+  position spans 0.226–0.232 ms, 0.006 ms, against its 15-round range of 0.222–0.236 ms.
+  No configuration is consistently slower in any position. In 14 of the 15 rounds the
+  medians rank 1 < 2 < r1 < r3 < 4, whatever the order; the other is the r3→4 round above.
+- **The pause brings no configuration-specific bias at the median** ("The first request
+  after a pause" below).
+- **Condition 1 was steadier than in the rotated runs:** its median spans 0.116–0.123 ms
+  over 15 rounds, against 0.117–0.159 ms over 9. Condition 4's excess spans +0.103 to
+  +0.115 ms, against +0.065 to +0.139 ms. The load average was also lower (1.1–2.5 against
+  5.4–6.6), and the harness differs (segments, pauses, the harvest). The data do not say
+  which of these made the difference.
+
+Mean wire median by position (ms), three samples each (one per run):
+
+| Config. | Position 1 | Position 2 | Position 3 | Position 4 | Position 5 |
+|---|---|---|---|---|---|
+| 1 | 0.119 | 0.119 | 0.121 | 0.119 | 0.121 |
+| 2 | 0.162 | 0.168 | 0.165 | 0.165 | 0.165 |
+| r1 | 0.194 | 0.195 | 0.192 | 0.192 | 0.193 |
+| r3 | 0.222 | 0.217 | 0.212 | 0.215 | 0.218 |
+| 4 | 0.230 | 0.232 | 0.226 | 0.230 | 0.227 |
+
+Condition 4's three values per position: 0.236, 0.222, 0.231 (1); 0.236, 0.231, 0.229
+(2); 0.225, 0.228, 0.224 (3); 0.230, 0.234, 0.226 (4); 0.231, 0.227, 0.222 (5).
+
+### The first request after a pause
+
+The Task 12 review asked for a check of the request that follows each 50 ms pause. It
+could be slow (a cold path, a CPU waking), and that could differ by configuration.
+Checked from the captures of all three runs, with the script's pairing rule: the first
+request of segments 2–20 is request 251, 501, … 4,751 of each configuration, 19 per
+configuration and round, **285 per configuration**.
+
+| Config. | First-after-pause median (ms) | Pooled median, all / without them (ms) | Pooled p99, all / without them (ms) |
+|---|---|---|---|
+| 1 | 0.328 | 0.119 / 0.119 | 0.245 / 0.235 |
+| 2 | 0.341 | 0.165 / 0.165 | 0.286 / 0.271 |
+| r1 | 0.341 | 0.192 / 0.192 | 0.351 / 0.337 |
+| r3 | 0.343 | 0.216 / 0.216 | 0.351 / 0.346 |
+| 4 | 0.342 | 0.229 / 0.229 | 0.387 / 0.385 |
+
+- The request after a pause is slow in **every** configuration, condition 1 included:
+  its median is 0.328–0.343 ms, against pooled medians of 0.119–0.229 ms.
+- Leaving those requests out changes no pooled median, and changes each round's median by
+  at most 0.001 ms. So **at the median, the pause adds no configuration-specific bias**.
+  Judged without them, every round of every configuration gets the same verdict.
+- They raise the pooled p99 by 0.002–0.015 ms in each configuration, condition 1 by
+  0.010 ms. That is small beside the 0.50 ms p99 limit, and it enters both sides of the
+  comparison.
+- One first-after-pause request took 9.04 ms in condition 1 and one 9.06 ms in condition
+  4, both within the 1 s lost-reply limit. The data do not say why.
+- Pooled figures mix 15 rounds; the stop rule judges each round alone.
+
+### The cause is still not established
+
+The diagnostic shows where the clients' time is not: inside the dispatcher call. It does
+not show where it is. Each hypothesis from the rotated runs is still consistent with the
+data, and none has been tested directly. They are not exclusive.
+
+| Hypothesis | What the diagnostic adds | What would isolate it |
+|---|---|---|
+| **H1. Work on the simulator's loop.** Every client adds a queue offer, a writer task and loopback TCP sends to the simulator's one asyncio loop, which also runs the CAN read callback and the reply's `_send` (0010 §4.2). A request that arrives while that work runs waits before dispatch starts, or its reply waits to be sent | consistent: the cost grows with each reader, and lies outside `dispatch_us`. The stalled client's writer sends almost every message too (4,949–4,951 of 5,000), yet the stalled client costs the least; the data do not explain that | timestamps inside the simulator, per request, at CAN receive, dispatch start and end, and reply send, written to a trace outside the timed path. They would split the wire interval into waiting before dispatch, dispatch, waiting after it, and the send. Also the publisher's `longest_turn_s` (already in `/status`) per configuration |
+| **H2. The harness sharing the host.** The harness process runs the tester (in a thread) and the reader tasks, which parse every event. Nothing pins any process to a CPU. The tester's own delays fall outside the wire interval, so the harness can only reach it through the host (CPU placement, caches, frequency) | consistent: the cost grows with readers, and every reader runs in the harness process | the readers in a separate process from the tester; the simulator, the tester and the readers pinned to separate CPUs (`taskset`) |
+| **H3. Host power management.** Governor `powersave` on all 12 CPUs. The rate falls as clients are added (5,773.6–6,704.5 req/s for condition 1, 3,474.1–3,922.8 for condition 4), so the gaps between requests change too. If CPU frequency or wake-up latency follows how busy the processes are, wire latency moves with it | not tested; the lower load average did not remove the excess | a repeat with the `performance` governor. The plan keeps the governor as it is, so this **needs the owner's approval** |
+
+The 1→2 step, the API with no clients, is the largest single step (+0.045 ms), and the
+diagnostic cannot split it: condition 1 has no `dispatch_us`. The simulator trace under H1
+would cover it too.
+
+### The verdict stays `STOP`
+
+- Condition 4 missed the median limit in 15 of 15 rounds, and r3 in 3 of 15. Per the stop
+  rule, this is reported before M3.
+- No round that printed no stop reason is a pass. No threshold was tuned, and no condition
+  was lengthened or changed.
+- M3 is not started. What to test next, and whether M3 waits for it, is the owner's
+  decision.
+
+### Captures
+
+The `candump` logs are now committed, xz-compressed, in
+[`gui-m2-early-check-captures/`](gui-m2-early-check-captures/) (`c1790bd`):
+
+| Directory | What it is | Files | Compressed | Uncompressed |
+|---|---|---|---|---|
+| `diag-run-1/` | all logs of diagnostic run 1 ([diag-run-1.txt](gui-m2-early-check-runs/diag-run-1.txt)): 5 rounds × 5 configurations, new names (`000`, `100`, `110`, `130`, `131`) | 25 | 508,756 bytes (18,956–22,292 each) | 11,922,725 bytes |
+| `rotated-run-1/` | all logs of rotated run 1 ([run-1.txt](gui-m2-early-check-runs/run-1.txt), `/tmp/gui-m2-faqya9ej`): 3 rounds × 3 conditions, old names (`00`, `10`, `11`). Their uncompressed hashes match the run 1 block in "Rotated runs, 2026-09-28" | 9 | 182,488 bytes | 4,292,181 bytes |
+
+- `SHA256SUMS` holds two blocks: the sha256 of each uncompressed log (34 lines), and of
+  each committed `.xz` file (34 lines).
+- Diagnostic runs 2 and 3, and rotated runs 2 and 3, are not committed. Their logs are
+  in the controller's session scratch directory and in `/tmp`, and are not kept.
+- To verify, from `docs/validation/gui-m2-early-check-captures/`:
+
+  ```sh
+  grep '\.xz$' SHA256SUMS | sha256sum -c
+  grep -v -e '^#' -e '^$' -e '\.xz$' SHA256SUMS | while read -r sum file; do
+    [ "$(xz -dc "$file.xz" | sha256sum | cut -d' ' -f1)" = "$sum" ] \
+      && echo "$file: OK" || echo "$file: FAILED"
+  done
+  ```
+
+  All 68 checks passed when this section was written.
+
+### Deferred before M4
+
+From the Task 12 review, not fixed, and to be settled before M4 relies on this harness:
+
+- **The segment guard is an `assert`** (`SEGMENT_SIZE <= HARVEST_LIMIT` in
+  `build_parser`). `python -O` skips it, and it allows 500, which leaves no margin in the
+  500-event history. It should be a real check, with `<`.
+- **The `--captures` refusal test runs the real script in a subprocess.** If the refusal
+  broke and pytest ran outside a namespace, it could start `candump` and a simulator on
+  the host's `vcan0`. This is for the owner to note.
+- **The script is 857 lines** (`scripts/gui_m2_early_check.py`).
+- **Pause timing at M4 scale is unmeasured.** The 50 ms pause covered every harvest here
+  (0 overruns at 5,000 requests, 250 per segment). At 20,000 requests (80 segments), or at
+  condition 5's maximum rate, it has not been measured.
+- Also deferred: the readers-first wait raises instead of printing a P5 line (it is loud
+  either way), and the label of the 2→4 step when r1 and r3 are left out.
+
+### Gates and CI for this part
+
+Local only. "Gates" gives the harness gates at `b6528b8`. "Hosted CI" adds run
+36436675557 at `70c4e9f`. **No hosted run covers `6bbad2c` or any later commit**,
+including the diagnostic harness (`7b5b7ea`, `b6528b8`): they are not pushed (`origin/gui`
+is at `70c4e9f`).
+
 ## M4 forced 1013 closes: a proposal for the owner
+
+**Decided (updated 2026-09-28).** The owner decided on a variant of option (b): 0010's
+seventh revision (`ec0839a`, `c6f9a90`) adds a forced-close run in every M4 round. See
+[0010 §9.2](../decisions/0010-gui-observer-api.md), *Forced-close run*; 0010 is the
+source for its terms. The proposal below is kept as history, unchanged.
 
 **This is a proposal, not a decision.** This record does not change 0010, and 0010 is
 the owner's to change.
@@ -690,7 +1116,8 @@ client overflows under all four.
 
 ### Recommendation: (b) with (d)
 
-**Awaiting the owner's decision (0010 change).**
+**Awaiting the owner's decision (0010 change).** (Updated 2026-09-28: decided; see the
+note at the head of this section.)
 
 - Keep timed condition 4 as 0010 specifies it, and correct its text: at 20,000 requests
   the stalled client overflows, but is not expected to be forced off.
@@ -779,9 +1206,24 @@ Open details for the owner, if (b) is chosen:
 
 ## Gates
 
-**`b27cf60` — local-only, unpushed.** Run by the controller, in this worktree, at commit
+**`b6528b8` — local-only, unpushed.** The harness gates of Task 12's fix round 1, as
+reported in its implementation report (fix-round section); not re-run for this record.
+Run in this worktree at `b6528b8` on branch `gui` (not on `origin/gui`, which is at
+`70c4e9f`). These are local results, not a hosted CI run: see "Hosted CI" and "Local vcan
+results" below.
+
+| Gate | Command | Result |
+|---|---|---|
+| Namespace suite (private namespace, `lo` up) | `unshare -r -n bash -c 'ip link set lo up && .venv/bin/python -m pytest -p no:cacheprovider -q -rsx'`, the command the same report gives for its first run | **1213 passed, 69 skipped, 2 xfailed**. Against `b27cf60`'s 1159: +54 passed, all in `tests/unit/test_gui_m2_early_check.py`; skipped and xfailed unchanged |
+| Lint | `ruff check .` | all checks passed |
+| Types | `mypy` | no issues in 58 source files; `src/` only, as below, so `scripts/gui_m2_early_check.py` is not type-checked |
+| vcan integration | — | **not re-run after Task 12.** The last run is `b27cf60`'s 69 passed, below. Between `b27cf60` and `b6528b8` only `scripts/gui_m2_early_check.py` and `tests/unit/test_gui_m2_early_check.py` changed; `src/` did not |
+
+**`b27cf60` — history.** Run by the controller, in this worktree, at commit
 `b27cf60` on branch `gui` (not on `origin/gui`, which is at `e0c8445`). These are local
-results, not a hosted CI run: see "Hosted CI" and "Local vcan results" below.
+results, not a hosted CI run: see "Hosted CI" and "Local vcan results" below. (Updated
+2026-09-28: `b27cf60` is now on `origin/gui`, at `70c4e9f`, and hosted run 36436675557
+covers it. The results in this table are still the local ones.)
 
 | Gate | Command | Result |
 |---|---|---|
@@ -814,14 +1256,20 @@ reason "needs the optional [gui] extra (aiohttp)" — the same reason the three 
 So the next hosted `.[dev]` run is **expected** to show 60 skipped with 4x "needs [gui]",
 not the 59 skipped and 3x recorded below. This is an expectation, not a result: no hosted
 run has confirmed it yet, and the "Hosted CI" figures below are left as recorded.
+(Updated 2026-09-28: hosted run 36436675557 at `70c4e9f` confirmed it: `.[dev]` 60
+skipped, 4x "needs [gui]".)
 
 ## Hosted CI
 
 (Corrected 2026-09-28.) The first version of this section said these were the only
 hosted runs, and that none covered `73e9e9f` or the commit that added this record
 (`cf0cb3a`). Run 36363466270 at `e0c8445` now covers both: each is an ancestor of
-`e0c8445`. **No hosted run covers `7141045` or any later commit**, including the rotated
-runs' harness (`a7431be`): they are not pushed.
+`e0c8445`. At that correction, no hosted run covered `7141045` or any later commit.
+
+(Updated again 2026-09-28.) Run 36436675557 at `70c4e9f` covers `7141045` to `70c4e9f`,
+including the rotated runs' harness (`a7431be`). **No hosted run covers any commit after
+`70c4e9f`**: `6bbad2c` and later, including the diagnostic harness (`b6528b8`), are not
+pushed (`origin/gui` is at `70c4e9f`).
 
 | Run | `head_sha` | Result |
 |---|---|---|
@@ -829,12 +1277,14 @@ runs' harness (`a7431be`): they are not pushed.
 | 36361183412 | `334ecf49fe364258166d01e1aad485f3d437c476` | **FAILURE**: `FAILED tests/unit/observe/test_publisher.py::test_encode_failure_publishes_a_fallback_and_seq_stays_contiguous - assert 2 == 4` on 3.12 and 3.13 |
 | 36361625692 | `6a04ee5fb985591b34a414573d19ca9d75ec7b68` | **SUCCESS**: `.[dev]` 3.12 and 3.13 each 1044 passed, 59 skipped, 2 xfailed; api `.[dev,gui]` 1094 passed, 57 skipped, 2 xfailed; lint green; can-capabilities green |
 | 36363466270 | `e0c84455f1d441fd9ab049c95b4324f57d82e492` (branch `gui`, push) | **SUCCESS**: `.[dev]` 3.12 and 3.13 each 1044 passed, 59 skipped, 2 xfailed; api `.[dev,gui]` 3.12 1094 passed, 57 skipped, 2 xfailed; lint and type check green; the vcan and `can_isotp` probe green, kernel `6.17.0-1022-azure`, `# CONFIG_CAN_ISOTP is not set`, and its vcan integration step 1 passed, 68 skipped (CAN_ISOTP cannot bind). The skip reasons are those listed below |
+| 36436675557 | `70c4e9fe9052035e44ac316ffbc21696c773b656` (branch `gui`, push) | **SUCCESS**: `.[dev]` 3.12 and 3.13 each 1044 passed, 60 skipped, 2 xfailed (54x CAN_ISOTP, 4x [gui], 2x [hardware]); api `.[dev,gui]` 3.12 1137 passed (1094 + 43 harness tests), 57 skipped (54x CAN_ISOTP, 2x [hardware], 1x aiohttp installed), 2 xfailed; lint green; can-capabilities green, its vcan integration step 1 passed, 68 skipped (CAN_ISOTP cannot bind on `6.17.0-1022-azure`) |
 
 Hosted skips: 54x "kernel cannot create CAN_ISOTP sockets (CONFIG_CAN_ISOTP not built,
 e.g. GitHub-hosted Azure kernels)"; 3x [gui] (`.[dev]` only); 2x [hardware]; 1x
 aiohttp-installed, by name (api job only). As recorded for run 36363466270; see "Gates"
 above for why the next hosted `.[dev]` run is expected to add a fourth [gui] skip (60
-skipped, 4x), not yet confirmed by a hosted run.
+skipped, 4x), not yet confirmed by a hosted run. (Updated 2026-09-28: run 36436675557
+confirmed it, with 4x [gui] and 60 skipped in `.[dev]`.)
 
 **The 54 vcan tests are skipped on hosted runners and never validated there**
 ([decisions/0009](../decisions/0009-self-hosted-vcan-runner.md)).
@@ -843,7 +1293,8 @@ skipped, 4x), not yet confirmed by a hosted run.
 
 The early check above and `scripts/run_integration_tests.sh` (69 passed) ran on this
 host, in private namespaces. **They are local, not CI.** So did the three rotated runs
-(2026-09-28, `a7431be`); they too are local, not CI.
+(2026-09-28, `a7431be`) and the three diagnostic runs (2026-09-28, `b6528b8`); they too
+are local, not CI.
 
 ## Skips, by reason
 
@@ -861,7 +1312,7 @@ Local CI-shaped `.[dev]` (59):
 As of `73e9e9f`. `tests/unit/test_gui_m2_early_check.py` (committed later, at `5f1f202`)
 gives a fourth "needs the optional [gui] extra" module skip; the next hosted `.[dev]` run
 is expected to show 60 skipped, 4x, not 59 and 3x (see "Gates" above). Not yet confirmed
-by a hosted run.
+by a hosted run. (Updated 2026-09-28: confirmed by hosted run 36436675557 at `70c4e9f`.)
 
 Local CI-shaped `.[dev,gui]` (57):
 
