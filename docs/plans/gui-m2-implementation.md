@@ -2782,3 +2782,66 @@ by `ApiServer`, and nothing in `src/` changes).
   such. Every view is clearly labelled SAMPLE DATA, not live.
 - Screenshots of each view at desktop width and one narrow width, and exact instructions
   to open it locally.
+
+## M3a: the live frontend (owner, 2026-09-28)
+
+The owner wants to review the **live** GUI. The mockup under `docs/mockups/m3a-dashboard/`
+is not the frontend and is not shipped; no sample data is used anywhere in M3a. **Open and
+unchanged:** the M2 median-latency STOP (not accepted), and every V1.0 / Phase 8b gate.
+M3b (sparklines, uPlot) is not in scope. Stop for the owner's review after the live demo.
+
+### Task 17: serve the frontend files, and the M3a page
+
+**Files:** `src/ecu_simulator/api/static/` (replace the placeholder `index.html`; add
+`app.css`, `app.js`), `src/ecu_simulator/api/server.py` (serve exactly those files),
+`tests/unit/api/test_server_http.py` (or a new frontend-files test module).
+
+- **Serving (0010 §6, §7, §9.3):** each frontend file is served at a fixed route with its
+  content type (`text/html`, `text/css`, `text/javascript`), from package data, read once
+  at startup; no directory listing, no path parameters, nothing else under the static
+  directory is reachable. The guard (Host allowlist, Origin on the upgrade) applies as
+  today. Tests: every frontend file is served with its content type and body; a request
+  for any other path, including a real file name under `static/` not on the list, is 404;
+  `HEAD`/`POST` behave as the existing routes do.
+- **The page uses only the running simulator's read-only API:** `GET /api/v1/status`,
+  `/vehicle`, `/dtcs`, `/ecus`, `/exchanges`, and `WS /api/v1/events?after=S` (`hello`,
+  `exchange`, `state`, `dropped`). Same origin (relative URLs; the WS URL built from
+  `location.host`). No other network access, no CDN, no fonts, no build step. It sends
+  nothing but GETs and the WS upgrade, and never sends on the socket.
+- **Views (0010 §7):** status bar (connection, interface, profile, uptime, scenario time,
+  drops: `handoff_dropped`, this client's `client_dropped`, `forced_disconnects`); vehicle
+  signals; DTC panel with MIL; exchange log filterable by ECU, service (first request
+  byte) and outcome, with pause and clear, gap markers wherever `seq` jumps (§4.5), and
+  `dispatch_us` labelled as dispatcher time. The browser does no protocol decoding beyond
+  the service byte; `summary` comes from the API.
+- **Honest states:** *loading* until the first responses arrive; *empty* when there are
+  no exchanges / no DTCs / no scenario (say which, from the data: e.g. `as_of: null`
+  means no scenario); *disconnected* when the socket closes or a fetch fails — show when
+  it was last live, mark every view's data as stale (not cleared, not presented as
+  current), and reconnect with bounded backoff using `after=<last seq>`, marking a gap if
+  the history no longer covers it. A refused connection (503 too many clients, 403, 421)
+  is shown with its reason, not retried in a tight loop.
+- **View-only controls:** filters, pause (holds and counts new rows, shows them on resume)
+  and clear change only the browser's view; nothing is sent to the simulator.
+- **Status refresh:** `GET /status` at a modest fixed interval (state it; ≥ 1 s), since
+  the WS carries no status message; vehicle and DTCs from `state` messages after the
+  initial GETs.
+- **Rendering safety:** DOM built with `textContent` / `createElement`, never `innerHTML`
+  with data. Consider `Content-Security-Policy` and `X-Content-Type-Options: nosniff` on
+  the frontend responses; if added, say so and test the headers.
+- Gates: the namespace suite, integration via `scripts/run_integration_tests.sh`, ruff,
+  mypy. No JavaScript test framework (0010 §7).
+
+### Task 18: the live demo on vcan, screenshots, and startup commands
+
+**Files:** `scripts/run_gui_demo.sh` (namespace demo), `scripts/gui_demo_traffic.py`
+(read-only diagnostic traffic: OBD and UDS read requests only), `docs/validation/gui-m3a-live-demo.md`
+(commands, what was run, screenshots), `docs/validation/gui-m3a-live-demo/*.png`.
+
+- In a private namespace: vcan0, the simulator with `ice_scenario.yaml` and
+  `--api 127.0.0.1:8765`, the traffic generator, and headless Chrome taking screenshots of
+  the live page: loading (if capturable), live with exchanges and a moving scenario,
+  a filter and a paused view, the disconnected state after the simulator is stopped, and
+  one narrow width. Nothing on the host's `vcan0` or `can0`.
+- Owner startup commands for the owner's own browser (host network, owner's choice of
+  interface), with the host-`vcan0` caveat stated.
