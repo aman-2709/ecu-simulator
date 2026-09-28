@@ -12,6 +12,7 @@ from typing import Any
 from ecu_simulator.ecu.router import AddressRouter
 from ecu_simulator.observe.handoff import ExchangeRecord
 from ecu_simulator.observe.limits import RETAINED_PAYLOAD_BYTES
+from ecu_simulator.protocols.obd import masks
 from ecu_simulator.protocols.obd.pids import MODE01_PIDS
 from ecu_simulator.transport.socketcan import EndpointConfig
 
@@ -41,8 +42,12 @@ def summarise(payload: bytes) -> str:
         return "empty request"
     sid = payload[0]
     if sid == 0x01 and len(payload) == 2:
-        pid = MODE01_PIDS.get(payload[1])
-        return f"OBD 01 {payload[1]:02X} — {pid.name if pid else 'unknown parameter'}"
+        base = payload[1]
+        if masks.is_range_request(base) and 0 <= base <= masks.LAST_RANGE_BASE:
+            first, last = base + 1, base + masks.RANGE_SIZE
+            return f"OBD 01 {base:02X} — supported PIDs {first:02X}–{last:02X}"
+        pid = MODE01_PIDS.get(base)
+        return f"OBD 01 {base:02X} — {pid.name if pid else 'unknown parameter'}"
     if sid == 0x01 and len(payload) > 2:
         pids = " ".join(f"{b:02X}" for b in payload[1:])
         return f"OBD 01 {pids} — {len(payload) - 1} parameters"
