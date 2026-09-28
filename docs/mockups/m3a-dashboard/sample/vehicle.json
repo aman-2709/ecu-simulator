@@ -1,0 +1,26 @@
+{
+  "kind": "ice",
+  "vin": "TESTVIN0123456789",
+  "signals": {
+    "vehicle.vin": "TESTVIN0123456789",
+    "vehicle.speed": 40,
+    "vehicle.ambient_temp": 20.0,
+    "vehicle.odometer": 0,
+    "vehicle.battery_voltage": 14.1,
+    "vehicle.obd_standard": 1,
+    "engine.rpm": 1400,
+    "engine.coolant_temp": 92.0,
+    "engine.intake_temp": 20.0,
+    "engine.engine_load": 59.31576354443081,
+    "engine.throttle": 41.0,
+    "engine.maf": 2.0,
+    "engine.map": 33,
+    "engine.timing_advance": 10.0,
+    "engine.short_fuel_trim": 0.0,
+    "engine.long_fuel_trim": 1.5,
+    "engine.runtime": 0,
+    "engine.fuel_level": 59,
+    "engine.fuel_type": 1
+  },
+  "as_of": 80.2550552089233
+}

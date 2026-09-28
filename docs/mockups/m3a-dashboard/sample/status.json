@@ -1,0 +1,44 @@
+{
+  "version": "0.1.0.dev0",
+  "interface": "vcan0",
+  "profile": "src/ecu_simulator/profiles/ice_scenario.yaml",
+  "started_at": 1790626444.8422868,
+  "uptime_s": 80.61412310600281,
+  "scenario": {
+    "enabled": true,
+    "t_last_applied": 80.2550552089233,
+    "pending_events": 0
+  },
+  "api": {
+    "clients": 0,
+    "issued_seq": 29,
+    "published": 29,
+    "last_published_seq": 29,
+    "oldest_seq": 1,
+    "handoff_dropped": 0,
+    "refused_clients": 0,
+    "forced_disconnects": 0,
+    "longest_turn_s": 8.37941188365221e-05,
+    "encode_failed": 0,
+    "fanout_failed": 0,
+    "writer_failed": 0,
+    "connections": [],
+    "closed_connections": [],
+    "connections_opened": 0,
+    "closed_totals": {
+      "connections": 0,
+      "published_span": 0,
+      "history_sent": 0,
+      "offered": 0,
+      "client_dropped": 0,
+      "enqueued": 0,
+      "sent": 0,
+      "delivery_unknown": 0,
+      "discarded_on_close": 0,
+      "close_codes": {},
+      "delivery_unknown_by_close_code": {},
+      "delivery_unknown_over_allowance": 0
+    },
+    "closed_unresolved": 0
+  }
+}

@@ -1,0 +1,74 @@
+2026-09-28T13:14:04.843 - ecu_simulator.api.server - INFO - [-/-] observer API on http://127.0.0.1:8765/
+2026-09-28T13:14:04.843 - ecu_simulator.transport.socketcan.transport - INFO - [-/-] listening on vcan0 rx 0x7DF / tx 0x7E8 (engine.obd_functional, functional, replies via engine.obd_physical)
+2026-09-28T13:14:04.844 - ecu_simulator.transport.socketcan.transport - INFO - [-/-] listening on vcan0 rx 0x7E0 / tx 0x7E8 (engine.obd_physical)
+2026-09-28T13:14:04.845 - ecu_simulator.transport.socketcan.transport - INFO - [-/-] listening on vcan0 rx 0x7E1 / tx 0x7E9 (engine.uds_physical)
+2026-09-28T13:14:04.845 - ecu_simulator.app - INFO - [-/-] ecu-simulator ready on vcan0
+2026-09-28T13:14:04.845 - ecu_simulator.app - INFO - [-/-] scenario tick every 0.5s
+2026-09-28T13:14:07.846 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 010c
+2026-09-28T13:14:07.846 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 410c0c80
+2026-09-28T13:14:07.846 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 010d
+2026-09-28T13:14:07.846 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 410d00
+2026-09-28T13:14:07.846 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 0105
+2026-09-28T13:14:07.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 41053f
+2026-09-28T13:14:07.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 0111
+2026-09-28T13:14:07.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 411114
+2026-09-28T13:14:07.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 012f
+2026-09-28T13:14:07.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 412f9b
+2026-09-28T13:14:07.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 0902
+2026-09-28T13:14:07.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 4902015445535456494e30313233343536373839
+2026-09-28T13:14:07.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 03
+2026-09-28T13:14:07.848 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 4300
+2026-09-28T13:14:07.848 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7E0 physical request 0100
+2026-09-28T13:14:07.848 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 41001e3f8013
+2026-09-28T13:14:07.848 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7E1 physical request 22f190
+2026-09-28T13:14:07.848 - ecu_simulator.ecu.ecu - WARNING - [engine/-] engine: SID 0x22 is not served by any protocol enabled here (obd, uds)
+2026-09-28T13:14:07.848 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 7f2211
+2026-09-28T13:14:07.848 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7E1 physical request 1902ff
+2026-09-28T13:14:07.848 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 59028c
+2026-09-28T13:14:44.925 - ecu_simulator.scenario.runner - INFO - [-/-] scenario: raise_pending on engine at t=40.0 (P0128)
+2026-09-28T13:14:48.846 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 010c
+2026-09-28T13:14:48.846 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 410c1db0
+2026-09-28T13:14:48.846 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 010d
+2026-09-28T13:14:48.846 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 410d37
+2026-09-28T13:14:48.846 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 0105
+2026-09-28T13:14:48.846 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 410570
+2026-09-28T13:14:48.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 0111
+2026-09-28T13:14:48.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 41113d
+2026-09-28T13:14:48.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 012f
+2026-09-28T13:14:48.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 412f99
+2026-09-28T13:14:48.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 07
+2026-09-28T13:14:48.847 - ecu_simulator.protocols.obd.protocol - INFO - [engine/obd] OBD mode 0x07 is not implemented; no response
+2026-09-28T13:14:48.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine: no response
+2026-09-28T13:14:49.848 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 03
+2026-09-28T13:14:49.848 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 4300
+2026-09-28T13:14:49.848 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7E1 physical request 1902ff
+2026-09-28T13:14:49.848 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 59028c01280104
+2026-09-28T13:15:19.995 - ecu_simulator.scenario.runner - INFO - [-/-] scenario: raise_confirmed on engine at t=75.0 (P0128)
+2026-09-28T13:15:19.995 - ecu_simulator.scenario.runner - INFO - [-/-] scenario: request_indicator on engine at t=75.0 (P0128)
+2026-09-28T13:15:22.846 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 010c
+2026-09-28T13:15:22.846 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 410c20d0
+2026-09-28T13:15:22.846 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 010d
+2026-09-28T13:15:22.846 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 410d50
+2026-09-28T13:15:22.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 0105
+2026-09-28T13:15:22.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 410584
+2026-09-28T13:15:22.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 0111
+2026-09-28T13:15:22.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 411168
+2026-09-28T13:15:22.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 012f
+2026-09-28T13:15:22.847 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 412f96
+2026-09-28T13:15:22.848 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 0101
+2026-09-28T13:15:22.848 - ecu_simulator.protocols.obd.protocol - INFO - [engine/obd] OBD PID 0x01 is not supported by this vehicle; no response
+2026-09-28T13:15:22.848 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine: no response
+2026-09-28T13:15:23.849 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 03
+2026-09-28T13:15:23.849 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 43010128
+2026-09-28T13:15:23.849 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 07
+2026-09-28T13:15:23.849 - ecu_simulator.protocols.obd.protocol - INFO - [engine/obd] OBD mode 0x07 is not implemented; no response
+2026-09-28T13:15:23.849 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine: no response
+2026-09-28T13:15:24.849 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7E1 physical request 1902ff
+2026-09-28T13:15:24.850 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 59028c0128018c
+2026-09-28T13:15:24.850 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7E0 physical request 0105
+2026-09-28T13:15:24.850 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 410584
+2026-09-28T13:15:24.850 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine rx 0x7DF functional request 010c
+2026-09-28T13:15:24.850 - ecu_simulator.ecu.ecu - INFO - [engine/-] engine tx response 410c15e0
+2026-09-28T13:15:25.481 - ecu_simulator.app - INFO - [-/-] received SIGINT, shutting down
+2026-09-28T13:15:25.507 - ecu_simulator.transport.socketcan.transport - INFO - [-/-] transport on vcan0 stopped
+2026-09-28T13:15:25.507 - ecu_simulator.app - INFO - [-/-] shutdown complete

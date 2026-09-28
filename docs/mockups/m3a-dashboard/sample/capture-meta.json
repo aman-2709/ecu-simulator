@@ -1,0 +1,8 @@
+{
+  "commit": "aa8cffe6f896e059edb5e66259af444dbb227d97",
+  "branch": "gui",
+  "captured_at": "2026-09-28T20:14:04Z",
+  "profile": "src/ecu_simulator/profiles/ice_scenario.yaml",
+  "interface": "vcan0 (private, inside unshare -r -n)",
+  "note": "Real simulator output, replayed statically. Not connected to any simulator."
+}
