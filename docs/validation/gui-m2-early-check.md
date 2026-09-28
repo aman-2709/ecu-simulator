@@ -8,8 +8,9 @@ output.
 **Result: `STOP` in all six runs** (three with the script at `cf0cb3a`, three after fix
 round 1). Condition 4's median wire latency exceeded condition 1's median + 0.10 ms in
 every run, by 7–16 µs. Every other early-check criterion held: p99 within condition 1 +
-0.50 ms, 0 lost replies, no P5 problem, and no `delivery_unknown` beyond the P5(h)
-allowance. Per the stop rule this is reported before M3. No threshold was tuned, and no
+0.50 ms, 0 lost replies, no P5 problem among those this script checks ((a), (b), (e), (f),
+(h)); (c), (d), (g) and P6 are not checked at M2, and no `delivery_unknown` beyond the
+P5(h) allowance. Per the stop rule this is reported before M3. No threshold was tuned, and no
 condition was lengthened.
 
 **Condition 4 here is "stalled, not overflowing, never forced off".** The stalled
@@ -161,11 +162,18 @@ exit=1
 (and in a 300-request smoke run before them, and in 3 of 3 runs after fix round 1), so
 the result stays STOP.
 
-**Harness bias.** Wire latency is request frame to reply frame, and that interval lies
-entirely inside the simulator and the kernel. The tester's GIL contention with the reader
-tasks in its own process only delays the **next** request. So the harness is unlikely to
-have inflated condition 4 against condition 1. The cause of the excess was not
-investigated.
+**Harness bias.** The cause of the excess is undetermined. This check does not isolate it
+from several confounders: the condition order was fixed 1→2→4 in every run, with no
+rotation, across a single round; the host ran governor `powersave`; the tester's own
+request rate roughly halves from condition 1 to condition 4 (5,000 requests in
+0.73–0.84 s vs. 1.27–1.48 s), and the longer idle gaps between requests can change the
+CPU's wake-up and C-state latency inside the request-to-reply interval being measured;
+and condition 4 runs three aiohttp reader tasks sharing the host with the tester process,
+where condition 1 runs none. The 7–16 µs miss is also smaller than condition 1's own
+19 µs run-to-run spread (see "Noise" above). None of this changes the result: per the
+stop rule, STOP stands as reported, and no threshold was tuned. A rotated-order
+diagnostic rerun, with the thresholds unchanged, would help the owner distinguish a real
+condition-4 cost from an order or host-scheduling artifact.
 
 ### The stalled connection's ledger
 
@@ -191,13 +199,14 @@ begins only after the transport and kernel buffers and the 1,024-message queue a
 
 The arithmetic, from the runs above:
 
-- condition 4 ran at 3,450–3,940 requests/s (5,000 requests in 1.27–1.45 s), one exchange
+- condition 4 ran at 3,380–3,940 requests/s (5,000 requests in 1.27–1.48 s), one exchange
   event per request;
 - before any overflow, the stalled connection absorbs at least ~4,950 messages into its
-  buffers (measured) plus 1,024 in its queue: **≥ ~6,000 messages, ≥ ~1.5–1.7 s**;
+  buffers (measured) plus 1,024 in its queue: **≥ ~6,000 messages, ≥ ~1.5–1.8 s**;
 - the first forced disconnect then comes 5 s later: **no earlier than ~6.5–6.9 s**, i.e.
-  after about **23,000–26,000 requests** (6,000 + 5 s × 3,450–3,940/s);
-- M4's conditions 1–4 have 20,000 requests each: **~5.1–5.8 s**.
+  after about **23,000–26,000 requests** (6,000 + 5 s × 3,380–3,940/s);
+- M4's conditions 1–4 have 20,000 requests each: **~5.1–5.9 s** — still under the earliest
+  possible forced disconnect (~6.5 s), so the conclusion below survives.
 
 So **M4 condition 4, as specified, would most likely see no forced disconnect at all**, and
 at best one. The 1013 path, the harness's reconnect and P5(e)'s 1013 reconciliation would
