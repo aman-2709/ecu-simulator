@@ -522,10 +522,11 @@ hypothesis below. None has been tested, and they are not exclusive.
 
 ### Gates and CI for this part
 
-This part re-ran no gate, and it adds local vcan evidence only. "Gates" and "Skips, by
-reason" below are as of `73e9e9f`. "Hosted CI" adds run 36363466270 at `e0c8445`. **No
-hosted run covers `7141045` or any later commit**: they are not pushed (`origin/gui` is
-at `e0c8445`).
+This part adds local vcan evidence only. "Gates" gives the gates at `b27cf60` (local,
+unpushed), with `73e9e9f` kept as history. "Skips, by reason" is as of `73e9e9f`, with the
+expected change noted. "Hosted CI" adds run 36363466270 at `e0c8445`. **No hosted run
+covers `7141045` or any later commit**: they are not pushed (`origin/gui` is at
+`e0c8445`).
 
 ## M4 forced 1013 closes: a proposal for the owner
 
