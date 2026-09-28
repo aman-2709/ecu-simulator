@@ -134,12 +134,21 @@ def rotate(order: tuple[int, ...], round_index: int) -> tuple[int, ...]:
 
 
 def parse_order(text: str) -> tuple[int, ...]:
-    """--order as an explicit base order, e.g. "2,4,1"; it must be a permutation of the
+    """--order as an explicit, fixed order, e.g. "2,4,1"; it must be a permutation of the
     three M4 conditions this harness runs."""
     order = tuple(int(x) for x in text.split(","))
     if sorted(order) != sorted(ROTATION_BASE):
         raise ValueError(f"--order must be a permutation of {ROTATION_BASE}, got {text!r}")
     return order
+
+
+def round_order(round_index: int, order_override: tuple[int, ...] | None) -> tuple[int, ...]:
+    """The order for one round. --order is the fixed-order control: given, it is used
+    unchanged for every round ("instead" of the rotation). Absent, round r rotates the
+    base (1, 2, 4) by r (0010 §9.2)."""
+    if order_override is not None:
+        return order_override
+    return rotate(ROTATION_BASE, round_index)
 
 
 def judge(base: dict, r: dict, number: int) -> list[str]:
@@ -184,8 +193,10 @@ def cpu_governors(root: Path = CPU_ROOT) -> list[str]:
 
 
 def host_info() -> dict:
-    """Once per run: the CPU governor of every CPU, nproc and the kernel release."""
-    return {"cpu_governors": cpu_governors(), "nproc": os.cpu_count(), "kernel": platform.release()}
+    """Once per run: the CPU governor of every CPU, nproc and the kernel release. nproc is
+    the scheduler affinity count, matching the `nproc` command -- not os.cpu_count(), which
+    ignores any affinity restriction."""
+    return {"cpu_governors": cpu_governors(), "nproc": len(os.sched_getaffinity(0)), "kernel": platform.release()}
 
 
 async def reader(stop: asyncio.Event, seen: list[int], dispatch: list[int] | None = None) -> str:
@@ -263,22 +274,26 @@ async def last500_dispatch() -> dict[str, float] | None:
 async def open_stalled(ids: list[int]) -> socket.socket:
     """Connect the stalled socket, require the 101 upgrade, and learn its connection id
     from /status (the id no one else had). Raises on a refused upgrade or a missing id, so
-    a broken stalled client never passes silently (0010 §9.2)."""
+    a broken stalled client never passes silently (0010 §9.2). `raw` is closed on every
+    failure path -- the upgrade check, the id poll, or a /status call that itself raises --
+    so a failed connect or reconnect never leaks a socket."""
     before = {c["id"] for c in (await status())["connections"]}
     raw = stalled_socket()
-    data = await asyncio.to_thread(read_upgrade_response, raw)
-    problem = upgrade_ok(data)
-    if problem is not None:
+    try:
+        data = await asyncio.to_thread(read_upgrade_response, raw)
+        problem = upgrade_ok(data)
+        if problem is not None:
+            raise RuntimeError(problem)
+        for _ in range(40):
+            new = {c["id"] for c in (await status())["connections"]} - before
+            if new:
+                ids.extend(sorted(new))
+                return raw
+            await asyncio.sleep(0.05)
+        raise RuntimeError("stalled connection id never appeared in /status")
+    except BaseException:
         raw.close()
-        raise RuntimeError(problem)
-    for _ in range(40):
-        new = {c["id"] for c in (await status())["connections"]} - before
-        if new:
-            ids.extend(sorted(new))
-            return raw
-        await asyncio.sleep(0.05)
-    raw.close()
-    raise RuntimeError("stalled connection id never appeared in /status")
+        raise
 
 
 async def stalled(stop: asyncio.Event, reconnects: list[int], ids: list[int]) -> None:
@@ -357,25 +372,66 @@ def unresolved(api: dict) -> list[str]:
     return notes
 
 
-def _default_start_dump(log: Path) -> subprocess.Popen[str]:
-    return subprocess.Popen(["candump", "-L", IFACE], stdout=log.open("w"))
+def _default_start_dump(log: Path) -> tuple[subprocess.Popen[str], Any]:
+    """The log file handle is returned alongside the process so it can be closed once
+    candump no longer needs it (M6): Popen dup()s the fd but never takes ownership of it."""
+    fh = log.open("w")
+    return subprocess.Popen(["candump", "-L", IFACE], stdout=fh), fh
+
+
+def _stop_process(proc: subprocess.Popen[str], timeout: float) -> None:
+    """SIGINT, then wait; kill and wait again (no timeout) if it doesn't exit in time."""
+    proc.send_signal(signal.SIGINT)
+    try:
+        proc.wait(timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+
+
+async def _teardown(
+    tester: Any | None, tasks: list[asyncio.Task[Any]], stop: asyncio.Event,
+    sim: subprocess.Popen[str] | None, dump: subprocess.Popen[str], dump_log_fh: Any,
+) -> None:
+    """Stop everything condition() may have started, each step running whatever the one
+    before it did or raised (0010 §9.2): the tester's sockets, the reader/stalled tasks,
+    the simulator, candump, and finally candump's log file handle (M6). Nested try/finally,
+    not a flat sequence, so one resource's failure to stop never skips the next one."""
+    try:
+        if tester is not None:
+            tester.close()
+    finally:
+        try:
+            if tasks:
+                stop.set()
+                await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            try:
+                if sim is not None:
+                    _stop_process(sim, 10)
+            finally:
+                try:
+                    _stop_process(dump, 5)
+                finally:
+                    if dump_log_fh is not None:
+                        dump_log_fh.close()
 
 
 async def condition(
     n: int, api: bool, clients: bool, workdir: Path, *,
     round_index: int = 0,
-    start_dump: Callable[[Path], subprocess.Popen[str]] = _default_start_dump,
+    start_dump: Callable[[Path], tuple[subprocess.Popen[str], Any]] = _default_start_dump,
     start_sim: Callable[[bool], subprocess.Popen[str]] = start_simulator,
     make_tester: Callable[[], Any] = Tester,
 ) -> dict:
     """Run one M4 condition on vcan. Stops the simulator, candump, the reader and
     stalled-client tasks and the tester's sockets on every exit, including an exception at
-    any step (0010 §9.2). `start_dump`, `start_sim` and `make_tester` are injectable so the
-    cleanup path can be unit-tested with fakes, never real processes. `round_index` keeps
-    each round's raw capture as a separate file, so a later round never overwrites an
-    earlier one's evidence."""
+    any step (0010 §9.2), via `_teardown`. `start_dump`, `start_sim` and `make_tester` are
+    injectable so the cleanup path can be unit-tested with fakes, never real processes.
+    `round_index` keeps each round's raw capture as a separate file, so a later round
+    never overwrites an earlier one's evidence."""
     log = workdir / f"candump-{round_index}-{int(api)}{int(clients)}.log"
-    dump = start_dump(log)
+    dump, dump_log_fh = start_dump(log)
     sim: subprocess.Popen[str] | None = None
     tester: Any | None = None
     tasks: list[asyncio.Task[Any]] = []
@@ -436,16 +492,7 @@ async def condition(
                 if isinstance(ended[3], BaseException):
                     result["p5_problems"].append(f"stalled-client task raised {ended[3]!r}")
     finally:
-        if tester is not None:
-            tester.close()
-        if tasks:
-            stop.set()
-            await asyncio.gather(*tasks, return_exceptions=True)
-        if sim is not None:
-            sim.send_signal(signal.SIGINT)
-            sim.wait(10)
-        dump.send_signal(signal.SIGINT)
-        dump.wait(5)
+        await _teardown(tester, tasks, stop, sim, dump, dump_log_fh)
     samples, lost = latencies(log)
     if not samples:
         raise RuntimeError(f"no request/reply pairs in {log}: the capture or the tester failed")
@@ -459,15 +506,15 @@ async def main() -> int:
     parser.add_argument("-n", type=int, default=5000)
     parser.add_argument("--rounds", type=int, default=1)
     parser.add_argument("--order", type=str, default=None,
-                         help="explicit base order, e.g. 2,4,1 (default: rotate 1,2,4)")
+                         help="a fixed order used every round, e.g. 2,4,1 (default: rotate 1,2,4 each round)")
     args = parser.parse_args()
-    base_order = parse_order(args.order) if args.order else ROTATION_BASE
+    order_override = parse_order(args.order) if args.order else None
     work = Path(tempfile.mkdtemp(prefix="gui-m2-"))
     print(f"host: {json.dumps(host_info())}")
     stop = inconclusive = False
     records: list[dict] = []
     for round_index in range(args.rounds):
-        order = rotate(base_order, round_index)
+        order = round_order(round_index, order_override)
         by_number: dict[int, dict] = {}
         for position, number in enumerate(order, start=1):
             r = await condition(args.n, number != 1, number == 4, work, round_index=round_index)
