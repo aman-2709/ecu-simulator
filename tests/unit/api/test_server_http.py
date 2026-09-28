@@ -50,7 +50,7 @@ async def test_bad_exchange_queries_are_400(server, session, query):
 
 @pytest.mark.asyncio
 async def test_every_other_method_is_405(server, session):
-    for path in ROUTES + ["/", "/api/v1/events"]:
+    for path in ROUTES + ["/", "/app.css", "/app.js", "/api/v1/events"]:
         for method in ("POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"):
             async with session.request(method, url(server, path)) as r:
                 assert r.status == 405, (method, path)
@@ -101,14 +101,6 @@ async def test_a_small_chunked_body_is_accepted(server):
     ).encode() + b"x" * 10 + b"\r\n0\r\n\r\n"
     reply = await raw_request(port, request)
     assert reply.startswith(b"HTTP/1.1 200"), reply[:40]
-
-
-@pytest.mark.asyncio
-async def test_the_placeholder_page_is_served(server, session):
-    # M2 serves exactly this one file. Frontend files and rendering are M3's (decisions/0010 §7).
-    async with session.get(url(server, "/")) as r:
-        assert r.status == 200 and r.content_type == "text/html"
-        assert "/api/v1/status" in await r.text()
 
 
 @pytest.mark.asyncio

@@ -39,6 +39,24 @@ EVENTS = "/api/v1/events"
 INT = re.compile(r"-?[0-9]{1,19}")
 # Close codes the server sends when the Publisher, or a dead writer, closed the connection.
 CLOSE_REASONS = {CLOSE_TOO_SLOW: b"client too slow", CLOSE_INTERNAL_ERROR: b"internal error"}
+# The frontend (0010 §6, §7): route -> (file under static/, content type). Exactly these files
+# are served, each at its fixed route; nothing else under static/ is reachable.
+FRONTEND = {
+    "/": ("index.html", "text/html"),
+    "/app.css": ("app.css", "text/css"),
+    "/app.js": ("app.js", "text/javascript"),
+}
+# On the frontend responses only; the JSON API is unchanged. connect-src 'self' covers the
+# same-host ws:// socket in current browsers (CSP Level 3).
+FRONTEND_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; "
+        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-cache",
+}
 Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 
 
@@ -163,7 +181,9 @@ class ApiServer:
         self._tasks: list[asyncio.Task[None]] = []
         self._sockets: dict[web.WebSocketResponse, tuple[web.Request, Connection]] = {}
         self._stopping = False
-        self._page = resources.files("ecu_simulator.api").joinpath("static/index.html").read_bytes()
+        static = resources.files("ecu_simulator.api").joinpath("static")
+        self._frontend = {route: (static.joinpath(name).read_bytes(), content_type)
+                          for route, (name, content_type) in FRONTEND.items()}
 
     def application(self) -> web.Application:
         @web.middleware
@@ -193,7 +213,7 @@ class ApiServer:
 
         application = web.Application(middlewares=[guard], client_max_size=MAX_BODY)
         routes: list[tuple[str, Handler]] = [
-            ("/", self._index),
+            *((route, self._frontend_file(route)) for route in FRONTEND),
             ("/api/v1/status", self._status),
             ("/api/v1/vehicle", self._vehicle),
             ("/api/v1/dtcs", self._dtcs),
@@ -243,8 +263,14 @@ class ApiServer:
             await self._runner.cleanup()
             self._runner = None
 
-    async def _index(self, request: web.Request) -> web.Response:
-        return web.Response(body=self._page, content_type="text/html", charset="utf-8")
+    def _frontend_file(self, route: str) -> Handler:
+        # One handler per fixed route, bound to its bytes read at construction: nothing taken
+        # from the request selects a file.
+        body, content_type = self._frontend[route]
+
+        async def serve(request: web.Request) -> web.Response:
+            return web.Response(body=body, content_type=content_type, charset="utf-8", headers=FRONTEND_HEADERS)
+        return serve
 
     async def _status(self, request: web.Request) -> web.Response:
         return web.json_response(snapshots.status(
