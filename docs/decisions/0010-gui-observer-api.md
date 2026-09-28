@@ -7,9 +7,10 @@ read-only browser MVP. M1, the observer core, and M2 (`ApiServer`, `--api`, the 
 extra, §6 security, §4.3 limits, the API tests and the CI job) are built on branch `gui`.
 **M2's early check is a `STOP` that remains open and is not accepted:** condition 4's
 median wire latency exceeds condition 1's median + 0.10 ms
-(`docs/validation/gui-m2-early-check.md`). M3 has not started, beyond an offline static
-mockup under `docs/mockups/m3a-dashboard/`, which is not served and is wired to no live
-data. M4 has not run.
+(`docs/validation/gui-m2-early-check.md`). M3 has not started. The only visual work is
+an offline static mockup of the M3a views, under `docs/mockups/m3a-dashboard/`: it is not
+served and shows sample data only, and the owner decided that wiring to live data waits
+for the owner's visual feedback. M4 has not run.
 
 This work lives on branch `gui`, which starts from `modernization` at `a57b98f`. It is
 **not merged into `modernization` until V1.0 is tagged.** A GUI remains a V1.0 non-goal
@@ -119,12 +120,14 @@ changes no threshold of P1–P9, and no V1.0 or Phase 8b gate:
   not accepted;
 - **M4's timed conditions, 1–5, run without segment pauses.** A segmented run, the M2
   diagnostic harness's segment-and-harvest mode, is a diagnostic only and never judges
-  P1–P9. Dispatch latency is therefore reported only where it can be taken without pauses
-  (§9.2, *Runs* and *Measurement*);
+  P1–P9. Dispatch latency is therefore taken from the reading clients' events, or from
+  the history after the run (§9.2, *Runs* and *Measurement*);
 - **the forced-close run is also judged on** zero lost diagnostic replies, as P3 defines
-  a lost reply, and zero drops for its three reading clients, as P6 requires of condition
-  4's reading clients. The stalled client's drops are reported as expected, not judged,
-  except that P5(h)'s allowance still applies. Its latency is still reported and not
+  a lost reply, and zero drops for its three reading clients: `client_dropped` = 0 and
+  `discarded_on_close` = 0 on their connections, and `handoff_dropped` = 0 over the run,
+  as P6 requires of condition 4's reading clients. The stalled client's drops are
+  reported as expected, not judged, but they must still reconcile under P5(b) and (f),
+  and P5(h)'s allowance applies to its `delivery_unknown`. Its latency is still reported and not
   judged against P1 or P2 (§9.2, *Forced-close run*).
 
 The owner's words: "For M4, keep timed conditions free of segment pauses; use segmented
@@ -649,13 +652,14 @@ inconclusive, not passed.
   A lost reply is as P3 defines it, a request frame with no reply frame before the next
   request, or within 1 s, and is counted from the run's own `candump -t a` capture.
 - **Zero drops for the reading clients** (added 2026-09-28). On each of the three
-  reading clients' connections, `client_dropped` = 0 and `discarded_on_close` = 0, as P6
-  requires of condition 4's reading clients. Their `delivery_unknown` = 0 is already
+  reading clients' connections, `client_dropped` = 0 and `discarded_on_close` = 0, and
+  over the run `handoff_dropped` = 0, as P6 requires of condition 4's reading clients. Their `delivery_unknown` = 0 is already
   required by P5(h), above.
 - **The stalled client's drops, reported as expected** (added 2026-09-28). Its
   `client_dropped`, `discarded_on_close` and `delivery_unknown`, per connection and
-  summed over its connections, are reported with the run's results. They are expected,
-  and not judged, except that P5(h)'s allowance still applies to its `delivery_unknown`.
+  summed over its connections, are reported with the run's results. They are expected
+  and not judged, but they must still reconcile under P5(b) and (f), and P5(h)'s
+  allowance applies to its `delivery_unknown`.
 - **Reported separately, not judged.** Its wire latency (median and p99, from its own
   `candump -t a` capture, by the *Measurement* method) and its dispatch latency (median
   and p99 of `dispatch_us`) are reported beside the round's conditions 1–5. They are
@@ -668,10 +672,11 @@ inconclusive, not passed.
 first frame, taken from a `candump -t a` capture by the method of
 `docs/validation/phase-8-lx-bluetooth-2026-09-25/analyze.py`. Dispatch latency comes from
 the events' `dispatch_us`. Because the timed conditions have no pauses (*Runs*), it is
-reported only where it can be taken without them: from the events that the reading
-clients receive, in conditions 3, 4 and 5 and in the forced-close run. Condition 2 has no
-client, so its full-run dispatch latency comes from a segmented diagnostic run, which
-judges none of P1–P9 (revised 2026-09-28). No criterion judges dispatch latency.
+taken from the events that the reading clients receive, in conditions 3, 4 and 5 and in
+the forced-close run. Condition 2 has no client: its last 500 events are fetched from the
+history after the tester finishes, as in the M2 rotated runs. A full-run figure for
+condition 2 is available only from a segmented diagnostic run, if one is made, and that
+run judges none of P1–P9 (revised 2026-09-28). No criterion judges dispatch latency.
 
 **Pass criteria:**
 
@@ -679,10 +684,10 @@ judges none of P1–P9 (revised 2026-09-28). No criterion judges dispatch latenc
 |---|---|---|
 | P1 | Median wire latency, conditions 2, 3 and 4 | ≤ condition 1's median **+ 0.10 ms**, on pooled samples, in every round |
 | P2 | p99 wire latency, conditions 2, 3 and 4 | ≤ condition 1's p99 **+ 0.50 ms**, on pooled samples, in every round |
-| P3 | Lost replies, every condition | **Exactly 0.** A lost reply is a request frame with no reply frame before the next request, or within 1 s |
+| P3 | Lost replies, every condition | **Exactly 0.** A lost reply is a request frame with no reply frame before the next request, or within 1 s. The same rule applies in the forced-close run (§9.2) |
 | P4 | Throughput, condition 5 | Requests answered per second ≥ **90 %** of the same tester's maximum rate with the API off (measured the same way in each round) |
 | P5 | Drop and delivery accounting (reconciliation) | Checked after the run has **quiesced**: tester stopped, `HandOff` drained, every open connection's `queued` = 0. All of the following must hold **exactly**: (a) `issued_seq = published + handoff_dropped`. A record whose encoding failed counts in `published`, because it was published as its fallback event (§5). (b) For every connection, open or closed, the §5.1 identities hold. (c) Summed over every connection that was open for the whole run, `offered` equals the growth of `published` over the run, measured by the harness from `GET /status` before and after. (d) On the harness side, the `exchange` messages a connection received have strictly increasing `seq` and no duplicates. For an **open** connection, received live events = `sent`. For a **closed** connection, received live events ≤ `sent` + `delivery_unknown`, and `sent` − received (sent but still in transit when the socket closed) is reported per connection. (e) **From the server's cumulative counters** (revised 2026-09-27; a client that never reads can never see its 1013 frame, so the harness cannot count those closes itself): `closed_totals.close_codes["1013"]` = `forced_disconnects`, and `closed_totals.close_codes["1011"]` = `fanout_failed` + `writer_failed`. The harness also records each time it had to reconnect its stalled client; that count must be ≤ `forced_disconnects`, and any shortfall is reported. HTTP 503 refusals seen = `refused_clients`. (f) Every closed connection is accounted for, including those no longer among the 64 retained: `closed_unresolved` = 0, `connections_opened = clients + closed_totals.connections`, the summed identities of §5.1, including `delivery_unknown`, hold on `closed_totals`, and `closed_totals.close_codes["1013"]` = `forced_disconnects`. (g) **Durable output:** the harness appends every `GET /status` poll (at most 1 s apart) and every close it observes to JSONL files committed with the results. The union of `closed_connections` ids across the polls must be exactly `1..connections_opened` minus the open ones. A missing id means the polls were too far apart, and the run is reported inconclusive, not passed. (h) **Delivery the ledger cannot vouch for, and its allowance** (revised 2026-09-27). A connection closed with **1013 (forced) or 1006 (reset or vanished)** may carry **at most one** `delivery_unknown`: the frame that was in the transport buffer when it was cut off. Every other connection must carry **zero**; that includes every open connection, every connection closed with any other code, and every healthy reading client. Checked on each open and retained ledger and, cumulatively for every closed connection including evicted ones, as `closed_totals.delivery_unknown_over_allowance` = 0 (a per-connection check made when each ledger is added; revised 2026-09-27, because the per-code sums, `delivery_unknown_by_close_code[c]` ≤ `close_codes[c]`, can hide a connection over its allowance behind one under it). The per-code sums are still reported, and still must be 0 for every code other than 1013 and 1006. **Every allowed `delivery_unknown` is reported explicitly** with the results, per condition and round, and per forced-close run, never folded silently into a pass. If the allowance is exceeded, or `closed_unresolved` > 0 at quiesce, P5 and P6 for that condition and round are **inconclusive**: reported with the counts, never passed; the run is repeated or the cause found. **Any unexplained difference fails** |
-| P6 | Drops where none should occur | In conditions 2 and 3, and for the 3 reading clients in condition 4: `handoff_dropped` = 0, `client_dropped` = 0 and `discarded_on_close` = 0. In **every** condition, `encode_failed` = 0 and `fanout_failed` = 0. Drops, discards and in-transit losses are allowed only on the stalled client's connections, and only where P5 accounts for them. For those reading clients `delivery_unknown` must also be 0; the stalled client's connections may carry the P5(h) allowance of one per forced or reset close, reported explicitly. Anything beyond the allowance makes P6 inconclusive for that condition and round (P5(h)) |
+| P6 | Drops where none should occur | In conditions 2 and 3, for the 3 reading clients in condition 4, and for the 3 reading clients in the forced-close run: `handoff_dropped` = 0, `client_dropped` = 0 and `discarded_on_close` = 0. In **every** condition, `encode_failed` = 0 and `fanout_failed` = 0. Drops, discards and in-transit losses are allowed only on the stalled client's connections, and only where P5 accounts for them. For those reading clients `delivery_unknown` must also be 0; the stalled client's connections may carry the P5(h) allowance of one per forced or reset close, reported explicitly. Anything beyond the allowance makes P6 inconclusive for that condition and round (P5(h)) |
 | P7 | Memory (RSS trend) | A 10-minute soak under condition 4 load, sampling the simulator's RSS every 5 s. Samples in the first 60 s are discarded as warm-up. **Pass if** the least-squares slope of RSS against time over the remaining samples is **≤ 0.1 MiB per minute**, **and** the final sample exceeds the first post-warm-up sample by **≤ 2 MiB**. Separately, the peak RSS increase over condition 1 must stay within the §4.3 bound of about 19 MiB plus 10 MiB for code and libraries |
 | P8 | Noise guard | If condition 1's own p99 differs by more than 0.50 ms between rounds, the benchmark is **inconclusive**. It is reported as such and does not pass |
 | P9 | Loop hold time | The publisher records the length of every turn. The maximum over the whole of conditions 2–5 and the forced-close run is **≤ 2 ms**. The M1 early check reports the same maximum for a full 4096-record `HandOff` |

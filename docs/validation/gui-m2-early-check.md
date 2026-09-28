@@ -50,18 +50,23 @@ is the source for their terms.
   condition 1's median + 0.10 ms, and no threshold changes.
 - **The next performance investigation is internal timestamps in the simulator:** per
   request, at CAN receive, dispatch start and end, and reply send (H1 in "The cause is
-  still not established"). It does not block M3a visual work.
+  still not established"). It does not block M3a visual work, which proceeds as an
+  offline mockup only; wiring views to live API data waits for the owner's visual
+  feedback.
 - **M4's timed conditions run without segments.** Segmented runs, such as the three
   diagnostic runs below, are diagnostics only and never judge P1–P9.
 - **The forced-close run is also judged on** zero lost diagnostic replies, as P3 defines
   a lost reply, and zero drops for its three reading clients: `client_dropped` = 0 and
-  `discarded_on_close` = 0, as P6 requires of condition 4's reading clients. The stalled
-  client's `client_dropped`, `discarded_on_close` and `delivery_unknown` are reported as
-  expected, not judged, except that P5(h)'s allowance still applies. Its latency stays
-  reported, not judged against P1 or P2.
+  `discarded_on_close` = 0 on their connections, and `handoff_dropped` = 0 over the run,
+  as P6 requires of condition 4's reading clients. The stalled client's
+  `client_dropped`, `discarded_on_close` and `delivery_unknown` are reported as expected
+  and not judged, but they must still reconcile under P5(b) and (f), and P5(h)'s
+  allowance applies to its `delivery_unknown`. Its latency stays reported, not judged
+  against P1 or P2.
 - **The P3/P6 question is closed.** The proposal below applied P3, P5 and P6 to the
   forced-close run; the seventh revision judged it by P5 and P9 only. The decision above
-  settles it: P3's lost-reply rule, and P6's rule for the reading clients, now apply.
+  settles it: P3's lost-reply rule, and P6's rule for the reading clients
+  (`handoff_dropped`, `client_dropped` and `discarded_on_close` all 0), now apply.
 
 ## Host
 
@@ -581,8 +586,8 @@ covers `7141045` or any later commit**: they are not pushed (`origin/gui` is at
 `e0c8445`).
 
 (Updated 2026-09-28: `7141045` to `70c4e9f` are now pushed, and hosted run 36436675557
-at `70c4e9f` covers them, including `a7431be`. No hosted run covers `6bbad2c` or any
-later commit. See "Hosted CI".)
+at `70c4e9f` covers them, including `a7431be`. At that update, no hosted run covered
+`6bbad2c` or any later commit. See "Hosted CI".)
 
 ## Client-cost diagnostic, 2026-09-28: three runs of five rounds, five client configurations
 
@@ -999,9 +1004,12 @@ From the Task 12 review, not fixed, and to be settled before M4 relies on this h
 ### Gates and CI for this part
 
 Local only. "Gates" gives the harness gates at `b6528b8`. "Hosted CI" adds run
-36436675557 at `70c4e9f`. **No hosted run covers `6bbad2c` or any later commit**,
-including the diagnostic harness (`7b5b7ea`, `b6528b8`): they are not pushed (`origin/gui`
-is at `70c4e9f`).
+36436675557 at `70c4e9f`. When this was written, no hosted run covered `6bbad2c` or any
+later commit, including the diagnostic harness (`7b5b7ea`, `b6528b8`): they were not
+pushed (`origin/gui` was at `70c4e9f`).
+
+(Updated 2026-09-28.) Run 36477465250 at `e5f3a8b` covers `6bbad2c` to `e5f3a8b`,
+including the diagnostic harness. See "Hosted CI".
 
 ## M4 forced 1013 closes: a proposal for the owner
 
@@ -1265,14 +1273,14 @@ Open details for the owner, if (b) is chosen:
 `gui`. These are local results, not a hosted CI run. The owner has since pushed
 `6bbad2c..e5f3a8b`, so `origin/gui` is at `e5f3a8b`. This record's statements that
 those commits are unpushed, or that `origin/gui` is at `70c4e9f`, were true when written.
-No hosted run at `e5f3a8b` is recorded here.
+The hosted run at `e5f3a8b` is 36477465250, recorded in "Hosted CI" below.
 
-| Gate | Result |
-|---|---|
-| Namespace suite (private namespace, `lo` up) | **1213 passed, 69 skipped, 2 xfailed** |
-| Lint (`ruff check .`) | clean |
-| Types (`mypy`) | clean |
-| vcan integration (private `vcan0`) | **69 passed** |
+| Gate | Command | Result |
+|---|---|---|
+| Namespace suite (private namespace, `lo` up) | `unshare -r -n bash -c 'ip link set lo up && .venv/bin/python -m pytest -p no:cacheprovider -q -rsx'` | **1213 passed, 69 skipped, 2 xfailed** |
+| Lint | `.venv/bin/ruff check .` | clean |
+| Types | `.venv/bin/mypy` | clean |
+| vcan integration (private `vcan0`) | `scripts/run_integration_tests.sh` | **69 passed** |
 
 **`b6528b8` — local-only, unpushed.** The harness gates of Task 12's fix round 1, as
 reported in its implementation report (fix-round section); not re-run for this record.
@@ -1335,9 +1343,14 @@ hosted runs, and that none covered `73e9e9f` or the commit that added this recor
 `e0c8445`. At that correction, no hosted run covered `7141045` or any later commit.
 
 (Updated again 2026-09-28.) Run 36436675557 at `70c4e9f` covers `7141045` to `70c4e9f`,
-including the rotated runs' harness (`a7431be`). **No hosted run covers any commit after
-`70c4e9f`**: `6bbad2c` and later, including the diagnostic harness (`b6528b8`), are not
-pushed (`origin/gui` is at `70c4e9f`).
+including the rotated runs' harness (`a7431be`). At that update, no hosted run covered
+any commit after `70c4e9f`: `6bbad2c` and later, including the diagnostic harness
+(`b6528b8`), were not pushed (`origin/gui` was at `70c4e9f`).
+
+(Updated 2026-09-28.) Run 36477465250 at `e5f3a8b` covers `6bbad2c` to `e5f3a8b`,
+including the diagnostic harness. **No hosted run covers any commit after `e5f3a8b`**:
+`aa8cffe` and later, including 0010's eighth revision and the M3a mockup, are not
+pushed.
 
 | Run | `head_sha` | Result |
 |---|---|---|
@@ -1346,13 +1359,15 @@ pushed (`origin/gui` is at `70c4e9f`).
 | 36361625692 | `6a04ee5fb985591b34a414573d19ca9d75ec7b68` | **SUCCESS**: `.[dev]` 3.12 and 3.13 each 1044 passed, 59 skipped, 2 xfailed; api `.[dev,gui]` 1094 passed, 57 skipped, 2 xfailed; lint green; can-capabilities green |
 | 36363466270 | `e0c84455f1d441fd9ab049c95b4324f57d82e492` (branch `gui`, push) | **SUCCESS**: `.[dev]` 3.12 and 3.13 each 1044 passed, 59 skipped, 2 xfailed; api `.[dev,gui]` 3.12 1094 passed, 57 skipped, 2 xfailed; lint and type check green; the vcan and `can_isotp` probe green, kernel `6.17.0-1022-azure`, `# CONFIG_CAN_ISOTP is not set`, and its vcan integration step 1 passed, 68 skipped (CAN_ISOTP cannot bind). The skip reasons are those listed below |
 | 36436675557 | `70c4e9fe9052035e44ac316ffbc21696c773b656` (branch `gui`, push) | **SUCCESS**: `.[dev]` 3.12 and 3.13 each 1044 passed, 60 skipped, 2 xfailed (54x CAN_ISOTP, 4x [gui], 2x [hardware]); api `.[dev,gui]` 3.12 1137 passed (1094 + 43 harness tests), 57 skipped (54x CAN_ISOTP, 2x [hardware], 1x aiohttp installed), 2 xfailed; lint and type check green; can-capabilities green, its vcan integration step 1 passed, 68 skipped (CAN_ISOTP cannot bind on `6.17.0-1022-azure`) |
+| 36477465250 | `e5f3a8b1095b0dbd46c1633e8b221a3014849c74` (branch `gui`, push) | **SUCCESS**: `.[dev]` 3.12 and 3.13 each 1044 passed, 60 skipped (54x CAN_ISOTP, 4x [gui], 2x [hardware]), 2 xfailed; api `.[dev,gui]` 3.12 1191 passed, 57 skipped (54x CAN_ISOTP, 2x [hardware], 1x aiohttp installed), 2 xfailed; lint and type check green; the vcan and `can_isotp` probe green, its vcan integration step 1 passed, 68 skipped (CAN_ISOTP cannot bind on `6.17.0-1022-azure`: `modprobe: FATAL: Module can_isotp not found`) |
 
 Hosted skips: 54x "kernel cannot create CAN_ISOTP sockets (CONFIG_CAN_ISOTP not built,
 e.g. GitHub-hosted Azure kernels)"; 3x [gui] (`.[dev]` only); 2x [hardware]; 1x
 aiohttp-installed, by name (api job only). As recorded for run 36363466270; see "Gates"
 above for why the next hosted `.[dev]` run is expected to add a fourth [gui] skip (60
 skipped, 4x), not yet confirmed by a hosted run. (Updated 2026-09-28: run 36436675557
-confirmed it, with 4x [gui] and 60 skipped in `.[dev]`.)
+confirmed it, with 4x [gui] and 60 skipped in `.[dev]`. Run 36477465250 at `e5f3a8b`
+shows the same: 60 skipped in `.[dev]`, with the fourth [gui] skip.)
 
 **The 54 vcan tests are skipped on hosted runners and never validated there**
 ([decisions/0009](../decisions/0009-self-hosted-vcan-runner.md)).
