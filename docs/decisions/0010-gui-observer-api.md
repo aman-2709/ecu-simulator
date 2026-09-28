@@ -88,6 +88,20 @@ buffer, and that frame's delivery cannot be known. Under the previous rule, M4 c
 could therefore never pass. Zero unknowns on forced and reset connections remains an open
 goal, not a requirement.
 
+A seventh revision, on 2026-09-28, is the owner's decision after the investigation of the
+M2 early check's `STOP` (`docs/validation/gui-m2-early-check.md`, "M4 forced 1013 closes:
+a proposal for the owner"; the owner chose a variant of its option (b)). It changes no
+threshold of P1–P9, and no V1.0 or Phase 8b gate:
+
+- **M4 adds a forced-close run in every round**, outside the timed conditions. It passes
+  only if the server counts **three 1013 closes** and **three reconnections** are
+  accepted, all **within 60 s**. It has no minimum number of requests. It is checked
+  against **P5 and P9**. Its latency is **reported separately and not judged against P1
+  or P2** (§9.2, *Forced-close run*). M4's exit requires it to pass in every round (§10);
+- **the condition 4 row is corrected.** At 20,000 requests the stalled client is expected
+  to overflow but not to be forced off, so the timed conditions are not where the 1013
+  path is proven (§9.2).
+
 The evidence for the routing and ordering claims is in §12.
 
 ## 1. Purpose and scope
@@ -560,11 +574,41 @@ request after the previous reply, or after a 1 s timeout.
 | 1 | API off |
 | 2 | API on, 0 clients |
 | 3 | API on, 1 client reading normally |
-| 4 | API on, 4 clients: 3 reading normally and 1 stalled (connected, never reading). The §4.3 rule disconnects the stalled client after 5 s of overflow, and the harness reconnects it at once, so a stalled client is present throughout. Each forced disconnect is counted |
+| 4 | API on, 4 clients: 3 reading normally and 1 stalled (connected, never reading). At 20,000 requests the stalled client is expected to overflow, after about 6,000 messages at the rates the M2 early check measured, but not to be forced off: the §4.3 rule disconnects it only after 5 s of continuous overflow (`docs/validation/gui-m2-early-check.md`; revised 2026-09-28). If it is forced off, the harness reconnects it at once, and each forced disconnect is counted. The forced path is covered by the *Forced-close run* below and by the forced-disconnect tests of §9.3 (`observe` unit tests and `api` tests) |
 | 5 | Condition 4, with the tester sending at the maximum rate it sustains |
 
 *Runs.* Conditions 1–4: 20,000 requests each, repeated in **3 rounds**, with the order of
 conditions rotated in each round. Condition 5: 60 s per round, 3 rounds.
+
+*Forced-close run* (added 2026-09-28). Once in **every round**, a separate run outside
+the timed conditions: API on, 3 reading clients, and 1 stalled client that the harness
+reconnects each time it is forced off. The tester sends condition 4's request mix
+continuously until the pass condition below is met, or until 60 s have passed since its
+first request. There is no minimum number of requests.
+
+- **Pass.** Within 60 s of the run's start, its first request:
+  - the server counts **three 1013 closes**: `forced_disconnects` in `GET /status` rises
+    by at least 3 over the run, and `closed_totals.close_codes["1013"]` rises by the same
+    amount. The second is compared at quiesce, when `closed_unresolved` = 0, because a
+    closed connection enters `closed_totals` only once its in-flight send has resolved
+    (§5.1);
+  - **three reconnections** of the stalled client are accepted: each upgrade is answered
+    with HTTP 101, and each new connection's `id` appears in `GET /status`
+    `connections`. The server has no reconnection counter, so the harness records each
+    reconnection, with its status and `id`, in its JSONL output (P5(g)).
+
+  Fewer than three of either within 60 s fails the run. It is not inconclusive.
+- **Checked against P5 and P9.** P5 in full at quiesce, (a) to (h). That includes P5(e)
+  with non-zero 1013 counts, and P5(h)'s allowance of at most one `delivery_unknown` per
+  forced (1013) connection, reported explicitly. P9's maximum of **≤ 2 ms** applies over
+  the run. `longest_turn_s` in `GET /status` is the longest turn since the simulator
+  started, so the run uses its own simulator process.
+- **Reported separately, not judged.** Its wire latency (median and p99, from its own
+  `candump -t a` capture, by the *Measurement* method) and its dispatch latency (median
+  and p99 of `dispatch_us`) are reported beside the round's timed conditions. They are
+  **not judged against P1 or P2**. Lost replies, by P3's definition, are reported with
+  them and not judged: P3 applies to the conditions, and this run is not one of them. P4
+  is condition 5's alone. No criterion other than P5 and P9 judges this run.
 
 *Measurement.* Wire latency is the time from the request's first frame to the reply's
 first frame, taken from a `candump -t a` capture by the method of
@@ -622,7 +666,7 @@ reported as local results, with their commands.
 | **M2** | `ApiServer`, `--api`, the `[gui]` extra, §6 security, §4.3 limits, API tests, the CI job; the M2 early check | yes | API tests green in CI on a `gui` push; M2 early check reported |
 | **M3a** | Frontend MVP: status, vehicle, DTCs, exchange log with gap markers | yes | Frontend file tests green in CI; owner runs the manual rendering checklist |
 | **M3b** | Sparklines with vendored uPlot | yes | Owner runs the manual view checklist for sparklines |
-| **M4** | Full benchmark (§9.2) and MVP acceptance report | benchmark scripts only | P1–P9 met, or failures reported; owner accepts |
+| **M4** | Full benchmark (§9.2) and MVP acceptance report | benchmark scripts only | P1–P9 met and the forced-close run passed in every round, or failures reported; owner accepts |
 | Later | Raw CAN frame panel (optional, read-only, a raw CAN socket in the API process) | — | Separate approval |
 | Later | `ControlPort` controls (§8) | — | Own decision record first |
 
