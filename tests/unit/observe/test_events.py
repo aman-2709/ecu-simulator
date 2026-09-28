@@ -39,11 +39,11 @@ def test_summaries():
     assert summarise(b"\x22\xf1\x90") == "service 0x22"
 
 
-def test_summaries_range_requests():  # Task 19
+def test_summaries_range_requests():
     assert summarise(b"\x01\x00") == "OBD 01 00 — supported PIDs 01–20"
     assert summarise(b"\x01\x20") == "OBD 01 20 — supported PIDs 21–40"
     assert summarise(b"\x01\x40") == "OBD 01 40 — supported PIDs 41–60"
-    assert summarise(b"\x01\xe0") == "OBD 01 E0 — supported PIDs E1–100"
+    assert summarise(b"\x01\xe0") == "OBD 01 E0 — supported PIDs E1–FF"
     assert summarise(b"\x01\x0c") == "OBD 01 0C — Engine speed"
     assert summarise(b"\x01\x01") == "OBD 01 01 — unknown parameter"
     assert summarise(b"\x01\x0c\x0d") == "OBD 01 0C 0D — 2 parameters"

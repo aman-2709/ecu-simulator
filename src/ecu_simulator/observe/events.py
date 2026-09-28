@@ -44,7 +44,7 @@ def summarise(payload: bytes) -> str:
     if sid == 0x01 and len(payload) == 2:
         base = payload[1]
         if masks.is_range_request(base) and 0 <= base <= masks.LAST_RANGE_BASE:
-            first, last = base + 1, base + masks.RANGE_SIZE
+            first, last = base + 1, min(base + masks.RANGE_SIZE, 0xFF)
             return f"OBD 01 {base:02X} — supported PIDs {first:02X}–{last:02X}"
         pid = MODE01_PIDS.get(base)
         return f"OBD 01 {base:02X} — {pid.name if pid else 'unknown parameter'}"
