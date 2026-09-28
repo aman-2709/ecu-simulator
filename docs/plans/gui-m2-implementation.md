@@ -2845,3 +2845,38 @@ M3b (sparklines, uPlot) is not in scope. Stop for the owner's review after the l
   one narrow width. Nothing on the host's `vcan0` or `can0`.
 - Owner startup commands for the owner's own browser (host network, owner's choice of
   interface), with the host-`vcan0` caveat stated.
+
+## M3a after the owner's first live review (owner, 2026-09-28)
+
+The live page works on real data. The owner asked for three fixes, then live desktop and
+narrow screenshots, the relevant tests, a push of the M3a commits and the hosted CI
+result. **Unchanged:** all data live, the UI read-only, the M2 latency STOP open.
+
+### Task 19: correct summaries for the supported-PID range requests
+
+**Files:** `src/ecu_simulator/observe/events.py`, its unit tests.
+
+- `summarise` calls `01 00` and `01 20` "unknown parameter" because it looks them up in
+  `MODE01_PIDS`, which holds no range identifiers, although the simulator answers them
+  (`protocols/obd/masks.py`). Use `masks.is_range_request` so a range request reads, e.g.,
+  `OBD 01 00 — supported PIDs 01–20` and `OBD 01 20 — supported PIDs 21–40` (every base
+  0x00…0xE0), while a real unknown PID still reads "unknown parameter". Summaries stay in
+  Python (0010 §5); the browser does not decode.
+- Focused tests first: 00, 20, 40, E0, a known PID, an unknown non-range PID, and the
+  multi-PID form unchanged.
+
+### Task 20: desktop readability, panel balance, and polled-status labelling
+
+**Files:** `src/ecu_simulator/api/static/{index.html,app.css,app.js}`.
+
+- Larger text and controls at desktop widths (the owner's 2000 px screenshot reads too
+  small): body, table and control sizes, and hit targets.
+- Rebalance the side panels against the log: the signal and trouble-code panels are too
+  narrow at wide viewports; give them more width and let the log keep the rest.
+- Label the status bar's polled counters (seq issued/oldest, clients, drops, uptime,
+  scenario time) as refreshed every 2 s by `GET /status`, which may briefly trail the
+  live exchange log's last seq; say so where the numbers are shown, not only in the
+  footer.
+- Still live-only, read-only, no API change. Frontend-file tests stay green.
+- Live desktop (about 1440 and about 2000 px) and narrow (390 px) screenshots from a real
+  simulator run in a namespace, replacing the M3a demo set where they differ.
