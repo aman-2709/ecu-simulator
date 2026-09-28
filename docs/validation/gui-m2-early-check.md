@@ -2,7 +2,9 @@
 
 **An early check on vcan, conditions 1, 2 and 4 only; not the M4 benchmark. P1–P9 are
 judged at M4** ([decisions/0010 §9.2](../decisions/0010-gui-observer-api.md)). It has no
-condition 3 or 5, no RSS soak, and no JSONL output. The first six runs had one round each,
+condition 3 or 5, no RSS soak, and no JSONL output. The diagnostic runs add two diagnostic
+configurations, r1 and r3. r1 has condition 3's client set (one reader), but it is not
+judged as condition 3. The first six runs had one round each,
 with no rotation of condition order. The three rotated runs have three rounds each, with the
 order rotated ("Rotated runs, 2026-09-28" below). The three diagnostic runs have five rounds
 each, over five client configurations ("Client-cost diagnostic, 2026-09-28" below).
@@ -19,8 +21,9 @@ each, over five client configurations ("Client-cost diagnostic, 2026-09-28" belo
 - Three diagnostic runs of five rotated rounds, at `b6528b8`: condition 4's median
   exceeded its own round's condition 1 median + 0.10 ms in **15 of the 15 rounds**. Three
   reading clients alone (no stalled client) exceeded it in 3 of 15. The wire cost builds
-  up with each client configuration; most of it lies outside the dispatcher's
-  `dispatch_us` window. Its cause is still not established.
+  up with each client configuration. Most of the clients' cost (condition 2→4: +0.064 ms
+  on the wire, +0.010 ms in dispatch) lies outside `dispatch_us`; the API's own
+  +0.045 ms cannot be split. Its cause is still not established.
 
 Every other early-check criterion held in all twelve runs: p99 within condition 1 +
 0.50 ms, 0 lost replies, no P5 problem among those this script checks ((a), (b), (e), (f),
@@ -568,9 +571,11 @@ the stalled client exceeded it in 3 of the 15. A configuration that printed no s
 in a round is **not a pass**: the stop rule applies to every round. No threshold was tuned, and no
 condition was lengthened. Per the stop rule, this is reported before M3.
 
-**What it finds, in one line:** the wire cost builds up with each client configuration
-(the API, the first reader, two more readers, the stalled client), and most of it lies
-outside `dispatch_us`. It shows where the time is not. It does not show where the time is.
+**What it finds:** the wire cost builds up with each client configuration (the API, the
+first reader, two more readers, the stalled client). Most of the clients' cost (condition
+2→4: +0.064 ms on the wire, +0.010 ms in dispatch) lies outside `dispatch_us`; the API's
+own +0.045 ms cannot be split. It shows where the time is not. It does not show where the
+time is.
 
 ### Environment
 
@@ -765,11 +770,15 @@ In all 75 rows (15 rounds × 5 configurations):
   `sent` 4,949–4,951 of 5,000 `enqueued`; at quiesce, closed 1006 with `queued` 0 and
   `delivery_unknown` 1. As before, **it never overflowed**, and it was never forced off.
 - p99: within condition 1 + 0.50 ms in every row. The largest p99 excess is r1's
-  +0.434 ms (run 3 round 1, p99 0.680 ms), 0.066 ms from the limit.
+  +0.434 ms (run 3 round 1, p99 0.680 ms), 0.066 ms from the limit. Its capture shows a
+  transient burst: 7 requests above 2 ms, between requests 525 and 809. A similar burst
+  of 9 (requests 4,765–4,978, run 2 round 3) gave r3's largest p99, 0.406 ms. So the near
+  miss is transient and not specific to r1. **For M4:** a burst like this, at 20,000
+  requests per condition, could decide a p99 verdict; it is noted, not explained.
 
 Each median and p99 above was recomputed from the `candump` captures with the script's own
-pairing rule, and all 75 match: run 1 from the committed captures, runs 2 and 3 from the
-controller's uncommitted copies.
+pairing rule, and all 75 match. All three runs' captures are committed (see "Captures"),
+so this, and the first-after-pause check below, can be reproduced from the repository.
 
 ### Cost of each configuration, over the 15 rounds
 
@@ -807,8 +816,15 @@ The incremental cost of each step, from two configurations of the same round (ms
   median in all 15 rounds, and the stalled client in 14. The step means (+0.045, +0.028, +0.024, +0.012 ms) add up to
   condition 4's mean excess (+0.109 ms). That sum holds by construction, since the steps
   chain within each round; the finding is that every part adds, and none carries the
-  excess alone. The API with no clients adds the most. The three readers add +0.052 ms,
-  the first reader more than the next two together. The stalled client adds the least.
+  excess alone. The API with no clients adds the most.
+- **Per client, the cost is about equal, except the first reader.** r1→r3 adds two
+  clients, so per client: the first reader +0.028 ms, readers 2 and 3 about +0.012 ms
+  each, and the stalled client +0.012 ms. The stalled step is above half the r1→r3 step
+  in 8 rounds and below it in 7. What stays unexplained is the first reader's premium: it
+  costs more than the next two readers together in 12 of 15 rounds, by 0.004 ms on
+  average. Equal per-client cost fits H1, and weighs only mildly against H2 alone,
+  because the stalled raw socket does no parsing on the harness side. That is not a
+  test.
 - **Dispatch barely moves.** From condition 2 to condition 4, the full-run dispatch
   median rises by +0.010 ms (mean; +0.007 to +0.016), while the wire median rises by
   +0.064 ms (+0.054 to +0.072). Over the three client steps (2→r1, r1→r3, r3→4), the
@@ -821,10 +837,13 @@ The incremental cost of each step, from two configurations of the same round (ms
 - **Three readers alone can miss the limit.** r3 printed a stop reason in 3 of 15 rounds
   (excess +0.104, +0.106 and +0.112 ms), and its mean excess, +0.097 ms, is just under
   the limit. The stalled client is not needed for a miss.
-- **Order does not matter** (medians by position below). Condition 4's mean median by
+- **No order effect at condition 4** (medians by position below). Its mean median by
   position spans 0.226–0.232 ms, 0.006 ms, against its 15-round range of 0.222–0.236 ms.
-  No configuration is consistently slower in any position. In 14 of the 15 rounds the
-  medians rank 1 < 2 < r1 < r3 < 4, whatever the order; the other is the r3→4 round above.
+  Smaller position spreads, up to 0.010 ms for r3, cannot be resolved with three samples
+  and the round/position confound: r3's position means span 0.212–0.222 ms, and all three
+  r3 samples at position 1 (0.217, 0.221, 0.228) exceed all three at position 3 (0.211,
+  0.211, 0.213). In 14 of the 15 rounds the medians rank 1 < 2 < r1 < r3 < 4, whatever the
+  order; the other is the r3→4 round above.
 - **The pause brings no configuration-specific bias at the median** ("The first request
   after a pause" below).
 - **Condition 1 was steadier than in the rotated runs:** its median spans 0.116–0.123 ms
@@ -850,7 +869,7 @@ Condition 4's three values per position: 0.236, 0.222, 0.231 (1); 0.236, 0.231, 
 
 The Task 12 review asked for a check of the request that follows each 50 ms pause. It
 could be slow (a cold path, a CPU waking), and that could differ by configuration.
-Checked from the captures of all three runs, with the script's pairing rule: the first
+Checked from the committed captures of all three runs, with the script's pairing rule: the first
 request of segments 2–20 is request 251, 501, … 4,751 of each configuration, 19 per
 configuration and round, **285 per configuration**.
 
@@ -870,8 +889,12 @@ configuration and round, **285 per configuration**.
 - They raise the pooled p99 by 0.002–0.015 ms in each configuration, condition 1 by
   0.010 ms. That is small beside the 0.50 ms p99 limit, and it enters both sides of the
   comparison.
-- One first-after-pause request took 9.04 ms in condition 1 and one 9.06 ms in condition
-  4, both within the 1 s lost-reply limit. The data do not say why.
+- Two first-after-pause requests took 9.04 ms (condition 1) and 9.06 ms (condition 4).
+  They are not tied to the pause: the 75 captures hold 11 requests of 7.88–9.06 ms, in
+  every configuration (condition 1: 1, condition 2: 2, r1: 3, r3: 1, condition 4: 4), and
+  9 of them are mid-segment. Run 1's four are all mid-segment: condition 4 requests 894
+  and 3,316, condition 2 request 4,427 and r1 request 2,248. All are within the 1 s
+  lost-reply limit. The data do not say why.
 - Pooled figures mix 15 rounds; the stop rule judges each round alone.
 
 ### The cause is still not established
@@ -882,8 +905,8 @@ data, and none has been tested directly. They are not exclusive.
 
 | Hypothesis | What the diagnostic adds | What would isolate it |
 |---|---|---|
-| **H1. Work on the simulator's loop.** Every client adds a queue offer, a writer task and loopback TCP sends to the simulator's one asyncio loop, which also runs the CAN read callback and the reply's `_send` (0010 §4.2). A request that arrives while that work runs waits before dispatch starts, or its reply waits to be sent | consistent: the cost grows with each reader, and lies outside `dispatch_us`. The stalled client's writer sends almost every message too (4,949–4,951 of 5,000), yet the stalled client costs the least; the data do not explain that | timestamps inside the simulator, per request, at CAN receive, dispatch start and end, and reply send, written to a trace outside the timed path. They would split the wire interval into waiting before dispatch, dispatch, waiting after it, and the send. Also the publisher's `longest_turn_s` (already in `/status`) per configuration |
-| **H2. The harness sharing the host.** The harness process runs the tester (in a thread) and the reader tasks, which parse every event. Nothing pins any process to a CPU. The tester's own delays fall outside the wire interval, so the harness can only reach it through the host (CPU placement, caches, frequency) | consistent: the cost grows with readers, and every reader runs in the harness process | the readers in a separate process from the tester; the simulator, the tester and the readers pinned to separate CPUs (`taskset`) |
+| **H1. Work on the simulator's loop.** Every client adds a queue offer, a writer task and loopback TCP sends to the simulator's one asyncio loop, which also runs the CAN read callback and the reply's `_send` (0010 §4.2). A request that arrives while that work runs waits before dispatch starts, or its reply waits to be sent | consistent: the cost grows from one reader to three, and lies mostly outside `dispatch_us`. Per client, the stalled client (whose writer sends 4,949–4,951 of 5,000 messages) costs about what readers 2 and 3 cost, which fits. The first reader's premium (+0.004 ms on average over the next two together) is not explained | timestamps inside the simulator, per request, at CAN receive, dispatch start and end, and reply send, written to a trace outside the timed path. They would split the wire interval into waiting before dispatch, dispatch, waiting after it, and the send. Also the publisher's `longest_turn_s` (already in `/status`) per configuration |
+| **H2. The harness sharing the host.** The harness process runs the tester (in a thread) and the reader tasks, which parse every event. In condition 4 it also polls `/status` every 0.5 s, which the simulator serves on its loop (`scripts/gui_m2_early_check.py:491`). Nothing pins any process to a CPU. The tester's own delays fall outside the wire interval, so the harness can only reach it through the host (CPU placement, caches, frequency) | consistent: the cost grows from one reader to three, and every reader runs in the harness process. The stalled client costs about as much per client as readers 2 and 3, though it does no parsing on the harness side; that weighs only mildly against H2 alone | the readers in a separate process from the tester; the simulator, the tester and the readers pinned to separate CPUs (`taskset`) |
 | **H3. Host power management.** Governor `powersave` on all 12 CPUs. The rate falls as clients are added (5,773.6–6,704.5 req/s for condition 1, 3,474.1–3,922.8 for condition 4), so the gaps between requests change too. If CPU frequency or wake-up latency follows how busy the processes are, wire latency moves with it | not tested; the lower load average did not remove the excess | a repeat with the `performance` governor. The plan keeps the governor as it is, so this **needs the owner's approval** |
 
 The 1→2 step, the API with no clients, is the largest single step (+0.045 ms), and the
@@ -906,13 +929,17 @@ The `candump` logs are now committed, xz-compressed, in
 
 | Directory | What it is | Files | Compressed | Uncompressed |
 |---|---|---|---|---|
-| `diag-run-1/` | all logs of diagnostic run 1 ([diag-run-1.txt](gui-m2-early-check-runs/diag-run-1.txt)): 5 rounds × 5 configurations, new names (`000`, `100`, `110`, `130`, `131`) | 25 | 508,756 bytes (18,956–22,292 each) | 11,922,725 bytes |
-| `rotated-run-1/` | all logs of rotated run 1 ([run-1.txt](gui-m2-early-check-runs/run-1.txt), `/tmp/gui-m2-faqya9ej`): 3 rounds × 3 conditions, old names (`00`, `10`, `11`). Their uncompressed hashes match the run 1 block in "Rotated runs, 2026-09-28" | 9 | 182,488 bytes | 4,292,181 bytes |
+| `diag-run-1/` | all logs of diagnostic run 1 ([diag-run-1.txt](gui-m2-early-check-runs/diag-run-1.txt)): 5 rounds × 5 configurations, new names (`000`, `100`, `110`, `130`, `131`) | 25 | 504,660 bytes | 11,922,725 bytes |
+| `diag-run-2/` | all logs of diagnostic run 2 ([diag-run-2.txt](gui-m2-early-check-runs/diag-run-2.txt)), as above | 25 | 499,436 bytes | 11,922,725 bytes |
+| `diag-run-3/` | all logs of diagnostic run 3 ([diag-run-3.txt](gui-m2-early-check-runs/diag-run-3.txt)), as above | 25 | 501,160 bytes | 11,922,725 bytes |
+| `rotated-run-1/` | all logs of rotated run 1 ([run-1.txt](gui-m2-early-check-runs/run-1.txt), `/tmp/gui-m2-faqya9ej`): 3 rounds × 3 conditions, old names (`00`, `10`, `11`). Their uncompressed hashes match the run 1 block in "Rotated runs, 2026-09-28" | 9 | 178,392 bytes | 4,292,181 bytes |
 
-- `SHA256SUMS` holds two blocks: the sha256 of each uncompressed log (34 lines), and of
-  each committed `.xz` file (34 lines).
-- Diagnostic runs 2 and 3, and rotated runs 2 and 3, are not committed. Their logs are
-  in the controller's session scratch directory and in `/tmp`, and are not kept.
+- Sizes are sums of the files' sizes. Runs 2 and 3 were committed in `3328868`.
+- `SHA256SUMS` holds two blocks: the sha256 of each uncompressed log (84 lines), and of
+  each committed `.xz` file (84 lines).
+- Every analysis in this record that uses the captures can be reproduced from these
+  files. Rotated runs 2 and 3 are not committed; their hashes are in the table in
+  "Rotated runs, 2026-09-28".
 - To verify, from `docs/validation/gui-m2-early-check-captures/`:
 
   ```sh
@@ -923,7 +950,7 @@ The `candump` logs are now committed, xz-compressed, in
   done
   ```
 
-  All 68 checks passed when this section was written.
+  All 168 checks passed when this section was written.
 
 ### Deferred before M4
 
@@ -1217,7 +1244,7 @@ results" below.
 | Namespace suite (private namespace, `lo` up) | `unshare -r -n bash -c 'ip link set lo up && .venv/bin/python -m pytest -p no:cacheprovider -q -rsx'`, the command the same report gives for its first run | **1213 passed, 69 skipped, 2 xfailed**. Against `b27cf60`'s 1159: +54 passed, all in `tests/unit/test_gui_m2_early_check.py`; skipped and xfailed unchanged |
 | Lint | `ruff check .` | all checks passed |
 | Types | `mypy` | no issues in 58 source files; `src/` only, as below, so `scripts/gui_m2_early_check.py` is not type-checked |
-| vcan integration | — | **not re-run after Task 12.** The last run is `b27cf60`'s 69 passed, below. Between `b27cf60` and `b6528b8` only `scripts/gui_m2_early_check.py` and `tests/unit/test_gui_m2_early_check.py` changed; `src/` did not |
+| vcan integration | — | **not re-run after Task 12.** The last run is `b27cf60`'s 69 passed, below. Between `b27cf60` and `b6528b8` the only code changes were to `scripts/gui_m2_early_check.py` and `tests/unit/test_gui_m2_early_check.py` (the plan and this record also changed); `src/` did not |
 
 **`b27cf60` — history.** Run by the controller, in this worktree, at commit
 `b27cf60` on branch `gui` (not on `origin/gui`, which is at `e0c8445`). These are local
@@ -1277,7 +1304,7 @@ pushed (`origin/gui` is at `70c4e9f`).
 | 36361183412 | `334ecf49fe364258166d01e1aad485f3d437c476` | **FAILURE**: `FAILED tests/unit/observe/test_publisher.py::test_encode_failure_publishes_a_fallback_and_seq_stays_contiguous - assert 2 == 4` on 3.12 and 3.13 |
 | 36361625692 | `6a04ee5fb985591b34a414573d19ca9d75ec7b68` | **SUCCESS**: `.[dev]` 3.12 and 3.13 each 1044 passed, 59 skipped, 2 xfailed; api `.[dev,gui]` 1094 passed, 57 skipped, 2 xfailed; lint green; can-capabilities green |
 | 36363466270 | `e0c84455f1d441fd9ab049c95b4324f57d82e492` (branch `gui`, push) | **SUCCESS**: `.[dev]` 3.12 and 3.13 each 1044 passed, 59 skipped, 2 xfailed; api `.[dev,gui]` 3.12 1094 passed, 57 skipped, 2 xfailed; lint and type check green; the vcan and `can_isotp` probe green, kernel `6.17.0-1022-azure`, `# CONFIG_CAN_ISOTP is not set`, and its vcan integration step 1 passed, 68 skipped (CAN_ISOTP cannot bind). The skip reasons are those listed below |
-| 36436675557 | `70c4e9fe9052035e44ac316ffbc21696c773b656` (branch `gui`, push) | **SUCCESS**: `.[dev]` 3.12 and 3.13 each 1044 passed, 60 skipped, 2 xfailed (54x CAN_ISOTP, 4x [gui], 2x [hardware]); api `.[dev,gui]` 3.12 1137 passed (1094 + 43 harness tests), 57 skipped (54x CAN_ISOTP, 2x [hardware], 1x aiohttp installed), 2 xfailed; lint green; can-capabilities green, its vcan integration step 1 passed, 68 skipped (CAN_ISOTP cannot bind on `6.17.0-1022-azure`) |
+| 36436675557 | `70c4e9fe9052035e44ac316ffbc21696c773b656` (branch `gui`, push) | **SUCCESS**: `.[dev]` 3.12 and 3.13 each 1044 passed, 60 skipped, 2 xfailed (54x CAN_ISOTP, 4x [gui], 2x [hardware]); api `.[dev,gui]` 3.12 1137 passed (1094 + 43 harness tests), 57 skipped (54x CAN_ISOTP, 2x [hardware], 1x aiohttp installed), 2 xfailed; lint and type check green; can-capabilities green, its vcan integration step 1 passed, 68 skipped (CAN_ISOTP cannot bind on `6.17.0-1022-azure`) |
 
 Hosted skips: 54x "kernel cannot create CAN_ISOTP sockets (CONFIG_CAN_ISOTP not built,
 e.g. GitHub-hosted Azure kernels)"; 3x [gui] (`.[dev]` only); 2x [hardware]; 1x
