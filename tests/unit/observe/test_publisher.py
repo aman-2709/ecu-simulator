@@ -32,7 +32,7 @@ def publisher(handoff, **kw):
 def test_a_turn_stops_at_64_records():
     handoff = HandOff()
     fill(handoff, 200)
-    p = publisher(handoff)
+    p = publisher(handoff, monotonic=lambda: 0.0)
     assert p.drain_turn() == 64 and len(handoff) == 136 and p.published == 64
 
 
