@@ -1,10 +1,15 @@
 # 0010 — A browser GUI over an opt-in, read-only observer API
 
 Status: **Proposed.** On 2026-09-26 the owner approved M0 **in direction**, subject to two
-edits: bound the publisher's work per loop turn, and correct the P5 accounting. Both are
-applied in this revision. The direction covers approach A (§3) and a read-only browser
-MVP. **No production code has been written.** M1 starts only after the owner has reviewed
-its implementation plan.
+edits: bound the publisher's work per loop turn, and correct the P5 accounting. Both were
+applied in the second revision, below. The direction covers approach A (§3) and a
+read-only browser MVP. M1, the observer core, and M2 (`ApiServer`, `--api`, the `[gui]`
+extra, §6 security, §4.3 limits, the API tests and the CI job) are built on branch `gui`.
+**M2's early check is a `STOP` that remains open and is not accepted:** condition 4's
+median wire latency exceeds condition 1's median + 0.10 ms
+(`docs/validation/gui-m2-early-check.md`). M3 has not started, beyond an offline static
+mockup under `docs/mockups/m3a-dashboard/`, which is not served and is wired to no live
+data. M4 has not run.
 
 This work lives on branch `gui`, which starts from `modernization` at `a57b98f`. It is
 **not merged into `modernization` until V1.0 is tagged.** A GUI remains a V1.0 non-goal
@@ -104,6 +109,27 @@ threshold of P1–P9, and no V1.0 or Phase 8b gate:
   (§9.2);
 - `GET /status`'s `longest_turn_s`, which the server already reports, is listed in §5, and
   P9 and P5(h) name the forced-close run (§9.2).
+
+An eighth revision, on 2026-09-28, records the owner's decisions after the M2 client-cost
+diagnostic (`docs/validation/gui-m2-early-check.md`, "Owner decisions (2026-09-28)"). It
+changes no threshold of P1–P9, and no V1.0 or Phase 8b gate:
+
+- **the status line is corrected.** It still said that no production code had been
+  written. M1 and M2 are built, and M2's early check is a `STOP` that remains open and is
+  not accepted;
+- **M4's timed conditions, 1–5, run without segment pauses.** A segmented run, the M2
+  diagnostic harness's segment-and-harvest mode, is a diagnostic only and never judges
+  P1–P9. Dispatch latency is therefore reported only where it can be taken without pauses
+  (§9.2, *Runs* and *Measurement*);
+- **the forced-close run is also judged on** zero lost diagnostic replies, as P3 defines
+  a lost reply, and zero drops for its three reading clients, as P6 requires of condition
+  4's reading clients. The stalled client's drops are reported as expected, not judged,
+  except that P5(h)'s allowance still applies. Its latency is still reported and not
+  judged against P1 or P2 (§9.2, *Forced-close run*).
+
+The owner's words: "For M4, keep timed conditions free of segment pauses; use segmented
+runs only as diagnostics. The forced-close run must have zero lost diagnostic replies and
+zero drops for healthy readers, while reporting the stalled client's expected drops."
 
 The evidence for the routing and ordering claims is in §12.
 
@@ -583,15 +609,22 @@ request after the previous reply, or after a 1 s timeout.
 *Runs.* Conditions 1–4: 20,000 requests each, repeated in **3 rounds**, with the order of
 conditions rotated in each round. Condition 5: 60 s per round, 3 rounds.
 
+Every timed condition runs its requests **without segment pauses** (revised 2026-09-28).
+A segmented run, which pauses between segments to harvest events as the M2 diagnostic
+did, is a **diagnostic only**: it may be run beside M4 and reported, but it never judges
+P1–P9.
+
 *Forced-close run* (added 2026-09-28). Once in **every round**, a separate run outside
 conditions 1–5: API on, 3 reading clients, and 1 stalled client that the harness
 reconnects each time it is forced off. The tester sends condition 4's request mix
 continuously until the stalled client's third reconnection has been accepted, or until
 60 s have passed since its first request. There is no minimum number of requests.
 
-The run passes only if all of the following hold: the counts below, P5, and P9. A
-shortfall in the counts fails it and is not inconclusive. A P5 result that P5(g) or P5(h)
-makes inconclusive makes the run inconclusive, not passed.
+The run passes only if all of the following hold: the counts below, P5, P9, zero lost
+replies, and zero drops for the reading clients (the last two revised 2026-09-28). A
+shortfall in the counts, a lost reply or a drop for a reading client fails it and is not
+inconclusive. A P5 result that P5(g) or P5(h) makes inconclusive makes the run
+inconclusive, not passed.
 
 - **Counts.** Within 60 s of the run's start, its first request:
   - the server counts **three 1013 closes**: `forced_disconnects` in `GET /status` rises
@@ -612,17 +645,33 @@ makes inconclusive makes the run inconclusive, not passed.
   Every allowed one is reported explicitly. P9's maximum of **≤ 2 ms** applies over
   the run. `longest_turn_s` in `GET /status` is the longest turn since the publisher
   was created (§5), so the run uses its own simulator process.
+- **Zero lost replies** (added 2026-09-28). Every tester request in the run is answered.
+  A lost reply is as P3 defines it, a request frame with no reply frame before the next
+  request, or within 1 s, and is counted from the run's own `candump -t a` capture.
+- **Zero drops for the reading clients** (added 2026-09-28). On each of the three
+  reading clients' connections, `client_dropped` = 0 and `discarded_on_close` = 0, as P6
+  requires of condition 4's reading clients. Their `delivery_unknown` = 0 is already
+  required by P5(h), above.
+- **The stalled client's drops, reported as expected** (added 2026-09-28). Its
+  `client_dropped`, `discarded_on_close` and `delivery_unknown`, per connection and
+  summed over its connections, are reported with the run's results. They are expected,
+  and not judged, except that P5(h)'s allowance still applies to its `delivery_unknown`.
 - **Reported separately, not judged.** Its wire latency (median and p99, from its own
   `candump -t a` capture, by the *Measurement* method) and its dispatch latency (median
   and p99 of `dispatch_us`) are reported beside the round's conditions 1–5. They are
-  **not judged against P1 or P2**. Lost replies, by P3's definition, are reported with
-  them and not judged: P3 applies to the conditions, and this run is not one of them. P4
-  is condition 5's alone. No criterion other than P5 and P9 judges this run.
+  **not judged against P1 or P2**. P4 is condition 5's alone. Only the counts, P5, P9,
+  and the lost-reply and reading-client rules above judge this run (revised 2026-09-28;
+  this said that only P5 and P9 judged it, and that its lost replies were reported and
+  not judged).
 
 *Measurement.* Wire latency is the time from the request's first frame to the reply's
 first frame, taken from a `candump -t a` capture by the method of
 `docs/validation/phase-8-lx-bluetooth-2026-09-25/analyze.py`. Dispatch latency comes from
-the events' `dispatch_us`.
+the events' `dispatch_us`. Because the timed conditions have no pauses (*Runs*), it is
+reported only where it can be taken without them: from the events that the reading
+clients receive, in conditions 3, 4 and 5 and in the forced-close run. Condition 2 has no
+client, so its full-run dispatch latency comes from a segmented diagnostic run, which
+judges none of P1–P9 (revised 2026-09-28). No criterion judges dispatch latency.
 
 **Pass criteria:**
 

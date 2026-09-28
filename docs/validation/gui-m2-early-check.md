@@ -40,6 +40,29 @@ diagnostic. See "The condition 4 limitation" below, and "M4 forced 1013 closes: 
 the owner". The owner has since decided: 0010's seventh revision adds a forced-close run
 in every M4 round ([0010 §9.2](../decisions/0010-gui-observer-api.md), *Forced-close run*).
 
+## Owner decisions (2026-09-28)
+
+After the client-cost diagnostic, the owner decided the open questions. 0010's eighth
+revision records the M4 parts ([0010 §9.2](../decisions/0010-gui-observer-api.md)); 0010
+is the source for their terms.
+
+- **The `STOP` stays open and is not accepted.** Condition 4's median still exceeds
+  condition 1's median + 0.10 ms, and no threshold changes.
+- **The next performance investigation is internal timestamps in the simulator:** per
+  request, at CAN receive, dispatch start and end, and reply send (H1 in "The cause is
+  still not established"). It does not block M3a visual work.
+- **M4's timed conditions run without segments.** Segmented runs, such as the three
+  diagnostic runs below, are diagnostics only and never judge P1–P9.
+- **The forced-close run is also judged on** zero lost diagnostic replies, as P3 defines
+  a lost reply, and zero drops for its three reading clients: `client_dropped` = 0 and
+  `discarded_on_close` = 0, as P6 requires of condition 4's reading clients. The stalled
+  client's `client_dropped`, `discarded_on_close` and `delivery_unknown` are reported as
+  expected, not judged, except that P5(h)'s allowance still applies. Its latency stays
+  reported, not judged against P1 or P2.
+- **The P3/P6 question is closed.** The proposal below applied P3, P5 and P6 to the
+  forced-close run; the seventh revision judged it by P5 and P9 only. The decision above
+  settles it: P3's lost-reply rule, and P6's rule for the reading clients, now apply.
+
 ## Host
 
 | | |
@@ -68,6 +91,8 @@ This table is for the first six runs. The rotated runs' environment is in "Rotat
 | `7b5b7ea`, `b6528b8` | the harness for the diagnostic (Task 12 and its fix round 1): client configurations and `--conditions`, segments and pauses, the full-run dispatch harvest, loud failures, completeness checks. `src/` unchanged. The three diagnostic runs ran on `b6528b8` |
 | `c1790bd` | the diagnostic runs' stdout, verbatim, and the committed `candump` captures |
 | `ec0839a`, `c6f9a90` | 0010's seventh revision (the owner's decision): a forced-close run in every M4 round |
+| `3328868` | the `candump` captures of diagnostic runs 2 and 3, xz-compressed, with sha256 |
+| `2404a03`, `e5f3a8b` | the diagnostic's part of this record ("Client-cost diagnostic, 2026-09-28"), and its fix round 1: the dispatch claim scoped to 2→4, the per-client cost, order, outliers, and the captures of all three runs |
 
 ## Method
 
@@ -619,8 +644,9 @@ time is.
   After the last segment and a 1 s drain, one more fetch takes the tail. So
   `dispatch_all_ms` covers **every** exchange (n = 5,000), not the last 500 as in the
   rotated runs. `dispatch_reader0_ms` is kept as a cross-check: in all 45 reader rows it is
-  identical to `dispatch_all_ms`. `dispatch_us` is dispatcher time only, not wire latency
-  (0010 §5).
+  identical to `dispatch_all_ms`. `dispatch_last500_ms` was dropped in the diagnostic
+  runs, in favour of `dispatch_all_ms`. `dispatch_us` is dispatcher time only, not wire
+  latency (0010 §5).
 - **Rate and seconds** count the tester's time inside segments only, not the pauses.
 - **Wire latency**, the pairing and the lost-reply rule are unchanged. They cover all
   5,000 requests, including the 19 that follow a pause in each configuration (see "The
@@ -920,7 +946,8 @@ would cover it too.
 - No round that printed no stop reason is a pass. No threshold was tuned, and no condition
   was lengthened or changed.
 - M3 is not started. What to test next, and whether M3 waits for it, is the owner's
-  decision.
+  decision. (Updated 2026-09-28: decided; see "Owner decisions (2026-09-28)" near the
+  top.)
 
 ### Captures
 
@@ -981,7 +1008,8 @@ is at `70c4e9f`).
 **Decided (updated 2026-09-28).** The owner decided on a variant of option (b): 0010's
 seventh revision (`ec0839a`, `c6f9a90`) adds a forced-close run in every M4 round. See
 [0010 §9.2](../decisions/0010-gui-observer-api.md), *Forced-close run*; 0010 is the
-source for its terms. The proposal below is kept as history, unchanged.
+source for its terms. The proposal below is kept as history, unchanged. The owner's
+later decisions add criteria to that run: see "Owner decisions (2026-09-28)" near the top.
 
 **This is a proposal, not a decision.** This record does not change 0010, and 0010 is
 the owner's to change.
@@ -1232,6 +1260,19 @@ Open details for the owner, if (b) is chosen:
 - whether P9 (loop hold time, "conditions 2–5") also covers the sub-run.
 
 ## Gates
+
+**`e5f3a8b` — local.** Run by the controller, in this worktree, at `e5f3a8b` on branch
+`gui`. These are local results, not a hosted CI run. The owner has since pushed
+`6bbad2c..e5f3a8b`, so `origin/gui` is at `e5f3a8b`. This record's statements that
+those commits are unpushed, or that `origin/gui` is at `70c4e9f`, were true when written.
+No hosted run at `e5f3a8b` is recorded here.
+
+| Gate | Result |
+|---|---|
+| Namespace suite (private namespace, `lo` up) | **1213 passed, 69 skipped, 2 xfailed** |
+| Lint (`ruff check .`) | clean |
+| Types (`mypy`) | clean |
+| vcan integration (private `vcan0`) | **69 passed** |
 
 **`b6528b8` — local-only, unpushed.** The harness gates of Task 12's fix round 1, as
 reported in its implementation report (fix-round section); not re-run for this record.
