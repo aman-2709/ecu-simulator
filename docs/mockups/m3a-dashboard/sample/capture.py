@@ -2,8 +2,15 @@
 
 Run inside: unshare -r -n (with lo up and a private vcan0).
 """
-import os, signal, subprocess, sys, threading, time, json
+import json
+import os
+import signal
+import subprocess
+import sys
+import threading
+import time
 from pathlib import Path
+
 import isotp
 
 IFACE = "vcan0"
@@ -34,8 +41,10 @@ def pump():
             ready.set()
 threading.Thread(target=pump, daemon=True).start()
 if not ready.wait(15):
-    proc.kill(); print("".join(lines)); sys.exit("not ready")
-print("READY:", [l for l in lines if "ready on" in l][0].strip(), "pid", proc.pid, flush=True)
+    proc.kill()
+    print("".join(lines))
+    sys.exit("not ready")
+print("READY:", [line for line in lines if "ready on" in line][0].strip(), "pid", proc.pid, flush=True)
 
 func_tx = sock(0, 0x7DF, broadcast=True)
 phys = sock(0x7E8, 0x7E0)          # obd_physical; also receives functional replies
@@ -44,13 +53,17 @@ uds = sock(0x7E9, 0x7E1, pad=False)
 log = []
 def functional(hexreq):
     func_tx.send(bytes.fromhex(hexreq))
-    try: r = phys.recv().hex()
-    except TimeoutError: r = None
+    try:
+        r = phys.recv().hex()
+    except TimeoutError:
+        r = None
     log.append({"t": time.time(), "via": "7DF->7E8", "req": hexreq, "resp": r})
 def physical(s, via, hexreq):
     s.send(bytes.fromhex(hexreq))
-    try: r = s.recv().hex()
-    except TimeoutError: r = None
+    try:
+        r = s.recv().hex()
+    except TimeoutError:
+        r = None
     log.append({"t": time.time(), "via": via, "req": hexreq, "resp": r})
 
 def snooze(n): time.sleep(n)
@@ -58,23 +71,35 @@ def snooze(n): time.sleep(n)
 t0 = time.time()
 def until(sec):
     d = t0 + sec - time.time()
-    if d > 0: snooze(d)
+    if d > 0:
+        snooze(d)
 
 def round_():
     for r in ["010c", "010d", "0105"]:
         functional(r)
-    functional("0111"); functional("012f")
+    functional("0111")
+    functional("012f")
 
 # Round 1: engine cold, idle.
-until(3); round_(); functional("0902"); functional("03")
+until(3)
+round_()
+functional("0902")
+functional("03")
 physical(phys, "7E0->7E8", "0100")
 physical(uds, "7E1->7E9", "22f190")
 physical(uds, "7E1->7E9", "1902ff")
 # Round 2: pending P0128 after 40 s.
-until(44); round_(); functional("07"); functional("03")
+until(44)
+round_()
+functional("07")
+functional("03")
 physical(uds, "7E1->7E9", "1902ff")
 # Round 3: confirmed + MIL after 75 s.
-until(78); round_(); functional("0101"); functional("03"); functional("07")
+until(78)
+round_()
+functional("0101")
+functional("03")
+functional("07")
 physical(uds, "7E1->7E9", "1902ff")
 physical(phys, "7E0->7E8", "0105")
 functional("010c")
