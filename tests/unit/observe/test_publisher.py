@@ -114,7 +114,7 @@ def test_encode_failure_publishes_a_fallback_and_seq_stays_contiguous(caplog):  
         if rec.seq == 3:
             raise ValueError("bad again")
         return json.dumps({"type": "exchange", "seq": rec.seq})
-    p = Publisher(handoff, Router(), {}, encode=flaky)
+    p = Publisher(handoff, Router(), {}, encode=flaky, monotonic=lambda: 0.0)
     conn, _, _ = p.connect()
     with caplog.at_level(logging.ERROR, logger="ecu_simulator.observe.publisher"):
         assert p.drain_turn() == 4
@@ -135,14 +135,14 @@ def test_encode_fallback_survives_a_failing_router():
             raise RuntimeError("router")
     def boom(*_):
         raise ValueError
-    p = Publisher(handoff, Broken(), {}, encode=boom)
+    p = Publisher(handoff, Broken(), {}, encode=boom, monotonic=lambda: 0.0)
     assert p.drain_turn() == 1
     assert json.loads(p.history.snapshot()[0][1])["outcome"] == "responded"
 
 
 def test_fanout_failure_closes_only_that_connection():  # Review Focus 7
     handoff = HandOff()
-    p = publisher(handoff)
+    p = publisher(handoff, monotonic=lambda: 0.0)
     a, _, _ = p.connect()
     b, _, _ = p.connect()
     fill(handoff, 1)
@@ -296,7 +296,7 @@ def test_a_closed_ledger_reflects_a_send_confirmed_after_close():  # final revie
 
 def test_abandon_keeps_the_ledger_exact_when_the_clock_also_fails():  # final review
     handoff = HandOff()
-    p = publisher(handoff)
+    p = publisher(handoff, monotonic=lambda: 0.0)
     a, _, _ = p.connect()
     fill(handoff, 1)
     p.drain_turn()
