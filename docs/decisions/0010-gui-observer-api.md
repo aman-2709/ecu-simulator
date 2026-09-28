@@ -93,14 +93,17 @@ M2 early check's `STOP` (`docs/validation/gui-m2-early-check.md`, "M4 forced 101
 a proposal for the owner"; the owner chose a variant of its option (b)). It changes no
 threshold of P1–P9, and no V1.0 or Phase 8b gate:
 
-- **M4 adds a forced-close run in every round**, outside the timed conditions. It passes
+- **M4 adds a forced-close run in every round**, outside conditions 1–5. It passes
   only if the server counts **three 1013 closes** and **three reconnections** are
   accepted, all **within 60 s**. It has no minimum number of requests. It is checked
   against **P5 and P9**. Its latency is **reported separately and not judged against P1
   or P2** (§9.2, *Forced-close run*). M4's exit requires it to pass in every round (§10);
-- **the condition 4 row is corrected.** At 20,000 requests the stalled client is expected
-  to overflow but not to be forced off, so the timed conditions are not where the 1013
-  path is proven (§9.2).
+- **the condition 4 row is corrected.** At 20,000 requests condition 4's stalled client is
+  expected to overflow but not to be forced off. Condition 5 and the P7 soak may reach
+  forced closes but do not require one, so the 1013 path is proven by the forced-close run
+  (§9.2);
+- `GET /status`'s `longest_turn_s`, which the server already reports, is listed in §5, and
+  P9 and P5(h) name the forced-close run (§9.2).
 
 The evidence for the routing and ordering claims is in §12.
 
@@ -363,7 +366,7 @@ version prefix means a future write API cannot silently change v1.
 
 | Endpoint | Returns |
 |---|---|
-| `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `encode_failed`, `fanout_failed`, `writer_failed`, `connections_opened`, `closed_unresolved`, `closed_totals` [cumulative, §5.1], `connections` [one **ledger** per open connection, §5.1], `closed_connections` [the ledgers of the last 64 closed connections, final values]} |
+| `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `longest_turn_s` [the longest publisher turn, in seconds, since the publisher was created: a running maximum, never reset; P9], `encode_failed`, `fanout_failed`, `writer_failed`, `connections_opened`, `closed_unresolved`, `closed_totals` [cumulative, §5.1], `connections` [one **ledger** per open connection, §5.1], `closed_connections` [the ledgers of the last 64 closed connections, final values]} |
 | `GET /vehicle` | `kind`, `vin`, `signals` {dotted path → value}, `as_of` (the scenario time of the last application, equal to `t_last_applied`; `null` without a scenario) |
 | `GET /dtcs` | per ECU: `[{code, pending, confirmed, indicator_requested}]`, and `mil` |
 | `GET /ecus` | per ECU: endpoints {`name`, `rx_id`, `tx_id`, `functional`, `receive`, `reply_via`, `padding`} and protocols {`name`, `sids`} |
@@ -574,19 +577,23 @@ request after the previous reply, or after a 1 s timeout.
 | 1 | API off |
 | 2 | API on, 0 clients |
 | 3 | API on, 1 client reading normally |
-| 4 | API on, 4 clients: 3 reading normally and 1 stalled (connected, never reading). At 20,000 requests the stalled client is expected to overflow, after about 6,000 messages at the rates the M2 early check measured, but not to be forced off: the §4.3 rule disconnects it only after 5 s of continuous overflow (`docs/validation/gui-m2-early-check.md`; revised 2026-09-28). If it is forced off, the harness reconnects it at once, and each forced disconnect is counted. The forced path is covered by the *Forced-close run* below and by the forced-disconnect tests of §9.3 (`observe` unit tests and `api` tests) |
+| 4 | API on, 4 clients: 3 reading normally and 1 stalled (connected, never reading). At 20,000 requests the stalled client is expected to overflow after about 6,000 messages (about 1.5–1.8 s at the M2 early check's rates), but not to be forced off while the tester sustains more than about 2,800 requests/s: the §4.3 rule disconnects it only after 5 s of continuous overflow (`docs/validation/gui-m2-early-check.md`; revised 2026-09-28). If it is forced off, the harness reconnects it at once, and each forced disconnect is counted. The forced path is covered by the *Forced-close run* below and by the forced-disconnect tests of §9.3 (`observe` unit tests and `api` tests) |
 | 5 | Condition 4, with the tester sending at the maximum rate it sustains |
 
 *Runs.* Conditions 1–4: 20,000 requests each, repeated in **3 rounds**, with the order of
 conditions rotated in each round. Condition 5: 60 s per round, 3 rounds.
 
 *Forced-close run* (added 2026-09-28). Once in **every round**, a separate run outside
-the timed conditions: API on, 3 reading clients, and 1 stalled client that the harness
+conditions 1–5: API on, 3 reading clients, and 1 stalled client that the harness
 reconnects each time it is forced off. The tester sends condition 4's request mix
-continuously until the pass condition below is met, or until 60 s have passed since its
-first request. There is no minimum number of requests.
+continuously until the stalled client's third reconnection has been accepted, or until
+60 s have passed since its first request. There is no minimum number of requests.
 
-- **Pass.** Within 60 s of the run's start, its first request:
+The run passes only if all of the following hold: the counts below, P5, and P9. A
+shortfall in the counts fails it and is not inconclusive. A P5 result that P5(g) or P5(h)
+makes inconclusive makes the run inconclusive, not passed.
+
+- **Counts.** Within 60 s of the run's start, its first request:
   - the server counts **three 1013 closes**: `forced_disconnects` in `GET /status` rises
     by at least 3 over the run, and `closed_totals.close_codes["1013"]` rises by the same
     amount. The second is compared at quiesce, when `closed_unresolved` = 0, because a
@@ -597,15 +604,17 @@ first request. There is no minimum number of requests.
     `connections`. The server has no reconnection counter, so the harness records each
     reconnection, with its status and `id`, in its JSONL output (P5(g)).
 
-  Fewer than three of either within 60 s fails the run. It is not inconclusive.
-- **Checked against P5 and P9.** P5 in full at quiesce, (a) to (h). That includes P5(e)
-  with non-zero 1013 counts, and P5(h)'s allowance of at most one `delivery_unknown` per
-  forced (1013) connection, reported explicitly. P9's maximum of **≤ 2 ms** applies over
-  the run. `longest_turn_s` in `GET /status` is the longest turn since the simulator
-  started, so the run uses its own simulator process.
+  Fewer than three of either within 60 s is a shortfall.
+- **P5 and P9.** P5 in full at quiesce, (a) to (h). That includes P5(e) with non-zero
+  1013 counts, and P5(h)'s allowance, per connection (`delivery_unknown_over_allowance` =
+  0), not pooled: at most one `delivery_unknown` on each 1013 connection, and on the final
+  stalled connection if it closes 1006 at teardown; zero on the three reading clients.
+  Every allowed one is reported explicitly. P9's maximum of **≤ 2 ms** applies over
+  the run. `longest_turn_s` in `GET /status` is the longest turn since the publisher
+  was created (§5), so the run uses its own simulator process.
 - **Reported separately, not judged.** Its wire latency (median and p99, from its own
   `candump -t a` capture, by the *Measurement* method) and its dispatch latency (median
-  and p99 of `dispatch_us`) are reported beside the round's timed conditions. They are
+  and p99 of `dispatch_us`) are reported beside the round's conditions 1–5. They are
   **not judged against P1 or P2**. Lost replies, by P3's definition, are reported with
   them and not judged: P3 applies to the conditions, and this run is not one of them. P4
   is condition 5's alone. No criterion other than P5 and P9 judges this run.
@@ -623,11 +632,11 @@ the events' `dispatch_us`.
 | P2 | p99 wire latency, conditions 2, 3 and 4 | ≤ condition 1's p99 **+ 0.50 ms**, on pooled samples, in every round |
 | P3 | Lost replies, every condition | **Exactly 0.** A lost reply is a request frame with no reply frame before the next request, or within 1 s |
 | P4 | Throughput, condition 5 | Requests answered per second ≥ **90 %** of the same tester's maximum rate with the API off (measured the same way in each round) |
-| P5 | Drop and delivery accounting (reconciliation) | Checked after the run has **quiesced**: tester stopped, `HandOff` drained, every open connection's `queued` = 0. All of the following must hold **exactly**: (a) `issued_seq = published + handoff_dropped`. A record whose encoding failed counts in `published`, because it was published as its fallback event (§5). (b) For every connection, open or closed, the §5.1 identities hold. (c) Summed over every connection that was open for the whole run, `offered` equals the growth of `published` over the run, measured by the harness from `GET /status` before and after. (d) On the harness side, the `exchange` messages a connection received have strictly increasing `seq` and no duplicates. For an **open** connection, received live events = `sent`. For a **closed** connection, received live events ≤ `sent` + `delivery_unknown`, and `sent` − received (sent but still in transit when the socket closed) is reported per connection. (e) **From the server's cumulative counters** (revised 2026-09-27; a client that never reads can never see its 1013 frame, so the harness cannot count those closes itself): `closed_totals.close_codes["1013"]` = `forced_disconnects`, and `closed_totals.close_codes["1011"]` = `fanout_failed` + `writer_failed`. The harness also records each time it had to reconnect its stalled client; that count must be ≤ `forced_disconnects`, and any shortfall is reported. HTTP 503 refusals seen = `refused_clients`. (f) Every closed connection is accounted for, including those no longer among the 64 retained: `closed_unresolved` = 0, `connections_opened = clients + closed_totals.connections`, the summed identities of §5.1, including `delivery_unknown`, hold on `closed_totals`, and `closed_totals.close_codes["1013"]` = `forced_disconnects`. (g) **Durable output:** the harness appends every `GET /status` poll (at most 1 s apart) and every close it observes to JSONL files committed with the results. The union of `closed_connections` ids across the polls must be exactly `1..connections_opened` minus the open ones. A missing id means the polls were too far apart, and the run is reported inconclusive, not passed. (h) **Delivery the ledger cannot vouch for, and its allowance** (revised 2026-09-27). A connection closed with **1013 (forced) or 1006 (reset or vanished)** may carry **at most one** `delivery_unknown`: the frame that was in the transport buffer when it was cut off. Every other connection must carry **zero**; that includes every open connection, every connection closed with any other code, and every healthy reading client. Checked on each open and retained ledger and, cumulatively for every closed connection including evicted ones, as `closed_totals.delivery_unknown_over_allowance` = 0 (a per-connection check made when each ledger is added; revised 2026-09-27, because the per-code sums, `delivery_unknown_by_close_code[c]` ≤ `close_codes[c]`, can hide a connection over its allowance behind one under it). The per-code sums are still reported, and still must be 0 for every code other than 1013 and 1006. **Every allowed `delivery_unknown` is reported explicitly** with the results, per condition and round, never folded silently into a pass. If the allowance is exceeded, or `closed_unresolved` > 0 at quiesce, P5 and P6 for that condition and round are **inconclusive**: reported with the counts, never passed; the run is repeated or the cause found. **Any unexplained difference fails** |
+| P5 | Drop and delivery accounting (reconciliation) | Checked after the run has **quiesced**: tester stopped, `HandOff` drained, every open connection's `queued` = 0. All of the following must hold **exactly**: (a) `issued_seq = published + handoff_dropped`. A record whose encoding failed counts in `published`, because it was published as its fallback event (§5). (b) For every connection, open or closed, the §5.1 identities hold. (c) Summed over every connection that was open for the whole run, `offered` equals the growth of `published` over the run, measured by the harness from `GET /status` before and after. (d) On the harness side, the `exchange` messages a connection received have strictly increasing `seq` and no duplicates. For an **open** connection, received live events = `sent`. For a **closed** connection, received live events ≤ `sent` + `delivery_unknown`, and `sent` − received (sent but still in transit when the socket closed) is reported per connection. (e) **From the server's cumulative counters** (revised 2026-09-27; a client that never reads can never see its 1013 frame, so the harness cannot count those closes itself): `closed_totals.close_codes["1013"]` = `forced_disconnects`, and `closed_totals.close_codes["1011"]` = `fanout_failed` + `writer_failed`. The harness also records each time it had to reconnect its stalled client; that count must be ≤ `forced_disconnects`, and any shortfall is reported. HTTP 503 refusals seen = `refused_clients`. (f) Every closed connection is accounted for, including those no longer among the 64 retained: `closed_unresolved` = 0, `connections_opened = clients + closed_totals.connections`, the summed identities of §5.1, including `delivery_unknown`, hold on `closed_totals`, and `closed_totals.close_codes["1013"]` = `forced_disconnects`. (g) **Durable output:** the harness appends every `GET /status` poll (at most 1 s apart) and every close it observes to JSONL files committed with the results. The union of `closed_connections` ids across the polls must be exactly `1..connections_opened` minus the open ones. A missing id means the polls were too far apart, and the run is reported inconclusive, not passed. (h) **Delivery the ledger cannot vouch for, and its allowance** (revised 2026-09-27). A connection closed with **1013 (forced) or 1006 (reset or vanished)** may carry **at most one** `delivery_unknown`: the frame that was in the transport buffer when it was cut off. Every other connection must carry **zero**; that includes every open connection, every connection closed with any other code, and every healthy reading client. Checked on each open and retained ledger and, cumulatively for every closed connection including evicted ones, as `closed_totals.delivery_unknown_over_allowance` = 0 (a per-connection check made when each ledger is added; revised 2026-09-27, because the per-code sums, `delivery_unknown_by_close_code[c]` ≤ `close_codes[c]`, can hide a connection over its allowance behind one under it). The per-code sums are still reported, and still must be 0 for every code other than 1013 and 1006. **Every allowed `delivery_unknown` is reported explicitly** with the results, per condition and round, and per forced-close run, never folded silently into a pass. If the allowance is exceeded, or `closed_unresolved` > 0 at quiesce, P5 and P6 for that condition and round are **inconclusive**: reported with the counts, never passed; the run is repeated or the cause found. **Any unexplained difference fails** |
 | P6 | Drops where none should occur | In conditions 2 and 3, and for the 3 reading clients in condition 4: `handoff_dropped` = 0, `client_dropped` = 0 and `discarded_on_close` = 0. In **every** condition, `encode_failed` = 0 and `fanout_failed` = 0. Drops, discards and in-transit losses are allowed only on the stalled client's connections, and only where P5 accounts for them. For those reading clients `delivery_unknown` must also be 0; the stalled client's connections may carry the P5(h) allowance of one per forced or reset close, reported explicitly. Anything beyond the allowance makes P6 inconclusive for that condition and round (P5(h)) |
 | P7 | Memory (RSS trend) | A 10-minute soak under condition 4 load, sampling the simulator's RSS every 5 s. Samples in the first 60 s are discarded as warm-up. **Pass if** the least-squares slope of RSS against time over the remaining samples is **≤ 0.1 MiB per minute**, **and** the final sample exceeds the first post-warm-up sample by **≤ 2 MiB**. Separately, the peak RSS increase over condition 1 must stay within the §4.3 bound of about 19 MiB plus 10 MiB for code and libraries |
 | P8 | Noise guard | If condition 1's own p99 differs by more than 0.50 ms between rounds, the benchmark is **inconclusive**. It is reported as such and does not pass |
-| P9 | Loop hold time | The publisher records the length of every turn. The maximum over the whole of conditions 2–5 is **≤ 2 ms**. The M1 early check reports the same maximum for a full 4096-record `HandOff` |
+| P9 | Loop hold time | The publisher records the length of every turn. The maximum over the whole of conditions 2–5 and the forced-close run is **≤ 2 ms**. The M1 early check reports the same maximum for a full 4096-record `HandOff` |
 
 Results, the raw captures and the scripts that produced them are committed under
 `docs/validation/`. A failed criterion is reported with its numbers, never rounded into a
