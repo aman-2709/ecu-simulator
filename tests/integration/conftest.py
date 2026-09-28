@@ -21,7 +21,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 import isotp
@@ -209,13 +209,19 @@ class Simulator:
     READY_MARKER = "ecu-simulator ready on"
 
     def __init__(
-        self, interface: str, workdir: str, log_level: str = "INFO", profile: str | None = None
+        self,
+        interface: str,
+        workdir: str,
+        log_level: str = "INFO",
+        profile: str | None = None,
+        extra_args: Sequence[str] = (),
     ) -> None:
         self.interface = interface
         self.workdir = workdir
         self.log_level = log_level
         # None means the packaged ice_default.yaml, which is what almost every test wants.
         self.profile = profile
+        self.extra_args = tuple(extra_args)
         self._start()
 
     def _start(self) -> None:
@@ -223,6 +229,7 @@ class Simulator:
         command = [sys.executable, "-m", "ecu_simulator", "--interface", interface, "--log-level", log_level]
         if self.profile is not None:
             command += ["--profile", self.profile]
+        command += self.extra_args
         self.proc = subprocess.Popen(
             command,
             cwd=workdir,
