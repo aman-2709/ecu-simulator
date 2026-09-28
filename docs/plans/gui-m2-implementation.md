@@ -2735,3 +2735,50 @@ Nothing in `src/` changes.
 3. Captures: keep, xz-compressed, one complete diagnostic run's candump logs and one
    complete run of the earlier rotated investigation (still in `/tmp`, sha256 recorded),
    with a sha256 of each compressed and uncompressed file, and a note of what each is.
+
+## Owner decisions after the diagnostic, and the M3a mockup (owner, 2026-09-28)
+
+The owner pushed `6bbad2c..e5f3a8b` and decided the open questions. **The M2 median-latency
+STOP stays open and is not accepted.** M3a visual work proceeds as an offline mockup only;
+wiring views to live API data waits for the owner's visual feedback.
+
+### Task 15: 0010 eighth revision and record notes
+
+**Files:** Modify `docs/decisions/0010-gui-observer-api.md`, `docs/validation/gui-m2-early-check.md`.
+
+- 0010 status line: make it accurate (M1 and M2 built on `gui`; M2's early check is a
+  STOP that remains open and is not accepted; M3 not started beyond an offline mockup;
+  M4 not run). Keep "Proposed" unless the owner has accepted the record.
+- M4 timed conditions (1–5) run **without segment pauses**; segmented runs (the M2
+  diagnostic harness's segment-and-harvest mode) are **diagnostics only** and never judge
+  P1–P9. Say how dispatch timing is then taken at M4 without pauses, or that it is
+  reported only from readers / the diagnostic, without inventing a mechanism.
+- The forced-close run is also judged on: **zero lost diagnostic replies** (the tester's
+  requests all answered, as P3 measures lost replies) and **zero drops for the healthy
+  readers** (`client_dropped` = 0 and no `discarded_on_close` beyond what P6 allows for
+  them), while **reporting** the stalled client's drops (`client_dropped`,
+  `discarded_on_close`, `delivery_unknown`) as expected, not judged. Update "No criterion
+  other than P5 and P9 judges this run" accordingly; latency stays reported, not judged
+  against P1/P2.
+- Revision note at the top (eighth revision, 2026-09-28, owner).
+- Record: a short "Owner decisions (2026-09-28)" note: the STOP stays open and is not
+  accepted; next performance investigation is internal timestamps in the simulator
+  (receive, dispatch start/end, reply send), not blocking M3a visual work; M4 timed
+  conditions unsegmented; forced-close run criteria as above; P3/P6 question closed.
+
+### Task 16: M3a offline static dashboard mockup
+
+**Files:** Create `docs/mockups/m3a-dashboard/` (not package data: nothing here is served
+by `ApiServer`, and nothing in `src/` changes).
+
+- Views from 0010 §7: status bar (connection, interface, uptime, scenario time, drops),
+  vehicle signals table, DTC panel, exchange log (filter by ECU, service, outcome; pause;
+  clear; gap markers where `seq` jumps).
+- Static HTML, CSS and plain JavaScript modules; no build step, no npm, no CDN, no web
+  fonts; opens from `file://` offline. Read-only: no control that writes or sends.
+- Sample data in the exact §5 shapes, captured from a real simulator in a private
+  namespace (`/api/v1/status`, `/vehicle`, `/dtcs`, `/ecus`, `/exchanges` after real
+  ISO-TP requests), plus a hand-made gap and non-`responded` outcomes, each marked as
+  such. Every view is clearly labelled SAMPLE DATA, not live.
+- Screenshots of each view at desktop width and one narrow width, and exact instructions
+  to open it locally.
