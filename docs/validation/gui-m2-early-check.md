@@ -259,7 +259,7 @@ was lengthened. Per the stop rule, this is reported before M3.
 | Date | 2026-09-28; the runs started at 00:42:52, 00:43:16 and 00:43:40 local (UTC−7) |
 | CPUs | 12 (`nproc`: the scheduler affinity count), governor `powersave` on all 12, from the `host:` line each run prints |
 | Kernel | `6.8.0-138-generic`, from the same line |
-| Load | 1-minute load average 6.37, 6.63 and 5.43 at the start of runs 1, 2 and 3 (file headers). That is higher than the 1.33 recorded just after the first three runs. The operator reports it came from desktop background processes, with the CPUs about 80 % idle; neither is recorded in the run files |
+| Load | 1-minute load average 6.37, 6.63 and 5.43 at the start of runs 1, 2 and 3 (file headers). That is higher than the 1.33 recorded just after the first three runs. The operator reports it came from desktop background processes, with the CPUs about 80 % idle, from a `top` snapshot taken just before run 1; neither is recorded in the run files. Each 1-minute average after run 1 includes the preceding run |
 | Python, aiohttp | the worktree `.venv`: Python 3.12.12, aiohttp 3.14.3, as checked when this section was written. The run files do not record them |
 | Namespace | as before: `unshare -r -n`, `lo` up, a private `vcan0` |
 
@@ -394,7 +394,7 @@ Medians and excesses (ms) by position, in run order 1, 2, 3:
 | 4, excess | +0.109, +0.103, +0.106 | +0.120, +0.139, +0.092 | +0.065, +0.110, +0.112 |
 | 4, mean excess | **+0.106** | **+0.117** | **+0.096** |
 
-- **The load test is met.** Condition 4's excess is above +0.10 ms in 7 of the 9 rounds,
+- **The load test is met in 7 of the 9 rounds.** Condition 4's excess is above +0.10 ms in 7 of the 9 rounds,
   and its mean per position is +0.096 to +0.117 ms. The two rounds below it are run 1
   round 0 (+0.065, position 3) and run 3 round 1 (+0.092, position 2). In both, condition
   1 had the two highest medians of the nine (0.159 and 0.143 ms, against 0.117–0.127 in
@@ -475,14 +475,14 @@ hypothesis below. None has been tested, and they are not exclusive.
 |---|---|---|
 | **H1. Work on the simulator's loop.** The publisher offers each event to four client queues, and four writer tasks send them over loopback TCP. All of it runs on the simulator's one asyncio loop, which also runs the CAN read callback and the reply's `_send` (0010 §4.2). A request that arrives while that work runs waits, before dispatch starts or before the reply is sent | the excess lying mostly outside `dispatch_us`; condition 2's smaller excess, with no clients | condition 3 (one reader) beside condition 4, and a diagnostic run with three readers and no stalled client, to see whether the excess scales with clients; the publisher's `longest_turn_s` (already in `/status`) printed per condition; the simulator pinned to its own CPU |
 | **H2. The harness sharing the host.** The harness process runs the tester (in a thread) and, in condition 4, three aiohttp readers that parse every event, and the stalled client's `/status` poll every 0.5 s. Nothing pins the harness or the simulator to CPUs. The wire interval runs from the request frame to the first reply frame, so the tester's own delays fall outside it. The harness can reach it only through the host (CPU placement, caches, frequency), or through `/status`, which the simulator serves on its loop. That is two or three polls per condition, too few to move a median of 5,000 | the slightly larger non-wire cycle time in condition 4 (derived above) | the readers in a separate process; the simulator, tester and readers pinned to separate CPUs (`taskset`) |
-| **H3. Host power management.** Governor `powersave` on all 12 CPUs; load average 5.4–6.6 from other processes. If CPU frequency or wake-up latency differs with how busy the simulator is, wire latency moves with it | nothing specific; it cannot be ruled out on this host | a repeat with the `performance` governor. The plan keeps the governor as it is, so this needs the owner's approval |
+| **H3. Host power management.** Governor `powersave` on all 12 CPUs; load average 5.4–6.6 at each run's start, source not recorded; it includes the preceding run (the runs started 24 s apart). If CPU frequency or wake-up latency differs with how busy the simulator is, wire latency moves with it | nothing specific; it cannot be ruled out on this host | a repeat with the `performance` governor. The plan keeps the governor as it is, so this needs the owner's approval |
 
 ### Gates and CI for this part
 
-This part re-ran no gate, and it adds local vcan evidence only. "Gates", "Hosted CI" and
-"Skips, by reason" below are as of `73e9e9f` and are not updated here. No hosted run
-covers `7141045` or any later commit: they are not pushed (`origin/gui` is at
-`e0c8445`).
+This part re-ran no gate, and it adds local vcan evidence only. "Gates" and "Skips, by
+reason" below are as of `73e9e9f`. "Hosted CI" adds run 36363466270 at `e0c8445`. **No
+hosted run covers `7141045` or any later commit**: they are not pushed (`origin/gui` is
+at `e0c8445`).
 
 ## M4 forced 1013 closes: a proposal for the owner
 
@@ -500,11 +500,20 @@ the owner's to change.
   stopped). It fills only once the writer's send stops returning.
 - At condition 4's rotated-run rates (3,392.6–3,874.3 requests/s, one exchange event per
   request), the first forced close needs about (4,950 + 1,024) + 5 s × rate ≈
-  **22,900–25,400 requests**, or 6.5–6.8 s. This is inside the 23,000–26,000 estimated
-  above.
+  **22,900–25,400 requests**, or 6.5–6.8 s. This is consistent with the 23,000–26,000
+  estimated above.
 - M4's condition 4 runs 20,000 requests: 5.2–5.9 s at these rates. So **as specified,
   M4 condition 4 would see no forced close**. This assumes the M2 rates hold at 20,000
   requests, which is not measured.
+- **But it would overflow.** While the queue is full, every offer is dropped and counted
+  in `client_dropped` (`src/ecu_simulator/observe/connection.py`, `offer`). Overflow
+  begins after about 5,974 events (1.5–1.8 s at these rates). At 20,000 requests the
+  stalled client then drops about 14,000 events over 3.6–4.1 s, without reaching 5 s of
+  overflow. So M4's condition 4, as specified, is **"stalled, overflowing, not forced
+  off"**. That is a different condition from M2's "stalled, not overflowing" at 5,000
+  requests, under every option below.
+- No close falls inside 20,000 requests at any rate above about 2,800 requests/s
+  ((20,000 − 5,974) / 5 s). Below that, one close would.
 - Where the ~4,950 messages sit was not measured. The stalled socket's receive buffer is
   already set to 4 KiB (`SO_RCVBUF 4096`). One exchange message is about 380 bytes (0010
   §5's example, compactly encoded), so ~4,950 of them are about 1.9 MB. Most of them
@@ -521,7 +530,8 @@ the owner's to change.
 ### (a) A smaller receive buffer for the stalled client
 
 - **Condition 4 stays an honest latency condition:** yes. It is still a client that
-  never reads, and any overflow would fall in the timed window.
+  never reads. It overflows sooner than as specified, and any close falls in the timed
+  window.
 - **What it proves about the 1013 path and P5(e):** little.
   - The buffer is already 4 KiB, and most of the absorption lies outside it (above).
   - Even with **no** absorption at all, the first close needs 1,024 messages + 5 s of
@@ -537,9 +547,12 @@ the owner's to change.
 
 ### (b) A dedicated forced-close sub-run, outside the timed conditions
 
-- **Condition 4 stays an honest latency condition:** yes. Timed condition 4 stays exactly
-  the condition measured at M2, "stalled, not overflowing", and 0010 would say so. Its
-  latency does not mix rounds with a close and rounds without one.
+- **Condition 4 stays an honest latency condition:** yes. Timed condition 4 is 0010's
+  condition 4 at 20,000 requests, unchanged: stalled, overflowing after about 6,000
+  messages, not forced off. It is **not** the M2 condition, which never overflowed (see
+  above); no option keeps that. What (b) keeps is a timed window with the same content in
+  every round, overflow without a close, at any rate above about 2,800 requests/s. 0010
+  would say so.
 - **What it proves:** on vcan, with the production limits (1,024 messages, 5 s) and the
   real simulator loop:
   - a stalled client is forced off with 1013, `forced_disconnects` counts it, and the
@@ -547,8 +560,10 @@ the owner's to change.
   - P5(e) holds with non-zero counts: `close_codes["1013"]` = `forced_disconnects`, and
     reconnects = `forced_disconnects`;
   - P5(h)'s allowance holds on 1013 closes, and P6 holds for the three readers.
-  - It does not test the latency cost of overflow and reconnect against P1–P2. It can
-    report that latency, unjudged.
+  - The timed condition 4 does judge the latency of overflow (the drops) against P1–P2.
+    It does not judge the cost of a close and reconnect. The sub-run can report that
+    latency, unjudged, or, if the owner chooses, judge it against P1–P2 as well (see the
+    recommendation).
 - **Cost and runtime:** harness code for a loop that sends requests until the k-th forced
   close has been reconnected, with a deadline. Each cycle is about 6.5–6.8 s at these
   rates (absorb, fill the queue, 5 s), plus up to 0.5 s for the harness to notice. For
@@ -562,15 +577,17 @@ the owner's to change.
 ### (c) Driving the stalled client to overflow before timing starts
 
 - **Condition 4 stays an honest latency condition:** yes, if the warm-up is declared and
-  kept out of the capture. But it becomes **a different condition** from the one measured
-  at M2. The timed window would then hold:
-  - a client that is already dropping;
-  - one forced close, 5 s after overflow began;
-  - the reconnect, and the new connection's initial history (up to 500 events).
+  kept out of the capture. Like every option, it is not the M2 condition. Compared with
+  (b) and (d), whose stalled client starts dropping after 1.5–1.8 s, the timed window
+  differs in two ways:
+  - the client is dropping from the first timed request, not from about 30 % in;
+  - it holds one forced close, 5 s after overflow began, then the reconnect and the new
+    connection's initial history (up to 500 events).
 
-  That is closer to 0010's present text for condition 4 ("disconnects … reconnects it at
-  once, so a stalled client is present throughout"). But M4's condition 4 could then not
-  be read directly against this M2 evidence, while the M2 STOP is unexplained.
+  The close and reconnect are the real difference. They make (c) the only option whose
+  **timed** latency includes a close, which is closer to 0010's present text for
+  condition 4 ("disconnects … reconnects it at once, so a stalled client is present
+  throughout").
 - **What it proves:** the same 1013 path as (b), under timed load. But typically there is
   **only one close per round**:
   - after the reconnect, the new connection must absorb ~6,000 messages and overflow for
@@ -590,8 +607,10 @@ the owner's to change.
 
 ### (d) Unit and integration tests only, and saying so in P5(e)
 
-- **Condition 4 stays an honest latency condition:** yes, unchanged, and P5(e) would say
-  plainly that conditions 1–4 do not exercise the 1013 path.
+- **Condition 4 stays an honest latency condition:** yes. It is 0010's condition 4 at
+  20,000 requests, unchanged: overflowing after about 6,000 messages, not forced off (not
+  the M2 condition). P5(e) would say plainly that conditions 1–4 do not exercise the 1013
+  path.
 - **What it proves:** what these tests already prove, in ordinary CI. The `observe` tests
   run in every job; the `api` tests run in the `.[dev,gui]` job, over loopback:
   - `tests/unit/observe/test_connection.py`: 5 s of continuous overflow closes with 1013
@@ -615,18 +634,22 @@ the owner's to change.
 
 ### Side by side
 
-| Option | Condition 4 an honest latency condition? | Forced closes in M4 | 1013 proven on vcan with production limits? | Extra runtime per M4 run | 0010 text |
-|---|---|---|---|---|---|
-| (a) | yes | 0–1 per round at best | only if a close happens | none | none; to make it work, *Runs* or §4.3 (not proposed) |
-| (b) | yes, unchanged from M2 | k per round, required | yes, outside the timed window | ~1 min for k = 3 | condition 4 row, *Runs*, P5(e) |
-| (c) | yes, but a different condition from M2's | ~1 per round, timing-dependent | yes, inside the timed window | ~6 s | condition 4 row, *Runs*, *Measurement* |
-| (d) | yes, unchanged | none | no: loopback, with injected limits | none | condition 4 row, P5(e) |
+None of the options keeps M2's "stalled, not overflowing": at 20,000 requests the stalled
+client overflows under all four.
+
+| Option | Honest latency condition? | Timed condition 4 holds | Forced closes | 1013 proven on vcan with production limits? | Extra runtime per M4 run | 0010 text |
+|---|---|---|---|---|---|---|
+| (a) | yes | overflow, sooner; 0–1 close | 0–1 per round at best | only if a close happens | none | none; to make it work, *Runs* or §4.3 (not proposed) |
+| (b) | yes | overflow from ~6,000 messages, no close (the same every round above ~2,800 req/s) | k per round, required, in the sub-run | yes, outside the timed window | ~1 min for k = 3 | condition 4 row, *Runs*, P5(e) |
+| (c) | yes | overflow from the first timed request; one close, then the reconnect and a fresh connection; timing-dependent | ~1 per round | yes, inside the timed window | ~6 s | condition 4 row, *Runs*, *Measurement* |
+| (d) | yes | as (b) | none | no: loopback, with injected limits | none | condition 4 row, P5(e) |
 
 ### Recommendation: (b) with (d)
 
 **Awaiting the owner's decision (0010 change).**
 
-- Keep timed condition 4 as it was measured at M2, and say so in 0010.
+- Keep timed condition 4 as 0010 specifies it, and correct its text: at 20,000 requests
+  the stalled client overflows, but is not expected to be forced off.
 - Add a forced-close sub-run per round, outside the timed conditions. It must reach k
   forced closes, each reconnected; k = 3 is proposed.
 - Name the existing unit and loopback tests in P5(e) as the proof of the close logic
@@ -636,13 +659,23 @@ Why:
 
 - It is the only option that **requires** forced closes on vcan with the production
   limits, and so makes P5(e)'s 1013 reconciliation non-trivial every round.
-- It leaves the timed condition 4 comparable with the M2 evidence behind the present
-  STOP.
+- The timed condition 4 holds the same thing in every round (overflow, no close) at any
+  rate above about 2,800 requests/s. Under (c), one close falls at a timing-dependent
+  point, so rounds can differ.
 - It costs about a minute per M4 run.
 - (a) cannot produce closes reliably at 20,000 requests, whatever the buffer. (c) gives
-  about one close, at a timing-dependent point, and changes condition 4 while its excess
-  is unexplained. (d) alone leaves the harness's reconnect and P5(e)'s non-zero case
+  about one close, at a timing-dependent point. (d) alone leaves the harness's reconnect and P5(e)'s non-zero case
   unexercised on vcan.
+
+What (c) offers that (b) does not is a close and reconnect inside judged latency. (b)
+can offer it too, with k closes instead of one and without the timing dependence: judge
+the sub-run's wire latency against P1–P2, not only report it. That choice is the owner's;
+the wording below reports it, unjudged.
+
+(Fix round 1: the first version of this recommendation said timed condition 4 stays the
+condition measured at M2, "not overflowing". That was wrong: at 20,000 requests it
+overflows under every option. The recommendation is unchanged, because its first reason,
+that (b) alone requires closes, still holds. The second reason is replaced above.)
 
 This proposal is about proving the 1013 path. It does not address condition 4's latency
 excess, which stays a `STOP`.
@@ -659,9 +692,9 @@ Proposed 0010 wording, for the owner to accept, edit or reject:
    Proposed:
 
    > API on, 4 clients: 3 reading normally and 1 stalled (connected, never reading). At
-   > 20,000 requests the stalled client is not expected to overflow: at M2 its connection
-   > absorbed about 4,950 messages without overflowing
-   > (`docs/validation/gui-m2-early-check.md`). If the §4.3 rule does disconnect it, the
+   > 20,000 requests the stalled client is not expected to be forced off: it begins to
+   > overflow after about 6,000 messages, and needs 5 s of continuous overflow before a
+   > 1013 (`docs/validation/gui-m2-early-check.md`). If the §4.3 rule does disconnect it, the
    > harness reconnects it at once, and each forced disconnect is counted. The
    > forced-close path is exercised by the forced-close sub-run (*Runs*)
 
@@ -681,9 +714,11 @@ Proposed 0010 wording, for the owner to accept, edit or reject:
 3. **§9.2, P5(e).** Now it ends:
 
    > The harness also records each time it had to reconnect its stalled client; that
-   > count must be ≤ `forced_disconnects`, and any shortfall is reported.
+   > count must be ≤ `forced_disconnects`, and any shortfall is reported. HTTP 503
+   > refusals seen = `refused_clients`.
 
-   Proposed: the same, followed by:
+   Proposed: insert this after "and any shortfall is reported." and before "HTTP 503
+   refusals seen = `refused_clients`.":
 
    > In the forced-close sub-run, `forced_disconnects` must be ≥ 3, and the harness's
    > reconnects must equal `forced_disconnects`; fewer is a failure, not a pass. The close
@@ -718,14 +753,18 @@ passed. `6a04ee5` fixed that test with a fixed clock, and it passed in every run
 
 ## Hosted CI
 
-These are the only hosted runs. **No hosted run covers the commit that adds this record**,
-or `73e9e9f`.
+(Corrected 2026-09-28.) The first version of this section said these were the only
+hosted runs, and that none covered `73e9e9f` or the commit that added this record
+(`cf0cb3a`). Run 36363466270 at `e0c8445` now covers both: each is an ancestor of
+`e0c8445`. **No hosted run covers `7141045` or any later commit**, including the rotated
+runs' harness (`a7431be`): they are not pushed.
 
 | Run | `head_sha` | Result |
 |---|---|---|
 | 36360139096 | `e70e73199c9951f2d08465de65185b0baecb1004` | **FAILURE**: the `.[dev]` job failed a timing-dependent test, then undiagnosable |
 | 36361183412 | `334ecf49fe364258166d01e1aad485f3d437c476` | **FAILURE**: `FAILED tests/unit/observe/test_publisher.py::test_encode_failure_publishes_a_fallback_and_seq_stays_contiguous - assert 2 == 4` on 3.12 and 3.13 |
 | 36361625692 | `6a04ee5fb985591b34a414573d19ca9d75ec7b68` | **SUCCESS**: `.[dev]` 3.12 and 3.13 each 1044 passed, 59 skipped, 2 xfailed; api `.[dev,gui]` 1094 passed, 57 skipped, 2 xfailed; lint green; can-capabilities green |
+| 36363466270 | `e0c84455f1d441fd9ab049c95b4324f57d82e492` (branch `gui`, push) | **SUCCESS**: `.[dev]` 3.12 and 3.13 each 1044 passed, 59 skipped, 2 xfailed; api `.[dev,gui]` 3.12 1094 passed, 57 skipped, 2 xfailed; lint and type check green; the vcan and `can_isotp` probe green, kernel `6.17.0-1022-azure`, `# CONFIG_CAN_ISOTP is not set`, and its vcan integration step 1 passed, 68 skipped (CAN_ISOTP cannot bind). The skip reasons are those listed below |
 
 Hosted skips: 54x "kernel cannot create CAN_ISOTP sockets (CONFIG_CAN_ISOTP not built,
 e.g. GitHub-hosted Azure kernels)"; 3x [gui] (`.[dev]` only); 2x [hardware]; 1x
