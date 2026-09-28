@@ -2647,3 +2647,91 @@ governor stays as it is (`powersave`); it is recorded, never changed.
    sub-run outside the timed conditions; (c) driving the stalled client to overflow before
    timing starts; (d) proving the 1013 path by unit and integration tests only, and saying
    so in P5(e). End with a recommendation, marked as awaiting the owner's decision.
+
+## Client-cost diagnostic and the M4 forced-close revision (owner, 2026-09-28)
+
+After the rotated runs (miss follows client load, cause not established), the owner asked
+for: a focused rotated diagnostic of the client configurations with full-run dispatch and
+wire timing; two harness failures made loud; representative raw captures kept with the
+record; and 0010 revised for a per-round forced-close run. M3 stays paused. **Unchanged:**
+the request mix, 5,000 requests per condition, the median (+0.10 ms) and p99 (+0.50 ms)
+limits against the same round's condition 1, lost = 0, the P5 checks, the governor.
+Nothing in `src/` changes.
+
+### Task 12: harness: loud failures, client configurations, full-run dispatch
+
+**Files:** Modify `scripts/gui_m2_early_check.py`, `tests/unit/test_gui_m2_early_check.py`.
+
+1. **`--rounds` below 1 fails**: argparse error (exit 2), never "within the limits".
+2. **An early-ending reader fails the run**: a reader whose `ended` is anything but
+   `"stopped"`, a reader that was never counted in `/status` by the "readers first" wait
+   (the wait must fail, not fall through), or a reader that received fewer exchanges than
+   the condition published, puts a line in `p5_problems` (so STOP). `reader_seq_ok` must
+   be false for an empty sequence when exchanges were published.
+3. **Client configurations.** `--conditions` takes a comma list from: `1` (API off),
+   `2` (API on, 0 clients), `r1` (API on, 1 reading client), `r3` (API on, 3 reading
+   clients), `4` (API on, 3 reading clients and 1 stalled, as today). Default `1,2,4`
+   (today's early check, unchanged). Rotation and `--order` work over whatever set is
+   given: round r uses rotation r of the list; `--order` fixes one order for every round
+   and must be a permutation of the set. Condition 1 must be in the set: each round is
+   judged against its own condition 1, with the unchanged limits, for every other
+   condition.
+4. **Full-run dispatch, without adding load during requests.** The tester sends its
+   requests in 10 equal segments (500 each at 5,000). Between segments it pauses; in every
+   API condition the pause fetches `GET /api/v1/exchanges?after=<last seq seen>&limit=500`
+   and keeps each exchange's `dispatch_us`. The pause is identical in every condition
+   (condition 1 makes the same pause without the fetch, for the same fixed time: choose a
+   fixed pause, e.g. 50 ms, longer than the fetch, and record it). Wire timing is not
+   taken during pauses (no requests are in flight). The result: every exchange's
+   `dispatch_us` in every API condition (`dispatch_all_ms`: n, median, p99), and the
+   harness fails the condition if the harvest has a `gap` or misses a seq. Keep
+   `dispatch_reader0_ms` for reader conditions as a cross-check. Drop `dispatch_last500_ms`
+   or keep it; say which.
+5. **Incremental cost** in the summary: per round, the median and p99 differences, wire and
+   dispatch, for each step 1→2, 2→r1, r1→r3, r3→4 (as present), then the mean and range
+   across rounds, and each condition's excess over its round's condition 1 with the
+   verdict.
+6. **Captures:** `--captures DIR` writes the candump logs there instead of a temp dir.
+7. Unit tests without CAN for each of the above (segmenting, harvest gap/miss detection,
+   condition parsing and rotation over 5, the incremental summary, `--rounds 0`,
+   early-ending reader verdicts). Gates as before; one smoke run
+   `-n 300 --rounds 5 --conditions 1,2,r1,r3,4`, verbatim, not a result.
+
+### Task 13: 0010 seventh revision: the per-round forced-close run
+
+**Files:** Modify `docs/decisions/0010-gui-observer-api.md` (and the M4 wording only where
+0010 references it).
+
+- Add a revision note at the top: seventh revision, 2026-09-28, owner decision, citing the
+  M2 early-check record.
+- §9.2: M4 adds, **in every round**, a separate forced-close run outside the timed
+  conditions: API on, 3 reading clients and 1 stalled client that the harness reconnects
+  each time it is forced off. It passes only if the server counts **three 1013 closes**
+  (`forced_disconnects` rises by at least 3, `close_codes["1013"]` agrees) **and** three
+  reconnections are accepted (HTTP 101, new connection id in `/status`), all **within
+  60 s** of its start. It is checked against **P5** (all identities at quiesce, including
+  P5(e) and P5(h)) and **P9** (loop hold time). Its latency is **reported separately and
+  is not judged against P1/P2**.
+- Correct the condition 4 row: at 20,000 requests the stalled client is expected to
+  overflow (after about 6,000 messages at the M2 rates) but not to be forced off; the
+  forced path is covered by the forced-close run and by the unit and loopback tests named
+  in P5(e).
+- Keep every other criterion and threshold unchanged. Quote nothing from the record as a
+  result that M4 has not produced.
+
+### Task 14: diagnostic runs, the record, and the captures
+
+**Files:** Modify `docs/validation/gui-m2-early-check.md`; create
+`docs/validation/gui-m2-early-check-runs/diag-run-{1,2,3}.txt` and
+`docs/validation/gui-m2-early-check-captures/` (xz-compressed candump logs with sha256).
+
+1. Run `scripts/run_gui_m2_early_check.sh --rounds 5 --conditions 1,2,r1,r3,4 --captures
+   <dir>` three times (15 rounds: each configuration three times in each position), from a
+   clean tree, no other load started by this session. Keep every stdout verbatim.
+2. Record: environment, per-condition per-round table (wire median/p99, full-run dispatch
+   median/p99, rate, verdict), the incremental cost of each client configuration (mean and
+   range, wire and dispatch), and what the data says about where condition 4's excess comes
+   from. The cause stays a hypothesis unless the data isolates it; the STOP stays a STOP.
+3. Captures: keep, xz-compressed, one complete diagnostic run's candump logs and one
+   complete run of the earlier rotated investigation (still in `/tmp`, sha256 recorded),
+   with a sha256 of each compressed and uncompressed file, and a note of what each is.
