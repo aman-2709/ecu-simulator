@@ -174,7 +174,7 @@ table { border-collapse: collapse; width: 100%; }
 .dtc th, .dtc td { padding: 5px 6px; border-bottom: 1px solid var(--panel-2); text-align: left; }
 .dtc thead th { white-space: nowrap; font-size: 12px; font-weight: 600; color: var(--ink-2); border-bottom: 1px solid var(--rule); }
 .dtc__code { font-weight: 700; font-size: 14px; }
-.dtc__state { font-weight: 600; }
+.dtc__state { font-weight: 600; white-space: nowrap; }
 .dtc__row--confirmed .dtc__state { color: var(--er); }
 .dtc__row--pending .dtc__state { color: var(--nr); }
 .dtc__row--not-set { color: var(--ink-2); }
@@ -228,7 +228,14 @@ fieldset.outcomes legend { padding: 0; margin-bottom: 2px; float: left; width: 1
 .log-state__line p { flex: 1 1 320px; }
 .log-state__line--paused { background: #fff7e0; border-left: 4px solid var(--nr); padding: 6px 8px; }
 
+.logarea { position: relative; display: flex; flex-direction: column; min-height: 0; }
 .logwrap { overflow: auto; min-height: 200px; }
+.follow {
+  position: absolute; right: 18px; bottom: 12px; z-index: 2;
+  background: var(--ink); color: var(--panel); border-color: var(--ink);
+  box-shadow: 0 1px 3px rgba(23, 32, 36, .25);
+}
+.follow:hover { background: #2c3a40; }
 .logwrap.is-empty { min-height: 0; }
 .logwrap.is-empty .log thead { display: none; }
 .log { font-size: 13px; }
@@ -286,11 +293,14 @@ td.c-ecu { white-space: nowrap; }
 @media (min-width: 1101px) and (min-height: 640px) {
   body { height: 100vh; display: grid; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; }
   .layout { min-height: 0; grid-template-rows: minmax(0, 1fr); align-items: stretch; }
-  .side { min-height: 0; display: flex; flex-direction: column; }
-  .side > #dtc-panel { flex: 0 1 auto; min-height: 0; max-height: 50%; overflow: auto; }
-  .side > #vehicle-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  /* The trouble codes keep their natural height, never clipped; when the column is too short
+     for them and the signals, the column scrolls with a visible scrollbar. */
+  .side { min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
+  .side > #dtc-panel { flex: 0 0 auto; }
+  .side > #vehicle-panel { flex: 1 1 auto; min-height: 240px; display: flex; flex-direction: column; }
   .panel__scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
   .panel--log { min-height: 0; }
+  .logarea { flex: 1 1 auto; }
   .logwrap { flex: 1 1 auto; min-height: 0; }
 }
 

@@ -20,6 +20,7 @@
   var MAX_ROWS = 2000;               // exchange rows this page keeps; older ones leave the view
   var RENDER_MIN_MS = 200;           // the log re-renders at most this often
   var HEX_PREVIEW_BYTES = 6;
+  var USER_SCROLL_MS = 1000;         // a scroll this soon after the reader's own input is theirs
   var OUTCOMES = ["responded", "no_response", "unrouted", "error"];
   var OUTCOME_LABEL = { responded: "responded", no_response: "no response", unrouted: "unrouted", error: "error" };
   var CLOSE_REASON = {
@@ -64,7 +65,10 @@
   };
   var view = {
     ecu: "all", service: "all", outcomes: OUTCOMES.slice(),
-    paused: false, pauseAfter: 0, clearedAfter: 0, expanded: {}
+    paused: false, pauseAfter: 0, clearedAfter: 0, expanded: {},
+    // The log follows the newest row until the reader scrolls away from it. Only the reader's
+    // own input (wheel, touch, keys, pointer on the log) stops following; a layout change never does.
+    follow: true, leftAt: 0, lastShownId: 0, userInputAt: 0
   };
   var rowCache = new Map();
   var renderTimer = null, lastRender = 0;
@@ -655,9 +659,8 @@
   function renderLog() {
     lastRender = Date.now();
     var wrap = $("logwrap"), body = $("log-body");
-    var stick = wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 40;
     var frag = document.createDocumentFragment();
-    var shown = 0, hidden = 0, inView = 0, held = 0;
+    var shown = 0, hidden = 0, inView = 0, held = 0, below = 0, lastShown = 0;
     function flushHidden() {
       if (!hidden) return;
       frag.appendChild(el("tr", { cls: "hiddenrow" }, [el("td", { colspan: "9", text: hidden + (hidden === 1 ? " exchange" : " exchanges") + " hidden by filters (not a gap)" })]));
@@ -680,18 +683,55 @@
       flushHidden();
       frag.appendChild(rowFor(entry));
       shown += 1;
+      if (entry.id > view.leftAt) below += 1;
+      lastShown = entry.id;
     });
     if (shown) flushHidden(); else hidden = 0;
     body.replaceChildren(frag);
     wrap.classList.toggle("is-empty", shown === 0);
-    if (stick && !view.paused) wrap.scrollTop = wrap.scrollHeight;
+    view.lastShownId = lastShown;
     renderLogState(shown, inView, held);
     renderFilterCounts();
+    // Last, after everything that can change the log's height: the state lines and the controls,
+    // which re-wrap as the filter counts widen.
+    if (view.follow) toBottom();
+    renderFollow(below);
     var h = S.hello;
     $("log-count").textContent = !h && S.lastSeq == null ? "" :
       (shown === inView ? inView + " exchanges" : shown + " of " + inView + " shown") +
       (S.lastSeq != null ? ", last seq " + S.lastSeq : "") + (S.duplicates ? ", " + S.duplicates + " duplicates ignored" : "");
   }
+  function atBottom(wrap) { return wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 4; }
+  function toBottom() { var wrap = $("logwrap"); wrap.scrollTop = wrap.scrollHeight; }
+  function renderFollow(below) {
+    var b = $("btn-follow");
+    b.hidden = view.follow;
+    b.textContent = below > 0 ? below + (below === 1 ? " new row below" : " new rows below") + ", jump to newest" : "Jump to newest";
+  }
+  function setFollow(on) {
+    if (view.follow === on) return;
+    view.follow = on;
+    if (!on) view.leftAt = view.lastShownId;
+    if (on) toBottom();
+    renderFollow(0);
+  }
+  function watchLogScroll() {
+    var wrap = $("logwrap");
+    function input() { view.userInputAt = Date.now(); }
+    ["wheel", "touchstart", "touchmove", "pointerdown", "keydown"].forEach(function (t) {
+      wrap.addEventListener(t, input, { passive: true });
+    });
+    wrap.addEventListener("scroll", function () {
+      // Only a scroll that follows the reader's own input changes following, either way. Any
+      // other scroll is the layout moving under them (a shorter filtered list clamps the
+      // position to the end, a banner resizes the box): following is unchanged.
+      if (Date.now() - view.userInputAt < USER_SCROLL_MS) setFollow(atBottom(wrap));
+    }, { passive: true });
+    // The log's box changes size with the banner, the pause line and wrapping controls.
+    if (window.ResizeObserver) new ResizeObserver(function () { if (view.follow) toBottom(); }).observe(wrap);
+    $("btn-follow").addEventListener("click", function () { setFollow(true); renderLog(); });
+  }
+
   function rowFor(entry) {
     var tr = rowCache.get(entry.id);
     if (!tr) { tr = entry.kind === "ex" ? exRow(entry) : markRow(entry); rowCache.set(entry.id, tr); }
@@ -810,6 +850,7 @@
   function renderAll() { renderLink(); renderPlaceholders(); renderStatus(); renderLog(); }
 
   buildControls();
+  watchLogScroll();
   renderAll();
   setInterval(function () { if (isStale()) renderLink(); }, 1000);
   connect();
