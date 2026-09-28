@@ -103,7 +103,8 @@ def latencies(log: Path) -> tuple[list[float], int]:
     return sorted(samples), lost
 
 
-async def reader(stop: asyncio.Event, seen: list[int]) -> None:
+async def reader(stop: asyncio.Event, seen: list[int]) -> str:
+    """Read until told to stop; return how it ended, so a reader that died is never silent."""
     async with aiohttp.ClientSession() as s, s.ws_connect(f"{BASE}/api/v1/events", origin=BASE) as ws:
         while not stop.is_set():
             try:
@@ -111,10 +112,11 @@ async def reader(stop: asyncio.Event, seen: list[int]) -> None:
             except TimeoutError:
                 continue
             if msg.type != aiohttp.WSMsgType.TEXT:
-                return
+                return f"ended early: {msg.type.name} {ws.close_code}"
             event = json.loads(msg.data)
             if event.get("type") == "exchange":
                 seen.append(event["seq"])
+    return "stopped"
 
 
 def stalled_socket() -> socket.socket:
@@ -134,17 +136,39 @@ async def status() -> dict:
         return (await r.json())["api"]
 
 
-async def stalled(stop: asyncio.Event, reconnects: list[int]) -> None:
-    raw, forced = stalled_socket(), 0
+async def open_stalled(ids: list[int]) -> socket.socket:
+    """Connect the stalled socket and learn its connection id from /status (the id no one else had)."""
+    before = {c["id"] for c in (await status())["connections"]}
+    raw = stalled_socket()
+    for _ in range(40):
+        new = {c["id"] for c in (await status())["connections"]} - before
+        if new:
+            ids.extend(sorted(new))
+            break
+        await asyncio.sleep(0.05)
+    return raw
+
+
+async def stalled(stop: asyncio.Event, reconnects: list[int], ids: list[int]) -> None:
+    raw, forced = await open_stalled(ids), 0
     while not stop.is_set():
         await asyncio.sleep(0.5)
         now = (await status())["forced_disconnects"]
         if now > forced:                                          # 0010 §9.2 condition 4: reconnect at once
             forced = now
             raw.close()
-            raw = stalled_socket()
+            raw = await open_stalled(ids)
             reconnects.append(now)
     raw.close()
+
+
+LEDGER_KEYS = ("id", "close_code", "client_dropped", "queued", "enqueued", "sent", "delivery_unknown")
+
+
+def ledgers_of(api: dict, ids: list[int]) -> list[dict]:
+    """The stalled connections' ledgers, trimmed to what shows whether they overflowed."""
+    return [{k: led[k] for k in LEDGER_KEYS} for led in api["connections"] + api["closed_connections"]
+            if led["id"] in ids]
 
 
 def p5(api: dict) -> list[str]:
@@ -203,10 +227,14 @@ async def condition(n: int, api: bool, clients: bool, workdir: Path) -> dict:
     log = workdir / f"candump-{int(api)}{int(clients)}.log"
     dump = subprocess.Popen(["candump", "-L", IFACE], stdout=log.open("w"))
     sim = start_simulator(api)
-    stop, tasks, seen, reconnects = asyncio.Event(), [], [[], [], []], []
+    stop, tasks, seen, reconnects, stalled_ids = asyncio.Event(), [], [[], [], []], [], []
     if clients:
         tasks = [asyncio.create_task(reader(stop, seen[i])) for i in range(3)]
-        tasks.append(asyncio.create_task(stalled(stop, reconnects)))
+        for _ in range(40):                                          # readers first, so the stalled id is known
+            if (await status())["clients"] >= 3:
+                break
+            await asyncio.sleep(0.05)
+        tasks.append(asyncio.create_task(stalled(stop, reconnects, stalled_ids)))
         await asyncio.sleep(0.5)
     tester = Tester()
     started = time.monotonic()
@@ -217,19 +245,33 @@ async def condition(n: int, api: bool, clients: bool, workdir: Path) -> dict:
     result: dict = {"api": api, "clients": clients, "requests": n, "seconds": round(elapsed, 2),
                     "tester_timeouts": tester_lost}
     if api:
+        if clients:
+            result["stalled_before_stop"] = ledgers_of(await status(), stalled_ids)
         stop.set()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        ended = await asyncio.gather(*tasks, return_exceptions=True)
         for _ in range(40):                                          # quiesce: every close resolved
             state = await status()
             if state["clients"] == 0 and state["closed_unresolved"] == 0:
                 break
             await asyncio.sleep(0.25)
         result["p5_problems"] = p5(state)
+        if state["clients"] != 0:
+            result["p5_problems"].append(f"quiesce timed out: clients = {state['clients']}")
+        if len(reconnects) > state["forced_disconnects"]:
+            result["p5_problems"].append(f"P5(e) harness reconnects {len(reconnects)} > forced_disconnects")
         result["inconclusive"] = unresolved(state)
         result["delivery_unknown_allowed"] = allowed_unknown(state)   # reported, never silently passed
         result["forced_disconnects"] = state["forced_disconnects"]
         result["connections_opened"] = state["connections_opened"]
         result["reader_seq_ok"] = all(s == sorted(set(s)) for s in seen)
+        if clients:
+            result["reconnects"] = len(reconnects)
+            result["readers"] = [{"exchanges": len(seen[i]), "ended": e if isinstance(e, str) else repr(e)}
+                                 for i, e in enumerate(ended[:3])]
+            result["stalled_ids"] = stalled_ids
+            result["stalled_at_quiesce"] = ledgers_of(state, stalled_ids)
+            if isinstance(ended[3], BaseException):
+                result["p5_problems"].append(f"stalled-client task raised {ended[3]!r}")
     sim.send_signal(signal.SIGINT)
     sim.wait(10)
     dump.send_signal(signal.SIGINT)
