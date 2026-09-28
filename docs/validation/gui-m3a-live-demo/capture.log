@@ -1,30 +1,37 @@
-[   0.00 s] gui demo capture, 2026-09-28T21:46:01+00:00
+[   0.00 s] gui demo capture, 2026-09-28T22:02:17+00:00
 [   0.00 s] start simulator: --profile src/ecu_simulator/profiles/ice_scenario.yaml --interface vcan0 --api 127.0.0.1:8765
-[   0.40 s] start headless Chrome: /usr/bin/google-chrome
-[   1.45 s] holding 1 API request(s) for the loading shot
-[   1.50 s] screenshot a-loading.png: Connecting | 
-[   3.31 s] screenshot h1-empty-fresh-start.png: Live | 0 exchanges, last seq 0
-[   3.31 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
-[   3.31 s] waiting 21.1 s, until about scenario t = 24 s
-[  24.53 s] screenshot b1-live.png: Live | 81 exchanges, last seq 81
-[  24.53 s] waiting 6.9 s, until about scenario t = 31 s
-[  31.53 s] screenshot b2-live-7s-later.png: Live | 107 exchanges, last seq 107
-[  32.64 s] screenshot d1-filter-service-0x19.png: Live | 12 of 112 shown, last seq 112
-[  37.79 s] screenshot d2-paused-held-rows.png: Live | 112 exchanges, last seq 131
-[  40.91 s] screenshot d3-resumed-log-not-following.png: Live | 143 exchanges, last seq 143
-[  40.91 s] waiting 3.5 s, until about scenario t = 44 s
-[  44.53 s] screenshot c1-dtc-pending.png: Live | 157 exchanges, last seq 157
-[  44.53 s] waiting 35.9 s, until about scenario t = 80 s
-[  80.56 s] screenshot c2-dtc-confirmed-mil.png: Live | 293 exchanges, last seq 293
-[  82.23 s] screenshot g1-narrow-390.png: Live | 300 exchanges, last seq 300
-[  82.42 s] screenshot g2-narrow-390-full-page.png: Live | 301 exchanges, last seq 301
-[  83.49 s] stop traffic, then SIGTERM the simulator
-[  87.75 s] screenshot e-disconnected-stale.png: Disconnected, retry in 4 s | 304 exchanges, last seq 304
-[  87.75 s] start simulator: --profile src/ecu_simulator/profiles/ice_scenario.yaml --interface vcan0 --api 127.0.0.1:8765
-[  88.05 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
-[  94.54 s] screenshot f-reconnected-after-restart.png: Live | 329 exchanges, last seq 25
-[  94.54 s] stop traffic and simulator; start the no-scenario profile
-[  94.69 s] start simulator: --profile src/ecu_simulator/profiles/ice_default.yaml --interface vcan0 --api 127.0.0.1:8765
-[  98.57 s] screenshot h2-no-scenario.png: Live | 0 exchanges, last seq 0
-[  98.57 s] resources from other origins on the final load: 0
-[  98.57 s] done
+[   0.30 s] start headless Chrome: /usr/bin/google-chrome
+[   1.28 s] holding 1 API request(s) for the loading shot
+[   1.31 s] screenshot a-loading.png: Connecting | 
+[   3.11 s] screenshot h1-empty-fresh-start.png: Live | 0 exchanges, last seq 0
+[   3.11 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[   3.11 s] waiting 21.2 s, until about scenario t = 24 s
+[  24.43 s] screenshot b1-live.png: Live | 82 exchanges, last seq 82
+[  24.43 s] waiting 6.9 s, until about scenario t = 31 s
+[  31.43 s] screenshot b2-live-7s-later.png: Live | 108 exchanges, last seq 108
+[  32.56 s] screenshot d1-filter-service-0x19.png: Live | 12 of 112 shown, last seq 112
+[  37.73 s] screenshot d2-paused-held-rows.png: Live | 112 exchanges, last seq 132
+[  40.86 s] screenshot d3-resumed-log-following.png: Live | 143 exchanges, last seq 143
+[  43.90 s] after the wheel scroll up, the follow control reads: '11 new rows below, jump to newest'
+[  44.02 s] screenshot d4-scrolled-up-new-rows-below.png: Live | 156 exchanges, last seq 156
+[  45.56 s] after clicking it, the follow control reads: ''
+[  45.69 s] screenshot d5-jumped-to-newest.png: Live | 162 exchanges, last seq 162
+[  45.81 s] screenshot c1-dtc-pending.png: Live | 162 exchanges, last seq 162
+[  45.81 s] waiting 34.5 s, until about scenario t = 80 s
+[  80.47 s] screenshot c2-dtc-confirmed-mil.png: Live | 294 exchanges, last seq 294
+[  82.13 s] screenshot g1-narrow-390.png: Live | 300 exchanges, last seq 300
+[  82.33 s] screenshot g2-narrow-390-full-page.png: Live | 301 exchanges, last seq 301
+[  83.40 s] stop traffic, then SIGTERM the simulator
+[  87.61 s] screenshot e-disconnected-stale.png: Disconnected, retry in 4 s | 304 exchanges, last seq 304
+[  87.61 s] start simulator: --profile src/ecu_simulator/profiles/ice_scenario.yaml --interface vcan0 --api 127.0.0.1:8765
+[  87.92 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[  93.77 s] restart marker offset from the log's centre: -809.84375
+[  94.44 s] screenshot f-reconnected-after-restart.png: Live | 329 exchanges, last seq 25
+[  94.44 s] stop traffic and simulator; start the no-scenario profile
+[  94.62 s] start simulator: --profile src/ecu_simulator/profiles/ice_default.yaml --interface vcan0 --api 127.0.0.1:8765
+[  98.51 s] screenshot h2-no-scenario.png: Live | 0 exchanges, last seq 0
+[  98.51 s] resources from other origins on the final load: 0
+[  98.51 s] console messages, exceptions and browser log entries over the whole run: 2
+[  98.51 s]   log error (network): Failed to load resource: net::ERR_CONNECTION_REFUSED
+[  98.51 s]   log error (network): Failed to load resource: net::ERR_CONNECTION_REFUSED
+[  98.51 s] done

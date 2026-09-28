@@ -174,6 +174,24 @@ class DevTools:
         await self.send("Emulation.setDeviceMetricsOverride", width=width, height=height,
                         deviceScaleFactor=1, mobile=width < 600)
 
+    async def centre(self, selector: str) -> tuple[float, float]:
+        rect = await self.js(f"(function(){{var r=document.querySelector({json.dumps(selector)})"
+                             ".getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2];})()")
+        return float(rect[0]), float(rect[1])
+
+    async def wheel(self, selector: str, delta_y: float) -> None:
+        """A real mouse-wheel event over the element, the way a person scrolls."""
+        x, y = await self.centre(selector)
+        await self.send("Input.dispatchMouseEvent", type="mouseMoved", x=x, y=y)
+        await self.send("Input.dispatchMouseEvent", type="mouseWheel", x=x, y=y, deltaX=0, deltaY=delta_y)
+
+    async def click(self, selector: str) -> None:
+        """A real left click at the element's centre."""
+        x, y = await self.centre(selector)
+        await self.send("Input.dispatchMouseEvent", type="mouseMoved", x=x, y=y)
+        for kind in ("mousePressed", "mouseReleased"):
+            await self.send("Input.dispatchMouseEvent", type=kind, x=x, y=y, button="left", clickCount=1)
+
     async def shot(self, run: Run, name: str, full_page: bool = False) -> None:
         params: dict[str, Any] = {"format": "png"}
         if full_page:
@@ -189,10 +207,7 @@ class DevTools:
 
 
 CONN = "document.getElementById('conn-text').textContent"
-# What a person does with the mouse wheel: scroll the exchange log to its newest row. The
-# page follows new rows only while the log is within 40 px of its bottom.
-SCROLL_LOG_TO_END = ("(function(){var w=document.getElementById('logwrap');"
-                     " w.scrollTop=w.scrollHeight; return w.scrollTop;})()")
+FOLLOW_TEXT = "(function(){var b=document.getElementById('btn-follow'); return b.hidden ? '' : b.textContent;})()"
 
 
 async def launch_chrome(run: Run, chrome: str, profile_dir: str) -> subprocess.Popen[bytes]:
@@ -245,8 +260,16 @@ async def session(run: Run, chrome: str, profile_dir: str) -> None:
         ws_url = await page_target(http)
         async with http.ws_connect(ws_url, max_msg_size=0) as ws:
             cdp = DevTools(ws)
+            problems: list[str] = []
+            cdp.handlers["Runtime.exceptionThrown"] = lambda p: problems.append(
+                "exception: " + str(p.get("exceptionDetails", {}).get("text")))
+            cdp.handlers["Runtime.consoleAPICalled"] = lambda p: problems.append(
+                f"console.{p.get('type')}: " + " ".join(str(a.get("value")) for a in p.get("args", [])))
+            cdp.handlers["Log.entryAdded"] = lambda p: problems.append(
+                f"log {p['entry'].get('level')} ({p['entry'].get('source')}): {p['entry'].get('text')}")
             await cdp.send("Page.enable")
             await cdp.send("Runtime.enable")
+            await cdp.send("Log.enable")
             await cdp.viewport(*WIDE)
 
             # a. Loading: hold the page's first API requests, shoot, release them unchanged.
@@ -290,11 +313,18 @@ async def session(run: Run, chrome: str, profile_dir: str) -> None:
             await asyncio.sleep(5.0)
             await cdp.shot(run, "d2-paused-held-rows.png")
             await cdp.js("document.getElementById('btn-pause').click()")
-            # A finding, kept on record: after the filter change and pause, the log no longer
-            # follows new rows until the reader scrolls it back to the end.
+            # After the filter reset, pause and resume, the log still follows the newest rows.
             await asyncio.sleep(3.0)
-            await cdp.shot(run, "d3-resumed-log-not-following.png")
-            await cdp.js(SCROLL_LOG_TO_END)
+            await cdp.shot(run, "d3-resumed-log-following.png")
+            # A real wheel scroll up: following stops and new rows are counted below.
+            await cdp.wheel("#logwrap", -700)
+            await asyncio.sleep(3.0)
+            run.log(f"after the wheel scroll up, the follow control reads: {await cdp.js(FOLLOW_TEXT)!r}")
+            await cdp.shot(run, "d4-scrolled-up-new-rows-below.png")
+            await cdp.click("#btn-follow")
+            await asyncio.sleep(1.5)
+            run.log(f"after clicking it, the follow control reads: {await cdp.js(FOLLOW_TEXT)!r}")
+            await cdp.shot(run, "d5-jumped-to-newest.png")
 
             # c. The DTC panel: P0128 pending at t = 40 s; confirmed with the MIL at t = 75 s.
             await until_scenario(44)
@@ -305,12 +335,10 @@ async def session(run: Run, chrome: str, profile_dir: str) -> None:
             # g. One narrow width, the whole page.
             await cdp.viewport(*NARROW)
             await asyncio.sleep(1.5)
-            await cdp.js(SCROLL_LOG_TO_END)
             await cdp.shot(run, "g1-narrow-390.png")
             await cdp.shot(run, "g2-narrow-390-full-page.png", full_page=True)
             await cdp.viewport(*WIDE)
             await asyncio.sleep(1.0)
-            await cdp.js(SCROLL_LOG_TO_END)
 
             # e. Disconnected: stop the traffic, then the simulator (SIGTERM).
             run.log("stop traffic, then SIGTERM the simulator")
@@ -326,9 +354,14 @@ async def session(run: Run, chrome: str, profile_dir: str) -> None:
             traffic = start_traffic(run)
             await cdp.wait_for(f"{CONN} === 'Live'", timeout=30)
             await asyncio.sleep(3.0)
-            # Scroll the log to the page's own restart marker, as a reader would.
-            await cdp.js("(function(){var m=document.querySelectorAll('#log-body tr.mark--link');"
-                         " if (m.length) m[m.length-1].scrollIntoView({block: 'center'}); return m.length;})()")
+            # Wheel the log up to the page's own restart marker, as a reader would.
+            offset = await cdp.js("(function(){var m=document.querySelectorAll('#log-body tr.mark--link');"
+                                  " if (!m.length) return null; var w=document.getElementById('logwrap')"
+                                  ".getBoundingClientRect(), r=m[m.length-1].getBoundingClientRect();"
+                                  " return r.y + r.height / 2 - (w.y + w.height / 2);})()")
+            run.log(f"restart marker offset from the log's centre: {offset}")
+            if offset is not None and abs(offset) > 150:
+                await cdp.wheel("#logwrap", offset)
             await asyncio.sleep(0.5)
             await cdp.shot(run, "f-reconnected-after-restart.png")
 
@@ -347,6 +380,9 @@ async def session(run: Run, chrome: str, profile_dir: str) -> None:
             errors = await cdp.js("performance.getEntriesByType('resource').map(e => e.name)"
                                   ".filter(n => !n.startsWith('http://127.0.0.1:8765/')).length")
             run.log(f"resources from other origins on the final load: {errors}")
+            run.log(f"console messages, exceptions and browser log entries over the whole run: {len(problems)}")
+            for problem in problems:
+                run.log(f"  {problem}")
             cdp.reader.cancel()
     run.log("done")
 
