@@ -112,11 +112,24 @@ def test_the_first_loop_boundary_gives_idle_bytes(label, at):
     assert ask(runtime, KEY_PIDS) == "41 0C 0C 80 0D 00 11 00 04 33 05 56", label
 
 
-def test_the_second_loop_boundary_gives_idle_bytes():
+@pytest.mark.parametrize(
+    "label, at",
+    [
+        ("just before the boundary", 179.999),
+        ("one ulp before the boundary", 179.99999999999997),
+        ("exactly at the boundary", 180.0),
+        ("just after the boundary", 180.001),
+    ],
+)
+def test_the_second_loop_boundary_gives_idle_bytes(label, at):
     clock = SimulatedClock()
     runtime = built(clock)
-    clock.advance(180.0)
-    assert ask(runtime, KEY_PIDS) == "41 0C 0C 80 0D 00 11 00 04 33 05 70"
+    clock.advance(at)
+    reply = ask(runtime, KEY_PIDS)
+    assert reply == "41 0C 0C 80 0D 00 11 00 04 33 05 70", label
+    # coolant has risen since the first boundary (t=90, byte 05 56): the wrap is a plain
+    # step in the stepped signals, but coolant keeps climbing across it.
+    assert reply != "41 0C 0C 80 0D 00 11 00 04 33 05 56", label
 
 
 # --- the coolant ramp keeps rising across loop boundaries -------------------------------------
