@@ -39,7 +39,7 @@ read-only traffic on vcan0 at 4/s; Ctrl-C to stop
     38 functional 7DF->7E8 01 0C      -> 41 0C 0D 48
     39 functional 7DF->7E8 01 0D      -> 41 0D 00
     40 functional 7DF->7E8 01 05      -> 41 05 4B
-    41 functional 7DF->7E8 01 04      -> 41 04 52
+    41 functional 7DF->7E8 01 04      -> 41 04 53
     42 physical 7E0->7E8  22 F1 90   -> 7F 22 11
     43 functional 7DF->7E8 01 11      -> 41 11 3D
     44 functional 7DF->7E8 01 2F      -> 41 2F 9B
@@ -64,7 +64,7 @@ read-only traffic on vcan0 at 4/s; Ctrl-C to stop
     63 functional 7DF->7E8 03         -> 43 00
     64 functional 7DF->7E8 01 0F      -> 41 0F 3C
     65 physical 7E0->7E8  19 02 FF   -> 59 02 8C
-    66 functional 7DF->7E8 01 0C      -> 41 0C 19 00
+    66 functional 7DF->7E8 01 0C      -> 41 0C 0D 48
     67 functional 7DF->7E8 01 0D      -> 41 0D 1E
     68 functional 7DF->7E8 07         -> no answer
     69 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
@@ -75,7 +75,7 @@ read-only traffic on vcan0 at 4/s; Ctrl-C to stop
     74 functional 7DF->7E8 01 0C      -> 41 0C 19 00
     75 functional 7DF->7E8 01 0D      -> 41 0D 1E
     76 functional 7DF->7E8 01 05      -> 41 05 57
-    77 functional 7DF->7E8 01 04      -> 41 04 46
+    77 functional 7DF->7E8 01 04      -> 41 04 45
     78 physical 7E0->7E8  22 F1 90   -> 7F 22 11
     79 functional 7DF->7E8 01 11      -> 41 11 3D
     80 functional 7DF->7E8 01 2F      -> 41 2F 9B
@@ -92,7 +92,7 @@ read-only traffic on vcan0 at 4/s; Ctrl-C to stop
     91 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
     92 functional 7DF->7E8 01 0C      -> 41 0C 19 00
     93 functional 7DF->7E8 01 0D      -> 41 0D 1E
-    94 functional 7DF->7E8 01 05      -> 41 05 5D
+    94 functional 7DF->7E8 01 05      -> 41 05 5C
     95 functional 7DF->7E8 01 04      -> 41 04 84
     96 physical 7E0->7E8  22 F1 90   -> 7F 22 11
     97 functional 7DF->7E8 01 11      -> 41 11 68
@@ -147,7 +147,7 @@ read-only traffic on vcan0 at 4/s; Ctrl-C to stop
    146 functional 7DF->7E8 01 0C      -> 41 0C 1D B0
    147 functional 7DF->7E8 01 0D      -> 41 0D 37
    148 functional 7DF->7E8 01 05      -> 41 05 6E
-   149 functional 7DF->7E8 01 04      -> 41 04 2D
+   149 functional 7DF->7E8 01 04      -> 41 04 2E
    150 physical 7E0->7E8  22 F1 90   -> 7F 22 11
    151 functional 7DF->7E8 01 11      -> 41 11 3D
    152 functional 7DF->7E8 01 2F      -> 41 2F 99
@@ -165,7 +165,7 @@ read-only traffic on vcan0 at 4/s; Ctrl-C to stop
    164 functional 7DF->7E8 01 0C      -> 41 0C 23 F0
    165 functional 7DF->7E8 01 0D      -> 41 0D 50
    166 functional 7DF->7E8 01 05      -> 41 05 73
-   167 functional 7DF->7E8 01 04      -> 41 04 38
+   167 functional 7DF->7E8 01 04      -> 41 04 37
    168 physical 7E0->7E8  22 F1 90   -> 7F 22 11
    169 functional 7DF->7E8 01 11      -> 41 11 3D
    170 functional 7DF->7E8 01 2F      -> 41 2F 99
@@ -237,7 +237,7 @@ read-only traffic on vcan0 at 4/s; Ctrl-C to stop
    236 functional 7DF->7E8 01 0C      -> 41 0C 23 F0
    237 functional 7DF->7E8 01 0D      -> 41 0D 50
    238 functional 7DF->7E8 01 05      -> 41 05 84
-   239 functional 7DF->7E8 01 04      -> 41 04 37
+   239 functional 7DF->7E8 01 04      -> 41 04 38
    240 physical 7E0->7E8  22 F1 90   -> 7F 22 11
    241 functional 7DF->7E8 01 11      -> 41 11 3D
    242 functional 7DF->7E8 01 2F      -> 41 2F 96

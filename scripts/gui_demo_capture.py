@@ -39,6 +39,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PROFILES = ROOT / "src" / "ecu_simulator" / "profiles"
 SCENARIO_PROFILE = PROFILES / "ice_scenario.yaml"
 DEFAULT_PROFILE = PROFILES / "ice_default.yaml"
+MOVING_PROFILE = ROOT / "docs" / "examples" / "ice_drive_cycle_stepped.yaml"
 IFACE = "vcan0"
 API = "127.0.0.1:8765"
 PAGE = f"http://{API}/"
@@ -277,10 +278,10 @@ async def page_target(http: aiohttp.ClientSession) -> str:
     raise RuntimeError("Chrome's DevTools endpoint did not come up")
 
 
-async def demo(run: Run, chrome: str) -> None:
+async def demo(run: Run, chrome: str, moving: bool = False) -> None:
     profile_dir = tempfile.mkdtemp(prefix="gui-demo-chrome-")
     try:
-        await session(run, chrome, profile_dir)
+        await (moving_session if moving else session)(run, chrome, profile_dir)
     finally:
         run.stop_all()
         shutil.rmtree(profile_dir, ignore_errors=True)
@@ -437,6 +438,164 @@ async def session(run: Run, chrome: str, profile_dir: str) -> None:
     run.log("done")
 
 
+# What the vehicle table shows, read from the page: scenario t and the named signals' cells.
+VEHICLE_READ = """(function(){
+  var out = {meta: document.getElementById('vehicle-meta').textContent};
+  document.querySelectorAll('#vehicle tr').forEach(function (tr) {
+    var c = tr.querySelectorAll('td, th');
+    if (c.length >= 2) {
+      var k = c[0].textContent.trim();
+      if (['speed', 'rpm', 'coolant_temp', 'odometer', 'throttle', 'engine_load'].indexOf(k) >= 0)
+        out[k] = Array.prototype.map.call(c, function (x) { return x.textContent.trim(); }).slice(1).join(' | ');
+    }
+  });
+  return out;
+})()"""
+
+
+def stepped_values(profile: Path) -> dict[str, list[float]]:
+    """The profile's `stepped` lists by path, read straight from the YAML."""
+    from ruamel.yaml import YAML
+
+    data = YAML(typ="safe").load(profile.read_text())
+    return {s["path"]: [float(v) for v in s["values"]]
+            for s in data["scenario"]["signals"] if s["type"] == "stepped"}
+
+
+async def scenario_origin(samples: int = 40) -> float:
+    """Wall-clock time at which scenario t was 0: min over polls of (poll time - t_last_applied).
+
+    t_last_applied never runs ahead of the clock, so each sample is an upper bound on the
+    origin plus the poll's own latency; the minimum over many polls is the tightest."""
+    best = float("inf")
+    async with aiohttp.ClientSession() as http:
+        for _ in range(samples):
+            async with http.get(f"http://{API}/api/v1/status") as resp:
+                body = await resp.json()
+            now = time.time()
+            t = body["scenario"]["t_last_applied"]
+            if t is not None:
+                best = min(best, now - float(t))
+            await asyncio.sleep(0.05)
+    return best
+
+
+async def harvest_exchanges() -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    after = 0
+    async with aiohttp.ClientSession() as http:
+        while True:
+            async with http.get(f"http://{API}/api/v1/exchanges?after={after}&limit=500") as resp:
+                body = await resp.json()
+            if not body["events"]:
+                return events
+            events.extend(body["events"])
+            after = body["events"][-1]["seq"]
+
+
+def obd_crosscheck(run: Run, events: list[dict[str, Any]], origin: float) -> None:
+    """Every 01 0C and 01 0D reply against the profile's stepped value for the request's
+    scenario second. A request within EDGE_S of a whole second is reported as at an edge:
+    the scenario may have been applied on either side of it."""
+    edge_s = 0.1
+    values = stepped_values(MOVING_PROFILE)
+    table = {"010c": ("engine.rpm", lambda b: (b[0] * 256 + b[1]) / 4),
+             "010d": ("vehicle.speed", lambda b: float(b[0]))}
+    lines, counts = [], {"match": 0, "edge-match": 0, "edge-other-side": 0, "mismatch": 0}
+    for e in events:
+        key = (e.get("request") or "").replace(" ", "").lower()
+        if key not in table or not e.get("response"):
+            continue
+        path, decode = table[key]
+        reply = bytes.fromhex(e["response"].replace(" ", ""))
+        got = decode(reply[2:])
+        wall = datetime.datetime.fromisoformat(e["t"].replace("Z", "+00:00")).timestamp()
+        t = wall - origin
+        cycle = values[path]
+        step = int(t // 1) if t > 0 else 0
+        want = cycle[step % len(cycle)]
+        near = abs(t - round(t)) < edge_s
+        edge = round(t)
+        other = cycle[edge % len(cycle)] if edge > step else cycle[(edge - 1) % len(cycle)]
+        if got == want:
+            verdict = "edge-match" if near else "match"
+        elif near and got == other:
+            verdict = "edge-other-side"
+        else:
+            verdict = "mismatch"
+        counts[verdict] += 1
+        lines.append(f"seq {e['seq']:4d}  t={t:7.3f}  {key[:2]} {key[2:]}  reply {e['response']:<14s}"
+                     f"  {path}={got:g}  expected step {step % len(cycle):2d}: {want:g}  {verdict}")
+    (run.outdir / "obd-crosscheck.txt").write_text(
+        f"scenario origin (wall, s): {origin:.3f}; edge window: {edge_s} s\n"
+        + "\n".join(lines) + f"\n\nsummary: {counts}\n")
+    run.log(f"OBD cross-check of 01 0C / 01 0D: {counts}")
+
+
+async def moving_session(run: Run, chrome: str, profile_dir: str) -> None:
+    """The moving-vehicle set: the stepped 90 s drive cycle, one run, shots across a loop."""
+    sim = start_simulator(run, MOVING_PROFILE, "simulator-1.log")
+    await wait_ready(run, sim, "simulator-1.log")
+    origin = await scenario_origin()
+    run.log(f"scenario origin estimated at wall {origin:.3f}")
+
+    async def until_scenario(t: float) -> None:
+        delay = origin + t - time.time()
+        if delay > 0:
+            run.log(f"waiting {delay:.1f} s, until scenario t = {t:g} s")
+            await asyncio.sleep(delay)
+
+    await launch_chrome(run, chrome, profile_dir)
+    traffic = None
+    async with aiohttp.ClientSession() as http:
+        ws_url = await page_target(http)
+        async with http.ws_connect(ws_url, max_msg_size=0) as ws:
+            cdp = DevTools(ws)
+            await cdp.send("Page.enable")
+            await cdp.send("Runtime.enable")
+            await cdp.viewport(*WIDE)
+            await cdp.send("Page.navigate", url=PAGE)
+            await cdp.wait_for(f"{CONN} === 'Live'")
+            await cdp.wait_for("!document.querySelector('#vehicle .placeholder')")
+            traffic = start_traffic(run)
+
+            async def shot(name: str) -> None:
+                await cdp.shot(run, name)
+                run.log(f"  {name} vehicle table: {await cdp.js(VEHICLE_READ)}")
+
+            await until_scenario(3.5)
+            await shot("m-idle-odometer-unavailable.png")
+            await until_scenario(10.5)
+            await shot("m-accelerating.png")
+            await until_scenario(40.5)
+            await shot("m-cruising.png")
+            await cdp.viewport(*OWNER_WIDE)
+            await until_scenario(45.5)
+            await shot("m-2000-cruising.png")
+            await cdp.viewport(*NARROW)
+            await cdp.js("document.getElementById('vehicle-panel').scrollIntoView({block: 'start'})")
+            await until_scenario(50.5)
+            await shot("m-390-vehicle.png")
+            await cdp.js("window.scrollTo(0, 0)")
+            await cdp.viewport(*WIDE)
+            await until_scenario(65.5)
+            await shot("m-braking.png")
+            await until_scenario(92.5)
+            await shot("m-after-loop-idle.png")
+
+            events = await harvest_exchanges()
+            obd_crosscheck(run, events, origin)
+
+            run.log("stop traffic, then SIGTERM the simulator")
+            run.stop(traffic)
+            run.stop(sim)
+            await cdp.wait_for(f"{CONN} !== 'Live'", timeout=10)
+            await asyncio.sleep(4.0)
+            await shot("m-disconnected-stale.png")
+            cdp.reader.cancel()
+    run.log("done")
+
+
 def find_chrome() -> str:
     for name in (os.environ.get("CHROME", ""), "google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
         if name and (path := shutil.which(name)):
@@ -459,6 +618,8 @@ def main(argv: list[str] | None = None) -> int:
     require_private_namespace()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("outdir", type=Path, help="directory for the screenshots and logs")
+    parser.add_argument("--moving", action="store_true",
+                        help="the moving-vehicle set (docs/examples/ice_drive_cycle_stepped.yaml)")
     args = parser.parse_args(argv)
     args.outdir.mkdir(parents=True, exist_ok=True)
     run = Run(args.outdir.resolve())
@@ -469,7 +630,7 @@ def main(argv: list[str] | None = None) -> int:
 
     signal.signal(signal.SIGTERM, stop)
     try:
-        asyncio.run(demo(run, find_chrome()))
+        asyncio.run(demo(run, find_chrome(), args.moving))
     except KeyboardInterrupt:
         print("interrupted; every process was stopped", file=sys.stderr)
         return 130

@@ -5,15 +5,22 @@
 # Nothing on the host changes: the host's vcan0 and can0 are never touched, and the page is
 # reachable only inside the namespace, so this gives screenshots, not a page to browse.
 #
-#   scripts/run_gui_demo.sh <outdir>
+#   scripts/run_gui_demo.sh <outdir>             the M3a set (ice_scenario.yaml)
+#   scripts/run_gui_demo.sh --moving <outdir>    the moving-vehicle set
+#                                                (docs/examples/ice_drive_cycle_stepped.yaml)
 #
 # Every process is stopped on every path: the capture script stops what it started by
 # exact PID, and the trap below then signals the capture script's whole process group
 # (its own session, started with setsid, so the group id is its PID) on every exit, which
 # also covers the capture script itself being killed with SIGKILL.
 set -euo pipefail
+MODE=""
+if [[ $# -eq 2 && "$1" == "--moving" ]]; then
+    MODE="--moving"
+    shift
+fi
 if [[ $# -ne 1 ]]; then
-    echo "usage: $0 <outdir>" >&2
+    echo "usage: $0 [--moving] <outdir>" >&2
     exit 2
 fi
 cd "$(dirname "$0")/.."
@@ -45,7 +52,7 @@ exec unshare -r -n bash -euo pipefail -c '
     }
     trap cleanup EXIT
     trap "exit 130" INT TERM
-    setsid "$0" scripts/gui_demo_capture.py "$1" &
+    setsid "$0" scripts/gui_demo_capture.py $2 "$1" &
     capture=$!
     wait "$capture"
-' "$PYTHON" "$OUTDIR"
+' "$PYTHON" "$OUTDIR" "$MODE"

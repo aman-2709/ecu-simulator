@@ -1,0 +1,343 @@
+read-only traffic on vcan0 at 4/s; Ctrl-C to stop
+     1 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+     2 functional 7DF->7E8 01 0C      -> 41 0C 0C 80
+     3 functional 7DF->7E8 01 0D      -> 41 0D 00
+     4 functional 7DF->7E8 01 05      -> 41 05 3D
+     5 functional 7DF->7E8 01 04      -> 41 04 33
+     6 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+     7 functional 7DF->7E8 01 11      -> 41 11 00
+     8 functional 7DF->7E8 01 2F      -> 41 2F 9E
+     9 functional 7DF->7E8 03         -> 43 00
+    10 functional 7DF->7E8 01 0F      -> 41 0F 3C
+    11 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+    12 functional 7DF->7E8 01 0C      -> 41 0C 0C 80
+    13 functional 7DF->7E8 01 0D      -> 41 0D 00
+    14 functional 7DF->7E8 07         -> no answer
+    15 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+    16 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+    17 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+    18 functional 7DF->7E8 01 10      -> 41 10 00 C8
+    19 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+    20 functional 7DF->7E8 01 0C      -> 41 0C 0F 00
+    21 functional 7DF->7E8 01 0D      -> 41 0D 0F
+    22 functional 7DF->7E8 01 05      -> 41 05 3E
+    23 functional 7DF->7E8 01 04      -> 41 04 BF
+    24 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+    25 functional 7DF->7E8 01 11      -> 41 11 72
+    26 functional 7DF->7E8 01 2F      -> 41 2F 9E
+    27 functional 7DF->7E8 03         -> 43 00
+    28 functional 7DF->7E8 01 0F      -> 41 0F 3C
+    29 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+    30 functional 7DF->7E8 01 0C      -> 41 0C 15 E0
+    31 functional 7DF->7E8 01 0D      -> 41 0D 19
+    32 functional 7DF->7E8 07         -> no answer
+    33 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+    34 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+    35 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+    36 functional 7DF->7E8 01 10      -> 41 10 00 C8
+    37 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+    38 functional 7DF->7E8 01 0C      -> 41 0C 1E A0
+    39 functional 7DF->7E8 01 0D      -> 41 0D 23
+    40 functional 7DF->7E8 01 05      -> 41 05 3F
+    41 functional 7DF->7E8 01 04      -> 41 04 BF
+    42 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+    43 functional 7DF->7E8 01 11      -> 41 11 72
+    44 functional 7DF->7E8 01 2F      -> 41 2F 9E
+    45 functional 7DF->7E8 03         -> 43 00
+    46 functional 7DF->7E8 01 0F      -> 41 0F 3C
+    47 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+    48 functional 7DF->7E8 01 0C      -> 41 0C 2B C0
+    49 functional 7DF->7E8 01 0D      -> 41 0D 32
+    50 functional 7DF->7E8 07         -> no answer
+    51 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+    52 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+    53 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+    54 functional 7DF->7E8 01 10      -> 41 10 00 C8
+    55 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+    56 functional 7DF->7E8 01 0C      -> 41 0C 1C 20
+    57 functional 7DF->7E8 01 0D      -> 41 0D 3C
+    58 functional 7DF->7E8 01 05      -> 41 05 41
+    59 functional 7DF->7E8 01 04      -> 41 04 BF
+    60 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+    61 functional 7DF->7E8 01 11      -> 41 11 72
+    62 functional 7DF->7E8 01 2F      -> 41 2F 9E
+    63 functional 7DF->7E8 03         -> 43 00
+    64 functional 7DF->7E8 01 0F      -> 41 0F 3C
+    65 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+    66 functional 7DF->7E8 01 0C      -> 41 0C 20 D0
+    67 functional 7DF->7E8 01 0D      -> 41 0D 4B
+    68 functional 7DF->7E8 07         -> no answer
+    69 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+    70 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+    71 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+    72 functional 7DF->7E8 01 10      -> 41 10 00 C8
+    73 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+    74 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+    75 functional 7DF->7E8 01 0D      -> 41 0D 50
+    76 functional 7DF->7E8 01 05      -> 41 05 42
+    77 functional 7DF->7E8 01 04      -> 41 04 59
+    78 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+    79 functional 7DF->7E8 01 11      -> 41 11 2D
+    80 functional 7DF->7E8 01 2F      -> 41 2F 9E
+    81 functional 7DF->7E8 03         -> 43 00
+    82 functional 7DF->7E8 01 0F      -> 41 0F 3C
+    83 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+    84 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+    85 functional 7DF->7E8 01 0D      -> 41 0D 50
+    86 functional 7DF->7E8 07         -> no answer
+    87 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+    88 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+    89 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+    90 functional 7DF->7E8 01 10      -> 41 10 00 C8
+    91 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+    92 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+    93 functional 7DF->7E8 01 0D      -> 41 0D 50
+    94 functional 7DF->7E8 01 05      -> 41 05 43
+    95 functional 7DF->7E8 01 04      -> 41 04 59
+    96 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+    97 functional 7DF->7E8 01 11      -> 41 11 2D
+    98 functional 7DF->7E8 01 2F      -> 41 2F 9E
+    99 functional 7DF->7E8 03         -> 43 00
+   100 functional 7DF->7E8 01 0F      -> 41 0F 3C
+   101 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+   102 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+   103 functional 7DF->7E8 01 0D      -> 41 0D 50
+   104 functional 7DF->7E8 07         -> no answer
+   105 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+   106 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+   107 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+   108 functional 7DF->7E8 01 10      -> 41 10 00 C8
+   109 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+   110 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+   111 functional 7DF->7E8 01 0D      -> 41 0D 50
+   112 functional 7DF->7E8 01 05      -> 41 05 45
+   113 functional 7DF->7E8 01 04      -> 41 04 59
+   114 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+   115 functional 7DF->7E8 01 11      -> 41 11 2D
+   116 functional 7DF->7E8 01 2F      -> 41 2F 9E
+   117 functional 7DF->7E8 03         -> 43 00
+   118 functional 7DF->7E8 01 0F      -> 41 0F 3C
+   119 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+   120 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+   121 functional 7DF->7E8 01 0D      -> 41 0D 50
+   122 functional 7DF->7E8 07         -> no answer
+   123 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+   124 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+   125 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+   126 functional 7DF->7E8 01 10      -> 41 10 00 C8
+   127 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+   128 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+   129 functional 7DF->7E8 01 0D      -> 41 0D 50
+   130 functional 7DF->7E8 01 05      -> 41 05 46
+   131 functional 7DF->7E8 01 04      -> 41 04 59
+   132 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+   133 functional 7DF->7E8 01 11      -> 41 11 2D
+   134 functional 7DF->7E8 01 2F      -> 41 2F 9E
+   135 functional 7DF->7E8 03         -> 43 00
+   136 functional 7DF->7E8 01 0F      -> 41 0F 3C
+   137 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+   138 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+   139 functional 7DF->7E8 01 0D      -> 41 0D 50
+   140 functional 7DF->7E8 07         -> no answer
+   141 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+   142 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+   143 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+   144 functional 7DF->7E8 01 10      -> 41 10 00 C8
+   145 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+   146 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+   147 functional 7DF->7E8 01 0D      -> 41 0D 50
+   148 functional 7DF->7E8 01 05      -> 41 05 48
+   149 functional 7DF->7E8 01 04      -> 41 04 59
+   150 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+   151 functional 7DF->7E8 01 11      -> 41 11 2D
+   152 functional 7DF->7E8 01 2F      -> 41 2F 9E
+   153 functional 7DF->7E8 03         -> 43 00
+   154 functional 7DF->7E8 01 0F      -> 41 0F 3C
+   155 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+   156 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+   157 functional 7DF->7E8 01 0D      -> 41 0D 50
+   158 functional 7DF->7E8 07         -> no answer
+   159 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+   160 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+   161 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+   162 functional 7DF->7E8 01 10      -> 41 10 00 C8
+   163 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+   164 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+   165 functional 7DF->7E8 01 0D      -> 41 0D 50
+   166 functional 7DF->7E8 01 05      -> 41 05 49
+   167 functional 7DF->7E8 01 04      -> 41 04 59
+   168 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+   169 functional 7DF->7E8 01 11      -> 41 11 2D
+   170 functional 7DF->7E8 01 2F      -> 41 2F 9E
+   171 functional 7DF->7E8 03         -> 43 00
+   172 functional 7DF->7E8 01 0F      -> 41 0F 3C
+   173 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+   174 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+   175 functional 7DF->7E8 01 0D      -> 41 0D 50
+   176 functional 7DF->7E8 07         -> no answer
+   177 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+   178 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+   179 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+   180 functional 7DF->7E8 01 10      -> 41 10 00 C8
+   181 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+   182 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+   183 functional 7DF->7E8 01 0D      -> 41 0D 50
+   184 functional 7DF->7E8 01 05      -> 41 05 4A
+   185 functional 7DF->7E8 01 04      -> 41 04 59
+   186 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+   187 functional 7DF->7E8 01 11      -> 41 11 2D
+   188 functional 7DF->7E8 01 2F      -> 41 2F 9E
+   189 functional 7DF->7E8 03         -> 43 00
+   190 functional 7DF->7E8 01 0F      -> 41 0F 3C
+   191 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+   192 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+   193 functional 7DF->7E8 01 0D      -> 41 0D 50
+   194 functional 7DF->7E8 07         -> no answer
+   195 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+   196 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+   197 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+   198 functional 7DF->7E8 01 10      -> 41 10 00 C8
+   199 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+   200 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+   201 functional 7DF->7E8 01 0D      -> 41 0D 50
+   202 functional 7DF->7E8 01 05      -> 41 05 4C
+   203 functional 7DF->7E8 01 04      -> 41 04 59
+   204 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+   205 functional 7DF->7E8 01 11      -> 41 11 2D
+   206 functional 7DF->7E8 01 2F      -> 41 2F 9E
+   207 functional 7DF->7E8 03         -> 43 00
+   208 functional 7DF->7E8 01 0F      -> 41 0F 3C
+   209 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+   210 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+   211 functional 7DF->7E8 01 0D      -> 41 0D 50
+   212 functional 7DF->7E8 07         -> no answer
+   213 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+   214 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+   215 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+   216 functional 7DF->7E8 01 10      -> 41 10 00 C8
+   217 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+   218 functional 7DF->7E8 01 0C      -> 41 0C 25 80
+   219 functional 7DF->7E8 01 0D      -> 41 0D 50
+   220 functional 7DF->7E8 01 05      -> 41 05 4D
+   221 functional 7DF->7E8 01 04      -> 41 04 19
+   222 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+   223 functional 7DF->7E8 01 11      -> 41 11 00
+   224 functional 7DF->7E8 01 2F      -> 41 2F 9E
+   225 functional 7DF->7E8 03         -> 43 00
+   226 functional 7DF->7E8 01 0F      -> 41 0F 3C
+   227 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+   228 functional 7DF->7E8 01 0C      -> 41 0C 20 80
+   229 functional 7DF->7E8 01 0D      -> 41 0D 45
+   230 functional 7DF->7E8 07         -> no answer
+   231 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+   232 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+   233 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+   234 functional 7DF->7E8 01 10      -> 41 10 00 C8
+   235 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+   236 functional 7DF->7E8 01 0C      -> 41 0C 1B 80
+   237 functional 7DF->7E8 01 0D      -> 41 0D 35
+   238 functional 7DF->7E8 01 05      -> 41 05 4F
+   239 functional 7DF->7E8 01 04      -> 41 04 19
+   240 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+   241 functional 7DF->7E8 01 11      -> 41 11 00
+   242 functional 7DF->7E8 01 2F      -> 41 2F 9E
+   243 functional 7DF->7E8 03         -> 43 00
+   244 functional 7DF->7E8 01 0F      -> 41 0F 3C
+   245 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+   246 functional 7DF->7E8 01 0C      -> 41 0C 14 00
+   247 functional 7DF->7E8 01 0D      -> 41 0D 2A
+   248 functional 7DF->7E8 07         -> no answer
+   249 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+   250 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+   251 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+   252 functional 7DF->7E8 01 10      -> 41 10 00 C8
+   253 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+   254 functional 7DF->7E8 01 0C      -> 41 0C 0F 00
+   255 functional 7DF->7E8 01 0D      -> 41 0D 20
+   256 functional 7DF->7E8 01 05      -> 41 05 50
+   257 functional 7DF->7E8 01 04      -> 41 04 19
+   258 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+   259 functional 7DF->7E8 01 11      -> 41 11 00
+   260 functional 7DF->7E8 01 2F      -> 41 2F 9E
+   261 functional 7DF->7E8 03         -> 43 00
+   262 functional 7DF->7E8 01 0F      -> 41 0F 3C
+   263 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+   264 functional 7DF->7E8 01 0C      -> 41 0C 0C 80
+   265 functional 7DF->7E8 01 0D      -> 41 0D 10
+   266 functional 7DF->7E8 07         -> no answer
+   267 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+   268 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+   269 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+   270 functional 7DF->7E8 01 10      -> 41 10 00 C8
+   271 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+   272 functional 7DF->7E8 01 0C      -> 41 0C 0C 80
+   273 functional 7DF->7E8 01 0D      -> 41 0D 05
+   274 functional 7DF->7E8 01 05      -> 41 05 51
+   275 functional 7DF->7E8 01 04      -> 41 04 33
+   276 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+   277 functional 7DF->7E8 01 11      -> 41 11 00
+   278 functional 7DF->7E8 01 2F      -> 41 2F 9E
+   279 functional 7DF->7E8 03         -> 43 00
+   280 functional 7DF->7E8 01 0F      -> 41 0F 3C
+   281 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+   282 functional 7DF->7E8 01 0C      -> 41 0C 0C 80
+   283 functional 7DF->7E8 01 0D      -> 41 0D 00
+   284 functional 7DF->7E8 07         -> no answer
+   285 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+   286 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+   287 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+   288 functional 7DF->7E8 01 10      -> 41 10 00 C8
+   289 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+   290 functional 7DF->7E8 01 0C      -> 41 0C 0C 80
+   291 functional 7DF->7E8 01 0D      -> 41 0D 00
+   292 functional 7DF->7E8 01 05      -> 41 05 53
+   293 functional 7DF->7E8 01 04      -> 41 04 33
+   294 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+   295 functional 7DF->7E8 01 11      -> 41 11 00
+   296 functional 7DF->7E8 01 2F      -> 41 2F 9E
+   297 functional 7DF->7E8 03         -> 43 00
+   298 functional 7DF->7E8 01 0F      -> 41 0F 3C
+   299 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+   300 functional 7DF->7E8 01 0C      -> 41 0C 0C 80
+   301 functional 7DF->7E8 01 0D      -> 41 0D 00
+   302 functional 7DF->7E8 07         -> no answer
+   303 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+   304 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+   305 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+   306 functional 7DF->7E8 01 10      -> 41 10 00 C8
+   307 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+   308 functional 7DF->7E8 01 0C      -> 41 0C 0C 80
+   309 functional 7DF->7E8 01 0D      -> 41 0D 00
+   310 functional 7DF->7E8 01 05      -> 41 05 54
+   311 functional 7DF->7E8 01 04      -> 41 04 33
+   312 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+   313 functional 7DF->7E8 01 11      -> 41 11 00
+   314 functional 7DF->7E8 01 2F      -> 41 2F 9E
+   315 functional 7DF->7E8 03         -> 43 00
+   316 functional 7DF->7E8 01 0F      -> 41 0F 3C
+   317 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+   318 functional 7DF->7E8 01 0C      -> 41 0C 0C 80
+   319 functional 7DF->7E8 01 0D      -> 41 0D 00
+   320 functional 7DF->7E8 07         -> no answer
+   321 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+   322 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+   323 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+   324 functional 7DF->7E8 01 10      -> 41 10 00 C8
+   325 functional 7DF->7E8 01 00      -> 41 00 1E 3F 80 13
+   326 functional 7DF->7E8 01 0C      -> 41 0C 0C 80
+   327 functional 7DF->7E8 01 0D      -> 41 0D 00
+   328 functional 7DF->7E8 01 05      -> 41 05 55
+   329 functional 7DF->7E8 01 04      -> 41 04 33
+   330 physical 7E0->7E8  22 F1 90   -> 7F 22 11
+   331 functional 7DF->7E8 01 11      -> 41 11 00
+   332 functional 7DF->7E8 01 2F      -> 41 2F 9E
+   333 functional 7DF->7E8 03         -> 43 00
+   334 functional 7DF->7E8 01 0F      -> 41 0F 3C
+   335 physical 7E0->7E8  19 02 FF   -> 59 02 8C
+   336 functional 7DF->7E8 01 0C      -> 41 0C 0C 80
+   337 functional 7DF->7E8 01 0D      -> 41 0D 00
+   338 functional 7DF->7E8 07         -> no answer
+   339 functional 7DF->7E8 09 02      -> 49 02 01 54 45 53 54 56 49 4E 30 31 32 33 34 35 36 37 38 39
+   340 physical 7E1->7E9  19 02 FF   -> 59 02 8C
+   341 functional 7DF->7E8 01 20      -> 41 20 00 02 00 01
+stopped: 341 requests, 19 unanswered
