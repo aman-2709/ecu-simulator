@@ -6,7 +6,7 @@ import pytest
 
 from ecu_simulator import app
 from ecu_simulator.config import load_profile
-from ecu_simulator.observe import snapshots
+from ecu_simulator.observe import availability, snapshots
 from ecu_simulator.observe.handoff import HandOff
 from ecu_simulator.observe.publisher import Publisher
 
@@ -17,12 +17,16 @@ def runtime(name="ice_default.yaml"):
     return app.build_runtime(app.RuntimeConfig.build(load_profile(PROFILES / name), "vcan0"))
 
 
+def missing(rt):
+    return availability.unavailable(rt.config.profile)
+
+
 @pytest.mark.parametrize("name", ["ice_default.yaml", "ice_scenario.yaml"])
 def test_snapshots_serialise_and_fit(name):
     rt = runtime(name)
-    for snap in (snapshots.vehicle(rt), snapshots.dtcs(rt), snapshots.ecus(rt)):
+    for snap in (snapshots.vehicle(rt, missing(rt)), snapshots.dtcs(rt), snapshots.ecus(rt)):
         json.dumps(snap)
-    snapshots.check_state_size(rt)
+    snapshots.check_state_size(rt, missing(rt))
 
 
 def test_snapshots_never_mutate_and_never_call_sync():
@@ -32,10 +36,10 @@ def test_snapshots_never_mutate_and_never_call_sync():
     original_apply = rt.runner.apply
     rt.runner.apply = lambda t: calls.append(t)
     for _ in range(3):
-        snapshots.vehicle(rt)
+        snapshots.vehicle(rt, missing(rt))
         snapshots.dtcs(rt)
         snapshots.ecus(rt)
-        snapshots.state_message(rt)
+        snapshots.state_message(rt, missing(rt))
     rt.runner.apply = original_apply
     after = (copy.deepcopy(rt.vehicle.signals), [(s.code, s.pending, s.confirmed, s.indicator_requested) for e in rt.ecus for s in e.dtc_store], rt.runner.last_applied, rt.runner.pending_events)
     assert before == after and calls == []
@@ -43,9 +47,19 @@ def test_snapshots_never_mutate_and_never_call_sync():
 
 def test_vehicle_reports_as_of_the_last_application():
     rt = runtime("ice_scenario.yaml")
-    assert snapshots.vehicle(rt)["as_of"] is None      # nothing applied yet
+    assert snapshots.vehicle(rt, missing(rt))["as_of"] is None      # nothing applied yet
     rt.sync()
-    assert snapshots.vehicle(rt)["as_of"] == rt.runner.last_applied
+    assert snapshots.vehicle(rt, missing(rt))["as_of"] == rt.runner.last_applied
+
+
+def test_vehicle_shape_carries_the_unavailable_list_beside_the_stored_value():
+    rt = runtime()
+    v = snapshots.vehicle(rt, ("vehicle.odometer",))
+    assert set(v) == {"kind", "vin", "signals", "as_of", "unavailable"}     # 0010 §5, ninth revision
+    assert v["unavailable"] == ["vehicle.odometer"]
+    assert v["signals"]["vehicle.odometer"] == 0                             # signals still carries it
+    message = json.loads(snapshots.state_message(rt, ("vehicle.odometer",)))
+    assert set(message) == {"type", "vehicle", "dtcs"} and message["vehicle"] == v
 
 
 def test_dtcs_and_ecus_shape():
@@ -61,7 +75,7 @@ def test_oversized_state_is_refused():
     rt = runtime()
     rt.vehicle.common.vin = "V" * (300 * 1024)   # test-only object, discarded after the test
     with pytest.raises(ValueError, match="256 KiB"):
-        snapshots.check_state_size(rt)
+        snapshots.check_state_size(rt, missing(rt))
 
 
 def test_status_has_every_section_5_field_including_profile():

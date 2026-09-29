@@ -19,7 +19,7 @@ from aiohttp import WSCloseCode, WSMsgType, web
 
 from ecu_simulator import app
 from ecu_simulator.api.options import ApiOptions, ApiStartupError, allowed_hosts
-from ecu_simulator.observe import snapshots
+from ecu_simulator.observe import availability, snapshots
 from ecu_simulator.observe.connection import Connection
 from ecu_simulator.observe.handoff import HandOff
 from ecu_simulator.observe.limits import CLOSE_INTERNAL_ERROR, CLOSE_TOO_SLOW, STATE_MIN_INTERVAL_S
@@ -160,8 +160,10 @@ class ApiServer:
         connection_options: Mapping[str, Any] | None = None,
         body_timeout_s: float = BODY_TIMEOUT_S,
     ) -> None:
+        # 0010 §5, ninth revision: signals with no source in this profile, computed once here.
+        self.unavailable = availability.unavailable(runtime.config.profile)
         try:
-            snapshots.check_state_size(runtime)
+            snapshots.check_state_size(runtime, self.unavailable)
         except ValueError as error:
             raise ApiStartupError(str(error)) from error
         self.runtime = runtime
@@ -171,7 +173,7 @@ class ApiServer:
                                    connection_options=connection_options)
         self.handler = ObservedDispatcher(runtime.dispatcher, self.handoff, self.publisher.wake)
         # Owner decision 2026-09-27: state exists before the first client can connect.
-        self.publisher.push_state(snapshots.state_message(runtime))
+        self.publisher.push_state(snapshots.state_message(runtime, self.unavailable))
         self.started_at = time.time()
         self.port: int | None = None
         self._state_interval_s = state_interval_s
@@ -239,7 +241,7 @@ class ApiServer:
             ) from error
         self.port = int(self._runner.addresses[0][1])
         self._allowed = allowed_hosts(self.options.host, self.port)
-        state = lambda: snapshots.state_message(self.runtime)  # noqa: E731
+        state = lambda: snapshots.state_message(self.runtime, self.unavailable)  # noqa: E731
         self._tasks = [
             asyncio.create_task(self.publisher.run(), name="observer publisher"),
             asyncio.create_task(self.publisher.run_state(state, self._state_interval_s), name="observer state"),
@@ -279,7 +281,7 @@ class ApiServer:
         ))
 
     async def _vehicle(self, request: web.Request) -> web.Response:
-        return web.json_response(snapshots.vehicle(self.runtime))
+        return web.json_response(snapshots.vehicle(self.runtime, self.unavailable))
 
     async def _dtcs(self, request: web.Request) -> web.Response:
         return web.json_response(snapshots.dtcs(self.runtime))

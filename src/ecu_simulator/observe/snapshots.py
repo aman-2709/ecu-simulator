@@ -6,18 +6,23 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Sequence
 from typing import Any
 
 from ecu_simulator import app
 from ecu_simulator.observe.limits import STATE_MAX_BYTES
 
 
-def vehicle(runtime: app.Runtime) -> dict[str, Any]:
+def vehicle(runtime: app.Runtime, unavailable: Sequence[str]) -> dict[str, Any]:
+    """``unavailable`` is ``availability.unavailable(profile)``, computed once by the caller
+    (0010 §5, ninth revision). ``signals`` still carries every stored value, listed or not.
+    """
     return {
         "kind": runtime.vehicle.powertrain.kind,
         "vin": runtime.vehicle.common.vin,
         "signals": dict(runtime.vehicle.signals),
         "as_of": runtime.runner.last_applied if runtime.runner is not None else None,
+        "unavailable": list(unavailable),
     }
 
 
@@ -48,12 +53,13 @@ def ecus(runtime: app.Runtime) -> dict[str, Any]:
     }
 
 
-def state_message(runtime: app.Runtime) -> str:
-    return json.dumps({"type": "state", "vehicle": vehicle(runtime), "dtcs": dtcs(runtime)}, separators=(",", ":"))
+def state_message(runtime: app.Runtime, unavailable: Sequence[str]) -> str:
+    return json.dumps({"type": "state", "vehicle": vehicle(runtime, unavailable), "dtcs": dtcs(runtime)},
+                      separators=(",", ":"))
 
 
-def check_state_size(runtime: app.Runtime) -> None:
-    size = len(state_message(runtime).encode())
+def check_state_size(runtime: app.Runtime, unavailable: Sequence[str]) -> None:
+    size = len(state_message(runtime, unavailable).encode())
     if size > STATE_MAX_BYTES:
         raise ValueError(f"state message is {size} bytes, over the 256 KiB limit (decisions/0010 §4.3)")
 

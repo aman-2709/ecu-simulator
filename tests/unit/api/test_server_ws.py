@@ -46,13 +46,25 @@ async def test_hello_state_history_then_live(server, session):
     async with session.ws_connect(url(server, "/api/v1/events"), origin=origin(server)) as ws:
         hello = await next_json(ws)
         assert hello == {"type": "hello", "api": 1, "watermark": 2, "oldest_seq": 1}
-        assert await next_json(ws) == json.loads(snapshots.state_message(server.runtime))
+        assert await next_json(ws) == json.loads(snapshots.state_message(server.runtime, server.unavailable))
         assert [(await next_json(ws))["seq"] for _ in range(2)] == [1, 2]   # history is sent directly
         await publish(server, 1)
         live = await next_exchange(ws)
         assert (live["type"], live["seq"], live["outcome"]) == ("exchange", 3, "responded")
     assert await wait_until(lambda: server.publisher.stats(issued=0)["closed_totals"]["connections"] == 1)
     assert check_delivery_unknown_allowance(server.publisher.stats(issued=server.handler.issued)) == {}
+
+
+@pytest.mark.asyncio
+async def test_the_state_message_carries_the_unavailable_list(server, session):
+    async with session.ws_connect(url(server, "/api/v1/events"), origin=origin(server)) as ws:
+        assert (await next_json(ws))["type"] == "hello"
+        state = await next_json(ws)
+    assert state["type"] == "state" and set(state["vehicle"]) == {"kind", "vin", "signals", "as_of", "unavailable"}
+    assert state["vehicle"]["unavailable"] == ["vehicle.odometer"]
+    assert state["vehicle"]["signals"]["vehicle.odometer"] == 0
+    async with session.get(url(server, "/api/v1/vehicle")) as r:
+        assert (await r.json())["unavailable"] == state["vehicle"]["unavailable"]
 
 
 @pytest.mark.asyncio
@@ -454,7 +466,7 @@ async def test_a_client_reset_while_backpressured_is_delivery_unknown_once():  #
 @pytest.mark.asyncio
 async def test_a_publisher_task_that_fails_is_logged_at_once(caplog, monkeypatch):
     s = build()
-    monkeypatch.setattr(snapshots, "state_message", lambda runtime: 1 / 0)   # run_state's snapshot raises
+    monkeypatch.setattr(snapshots, "state_message", lambda runtime, unavailable: 1 / 0)   # run_state's snapshot raises
     await s.start()
     try:
         assert await wait_until(lambda: any(

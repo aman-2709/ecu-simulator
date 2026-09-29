@@ -28,7 +28,37 @@ async def test_every_route_answers_json(server, session):
 def test_the_initial_state_is_ready_before_the_server_starts():
     s = build()                                           # constructed, not started: no socket, no task
     conn, _, _ = s.publisher.connect()
-    assert conn.take_state() == snapshots.state_message(s.runtime)
+    assert conn.take_state() == snapshots.state_message(s.runtime, s.unavailable)
+
+
+@pytest.mark.asyncio
+async def test_vehicle_carries_the_unavailable_list(server, session):
+    # 0010 §5, ninth revision: one added key; signals still carries the stored value.
+    async with session.get(url(server, "/api/v1/vehicle")) as r:
+        body = await r.json()
+    assert set(body) == {"kind", "vin", "signals", "as_of", "unavailable"}
+    assert body["unavailable"] == ["vehicle.odometer"]
+    assert body["signals"]["vehicle.odometer"] == 0
+
+
+@pytest.mark.asyncio
+async def test_the_unavailable_list_is_computed_once_at_construction(session, monkeypatch):
+    from ecu_simulator.observe import availability
+
+    calls = []
+    original = availability.unavailable
+    monkeypatch.setattr(availability, "unavailable", lambda profile: calls.append(1) or original(profile))
+    s = build()
+    assert calls == [1]
+    await s.start()
+    try:
+        for _ in range(3):
+            async with session.get(url(s, "/api/v1/vehicle")) as r:
+                assert (await r.json())["unavailable"] == ["vehicle.odometer"]
+            snapshots.state_message(s.runtime, s.unavailable)
+    finally:
+        await s.stop()
+    assert calls == [1]
 
 
 @pytest.mark.asyncio
