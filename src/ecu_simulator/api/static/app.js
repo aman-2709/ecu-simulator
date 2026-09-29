@@ -505,7 +505,7 @@
       });
       body.appendChild(table);
       body.appendChild(el("p", { cls: "fineprint", text: "Units are a display map from the bundled profiles' comments, not API data. Values are rounded to two decimals; hover for the raw value." +
-        (Object.keys(missing).length ? " \u201cUnavailable, no source\u201d: nothing in this profile sets the signal, so its stored default is not a reading." : "") }));
+        (Object.keys(missing).length ? " \u201cunavailable, no source\u201d: nothing in this profile sets the signal, so its stored default is not a reading." : "") }));
     }
     paths.forEach(function (p) {
       var cell = vehicleCells[p], raw = v.signals[p];

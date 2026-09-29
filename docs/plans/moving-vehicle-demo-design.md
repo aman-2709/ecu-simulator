@@ -1,12 +1,17 @@
 # Moving-vehicle demo profile and the smallest timeline extension — design
 
-Status: **revised after the owner's review of 2026-09-29, and stopped for review again.
-Nothing is implemented.**
+Status: **revised after the owner's review of 2026-09-29. The near-term part is approved
+and implemented on `gui`; the rest stays deferred.**
 - The owner's decisions are recorded in §2.
-- The timeline extension (§5) is **post-V1.0 work** and is not implemented now.
-- A sooner path that needs no code change, a profile built only from today's generators,
-  is evaluated in §4. It awaits the owner's decision.
-- This file is the only change. No `src/`, `tests/` or profile file was touched.
+- **Implemented (owner, 2026-09-29, `docs/plans/gui-m2-implementation.md`, "Near-term
+  moving-vehicle demo and unavailable metadata"):**
+  - the stepped demo of §4, at location L3: `docs/examples/ice_drive_cycle_stepped.yaml`
+    (`965229a`, `aad8072`);
+  - option (c) of §9, the additive `unavailable` list: `a2e6a9a` (observer and API),
+    `10f5c38` (0010 ninth revision), `287cfc2` (GUI).
+- **Deferred, unchanged:** the timeline extension (§5) is **post-V1.0 work** and is not
+  implemented; the `distance` generator (O1) and PIDs 0xA6 and 0x31 wait for a later
+  decision.
 
 Written on branch `gui` (worktree `.claude/worktrees/gui`).
 - Every "fact" was re-verified against the code on this branch, with file:line.
@@ -32,7 +37,9 @@ Written on branch `gui` (worktree `.claude/worktrees/gui`).
   - conditions or triggers;
   - randomness.
 - **Stop point.** The design stops for review again. No scenario, timeline, profile or GUI
-  code is written until the owner decides the open questions in §11.
+  code is written until the owner decides the open questions in §11. *Since then, the
+  owner decided §11 questions 1–4 on 2026-09-29, and the stepped profile and the GUI's
+  `unavailable` list were implemented (see Status); no scenario or timeline code was.*
 - **Unaffected and still open:**
   - The M2 early-check latency `STOP` stays open and is not accepted
     (`docs/decisions/0010-gui-observer-api.md:8-10`,
@@ -62,10 +69,11 @@ The owner's words:
 | Option A (land on `modernization` now) | **Rejected**, because it expands V1.0 | §3 |
 | Option C (land on `gui` only) | **Rejected**, because it conflicts with the `gui` branch rule | §3 |
 | Where the extension lands post-V1.0 | **Decided post-V1.0.** The owner has not chosen a branch or phase, and this design does not claim one | §3 |
-| A profile using today's `stepped` generator | **To be evaluated** (§4) | §4 |
+| A profile using today's `stepped` generator | **Approved (owner, 2026-09-29) and implemented** at L3, `docs/examples/ice_drive_cycle_stepped.yaml` (`965229a`, `aad8072`) | §4 |
 | Nonfinite `repeat` and point inputs | **Must be rejected** by the extension | §5.8 |
 | Periodicity | **Required:** deterministic at a given float time, and correct at the boundaries. **Documented, not required:** decimal times one cycle apart need not give byte-identical rpm | §5.6, §6.3 |
 | The `distance` generator (O1), PIDs 0xA6 and 0x31 | **Deferred** to a later decision | §8.3, §8.5 |
+| The GUI's unsourced odometer | **Option (c) approved (owner, 2026-09-29) and implemented:** `unavailable` on `GET /vehicle` and WS `state` (`a2e6a9a`), 0010 ninth revision (`10f5c38`), "—" in the GUI (`287cfc2`) | §9 |
 
 ## 3. Where this work sits (facts)
 
@@ -829,7 +837,14 @@ Kept as the specified real source. **It is not part of any current work.**
 | Existing tests | `test_vehicle_state.py:126` changes, and so do the schema and runner tests | Mockup data changes | None break |
 | Branch and records | `modernization` and `gui`; 0006 or 0002, and 0010 | `gui`; 0010 | **`gui` only; 0010 §5** |
 
-### 9.3 Recommendation: (c) (not yet decided by the owner)
+### 9.3 Decision: (c), decided by the owner on 2026-09-29 and implemented
+
+Implemented on `gui` with no V1.0 code change: `a2e6a9a` (the list, computed once at
+startup by the API server from the schema fields and the scenario's paths), `10f5c38` (0010
+ninth revision) and `287cfc2` (the GUI shows "—" with "unavailable, no source"). The list
+is a plain sorted list of paths; it names no reason. The recommendation as written before
+the decision:
+
 
 - It changes no V1.0 code, so it fits the `gui` rule.
 - The list is computed once per runtime, so it adds no per-message publisher work.
@@ -899,11 +914,13 @@ Request `01 0C 0D 11 04 05`.
 
 ## 11. Open questions for the owner
 
-1. **The sooner path (§4):** build the stepped profile now, as a no-code stopgap?
-2. **Its location (§4.5):** L3 `docs/examples/` on `gui` (recommended), L1, L2 or L4?
-3. **Its step:** `interval: 1` with 90 values (recommended), or coarser?
-4. **The GUI (§9):** option (c), recommended? And should the list name a reason, for
-   example `{"vehicle.odometer": "no_source"}`?
+1. **The sooner path (§4):** *decided (owner, 2026-09-29):* built, as a no-code stopgap
+   (`965229a`, `aad8072`).
+2. **Its location (§4.5):** *decided:* L3, `docs/examples/ice_drive_cycle_stepped.yaml` on
+   `gui`.
+3. **Its step:** *implemented* with `interval: 1` and 90 values.
+4. **The GUI (§9):** *decided (owner, 2026-09-29):* option (c), implemented (`a2e6a9a`,
+   `10f5c38`, `287cfc2`). The list names no reason: it is a plain sorted list of paths.
 5. **The demo's realism, for both profiles:**
    - a third gear;
    - a throttle lift during the shift;
@@ -920,7 +937,9 @@ The extension's landing, O1 and PIDs 0xA6 and 0x31 are already deferred by the o
 
 Each task is test-first, in its own commit, with no amend.
 
-**Now, if the owner approves §4 and §9 (`gui` only; no V1.0 code):**
+**Now (`gui` only; no V1.0 code). Approved by the owner on 2026-09-29. N1 is done
+(`965229a`, `aad8072`) and N3 is done (`a2e6a9a`, `10f5c38`, `287cfc2`); N2 is Task 24 of
+the M2 plan:**
 
 | # | Task | Files | Tests |
 |---|---|---|---|
