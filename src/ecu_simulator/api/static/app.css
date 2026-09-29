@@ -168,6 +168,8 @@ table { border-collapse: collapse; width: 100%; }
 .sig td.num { font-weight: 600; width: 6.5em; }
 .sig__unit { color: var(--ink-2); width: 4.5em; font-size: 0.929rem; white-space: nowrap; }
 .sig td.changed { animation: changed 1.2s ease-out; }
+.sig td.sig__na-value { font-weight: 400; color: var(--ink-2); }
+.sig__na { display: block; color: var(--ink-2); font: italic 400 0.857rem var(--sans); }
 @keyframes changed { from { background: #d7ecdf; } to { background: transparent; } }
 
 /* ---------- DTCs ---------- */

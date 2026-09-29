@@ -456,7 +456,11 @@
     if (!v) return;
     $("vehicle-meta").textContent = v.as_of == null ? "no scenario: values as configured" : "as of scenario t = " + v.as_of.toFixed(2) + " s";
     var paths = Object.keys(v.signals || {});
-    var key = v.kind + "|" + v.vin + "|" + paths.join(",");
+    // 0010 §5, ninth revision: paths with no source in the profile. Their stored value is a
+    // default, not a measurement, so it is never shown; the list is fixed for a run.
+    var missing = {};
+    (Array.isArray(v.unavailable) ? v.unavailable : []).forEach(function (p) { missing[p] = true; });
+    var key = v.kind + "|" + v.vin + "|" + paths.join(",") + "|" + Object.keys(missing).join(",");
     if (key !== vehicleKey) {
       vehicleKey = key; vehicleCells = {};
       body.textContent = "";
@@ -482,21 +486,30 @@
         var tb = el("tbody");
         tb.appendChild(el("tr", { cls: "sig__group" }, [el("th", { scope: "rowgroup", colspan: "3", text: g ? g + ".*" : "(top level)" })]));
         groups[g].forEach(function (p) {
+          var name = el("th", { scope: "row", cls: "mono sig__name", title: p }, [p.slice(g.length ? g.length + 1 : 0) || p]);
+          if (missing[p]) {
+            // Text, not colour alone: "—" and the words, live and stale alike. The unit is hidden.
+            // The words sit under the name, the widest column, so the narrow sidebar does not scroll.
+            vehicleCells[p] = { td: null, raw: undefined };
+            name.appendChild(el("span", { cls: "sig__na", text: "unavailable, no source" }));
+            tb.appendChild(el("tr", { cls: "sig--na", title: p + ": no source in this profile. No profile field or scenario generator sets it, so the stored default is not shown." }, [
+              name, el("td", { cls: "num sig__na-value", text: "—" }), el("td", { cls: "sig__unit" })
+            ]));
+            return;
+          }
           var td = el("td", { cls: "num" });
           vehicleCells[p] = { td: td, raw: undefined };
-          tb.appendChild(el("tr", null, [
-            el("th", { scope: "row", cls: "mono sig__name", title: p }, [p.slice(g.length ? g.length + 1 : 0) || p]),
-            td, el("td", { cls: "sig__unit", text: UNITS[p] || "" })
-          ]));
+          tb.appendChild(el("tr", null, [name, td, el("td", { cls: "sig__unit", text: UNITS[p] || "" })]));
         });
         table.appendChild(tb);
       });
       body.appendChild(table);
-      body.appendChild(el("p", { cls: "fineprint", text: "Units are a display map from the bundled profiles' comments, not API data. Values are rounded to two decimals; hover for the raw value." }));
+      body.appendChild(el("p", { cls: "fineprint", text: "Units are a display map from the bundled profiles' comments, not API data. Values are rounded to two decimals; hover for the raw value." +
+        (Object.keys(missing).length ? " \u201cUnavailable, no source\u201d: nothing in this profile sets the signal, so its stored default is not a reading." : "") }));
     }
     paths.forEach(function (p) {
       var cell = vehicleCells[p], raw = v.signals[p];
-      if (cell.raw === raw) return;
+      if (!cell.td || cell.raw === raw) return;
       var first = cell.raw === undefined;
       cell.raw = raw;
       var shown = fmtValue(raw);
