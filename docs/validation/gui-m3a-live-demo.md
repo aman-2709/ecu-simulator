@@ -8,8 +8,8 @@ single run at a human request rate, and are not evidence about latency.
 
 **The V1.0 and Phase 8b gates are untouched.** No simulator, protocol, profile, API
 endpoint or server code changed in this task. The page fixes are in the static files under
-`src/ecu_simulator/api/static/` (`app.css`, `app.js`, `index.html`): `4b92c9a` (see
-"Findings") and Task 20's `8d953d3`. The supported-PID summaries come from Task 19's
+`src/ecu_simulator/api/static/` (`app.css`, `app.js`, `index.html`): `4b92c9a` and
+`0355164` (see "Findings"), and Task 20's `8d953d3`. The supported-PID summaries come from Task 19's
 `5e9361b` and `cfd8c24` in `observe/`. These screenshots were retaken against all of
 them. Apart from those, the changes are the demo scripts and this record.
 
@@ -17,8 +17,8 @@ them. Apart from those, the changes are the demo scripts and this record.
 
 | Item | Value |
 |---|---|
-| Branch, commit | `gui` at `8d953d38eeff4bc2f61e1a175a74e9d065a386ed` (Task 20: desktop widths, polled label). The capture script's update was committed on top; it adds capture steps and the namespace guard only |
-| Date | 2026-09-28, 23:48:04 UTC (capture start) |
+| Branch, commit | `gui` at `0355164eb6d19a90b2aa1f78bfd463abcb398bb2` (the trouble-codes table fits the sidebar at every width). The capture script is unchanged from `efc1969` |
+| Date | 2026-09-28, 23:58:35 UTC (capture start). The run crossed midnight UTC, so later shots read 00:00 times |
 | Kernel | Linux 6.8.0-138-generic |
 | CPU governor | `powersave` on all 12 CPUs (not pinned; this is not a timing run) |
 | Python | 3.12.12 (worktree `.venv`) |
@@ -28,15 +28,14 @@ them. Apart from those, the changes are the demo scripts and this record.
 The one command:
 
 ```
-scripts/run_gui_demo.sh <scratchpad>/run6
+scripts/run_gui_demo.sh <scratchpad>/run7
 ```
 
 The screenshots in [gui-m3a-live-demo/](gui-m3a-live-demo/) are all from that one run,
 copied unchanged, with its `capture.log` (the step log) and `traffic.log` (every request
-and answer the generator saw). The same command had been run five times before, to develop
+and answer the generator saw). The same command had been run six times before, to develop
 the capture script and against earlier pages. Those runs are not the record, and none of
-their screenshots is kept. Run 5, at the same commit, lacked the dedicated supported-PID
-shot (b3), so the whole set was retaken.
+their screenshots is kept.
 
 Inside the namespace, `scripts/gui_demo_capture.py`:
 
@@ -92,26 +91,29 @@ All shots are at 1440×900 unless the name says otherwise. From the first live s
 the status bar shows the polled label: "Polled every 2 s from /status, last at HH:MM:SS;
 may trail the live log".
 
+In the trouble-codes table the flag columns are now marks under short headers ("Pend.",
+"Conf.", "Lamp"): a filled dot is set, a ring is not.
+
 | File | What it shows |
 |---|---|
 | [a-loading.png](gui-m3a-live-demo/a-loading.png) | **Loading.** "Connecting"; "Loading trouble codes", "Loading vehicle signals", "Loading the exchange history". The first `/api/v1/` request was held in DevTools to capture this; otherwise it lasts well under a second |
-| [h1-empty-fresh-start.png](gui-m3a-live-demo/h1-empty-fresh-start.png) | **Empty: a fresh start before any traffic.** Live, t = 1.11 s, seq issued 0, the polled label. "No exchanges yet. The simulator has not handled a diagnostic request since it started." The scenario is already moving `coolant_temp` and `engine_load` |
+| [h1-empty-fresh-start.png](gui-m3a-live-demo/h1-empty-fresh-start.png) | **Empty: a fresh start before any traffic.** Live, t = 1.10 s, seq issued 0, the polled label. "No exchanges yet. The simulator has not handled a diagnostic request since it started." The scenario is already moving `coolant_temp` and `engine_load` |
 | [b1-live.png](gui-m3a-live-demo/b1-live.png) | **Live, t ≈ 23 s.** 80 exchanges: speed 30, rpm 1600, coolant 48.98 °C, load 33.35 %, throttle 41 %. It includes row 73, "OBD 01 00 — supported PIDs 01–20", and the 0x22 NRC |
-| [b2-live-7s-later.png](gui-m3a-live-demo/b2-live-7s-later.png) | **Live, t ≈ 29–31 s, about 7 s later.** 106 exchanges: speed 55, rpm 1900, coolant 57.4 °C, load 60 %. The log follows to the newest row, 106 |
-| [b3-live-supported-pid-ranges.png](gui-m3a-live-demo/b3-live-supported-pid-ranges.png) | **The new supported-PID summaries (Task 19).** Row 107 is "OBD 01 20 — supported PIDs 21–40" (`41 20 00 02 00 01`); row 109 is "OBD 01 00 — supported PIDs 01–20" (`41 00 1e 3f 80 13`). The polled label reads "Polled every 2 s from /status, last at 23:48:36; may trail the live log". The status Seq "issued 107" trails the log's "last seq 112", as that label says it may |
+| [b2-live-7s-later.png](gui-m3a-live-demo/b2-live-7s-later.png) | **Live, t ≈ 29–31 s, about 7 s later.** 106 exchanges: speed 55, rpm 1900, coolant 56.88 °C, load 59.82 %. The log follows to the newest row, 106 |
+| [b3-live-supported-pid-ranges.png](gui-m3a-live-demo/b3-live-supported-pid-ranges.png) | **The supported-PID summaries (Task 19).** Row 107 is "OBD 01 20 — supported PIDs 21–40" (`41 20 00 02 00 01`); row 109 is "OBD 01 00 — supported PIDs 01–20" (`41 00 1e 3f 80 13`). The polled label reads "Polled every 2 s from /status, last at 23:59:06; may trail the live log". The status Seq "issued 107" trails the log's "last seq 112", as that label says it may |
 | [d1-filter-service-0x19.png](gui-m3a-live-demo/d1-filter-service-0x19.png) | **The service filter 0x19.** "12 of 116 shown". UDS 19 rows from 7E0 and 7E1, with "N exchanges hidden by filters (not a gap)" between them |
 | [d2-paused-held-rows.png](gui-m3a-live-demo/d2-paused-held-rows.png) | **Paused, after the filter was reset.** "View paused. 20 new exchanges are held"; the header reads "116 exchanges, last seq 136"; the button reads "Resume view" |
-| [d3-resumed-log-following.png](gui-m3a-live-demo/d3-resumed-log-following.png) | **3 s after Resume: the log follows.** "147 exchanges, last seq 147", and row 147 is the last visible row, with no scrolling |
+| [d3-resumed-log-following.png](gui-m3a-live-demo/d3-resumed-log-following.png) | **3 s after Resume: the log follows.** "147 exchanges, last seq 147", and row 147 is the last visible row, with no scrolling. P0128 has just turned "Pending" |
 | [d4-scrolled-up-new-rows-below.png](gui-m3a-live-demo/d4-scrolled-up-new-rows-below.png) | **After a real wheel scroll up (deltaY −700).** The log stays at rows 126–135 while exchanges arrive (159). The control reads "11 new rows below, jump to newest" |
 | [d5-jumped-to-newest.png](gui-m3a-live-demo/d5-jumped-to-newest.png) | **After a real click on that control.** The control is gone, and the log shows the newest row, 166 |
-| [c1-dtc-pending.png](gui-m3a-live-demo/c1-dtc-pending.png) | **DTC pending, t ≈ 46 s.** P0128 "Pending", "1 of 3 codes set", MIL off. UDS 19 02 FF on 7E1 answers `59 02 8c 01 28 01` (P0128 in the record). The log follows, at row 167 |
-| [c2-dtc-confirmed-mil.png](gui-m3a-live-demo/c2-dtc-confirmed-mil.png) | **DTC confirmed with the MIL, t ≈ 80 s.** P0128 "Confirmed", pending and confirmed yes; "MIL on"; speed 40, rpm 1400, coolant 92 °C. **The Lamp column is clipped at the panel's right edge** (see Findings) |
-| [g1-narrow-390.png](gui-m3a-live-demo/g1-narrow-390.png) | **390 px, viewport.** The status grid with the polled label wrapped under Connection; the trouble codes with MIL on, all columns visible, including Lamp "yes" |
+| [c1-dtc-pending.png](gui-m3a-live-demo/c1-dtc-pending.png) | **DTC pending, t ≈ 45 s.** P0128 "Pending": a filled Pend. mark, rings under Conf. and Lamp; "1 of 3 codes set"; MIL off. UDS 19 02 FF on 7E1 answers `59 02 8c 01 28 01` (P0128 in the record). The log follows, at row 166 |
+| [c2-dtc-confirmed-mil.png](gui-m3a-live-demo/c2-dtc-confirmed-mil.png) | **DTC confirmed with the MIL, t ≈ 79 s.** P0128 "Confirmed", with filled marks under Pend., Conf. and **Lamp, all fully visible inside the panel**; "MIL on"; speed 80, rpm 2100, coolant 92 °C |
+| [g1-narrow-390.png](gui-m3a-live-demo/g1-narrow-390.png) | **390 px, viewport.** The status grid with the polled label wrapped under Connection; the trouble codes with MIL on and every column visible |
 | [g2-narrow-390-full-page.png](gui-m3a-live-demo/g2-narrow-390-full-page.png) | **390 px, full page.** Panels stacked; every vehicle signal; log rows as blocks, 295–300, ending at the newest |
-| [w-desktop-2000x1100.png](gui-m3a-live-demo/w-desktop-2000x1100.png) | **2000×1100, the owner's width.** A wider side column, with the DTC table unclipped (Lamp "yes" for P0128); the log's summaries fit on one line, including row 305, "OBD 01 20 — supported PIDs 21–40"; the polled label |
-| [e-disconnected-stale.png](gui-m3a-live-demo/e-disconnected-stale.png) | **Disconnected, about 4 s after SIGTERM.** "Disconnected, retry in 4 s"; the polled label keeps its last time (23:49:28). The banner reads "Last live 23:49:29 UTC (4 s ago) … the simulator is shutting down (1001) …", with "Retry now". Each panel shows "Stale, as of 23:49:29 UTC", and the status readouts are struck through. All three DTC rows are visible; the Lamp column is clipped at the right edge, as in c2. The log keeps 311 exchanges, including 01 20 and 01 00 (rows 305 and 307) |
-| [f-reconnected-after-restart.png](gui-m3a-live-demo/f-reconnected-after-restart.png) | **Reconnected after a restart.** Live at t = 4.63 s, MIL off, P0128 not set. A real wheel scroll up of about 856 px shows the marker: "Simulator restarted. A new run started at 23:49:34 UTC. Rows above are from the previous run; seq starts again at 1." Old rows 308–311 are above it and new rows 1–5 below. The control reads "2 new rows below, jump to newest", counting the rows that arrived after the scroll |
-| [h2-no-scenario.png](gui-m3a-live-demo/h2-no-scenario.png) | **No scenario.** `ice_default.yaml`, on a fresh page load with no traffic. Scenario t reads "no scenario"; the vehicle signals read "no scenario: values as configured"; "No exchanges yet". The profile's confirmed B1477 and P0001 are shown with MIL off. The Lamp column is clipped, as in c2 |
+| [w-desktop-2000x1100.png](gui-m3a-live-demo/w-desktop-2000x1100.png) | **2000×1100, the owner's width.** A wider side column with the whole DTC table; the log's summaries fit on one line, including row 305, "OBD 01 20 — supported PIDs 21–40"; the polled label |
+| [e-disconnected-stale.png](gui-m3a-live-demo/e-disconnected-stale.png) | **Disconnected, about 4 s after SIGTERM.** "Disconnected, retry in 4 s"; the polled label keeps its last time (23:59:58). The banner reads "Last live 00:00:00 UTC (4 s ago) … the simulator is shutting down (1001) …", with "Retry now". Each panel shows "Stale, as of 00:00:00 UTC", and the status readouts are struck through. **All three DTC rows and the Lamp column are fully visible.** The log keeps 311 exchanges, including 01 20 and 01 00 (rows 305 and 307) |
+| [f-reconnected-after-restart.png](gui-m3a-live-demo/f-reconnected-after-restart.png) | **Reconnected after a restart.** Live at t = 4.64 s, MIL off, P0128 not set. A real wheel scroll up of about 962 px shows the marker: "Simulator restarted. A new run started at 00:00:04 UTC. Rows above are from the previous run; seq starts again at 1." Old rows 308–311 are above it and new rows 1–5 below. The control reads "2 new rows below, jump to newest", counting the rows that arrived after the scroll |
+| [h2-no-scenario.png](gui-m3a-live-demo/h2-no-scenario.png) | **No scenario.** `ice_default.yaml`, on a fresh page load with no traffic. Scenario t reads "no scenario"; the vehicle signals read "no scenario: values as configured"; "No exchanges yet". The profile's confirmed B1477 and P0001 are shown with filled Pend. and Conf. marks, a ring under Lamp (fully visible), and MIL off |
 
 On the final page load, `performance.getEntriesByType('resource')` listed no resource from
 any origin other than `http://127.0.0.1:8765`. The whole run produced **no page exception
@@ -138,20 +140,23 @@ The API's `summary` strings for OBD 01 00 and 01 20 read "unknown parameter" in 
 captures. Task 19 (`5e9361b`, `cfd8c24`) changed them to "supported PIDs 01–20" and
 "supported PIDs 21–40" (b3).
 
-**Open, found in this recapture at `8d953d3`:** at 1440×900 the trouble-codes table is
-wider than its panel whenever a code reads "Confirmed". The Lamp header and its yes/no
-column are cut off at the panel's right edge (c2, e, h2). With no confirmed code (b1, c1,
-f) it fits. At 2000×1100 (w) and at 390 px (g1, g2) it is not clipped. The page was not
-changed here; this is for the owner or the next page task.
+3. **At 1440×900 the trouble-codes table clipped its Lamp column** whenever a code read
+   "Confirmed": the table was wider than its panel. Found in the recapture at `8d953d3`
+   (Task 20). **Fixed in `0355164`:** the flag columns show marks under short headers,
+   and a safety net scrolls the table sideways instead of clipping it. The retake shows
+   the Lamp column fully visible in c2, e and h2, and at 390 px and 2000 px.
 
-## Test suite (at `4b92c9a`, Fix round 1; not rerun for this recapture)
+## Test suite (at `0355164`)
 
 These are recorded for completeness. The demo adds no tests.
 
-- **The namespace suite without vcan0**, the baseline form:
+- **The namespace suite without vcan0, at `0355164`**, the baseline form:
   `unshare -r -n bash -c 'ip link set lo up && .venv/bin/python -m pytest -p no:cacheprovider -q -rsx'`
-  gave **1247 passed, 69 skipped, 2 xfailed**. The 69 skips are the vcan integration
+  gave **1248 passed, 69 skipped, 2 xfailed**, as reported by the page implementer for
+  that commit. It was not rerun for this recapture. The 69 skips are the vcan integration
   tests, which need a `vcan0`.
+- Earlier, at `4b92c9a`, the same command gave 1247 passed, 69 skipped, 2 xfailed (run for
+  this task in Fix round 1).
 - **A separate note, not the baseline:** the same suite run in a namespace that also had a
   `vcan0`, at `aafdac2` before the page fix, gave 1315 passed, 1 skipped, 2 xfailed. The
   vcan0 lets 68 of the 69 integration tests run; the total is the same.
