@@ -134,6 +134,22 @@ The owner's words: "For M4, keep timed conditions free of segment pauses; use se
 runs only as diagnostics. The forced-close run must have zero lost diagnostic replies and
 zero drops for healthy readers, while reporting the stalled client's expected drops."
 
+A ninth revision, on 2026-09-29, is the owner's decision on option (c) of
+`docs/plans/moving-vehicle-demo-design.md` §9: an unsourced signal is shown as
+unavailable, not as a misleading stored default. It is additive. It changes no threshold of
+P1–P9, no V1.0 code (the schema, the state model and the scenario engine are read, not
+changed), and no V1.0 or Phase 8b gate. The M2 early-check `STOP` stays open:
+
+- **`GET /vehicle` and the WS `state` message gain `unavailable`:** a sorted list of the
+  dotted signal paths that have **no source** in the loaded profile. A path has no source
+  when no field of the profile schema's `vehicle` section can set it and no scenario
+  generator drives it. The list is computed once at startup, not per request or per
+  message (§5);
+- **`signals` still carries the stored value** of every path, listed or not. With the
+  shipped profiles and the stepped demo, the list is `["vehicle.odometer"]`;
+- the page shows a listed signal as "—" with the text "unavailable, no source", live and
+  stale alike.
+
 The evidence for the routing and ordering claims is in §12.
 
 ## 1. Purpose and scope
@@ -396,7 +412,7 @@ version prefix means a future write API cannot silently change v1.
 | Endpoint | Returns |
 |---|---|
 | `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `longest_turn_s` [the longest publisher turn, in seconds, since the publisher was created: a running maximum, never reset; P9], `encode_failed`, `fanout_failed`, `writer_failed`, `connections_opened`, `closed_unresolved`, `closed_totals` [cumulative, §5.1], `connections` [one **ledger** per open connection, §5.1], `closed_connections` [the ledgers of the last 64 closed connections, final values]} |
-| `GET /vehicle` | `kind`, `vin`, `signals` {dotted path → value}, `as_of` (the scenario time of the last application, equal to `t_last_applied`; `null` without a scenario) |
+| `GET /vehicle` | `kind`, `vin`, `signals` {dotted path → value}, `as_of` (the scenario time of the last application, equal to `t_last_applied`; `null` without a scenario), `unavailable` (ninth revision: a sorted list of the dotted paths with no source in the loaded profile, neither settable by the profile schema nor driven by its scenario, computed once at startup; `signals` still carries their stored values) |
 | `GET /dtcs` | per ECU: `[{code, pending, confirmed, indicator_requested}]`, and `mil` |
 | `GET /ecus` | per ECU: endpoints {`name`, `rx_id`, `tx_id`, `functional`, `receive`, `reply_via`, `padding`} and protocols {`name`, `sids`} |
 | `GET /exchanges?limit=N&after=S` | up to N (default and maximum 500) exchange events with `seq > S` (default: the most recent N), oldest first, together with `watermark`, `oldest_seq` and `gap` (§4.5) |
@@ -412,7 +428,7 @@ WebSocket messages, server → client:
  "response": "410c0c80", "response_len": 4, "response_truncated": false,
  "outcome": "responded", "error": null, "dispatch_us": 41,
  "summary": "OBD 01 0C — engine speed"}
-{"type": "state", "vehicle": {"...": "as GET /vehicle"}, "dtcs": {"...": "as GET /dtcs"}}
+{"type": "state", "vehicle": {"...": "as GET /vehicle, including unavailable"}, "dtcs": {"...": "as GET /dtcs"}}
 {"type": "dropped", "handoff_dropped": 0, "client_dropped": 12, "forced_disconnects": 0}
 ```
 
