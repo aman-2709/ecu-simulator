@@ -2880,3 +2880,23 @@ result. **Unchanged:** all data live, the UI read-only, the M2 latency STOP open
 - Still live-only, read-only, no API change. Frontend-file tests stay green.
 - Live desktop (about 1440 and about 2000 px) and narrow (390 px) screenshots from a real
   simulator run in a namespace, replacing the M3a demo set where they differ.
+
+## M3a follow-up after the owner's second review (owner, 2026-09-29)
+
+Hosted CI at `1d9bb32` noted. **Explicitly open:** the 68 hosted CAN_ISOTP skips (vcan
+never validated on hosted runners) and the M2 median-latency STOP.
+
+### Task 21: log view fixes
+
+**Files:** `src/ecu_simulator/api/static/{app.css,app.js}`.
+
+- Keep the accessible Pend./Conf./Lamp labels (short visible headers, full words for
+  screen readers and on hover).
+- "N new rows below" counts **all** rows below the viewport (of the rows the current
+  filters show), not only rows that arrived after the reader scrolled up.
+- The jump control never covers log data: it sits outside the scrolling rows (for
+  example in the log header or a reserved strip), never overlaid on a row.
+- Verify live, in a namespace, at 1440, 2000 and 390 px; frontend-file tests stay green.
+
+Scenario analysis (ice_scenario.yaml, ScenarioRunner, OBD mapping) is a report only; no
+new scenario, DBC feature or decision record 0011 until the owner decides.
