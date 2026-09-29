@@ -2900,3 +2900,52 @@ never validated on hosted runners) and the M2 median-latency STOP.
 
 Scenario analysis (ice_scenario.yaml, ScenarioRunner, OBD mapping) is a report only; no
 new scenario, DBC feature or decision record 0011 until the owner decides.
+
+## Near-term moving-vehicle demo and unavailable metadata (owner, 2026-09-29)
+
+Approved from `docs/plans/moving-vehicle-demo-design.md`: the stepped stopgap at location L3
+and the additive "unavailable" metadata. **Unchanged:** the scenario engine and the V1.0
+state model (`vehicle/state.py`, `scenario/`, `config/`). **Deferred:** the timeline
+interpolate/repeat extension, the distance generator, PIDs 0xA6 and 0x31. **Open:** the M2
+latency STOP and the hosted CAN_ISOTP gap. The nonfinite-profile crash is a separate
+modernization defect (DEV-26), recorded on its own branch, never mixed into this work.
+
+### Task 22: the stepped 90-second demo profile
+
+**Files:** create `docs/examples/ice_drive_cycle_stepped.yaml` and a test module under
+`tests/unit/` that loads it by path.
+
+- Exactly the stepped profile of the design's §4: `interval: 1`, 90 values each for
+  speed, rpm, throttle and load; coolant the non-repeating `ramp`; no odometer; loaded with
+  `--profile docs/examples/ice_drive_cycle_stepped.yaml`.
+- Tests: it validates through the real loader; **every stepped list has the same length
+  (90) and the same interval**; key OBD replies (`01 0C 0D 11 04 05`) at the design's
+  representative whole-second times equal the design's bytes; the loop boundary (just
+  before, at, and just after 90 s and 180 s) gives the design's bytes; coolant in the
+  second cycle is higher than at the same cycle time in the first.
+
+### Task 23: additive "unavailable" metadata, and "—" in the GUI
+
+**Files:** `src/ecu_simulator/observe/snapshots.py` (or a new `observe/` helper),
+`src/ecu_simulator/api/static/app.js`/`app.css`, `docs/decisions/0010-gui-observer-api.md`
+(ninth revision: §5 `GET /vehicle` and WS `state` gain `unavailable`), tests under
+`tests/unit/observe` and `tests/unit/api`.
+
+- `GET /vehicle` and every WS `state` message gain `unavailable`: a sorted list of dotted
+  signal paths that have **no source** in the loaded profile — not settable by the profile
+  schema and not driven by its scenario — computed once at startup from the profile, the
+  schema and the scenario. With the shipped profiles and the stepped demo it is
+  `["vehicle.odometer"]`. Every other field is unchanged; `signals` still carries the
+  stored value (additive, no V1.0 change).
+- The GUI shows a listed signal's value as "—" with an "unavailable, no source" label (text,
+  not colour alone, and in the stale state too).
+- Tests: the list for `ice_default`, `ice_scenario` and the stepped demo; a scenario that
+  drives a signal removes it from the list; `/vehicle` and a WS `state` message both carry
+  it; the existing API shape tests still pass apart from the added key.
+
+### Task 24: live demo of the moving vehicle on vcan
+
+In a namespace, the simulator with `--profile docs/examples/ice_drive_cycle_stepped.yaml
+--api 127.0.0.1:8765` and the traffic generator; live screenshots at 1440, 2000 and 390 px
+showing the vehicle moving across a loop boundary and the odometer as "—"; recorded in
+`docs/validation/gui-m3a-live-demo.md`.
