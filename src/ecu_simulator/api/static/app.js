@@ -68,7 +68,8 @@
     paused: false, pauseAfter: 0, clearedAfter: 0, expanded: {},
     // The log follows the newest row until the reader scrolls away from it. Only the reader's
     // own input (wheel, touch, keys, pointer on the log) stops following; a layout change never does.
-    follow: true, leftAt: 0, lastShownId: 0, userInputAt: 0
+    follow: true, shownRows: [], userInputAt: 0, followFrame: 0,
+    layoutTop: null                  // a scroll position the layout forced, not the reader
   };
   var rowCache = new Map();
   var renderTimer = null, lastRender = 0;
@@ -665,8 +666,9 @@
   function renderLog() {
     lastRender = Date.now();
     var wrap = $("logwrap"), body = $("log-body");
+    var topBefore = wrap.scrollTop;
     var frag = document.createDocumentFragment();
-    var shown = 0, hidden = 0, inView = 0, held = 0, below = 0, lastShown = 0;
+    var shown = 0, hidden = 0, inView = 0, held = 0, rows = [];
     function flushHidden() {
       if (!hidden) return;
       frag.appendChild(el("tr", { cls: "hiddenrow" }, [el("td", { colspan: "9", text: hidden + (hidden === 1 ? " exchange" : " exchanges") + " hidden by filters (not a gap)" })]));
@@ -687,21 +689,22 @@
       inView += 1;
       if (!passes(entry.e)) { hidden += 1; return; }
       flushHidden();
-      frag.appendChild(rowFor(entry));
+      var tr = rowFor(entry);
+      frag.appendChild(tr);
+      rows.push(tr);
       shown += 1;
-      if (entry.id > view.leftAt) below += 1;
-      lastShown = entry.id;
     });
     if (shown) flushHidden(); else hidden = 0;
     body.replaceChildren(frag);
     wrap.classList.toggle("is-empty", shown === 0);
-    view.lastShownId = lastShown;
+    view.shownRows = rows;
     renderLogState(shown, inView, held);
     renderFilterCounts();
     // Last, after everything that can change the log's height: the state lines and the controls,
     // which re-wrap as the filter counts widen.
     if (view.follow) toBottom();
-    renderFollow(below);
+    else noteLayoutScroll(topBefore);
+    renderFollow();
     var h = S.hello;
     $("log-count").textContent = !h && S.lastSeq == null ? "" :
       (shown === inView ? inView + " exchanges" : shown + " of " + inView + " shown") +
@@ -709,17 +712,46 @@
   }
   function atBottom(wrap) { return wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 4; }
   function toBottom() { var wrap = $("logwrap"); wrap.scrollTop = wrap.scrollHeight; }
-  function renderFollow(below) {
+  // Shown exchange rows wholly below the visible part of the log: those the current filters
+  // show, however they got there. Rows are in order, so a binary search finds the first one.
+  function rowsBelow() {
+    var rows = view.shownRows, wrap = $("logwrap");
+    if (!rows.length) return 0;
+    var bottom = wrap.getBoundingClientRect().bottom - 1;
+    var lo = 0, hi = rows.length;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      if (rows[mid].getBoundingClientRect().top >= bottom) hi = mid; else lo = mid + 1;
+    }
+    return rows.length - lo;
+  }
+  // The control lives in the log header and always keeps its place (visibility, not display),
+  // so showing it never moves a row, and it never lies over one.
+  function renderFollow() {
     var b = $("btn-follow");
-    b.hidden = view.follow;
-    b.textContent = below > 0 ? below + (below === 1 ? " new row below" : " new rows below") + ", jump to newest" : "Jump to newest";
+    var n = view.follow ? 0 : rowsBelow();
+    b.classList.toggle("is-off", view.follow);
+    b.disabled = view.follow;
+    b.setAttribute("aria-hidden", String(view.follow));
+    b.textContent = n > 0 ? n.toLocaleString("en") + (n === 1 ? " row below" : " rows below") + ", jump to newest" : "Jump to newest";
+  }
+  // A shorter list or a smaller box makes the browser move the scroll position itself (it
+  // clamps to the new end). That move is the layout's, not the reader's: remember where it
+  // landed, so the scroll event it fires does not change following.
+  function noteLayoutScroll(topBefore) {
+    var top = $("logwrap").scrollTop;         // reading it applies any clamp now
+    view.layoutTop = top !== topBefore ? top : null;
+  }
+  function scheduleFollow() {
+    if (view.followFrame) return;
+    view.followFrame = requestAnimationFrame(function () { view.followFrame = 0; renderFollow(); });
   }
   function setFollow(on) {
-    if (view.follow === on) return;
-    view.follow = on;
-    if (!on) view.leftAt = view.lastShownId;
-    if (on) toBottom();
-    renderFollow(0);
+    if (view.follow !== on) {
+      view.follow = on;
+      if (on) toBottom();
+    }
+    renderFollow();
   }
   function watchLogScroll() {
     var wrap = $("logwrap");
@@ -728,13 +760,27 @@
       wrap.addEventListener(t, input, { passive: true });
     });
     wrap.addEventListener("scroll", function () {
+      if (view.layoutTop !== null && wrap.scrollTop === view.layoutTop) {
+        view.layoutTop = null;          // the clamp noted above: count again, following unchanged
+        scheduleFollow();
+        return;
+      }
+      view.layoutTop = null;
       // Only a scroll that follows the reader's own input changes following, either way. Any
       // other scroll is the layout moving under them (a shorter filtered list clamps the
       // position to the end, a banner resizes the box): following is unchanged.
       if (Date.now() - view.userInputAt < USER_SCROLL_MS) setFollow(atBottom(wrap));
+      scheduleFollow();                 // the count of rows below changes as the reader scrolls
     }, { passive: true });
     // The log's box changes size with the banner, the pause line and wrapping controls.
-    if (window.ResizeObserver) new ResizeObserver(function () { if (view.follow) toBottom(); }).observe(wrap);
+    if (window.ResizeObserver) {
+      var lastTop = wrap.scrollTop;
+      wrap.addEventListener("scroll", function () { lastTop = wrap.scrollTop; }, { passive: true });
+      new ResizeObserver(function () {
+        if (view.follow) toBottom(); else noteLayoutScroll(lastTop);
+        scheduleFollow();
+      }).observe(wrap);
+    }
     $("btn-follow").addEventListener("click", function () { setFollow(true); renderLog(); });
   }
 
