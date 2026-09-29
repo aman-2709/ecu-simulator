@@ -1,13 +1,18 @@
 # Moving-vehicle demo profile and the smallest timeline extension — design
 
-Status: **proposal, awaiting the owner's decision. Nothing is implemented.** This file is
-the only change. No `src/`, `tests/` or profile file was touched.
+Status: **revised after the owner's review of 2026-09-29, and stopped for review again.
+Nothing is implemented.**
+- The owner's decisions are recorded in §2.
+- The timeline extension (§5) is **post-V1.0 work** and is not implemented now.
+- A sooner path that needs no code change, a profile built only from today's generators,
+  is evaluated in §4. It awaits the owner's decision.
+- This file is the only change. No `src/`, `tests/` or profile file was touched.
 
-Written on branch `gui` (worktree `.claude/worktrees/gui`). Every "fact" below was
-re-verified against the code on this branch, with file:line. Everything under a
-"Proposal" heading is a proposal and not a fact about the code. The OBD bytes in §8 were
-computed in-process by the simulator's own schema, runner, dispatcher and encoders, with no
-CAN (Appendix A).
+Written on branch `gui` (worktree `.claude/worktrees/gui`).
+- Every "fact" was re-verified against the code on this branch, with file:line.
+- Everything under a "Proposal" heading is a proposal, not a fact about the code.
+- All OBD bytes were computed in-process by the simulator's own loader, schema,
+  generators, runner, dispatcher and encoders, with no CAN (Appendices A and B).
 
 ## 1. Scope and status
 
@@ -15,86 +20,355 @@ CAN (Appendix A).
   - a separate moving-vehicle demo profile;
   - the smallest timeline extension that makes it readable (`interpolate`, `repeat`);
   - an odometer that never decreases, or none at all;
-  - a way to show an unsourced odometer as unavailable in the GUI.
-- **Not asked for, and not proposed:** a looping odometer ramp, any change to
-  `ice_default.yaml` or `ice_scenario.yaml`, any new OBD PID, conditions or triggers, or
-  randomness.
-- **Stop point.** This design stops for review. No scenario or timeline code is written
-  until the owner approves this design, including the branch and gate question in §2.
+  - a way to show an unsourced odometer as unavailable in the GUI;
+  - since the review:
+    - an evaluation of a profile that uses only today's generators;
+    - nonfinite-input validation;
+    - a restated periodicity requirement.
+- **Not asked for, and not proposed:**
+  - a looping odometer ramp;
+  - any change to `ice_default.yaml` or `ice_scenario.yaml`;
+  - any new OBD PID;
+  - conditions or triggers;
+  - randomness.
+- **Stop point.** The design stops for review again. No scenario, timeline, profile or GUI
+  code is written until the owner decides the open questions in §11.
 - **Unaffected and still open:**
-  - The M2 early-check latency `STOP` stays open and not accepted
+  - The M2 early-check latency `STOP` stays open and is not accepted
     (`docs/decisions/0010-gui-observer-api.md:8-10`,
     `docs/validation/gui-m2-early-check.md`). Nothing here measures or changes it.
   - The hosted-CI `CAN_ISOTP` skips stay as they are. GitHub-hosted runners have no
-    `can_isotp` (`docs/modernization-plan.md:342-349`), and decision 0009 proposes the
-    runner that would fix that. Every vcan test proposed here is skipped on hosted CI in
-    the same way.
+    `can_isotp` (`docs/modernization-plan.md:344-347`), and decision 0009 proposes the
+    runner that would fix that. Every vcan check proposed here runs only on a vcan host.
 
-## 2. Where this work would sit (fact, then options for the owner)
+## 2. Decisions (owner, 2026-09-29)
 
-Facts:
+The owner's words:
+
+> "Approve the closing-point rule and O2 (no demo odometer), but do not implement the
+> timeline extension yet. Treat it as post-V1.0 work; option A expands V1.0 and option C
+> conflicts with the gui branch rule. Evaluate whether a separate profile using today's
+> repeating stepped generator can show a moving vehicle sooner. Add validation for
+> nonfinite repeat/point inputs. For periodicity, require deterministic results at a
+> given float time and correct boundary behavior; document that arbitrary decimal times
+> one cycle apart need not give byte-identical RPM. Keep the optional distance generator
+> and PIDs for a later decision. Revise the design and stop for review."
+
+| Topic | Decision | Where it applies |
+|---|---|---|
+| The closing-point rule for `repeat` | **Approved** | §5.4 |
+| O2: no odometer in the demo | **Approved** | §8.4, and the stepped profile in §4 |
+| The timeline extension | **Post-V1.0. Not implemented now** | §3, §5 |
+| Option A (land on `modernization` now) | **Rejected**, because it expands V1.0 | §3 |
+| Option C (land on `gui` only) | **Rejected**, because it conflicts with the `gui` branch rule | §3 |
+| Where the extension lands post-V1.0 | **Decided post-V1.0.** The owner has not chosen a branch or phase, and this design does not claim one | §3 |
+| A profile using today's `stepped` generator | **To be evaluated** (§4) | §4 |
+| Nonfinite `repeat` and point inputs | **Must be rejected** by the extension | §5.8 |
+| Periodicity | **Required:** deterministic at a given float time, and correct at the boundaries. **Documented, not required:** decimal times one cycle apart need not give byte-identical rpm | §5.6, §6.3 |
+| The `distance` generator (O1), PIDs 0xA6 and 0x31 | **Deferred** to a later decision | §8.3, §8.5 |
+
+## 3. Where this work sits (facts)
 
 - The scenario engine is V1.0 code. Phase 7 is listed under V1.0
-  (`docs/modernization-plan.md:123`, `:249`). It was approved with rulings in 0006, and one
-  ruling is **"Exactly the six generators, pure functions of `t`"**
-  (`docs/decisions/0006-phase-7-scenario-and-testerpresent.md:523`).
-- In 0006 §5.1, the timeline is defined as step-and-hold ("the value of the latest point
-  whose `at <= t`") (`0006:310`). 0006 also calls the timeline "absolute", in contrast to
-  `stepped`, which repeats (`0006:312`).
-- The conformance row is "Six deterministic generators as pure functions of elapsed time"
-  (`docs/conformance.md:217`).
-- V1.0 is not tagged without Phase 8b's evidence. Phases 9 to 11 may proceed while 8b is
-  open (`docs/modernization-plan.md:364-365`).
+  (`docs/modernization-plan.md:123`, `:249`).
+  - It was approved with rulings in 0006. One ruling is **"Exactly the six generators,
+    pure functions of `t`"** (`docs/decisions/0006-phase-7-scenario-and-testerpresent.md:523`).
+  - 0006 §5.1 defines the timeline as step-and-hold (`0006:310`), and calls it "absolute"
+    in contrast to `stepped`, which repeats (`0006:312`).
+  - The conformance row reads "Six deterministic generators as pure functions of elapsed
+    time" (`docs/conformance.md:217`).
+- V1.0 is not tagged without Phase 8b's evidence (`docs/modernization-plan.md:364-365`).
 - Branch `gui` starts from `modernization` at `a57b98f`, and it is **not merged into
   `modernization` until V1.0 is tagged**. Nothing on `gui` changes V1.0 scope, the 8b gate
   or any conformance status (`0010:14-18`, `docs/modernization-plan.md:567-577`).
 - The standing gates apply to any change: the phase completion gate
   (`docs/modernization-plan.md:694-756`) and the documentation and standards verification
-  gate (`:758-`). The timeline extension depends on no external standard. Python float
-  semantics are the only external behaviour it relies on (§3.5).
+  gate (`:758-`).
 
-**Consequence.** `interpolate` and `repeat` change the semantics of a V1.0 generator, so
-they amend 0006 §5.1 and 5.3. A `distance` generator (§6) would be a seventh generator,
-which reverses the "exactly six" ruling. Neither can happen without the owner's approval.
+What follows from the decisions:
 
-The options, not decided here:
+- `interpolate` and `repeat` change the semantics of a V1.0 generator. They therefore
+  amend 0006 §5.1 and §5.3, in a decision record written when the post-V1.0 work starts.
+- **Option A** would have landed that on `modernization` before 8b, which expands V1.0.
+  The owner rejected it for that reason.
+- **Option C** would have changed V1.0 code on `gui`, which the `gui` rule forbids
+  (`0010:14-18`). The owner rejected it for that reason.
+- The landing (which branch, which phase) is **decided post-V1.0**.
+- §5 to §7 and §10 are kept as the approved-in-part specification for that later work.
+- §4 is the only path that could show a moving vehicle before then. §9's `unavailable`
+  list touches only `gui` files and 0010, and it does not depend on the extension.
 
-| Option | Where the timeline change lands | Gate or approval it needs | Cost |
-|---|---|---|---|
-| A | `modernization`, now, as an amendment to Phase 7 | The owner's approval; an amendment to 0006, or a new decision record; the phase completion gate (§10) evidence for the amended rows; `conformance.md` wording | It adds scope to V1.0 after Phase 7 closed and before 8b. The defaults preserve every byte (§4), but it is still V1.0 code changing |
-| B | `modernization`, as a small post-8a item beside Phases 9 to 11 (V1.1) | The same decision record. It is not on the V1.0 path | The demo waits for that branch, and `gui` rebases or merges it later |
-| C | `gui` only | Owner approval. It contradicts the `gui` rule that V1.0 code is not changed there (`0010:14-18`) | Divergence in V1.0 files that the eventual merge must reconcile |
+## 4. The sooner path: a profile using only today's generators
 
-The demo profile is packaged with the wheel (`pyproject.toml:63`, profiles glob). It goes
-wherever the extension goes, because it cannot be written without it (§5).
+### 4.1 Facts about `stepped`
 
-The GUI change for "unavailable" (§7, recommended option) touches only `gui` files and 0010.
-It does not depend on the timeline decision.
+- **Semantics.** `value_at(t) = values[step % len(values)]`, with
+  `step = int(t // interval) if t > 0 else 0` (`scenario/generators.py:96-105`,
+  `0006:308`).
+- **Step length.** There is one `interval` for every step. A per-step length is **not**
+  configurable (`generators.py:101`), so the cycle length is `len(values) × interval`.
+- **Wrap.** Just before `t = k × len × interval` the value is `values[-1]`. **At** that
+  instant it is `values[0]`, because `step % len == 0`. The wrap is a plain step from the
+  last value to the first. `t <= 0` gives `values[0]` (`generators.py:104`).
+- **Float behaviour.** With `interval: 1`, `t // 1.0` is the exact floor of the double
+  `t`. The same float `t` always gives the same step.
+  - `15.3` and `105.3` land on steps 15 and 105, so they agree (Appendix B).
+  - Two decimal times one cycle apart could disagree only within an ulp of a step edge,
+    where `t + 90` rounds across a whole second.
+- **Schema limits.**
+  - `values` must be non-empty (`Field(min_length=1)`), with **no maximum length**
+    (`generators.py:100`).
+  - `interval` must be `> 0` (`generators.py:101`).
+  - `ScenarioConfig.signals` has no length limit either (`config/schema.py:195`).
+- **Nonfinite values are not rejected** (finding, §5.8.2): `values: [.inf]` and
+  `interval: .inf` both validate today (Appendix C).
+- **Combining with a non-repeating `ramp`.**
+  - Each generator is evaluated independently at the same `t` (`runner.py:148-151`).
+  - A `ramp` is a function of absolute `t`: it holds `to` after `over`
+    (`generators.py:68-73`). It ignores the stepped cycle, so the coolant keeps rising
+    through the loops and never resets.
+- **Phase alignment is not validated.** Each `stepped` wraps at its own
+  `len × interval`. Nothing checks that the four lists share a length. A list one value
+  short would drift out of phase with the others silently, a second per lap.
 
-## 3. The timeline extension
+### 4.2 Proposal: the profile
 
-### 3.1 Today (fact)
+- **The same 90 s cycle as §7.** `interval: 1`, **90 values per signal** for speed, rpm,
+  throttle and load.
+- **How the values were derived.** Each value is the §7 knot line sampled at the start of
+  its second. So each 1 s step holds the value the linear timeline would have at that
+  whole second.
+- **Speed** is written as the whole km/h the runner stores anyway. The runner truncates
+  integer signals (`runner.py:107-110, 151`), so `74.67` and `74` give the same byte, and
+  the file shows what the wire carries.
+- **rpm stays coherent with speed:**
+  - exactly 56 × speed on steps 9–15 (2nd gear);
+  - exactly 30 × speed on steps 16–21 (top gear);
+  - within about 1% on steps 61–69, because speed is written truncated and rpm is not.
+- **Coolant** is the existing `ramp` from 20 to 90 °C over 240 s. It does not repeat.
+- **No odometer**, per O2. `vehicle.odometer` stays undriven.
+- **No `dtc_events`** (open question 6).
+- **`tick: 0.5`**, as in `ice_scenario.yaml`.
+- The `vehicle` and `ecus` blocks are as in `ice_scenario.yaml`
+  (`ice_scenario.yaml:30-52, 121-170`).
+- The scenario part below was generated by Appendix B's script and loaded through the
+  real loader and schema. It validates: four `stepped` signals of 90 values each, and one
+  `ramp`.
+
+```yaml
+scenario:
+  tick: 0.5
+  signals:
+    - path: vehicle.speed
+      type: stepped
+      interval: 1
+      values: [
+          0, 0, 0, 0, 0, 0, 5, 10, 15, 20,  # 0-9 s
+          25, 30, 35, 40, 45, 50, 55, 60, 65, 70,  # 10-19 s
+          75, 80, 80, 80, 80, 80, 80, 80, 80, 80,  # 20-29 s
+          80, 80, 80, 80, 80, 80, 80, 80, 80, 80,  # 30-39 s
+          80, 80, 80, 80, 80, 80, 80, 80, 80, 80,  # 40-49 s
+          80, 80, 80, 80, 80, 80, 80, 80, 80, 80,  # 50-59 s
+          80, 74, 69, 64, 58, 53, 48, 42, 37, 32,  # 60-69 s
+          26, 21, 16, 10, 5, 0, 0, 0, 0, 0,  # 70-79 s
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  # 80-89 s
+        ]
+    - path: engine.rpm
+      type: stepped
+      interval: 1
+      values: [
+          800, 800, 800, 800, 800, 800, 880, 960, 1040, 1120,  # 0-9 s
+          1400, 1680, 1960, 2240, 2520, 2800, 1650, 1800, 1950, 2100,  # 10-19 s
+          2250, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400,  # 20-29 s
+          2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400,  # 30-39 s
+          2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400,  # 40-49 s
+          2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400,  # 50-59 s
+          2400, 2240, 2080, 1920, 1760, 1600, 1440, 1280, 1120, 960,  # 60-69 s
+          800, 800, 800, 800, 800, 800, 800, 800, 800, 800,  # 70-79 s
+          800, 800, 800, 800, 800, 800, 800, 800, 800, 800,  # 80-89 s
+        ]
+    - path: engine.throttle
+      type: stepped
+      interval: 1
+      values: [
+          0, 0, 0, 0, 0, 0, 45, 45, 45, 45,  # 0-9 s
+          45, 45, 45, 45, 45, 45, 45, 45, 45, 45,  # 10-19 s
+          45, 45, 18, 18, 18, 18, 18, 18, 18, 18,  # 20-29 s
+          18, 18, 18, 18, 18, 18, 18, 18, 18, 18,  # 30-39 s
+          18, 18, 18, 18, 18, 18, 18, 18, 18, 18,  # 40-49 s
+          18, 18, 18, 18, 18, 18, 18, 18, 18, 18,  # 50-59 s
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  # 60-69 s
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  # 70-79 s
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  # 80-89 s
+        ]
+    - path: engine.engine_load
+      type: stepped
+      interval: 1
+      values: [
+          20, 20, 20, 20, 20, 20, 75, 75, 75, 75,  # 0-9 s
+          75, 75, 75, 75, 75, 75, 75, 75, 75, 75,  # 10-19 s
+          75, 75, 35, 35, 35, 35, 35, 35, 35, 35,  # 20-29 s
+          35, 35, 35, 35, 35, 35, 35, 35, 35, 35,  # 30-39 s
+          35, 35, 35, 35, 35, 35, 35, 35, 35, 35,  # 40-49 s
+          35, 35, 35, 35, 35, 35, 35, 35, 35, 35,  # 50-59 s
+          10, 10, 10, 10, 10, 10, 10, 10, 10, 10,  # 60-69 s
+          10, 20, 20, 20, 20, 20, 20, 20, 20, 20,  # 70-79 s
+          20, 20, 20, 20, 20, 20, 20, 20, 20, 20,  # 80-89 s
+        ]
+    # Warm-up happens once: a ramp of absolute time, not part of the cycle.
+    - path: engine.coolant_temp
+      type: ramp
+      from: 20
+      to: 90
+      over: 240
+```
+
+**The loop boundary** (`generators.py:103-105`):
+
+| t | Step | Every cycle signal |
+|---|---|---|
+| `89.999`, and one ulp below 90 | 89 | `values[89]`: idle |
+| `90.0` exactly | 0 | `values[0]`: idle |
+| `90.001` | 0 | `values[0]`: idle |
+
+- Every list ends on the value it starts with. So the wrap is a step from idle to idle,
+  and nothing on the wire changes.
+- The coolant keeps rising across the boundary.
+
+### 4.3 Expected bytes (computed through the real generators)
+
+Method (Appendix B):
+- the profile file above was written;
+- it was read by `load_profile` (the real ruamel loader and schema);
+- it was built with `app.build_runtime(..., clock=SimulatedClock())`;
+- the clock was advanced to `t`, and the real `Dispatcher` asked `01 0C 0D 11 04 05` on
+  `0x7E0`.
+
+| Label | t (s) | Step | Stored rpm, speed, throttle, load | Coolant (°C) | Reply |
+|---|---|---|---|---|---|
+| idle | 2.0 | 2 | 800, 0, 0.0, 20.0 | 20.583 | `41 0C 0C 80 0D 00 11 00 04 33 05 3C` |
+| mid-acceleration, 2nd gear | 12.0 | 12 | 1960, 35, 45.0, 75.0 | 23.500 | `41 0C 1E A0 0D 23 11 72 04 BF 05 3F` |
+| same step, 0.5 s later | 12.5 | 12 | 1960, 35, 45.0, 75.0 | 23.646 | `41 0C 1E A0 0D 23 11 72 04 BF 05 3F` |
+| upshift begins | 15.0 | 15 | 2800, 50, 45.0, 75.0 | 24.375 | `41 0C 2B C0 0D 32 11 72 04 BF 05 40` |
+| t = 15.3 | 15.3 | 15 | 2800, 50, 45.0, 75.0 | 24.462 | `41 0C 2B C0 0D 32 11 72 04 BF 05 40` |
+| upshift ends, top gear | 16.0 | 16 | 1650, 55, 45.0, 75.0 | 24.667 | `41 0C 19 C8 0D 37 11 72 04 BF 05 40` |
+| cruise | 40.0 | 40 | 2400, 80, 18.0, 35.0 | 31.667 | `41 0C 25 80 0D 50 11 2D 04 59 05 47` |
+| brake, first step | 61.0 | 61 | 2240, 74, 0.0, 10.0 | 37.792 | `41 0C 23 00 0D 4A 11 00 04 19 05 4D` |
+| mid-brake | 65.0 | 65 | 1600, 53, 0.0, 10.0 | 38.958 | `41 0C 19 00 0D 35 11 00 04 19 05 4E` |
+| **just before the boundary** | 89.999 | 89 | 800, 0, 0.0, 20.0 | 46.250 | `41 0C 0C 80 0D 00 11 00 04 33 05 56` |
+| **one ulp before the boundary** | 89.99999999999999 | 89 | 800, 0, 0.0, 20.0 | 46.250 | `41 0C 0C 80 0D 00 11 00 04 33 05 56` |
+| **exactly at the boundary** | 90.0 | 0 | 800, 0, 0.0, 20.0 | 46.250 | `41 0C 0C 80 0D 00 11 00 04 33 05 56` |
+| **just after the boundary** | 90.001 | 0 | 800, 0, 0.0, 20.0 | 46.250 | `41 0C 0C 80 0D 00 11 00 04 33 05 56` |
+| 2nd cycle, mid-acceleration | 102.0 | 12 | 1960, 35, 45.0, 75.0 | **49.750** | `41 0C 1E A0 0D 23 11 72 04 BF 05 59` |
+| 2nd cycle, t = 105.3 | 105.3 | 15 | 2800, 50, 45.0, 75.0 | **50.712** | `41 0C 2B C0 0D 32 11 72 04 BF 05 5A` |
+| 2nd cycle, cruise | 130.0 | 40 | 2400, 80, 18.0, 35.0 | **57.917** | `41 0C 25 80 0D 50 11 2D 04 59 05 61` |
+| 2nd boundary | 180.0 | 0 | 800, 0, 0.0, 20.0 | 72.500 | `41 0C 0C 80 0D 00 11 00 04 33 05 70` |
+| warm, 4th cycle, cruise | 310.0 | 40 | 2400, 80, 18.0, 35.0 | 90.000 | `41 0C 25 80 0D 50 11 2D 04 59 05 82` |
+
+Read with the table:
+
+- **At the whole-second steps, every reply equals §10.3's linear-timeline reply**,
+  because the values are the same samples. The two differ only between whole seconds:
+  - at t=15.5, stepped holds 2800 rpm (`0C 2B C0`), and linear gives 2225 (`0C 22 C4`);
+  - at t=15.3, stepped gives 2800 rpm, and linear gives 2454.
+- **The coolant keeps rising across the loops:** `05 3F` at t=12, `05 59` at t=102.
+- **The cycle PIDs agree at t=15.3 and t=105.3** (`0C 2B C0`). Here, unlike the linear
+  timeline (§5.6), the step holds for a whole second.
+
+### 4.4 Trade-offs against the extension
+
+| | Stepped profile, now | Linear `timeline` with `repeat`, post-V1.0 |
+|---|---|---|
+| Code change | **None.** Only V1.0 generators (0006 §5.1) | Amends a V1.0 generator; post-V1.0 |
+| Shape | A 1 s staircase: speed moves in 5 km/h steps; the upshift is one step, 2800 → 1650 rpm | Smooth ramps between knots |
+| File | About 66 lines of scenario: 360 numbers, with the knots invisible. Changing a phase means re-deriving many values, which is why the generating script matters | About 50 lines: 33 knots, each readable as intent |
+| Silent-error risk | **Lists of unequal length drift out of phase with no error** (§4.1). A test must pin every length to 90 | The closing-point rule validates every signal's cycle |
+| Values between whole seconds | The value at the start of the second, held | Interpolated. Byte periodicity at decimal times is not guaranteed (§5.6) |
+| In the GUI | See below | See below |
+
+In the GUI:
+
+- `state` is pushed at most every 0.25 s, and only when it changed
+  (`observe/limits.py:16`, `observe/publisher.py:265-272`).
+- Snapshots never apply the scenario (`observe/snapshots.py:1-3`). So a value on screen
+  moves only when the tick (`tick: 0.5`) or a request applies it.
+- In the M3a signals table, which shows numbers and not plots yet (0010 §7), the stepped
+  profile changes speed and rpm **once a second**. The linear timeline would change them
+  about **twice a second**, at the tick. Both read as a moving vehicle in a number table.
+- The staircase becomes visible only as steps on a plot, which is M3b's sparklines. At a
+  90 s scale, 1 s steps are small.
+
+**Assessment.** The stepped profile can show a moving vehicle **now**, with no code change,
+at the cost of a long list and a 1 s staircase. It is a stopgap: when the extension lands
+post-V1.0, the §7 profile replaces it with the same cycle and the same bytes at whole
+seconds.
+
+A coarser step does not read better. `interval: 2` halves the lists to 45 values, but
+speed then jumps 10 km/h at a time and the upshift lasts 2 s.
+
+### 4.5 Where the file would live
+
+Facts:
+
+- **Shipped profiles are package data.** The wheel includes
+  `src/ecu_simulator/profiles/*.yaml` (`pyproject.toml:63`).
+- **`--profile` accepts any path.**
+  - `--profile PATH` (`cli.py:59-63`) becomes `Path(args.profile)` (`cli.py:78`).
+  - `load_profile` reads and validates any file (`config/__init__.py:19-21`,
+    `config/loader.py:29-48`).
+  - The M3a live demo already runs with an explicit `--profile <path>`
+    (`docs/validation/gui-m3a-live-demo.md:49`).
+- **The `gui` rules:**
+  - `gui` is not merged until V1.0 is tagged, and nothing on it changes V1.0 scope
+    (`0010:14-18`, `docs/modernization-plan.md:567-577`).
+  - M1's plan listed "the profiles" among files it must not modify
+    (`docs/plans/gui-m1-implementation.md:60-62`). That was a constraint on M1, but it
+    shows the intent.
+  - M2's plan says "Nothing in this plan touches `modernization`"
+    (`docs/plans/gui-m2-implementation.md:95-96`).
+  - There is a precedent for GUI-track material outside package data:
+    `docs/mockups/m3a-dashboard/`, "not package data"
+    (`docs/plans/gui-m2-implementation.md:2771`).
+- There is no `examples/` directory today (repository root listing).
+
+Options, not decided:
+
+| | Location | Branch | V1.0 content? | Notes |
+|---|---|---|---|---|
+| L1 | `src/ecu_simulator/profiles/ice_drive_cycle_stepped.yaml` | `gui` | **Yes, in effect.** It is package data in a V1.0 directory, which the `gui` rule's intent excludes | Tests can find it next to `ice_scenario.yaml` |
+| L2 | The same path | `modernization` | **Yes.** It adds a shipped profile before 8b, which is what the owner rejected A for, though with no code | Needs an owner ruling and a conformance note |
+| L3 | **`docs/examples/ice_drive_cycle_stepped.yaml`** | `gui` | **No.** It is not package data, and it is run with `--profile docs/examples/ice_drive_cycle_stepped.yaml` | Matches the `docs/mockups/` precedent. Tests on `gui` load it by repository path |
+| L4 | `examples/ice_drive_cycle_stepped.yaml` (a new top-level directory) | `gui` | No | The same as L3, but it adds a new top-level directory |
+
+**Recommendation: L3.** It is the only option that is neither V1.0 content nor a new
+top-level convention. It keeps the GUI demo on the GUI track, and it can move into
+`profiles/` when the extension lands post-V1.0.
+
+## 5. The timeline extension (specification for post-V1.0 work, not implemented now)
+
+### 5.1 Today (fact)
 
 - `TimelineSignal` has `type` and `points`. Points must ascend by `at`, and **equal `at`
   values are allowed**: the check is `times != sorted(times)`
-  (`src/ecu_simulator/scenario/generators.py:141-153`).
+  (`scenario/generators.py:141-153`).
 - `value_at(t)` returns the value of the last point whose `at <= t`, and the first point's
   value before the first point (`generators.py:155-161`). It never interpolates, and it
   holds the last value forever.
-- Generator models forbid unknown keys (`generators.py:34`). Today, `interpolate:` or
-  `repeat:` on a timeline is refused as `Extra inputs are not permitted` (Appendix A.3).
-- Scenario time `t` is a Python `float`. `ScenarioSync.elapsed` is
-  `clock.now() - origin` (`scenario/sync.py:31-32`). The origin is read once at build
-  (`sync.py:25`, `app.py:222-224`). `MonotonicClock` returns `time.monotonic()`
-  (`clock.py:24-25`). `SimulatedClock.advance` accumulates `self._now += float(seconds)`
-  (`clock.py:37-41`). So `t` is an arbitrary double: exact for whole or dyadic advances in
-  tests, and not exact in production.
-- The runner calls `value_at(t)` for every signal and writes `int(value)` into
-  integer-typed signals (`scenario/runner.py:148-151`). The integer or float decision is
-  made once, from the vehicle's initial value types (`runner.py:107-110`). A `t` earlier
-  than the last applied one is refused with a warning (`runner.py:136-143`).
+- Generator models forbid unknown keys (`generators.py:34`). Today, `repeat:` on a
+  timeline is refused as `Extra inputs are not permitted` (Appendix A.3).
+- **Time is a Python `float`.**
+  - `ScenarioSync.elapsed` is `clock.now() - origin` (`scenario/sync.py:31-32`).
+  - The origin is read once, at build (`sync.py:25`, `app.py:222-224`).
+  - `MonotonicClock` returns `time.monotonic()` (`clock.py:24-25`).
+  - `SimulatedClock.advance` accumulates `self._now += float(seconds)` (`clock.py:37-41`).
+- **The runner:**
+  - it calls `value_at(t)` for every signal, and writes `int(value)` into integer signals
+    (`scenario/runner.py:148-151`);
+  - the integer-or-float choice is made once, from the vehicle's initial value types
+    (`runner.py:107-110`);
+  - a `t` earlier than the last applied one is refused (`runner.py:136-143`).
 
-### 3.2 Proposal: two optional fields on `timeline` only
+### 5.2 Proposal: two optional fields on `timeline` only
 
 ```yaml
 - path: vehicle.speed
@@ -105,82 +379,55 @@ It does not depend on the timeline decision.
 ```
 
 - `interpolate: Literal["step", "linear"] = "step"`.
-- `repeat: float | None = Field(default=None, gt=0)`.
-- When both are absent, or `interpolate: step` with no `repeat`, `value_at` runs the
-  **existing code path unchanged**. §4 proves it.
-- No other generator gains either field. `repeat` on a `ramp` stays
-  `Extra inputs are not permitted`.
+- `repeat: float | None = Field(default=None, gt=0, allow_inf_nan=False)`.
+- With both absent, or with `interpolate: step` and no `repeat`, `value_at` runs the
+  **existing code path unchanged** (§6.2).
+- No other generator gains either field.
 
-### 3.3 Linear: the value at `tc`
+### 5.3 Linear: the value at `tc`
 
-`tc` is the evaluation time. Without `repeat`, `tc = t`. With `repeat`, `tc` is the cycle
-time from §3.4. Let the points be `(a0, v0) … (an, vn)`, ascending.
+`tc` is the evaluation time: `t` without `repeat`, or the cycle time (§5.4) with it. The
+points are `(a0, v0) … (an, vn)`, ascending.
 
 | Case | Value |
 |---|---|
-| `tc < a0` (before the first point) | `v0`, held. This is the same as step today (`generators.py:156`) |
-| `ai <= tc < ai+1`, with `i` the **last** index where `ai <= tc` | `vi + ((vi+1 − vi) × (tc − ai)) / (ai+1 − ai)` |
-| `tc >= an` (at or after the last point) | `vn`, held. This is the same as step |
-| `tc == ai` exactly | `vi` exactly, because the fraction is 0 |
-| Two points share one `at` (allowed today) | Choosing the last index with `ai <= tc` never selects a zero-width segment, so there is no division by zero. The value jumps at that `at`, and the later point wins, exactly as step does today |
+| `tc < a0` | `v0`, held, as step does today (`generators.py:156`) |
+| `ai <= tc < ai+1`, `i` the **last** index with `ai <= tc` | `vi + ((vi+1 − vi) × (tc − ai)) / (ai+1 − ai)` |
+| `tc >= an` | `vn`, held |
+| `tc == ai` exactly | `vi` exactly |
+| Two points share one `at` | A zero-width segment is never selected, so there is no division by zero. The value jumps at that `at`, and the later point wins, exactly as step does today |
 
-- **Multiply before divide.** The expression is evaluated in that order. With integer
-  knots and a time where the exact result is a whole number, the numerator is exact and
-  IEEE division is correctly rounded, so the result is that whole number exactly. The
-  demo relies on this: 1960 rpm at t=12 is `1960.0`, not `1959.9999…`.
-- Only `+ − × ÷` are used, with no libm. So unlike `sine` (`generators.py:79-83`,
-  `0006:315-321`), a linear timeline gives the same bits on any IEEE-754 platform for the
-  same double `t`.
-- **Non-repeating linear:** before `a0`, hold `v0`. After `an`, hold `vn` forever.
-- **Repeating linear:** the same table, applied to `tc = cycle time`. §3.4's rules make
-  `a0 = 0` and `an = repeat`, so "before the first point" cannot happen. "At or after the
-  last point" happens only at `tc == repeat`, which the mapping never produces.
+- **Multiply before divide.** With integer knots, a time whose exact result is a whole
+  number gives that whole number exactly, for example 1960 rpm at t=12.
+- Only `+ − × ÷` are used, with no libm, unlike `sine` (`generators.py:79-83`,
+  `0006:315-321`).
 
-### 3.4 Repeat: the cycle time, and the validation rule
+### 5.4 Repeat: the cycle time, and the closing-point rule (approved)
 
-**Mapping.** `tc = math.fmod(max(t, 0.0), repeat)`.
+- **Mapping.** `tc = math.fmod(max(t, 0.0), repeat)`.
+  - A `t < 0` never happens in the runtime. It is treated as 0, like `ramp` and `stepped`
+    (`generators.py:69, 104`).
+- **The closing-point rule, approved by the owner on 2026-09-29.** When `repeat` is set:
+  1. the first point's `at` is `0`;
+  2. the last point's `at` equals `repeat`;
+  3. the last point's `value` equals the first point's `value`.
+- **Why this rule:**
+  - the file states the value at `t = k × repeat`;
+  - linear is continuous at the wrap by construction;
+  - a jump has to be written, as two points at one `at`, so it is visible;
+  - it is `stepped`'s wrap to `values[0]` (`generators.py:103-105`), made explicit.
 
-- `t < 0` never happens in the runtime, because the origin is captured at build. It is
-  treated as 0 and gives `v0`. This matches `ramp` and `stepped`, which treat `t <= 0` as
-  the start (`generators.py:69, 104`).
-- `math.fmod` is used rather than `%` so that the rule is one named function. For
-  `t >= 0` and `repeat > 0` the two agree.
+### 5.5 The loop boundary, exactly
 
-**Validation. The rule chosen is the "closing point".** When `repeat` is set:
-
-1. the first point's `at` must be `0`;
-2. the last point's `at` must equal `repeat`;
-3. the last point's `value` must equal the first point's `value`.
-
-Why this rule, and not "`repeat` must be greater than the last point's `at`":
-
-- The file states the value at the boundary explicitly. The closing point *is* the
-  value at `t = k × repeat`, in both step and linear mode. No segment is left implicit.
-- **Linear is continuous at the wrap by construction.** Under the alternative, the stretch
-  between the last point and `repeat` would need a rule of its own: hold then jump, or
-  interpolate back to `v0`. Either rule is invisible in the file, and forgetting it gives
-  a silent jump. Under the closing-point rule, a jump has to be written as two points at
-  the same `at`, so it is visible.
-- It is the same idea as `stepped` wrapping to `values[0]` (`generators.py:103-105`), made
-  explicit.
-- The cost is one extra line per signal, and a closing point that step mode never
-  evaluates (it equals `v0` anyway).
-
-### 3.5 The loop boundary, exactly
-
-Here `k >= 1` is an integer, and `ε` is small: in the test, one ulp or 0.001 s.
+Here `k >= 1`, and `ε` is small: one ulp, or 0.001 s.
 
 | `t` | `tc` | step | linear |
 |---|---|---|---|
-| `k·repeat − ε` | `repeat − ε` | the value of the last point with `at <= repeat − ε`, which is **the point before the closing point** | `→ vn = v0` as `ε → 0` (continuous) |
+| `k·repeat − ε` | `repeat − ε` | the value of the point before the closing point | `→ vn = v0` (continuous) |
 | `k·repeat` exactly | `0.0` exactly | `v0` | `v0` |
-| `k·repeat + ε` | `ε` | `v0` (until the next point's `at`) | `v0 + slope0 × ε` |
+| `k·repeat + ε` | `ε` | `v0` | `v0 + slope0 × ε` |
 
-- **Linear wraps continuously.** The left limit is `vn`, which the rule makes equal to
-  `v0`, and the value at the boundary is `v0`.
-- **Step jumps at the boundary.** It jumps from the second-to-last value to `v0`, as step
-  already jumps at every point.
-- Worked example, with points `(0,10) (30,20) (60,10)` and `repeat: 60` (Appendix A.2):
+A worked example, with points `(0,10) (30,20) (60,10)` and `repeat: 60` (Appendix A.2):
 
 | t | tc | step | linear |
 |---|---|---|---|
@@ -193,179 +440,219 @@ Here `k >= 1` is an integer, and `ε` is small: in the test, one ulp or 0.001 s.
 | 90.0 | 30.0 | 20 | 20.0 |
 | 120.0 | 0.0 | 10 | 10.0 |
 
-### 3.6 Floating point: what "deterministic at exact multiples" means here
+### 5.6 Periodicity and floating point (restated per the owner's decision)
 
-- **`math.fmod` is exact.** IEEE-754 and C99 `fmod` return the exact remainder with no
-  rounding. So a double `t` that equals `k × repeat` exactly gives `tc == 0.0` exactly:
-  `fmod(270.0, 90.0) == 0.0`, and `fmod(9e10, 90.0) == 0.0` (Appendix A.2).
-- **The values are a pure function of the double `t`,** and nothing else. Two calls, two
-  processes or two machines with the same double `t` give the same value and the same
-  bytes.
-- **What is not promised.** A decimal time and the "same" decimal time one cycle later
-  are different doubles. For example, `105.3 − 90` in doubles is
-  `15.299999999999997`, not `15.3`. Their values can then differ in the last bit, and the
-  runner's truncation can turn that into a different byte (§8.3: 2454 rpm at t=15.3,
-  2455 rpm at t=105.3). That is deterministic, but it is not byte-periodic.
-  - Tests assert periodicity only at exactly representable times: whole seconds, or
-    halves and quarters.
-  - The same hazard exists today for `ramp` and at every truncation boundary. It is not
-    new.
-- **Rejected alternatives:**
-  - Quantising `tc` (for example, rounding to 1 ms) adds a second rule and a new boundary.
-  - Rational `t` would need the clock seam to change. The runner receives a float
-    (`runner.py:126`, `sync.py:35`).
+**Required:**
 
-### 3.7 Other generators
+1. **Determinism at a given float time.** `value_at(t)` is a pure function of the double
+   `t`. The same double gives the same value, in two calls, in two instances built from
+   the same configuration, and in two processes. On any IEEE-754 platform it gives the same
+   bytes, because only correctly rounded basic operations and the exact `fmod` are used.
+2. **Correct boundary behaviour.**
+   - At an exact multiple `t = k × repeat`, `math.fmod` returns exactly `0.0`, because
+     IEEE-754 `fmod` is exact. The value is `v0`: `fmod(270.0, 90.0) == 0.0`,
+     `fmod(9e10, 90.0) == 0.0` (Appendix A.2).
+   - Just before and just after, the values follow §5.5.
 
-`constant`, `ramp`, `sine`, `stepped` and `sequence` are unchanged: code, parameters and
-tests (`generators.py:50-131`). `stepped` already repeats and `sine` is already periodic.
-Neither gains `repeat`, and the six-generator set test stays exactly as written
-(`tests/unit/test_scenario_generators.py:42-44`).
+**Documented, not required:** arbitrary decimal times one cycle apart need not give
+byte-identical results.
 
-### 3.8 Schema validation errors (proposed exact text)
+- `105.3 − 90` in doubles is `15.299999999999997`, not `15.3`.
+- The linear rpm is then `2455.000000000003` against `2454.999999999999`, and the runner's
+  truncation (`runner.py:151`) turns that into **2455 rpm against 2454 rpm** (`0C 26 5C`
+  against `0C 26 58`, §10.3).
+- This is deterministic, but it is not byte-periodic. The same hazard exists today for
+  `ramp` and at every truncation boundary.
 
-The rule is a model validator on `TimelineSignal`. Its messages start with `repeat: `, so
-`config/schema.py`'s `_join` moves the sub-path into the location
-(`config/schema.py:354-368`), as the existing validators do. Several problems are joined
-with `; `, following the rule at `schema.py:357-360`.
+Rejected alternatives:
+
+- quantising `tc`, which adds a second rule;
+- rational `t`, which would change the clock seam (`runner.py:126`, `sync.py:35`).
+
+### 5.7 Other generators
+
+- `constant`, `ramp`, `sine`, `stepped` and `sequence` are unchanged
+  (`generators.py:50-131`).
+- The six-generator test stays as written (`tests/unit/test_scenario_generators.py:42-44`).
+
+### 5.8 Validation
+
+#### 5.8.1 Messages, including nonfinite input
+
+- A model validator on `TimelineSignal` prefixes its messages with `repeat: `, so `_join`
+  moves the sub-path into the location (`config/schema.py:354-368`).
+- Several problems are joined with `; ` (`schema.py:357-360`).
+- Nonfinite input is refused by `allow_inf_nan=False` on `repeat`, `TimelinePoint.at` and
+  `TimelinePoint.value`, which produces Pydantic's own message. That matches the style of
+  the existing field errors, such as `Input should be greater than 0`
+  (Appendix A.3, Appendix C).
 
 | Problem | Message as `validate-config` prints it |
 |---|---|
 | First point not at 0 | `scenario.signals.0.timeline.repeat: a repeating timeline must start its cycle at 0, but its first point is at 5.0` |
-| Last point not at `repeat` (before or after it) | `scenario.signals.0.timeline.repeat: a repeating timeline must end with a point at its repeat time 90.0, but its last point is at 75.0` |
+| Last point not at `repeat` | `scenario.signals.0.timeline.repeat: a repeating timeline must end with a point at its repeat time 90.0, but its last point is at 75.0` |
 | The closing value differs | `scenario.signals.0.timeline.repeat: the last point closes the cycle, so its value must equal the first point's value 0.0, got 5.0` |
-| `repeat: 0` or negative | `scenario.signals.0.timeline.repeat: Input should be greater than 0` (Pydantic's own, as `ramp.over` today) |
+| `repeat: 0` or negative | `scenario.signals.0.timeline.repeat: Input should be greater than 0` |
+| `repeat: .nan`, `.inf` or `-.inf` | `scenario.signals.0.timeline.repeat: Input should be a finite number` |
+| A point's `at` is `.nan`, `.inf` or `-.inf` | `scenario.signals.0.timeline.points.3.at: Input should be a finite number` |
+| A point's `value` is `.nan`, `.inf` or `-.inf` | `scenario.signals.0.timeline.points.3.value: Input should be a finite number` |
 | `interpolate: cubic` | `scenario.signals.0.timeline.interpolate: Input should be 'step' or 'linear'` |
 | `repeat` on another generator | `scenario.signals.1.ramp.repeat: Extra inputs are not permitted` (unchanged) |
 
-The Pydantic messages above were checked against Pydantic 2.13.5 (Appendix A.3). The
-first three are proposed text, in the style of
-`timeline points must be in ascending 'at' order, got [...]` (`generators.py:152`).
+- The finite-number messages and their `type` (`finite_number`) were checked on Pydantic
+  2.13.5 (Appendix C).
+- YAML spells these values `.nan`, `.inf` and `-.inf`, and an overflowing literal such as
+  `1e400` also loads as `inf` (Appendix C).
+- Finiteness on `TimelinePoint` applies to **step** timelines too, because the class is
+  shared. That is deliberate, and it is a tightening. A profile with a nonfinite point
+  becomes invalid, and every valid profile is unaffected, which the §6.2 goldens prove.
 
-## 4. Determinism and the regression proof
+#### 5.8.2 Finding: the current schema accepts nonfinite values almost everywhere
 
-### 4.1 Invariants kept (0006 §5, `runner.py:8-22`)
+This is recorded as a finding. No change is proposed here for the existing generators; it
+is a later decision (open question 8).
 
-- A generator is still a pure function of `t`. It holds no state, reads no clock and
-  knows no other signal.
+Checked through `parse_profile` (Appendix C):
+
+| Input | Result today | Why |
+|---|---|---|
+| timeline point `value: nan` | **accepted** | `TimelinePoint.value: float`, no constraint (`generators.py:138`) |
+| timeline point `at: inf` | **accepted** | `Field(ge=0)`, and `inf >= 0` (`generators.py:137`) |
+| timeline point `at: nan` | refused: `Input should be greater than or equal to 0` | `NaN >= 0` is false, so it is refused by accident, with a misleading message |
+| `ramp.over: inf`, `ramp.to: nan` | **accepted** | `generators.py:64-66` |
+| `sine.centre: inf` | **accepted**; `sine.period: nan` is refused by `gt=0` | `generators.py:87-89` |
+| `stepped.values: [inf]`, `stepped.interval: inf` | **accepted** | `generators.py:100-101` |
+| `constant.value: nan` | **accepted** | `generators.py:54` |
+| `sequence` step `for: inf` | **accepted** | `generators.py:112` |
+| `scenario.tick: inf` | **accepted** | `schema.py:194` |
+| DTC event `at: inf` | **accepted** | `Field(ge=0)`, and `inf >= 0` (`scenario/events.py:47`) |
+| initial `vehicle.engine.coolant_temp: nan` | **accepted** | `schema.py:65`, an unbounded `float` |
+
+What an accepted nonfinite value does, in-process (Appendix C):
+
+- A NaN point on the integer `vehicle.speed` makes `int()` in the runner raise
+  `ValueError` (`runner.py:151`).
+- An `inf` stepped value on the float `engine.throttle` makes the encoder's `int()` raise
+  `OverflowError` (`pids.py:80`).
+- Either exception propagates out of `Dispatcher.__call__` (`ecu/dispatcher.py:78-79`).
+- How the running transport then treats it was **not traced here**.
+
+## 6. Determinism and the regression proof (for the post-V1.0 work)
+
+### 6.1 Invariants kept (0006 §5, `runner.py:8-22`)
+
+- A generator is still a pure function of `t`.
 - `ScenarioRunner.apply` is untouched. It stays the only writer, it is idempotent for a
   fixed `t`, and it performs no await.
-- **Events never repeat.** `repeat` belongs to one timeline. DTC events are consumed once
-  by their applied-marker (`runner.py:153-158`), so a repeating drive cycle never
-  re-raises a code.
+- **Events never repeat.** They are consumed once by their applied-marker
+  (`runner.py:153-158`).
 
-### 4.2 The proof that existing scenarios keep their current behaviour
+### 6.2 The proof that existing scenarios keep their current behaviour
 
-The owner's pin-then-transition method is used. **Commit 1 pins the goldens against the
-unchanged code**, and commit 2 changes the generator. Commit 1 must pass before commit 2
-exists.
+This uses pin-then-transition. Commit 1 pins the goldens on the unchanged code, and
+commit 2 changes the generator.
 
-1. **The golden values of `ice_scenario.yaml` at many timestamps** (new file
+1. **Golden values of `ice_scenario.yaml`** (new file
    `tests/unit/test_scenario_goldens.py`, recorded before the change):
    - Timestamps:
      - every 0.5 s from 0 to 130 s;
-     - each timeline `at` in the profile, and one ulp either side of it
-       (`math.nextafter`);
+     - each timeline `at`, and one ulp either side of it;
      - 600 s, 3600 s and 86400 s.
    - Per timestamp, recorded exactly:
-     - the stored values of `vehicle.speed`, `engine.rpm`, `engine.coolant_temp`,
-       `engine.throttle` and `engine.fuel_level`;
+     - the stored speed, rpm, coolant, throttle and fuel level;
      - the replies to `01 0C 0D 11 05 2F`, `03`, and `19 02 FF` on `0x7E1`.
    - `engine.engine_load` is driven by `sine`, so it is compared with
-     `math.isclose(rel_tol=1e-12)` and PID `0x04` is left out of the byte goldens. This is
-     0006's own rule, that byte-exact assertions avoid libm (`0006:315-321`).
-2. **Absent means identical, as a differential test**
-   (`test_scenario_goldens.py::test_an_explicit_step_timeline_answers_byte_for_byte_like_an_absent_one`):
-   - Load `ice_scenario.yaml` as shipped, and a copy with `interpolate: step` added to both
-     timelines.
-   - At every golden timestamp, the OBD replies are identical, and so is
-     `vehicle.signals`.
+     `math.isclose(rel_tol=1e-12)`, and PID 0x04 is left out of the byte goldens
+     (`0006:315-321`).
+2. **Absent means identical**
+   (`test_an_explicit_step_timeline_answers_byte_for_byte_like_an_absent_one`): the shipped
+   profile and a copy with `interpolate: step` give identical replies and
+   `vehicle.signals` at every golden timestamp.
 3. **The old function, frozen**
-   (`test_scenario_generators.py::test_a_timeline_without_the_new_fields_matches_the_phase_7_rule`):
-   - The Phase 7 `value_at` is copied verbatim into the test as `phase7_value_at`.
-   - For every timeline in the shipped profile and in the existing tests, at the golden
-     grid plus ±1 ulp around every `at`, `value_at(t) == phase7_value_at(points, t)`.
+   (`test_a_timeline_without_the_new_fields_matches_the_phase_7_rule`): `value_at` equals
+   a verbatim copy of the Phase 7 function over the grid.
 4. **Existing test files that must stay green, unmodified:**
 
 | File | Why it matters |
 |---|---|
-| `tests/unit/test_scenario_profile.py` | pins `ice_scenario.yaml`'s driven paths (`:35-45`), speed bytes at eight instants (`:65-73`), coolant bytes (`:76-85`), multi-PID bytes (`:96-103`), events and replay |
-| `tests/unit/test_scenario_generators.py` | "exactly six generators" (`:42-44`); step timeline semantics (`:202-232`); no transcendental function in the byte-exact generators (`:236-249`) |
-| `tests/unit/test_scenario_schema.py` | the refusal of bad timelines (`:105-132`), and unknown keys (`:135`) |
-| `tests/unit/test_scenario_runner.py`, `tests/unit/test_scenario_wiring.py` | runner invariants: idempotence, events once, backward time, no await |
-| `tests/characterization/*` (`test_obd_golden.py`, `test_uds_golden.py`, `test_dtc_golden.py`, `test_config_golden.py`, `test_mode09_pid0a_frozen.py`) | `ice_default.yaml`, which has no scenario and builds no runner (`conformance.md:252-254`) |
+| `tests/unit/test_scenario_profile.py` | pins `ice_scenario.yaml`'s paths (`:35-45`), speed (`:65-73`), coolant (`:76-85`) and multi-PID bytes (`:96-103`), events and replay |
+| `tests/unit/test_scenario_generators.py` | six generators (`:42-44`); step timeline (`:202-232`); no transcendental function (`:236-249`) |
+| `tests/unit/test_scenario_schema.py` | bad timelines refused (`:105-132`); unknown keys (`:135`) |
+| `tests/unit/test_scenario_runner.py`, `tests/unit/test_scenario_wiring.py` | runner invariants |
+| `tests/characterization/*` | `ice_default.yaml`, with no scenario and no runner (`conformance.md:252-254`) |
 | `tests/unit/observe/test_snapshots.py` | `/vehicle` and `state` over `ice_scenario.yaml` |
-| `tests/integration/test_scenario_isotp.py` | a step timeline on vcan. Skipped on hosted CI (§1) and run on a vcan host |
+| `tests/integration/test_scenario_isotp.py` | a step timeline on vcan, run on a vcan host (§1) |
 
-Note, fact: the comment in `tests/unit/test_scenario_schema.py:229` says "Unlike a
+Note, fact: the comment at `tests/unit/test_scenario_schema.py:229` says "Unlike a
 timeline, which is read by interpolation". A timeline is not read by interpolation today
-(`generators.py:155-161`). It is proposed to correct that comment in the implementation.
-The test itself is unaffected.
+(`generators.py:155-161`). Correcting it is part of the later work.
 
-### 4.3 New unit tests (names and assertions)
+### 6.3 New unit tests (names and assertions)
 
 In `tests/unit/test_scenario_generators.py`:
 
 | Test | Assertion |
 |---|---|
-| `test_a_timeline_defaults_to_step_without_repeat` | a built timeline has `interpolate == "step"` and `repeat is None` |
-| `test_a_linear_timeline_interpolates_between_points` | points `(0,0) (10,100)`: `value_at(2.5) == 25.0`, `value_at(5) == 50.0` |
-| `test_a_linear_timeline_lands_exactly_on_its_points` | `value_at(ai) == vi` for every point |
-| `test_a_linear_timeline_holds_its_first_value_before_the_first_point` | points `(5,10) (10,20)`: `value_at(0) == value_at(4.999) == 10` |
-| `test_a_linear_timeline_holds_its_last_value_after_the_last_point` | the same points: `value_at(10) == value_at(1e6) == 20` |
+| `test_a_timeline_defaults_to_step_without_repeat` | `interpolate == "step"` and `repeat is None` |
+| `test_a_linear_timeline_interpolates_between_points` | `(0,0) (10,100)`: `value_at(2.5) == 25.0`, `value_at(5) == 50.0` |
+| `test_a_linear_timeline_lands_exactly_on_its_points` | `value_at(ai) == vi` |
+| `test_a_linear_timeline_holds_its_first_value_before_the_first_point` | `(5,10) (10,20)`: `value_at(0) == value_at(4.999) == 10` |
+| `test_a_linear_timeline_holds_its_last_value_after_the_last_point` | `value_at(10) == value_at(1e6) == 20` |
 | `test_two_points_at_one_time_make_a_linear_jump` | `(0,0) (10,50) (10,0) (20,0)`: `value_at(9.999) ≈ 49.995`, `value_at(10) == 0` |
 | `test_linear_interpolation_multiplies_before_dividing` | `(9,1120) (15,2800)`: `value_at(12) == 1960.0` exactly |
+| `test_the_same_float_time_gives_the_same_value` | **Determinism.** For two instances built from one configuration, and for decimal times including `15.3`, `105.3`, `0.1*3` and `89.999`: repeated calls return identical values (`==`, and the same bits via `float.hex`) |
 | `test_repeat_maps_time_to_cycle_time_in_step_mode` | `(0,10) (30,20) (60,10)`, repeat 60: at `29.999, 30, 59.999, 60, 60.001, 90, 120` the values are `10, 20, 20, 10, 10, 20, 10` |
-| `test_a_linear_repeat_is_continuous_at_the_boundary` | the same points, linear: `value_at(60.0) == 10.0` and `abs(value_at(nextafter(60,0)) − 10.0) < 1e-9` |
-| `test_repeat_at_exact_multiples_gives_the_first_value` | for `k` in 1…1000, and for `k = 10**9`: `value_at(k * 60.0) == 10` |
-| `test_repeat_is_periodic_at_exactly_representable_times` | for `t` in steps of 0.25 over one cycle, and `k` in 1…100: `value_at(t + k*60.0) == value_at(t)` |
+| `test_a_linear_repeat_is_continuous_at_the_boundary` | `value_at(60.0) == 10.0`, and `abs(value_at(nextafter(60,0)) − 10.0) < 1e-9` |
+| `test_repeat_at_exact_multiples_gives_the_first_value` | **Boundary.** For `k` in 1…1000, and for `k = 10**9`: `value_at(k * 60.0) == 10` |
 | `test_a_time_before_zero_is_the_first_value_of_a_repeating_timeline` | `value_at(-1.0) == 10` |
-| `test_a_repeating_timeline_must_start_at_zero` | `ValidationError`, with the §3.8 text |
-| `test_a_repeating_timeline_must_end_at_its_repeat_time` | the last `at` below, and above, `repeat`: the §3.8 text |
-| `test_a_repeating_timeline_must_end_where_it_began` | the §3.8 text |
+| `test_a_repeating_timeline_must_start_at_zero` | the §5.8.1 text |
+| `test_a_repeating_timeline_must_end_at_its_repeat_time` | the last `at` below, and above, `repeat`: the §5.8.1 text |
+| `test_a_repeating_timeline_must_end_where_it_began` | the §5.8.1 text |
 | `test_repeat_must_be_positive` | `0` and `-5` are refused |
+| `test_repeat_must_be_finite` | `nan`, `inf` and `-inf` are refused with `Input should be a finite number` |
+| `test_timeline_points_must_be_finite` | `at` and `value` of `nan`, `inf` and `-inf` are refused, in both step and linear timelines |
 | `test_interpolate_is_step_or_linear` | `cubic` is refused |
-| `test_only_a_timeline_takes_interpolate_or_repeat` | for each of the other five types, `repeat` and `interpolate` are refused as extra inputs |
-| `test_a_linear_timeline_uses_no_transcendental_function` | the byte-exact entry list gains a linear repeating timeline whose value at `t=7.0` is integral (extends `:236-249`) |
+| `test_only_a_timeline_takes_interpolate_or_repeat` | on the other five types, both keys are refused as extra inputs |
+| `test_a_linear_timeline_uses_no_transcendental_function` | the byte-exact list gains a linear repeating entry that is integral at `t=7.0` (extends `:236-249`) |
+
+- There is deliberately **no** test that decimal times one cycle apart agree, and none that
+  they differ. The first is not required. A test of the second would turn a documented
+  property into a requirement.
+- The known 15.3 against 105.3 example is recorded in §5.6 and pinned only as the runner
+  test below.
 
 In `tests/unit/test_scenario_schema.py`:
 
 | Test | Assertion |
 |---|---|
-| `test_a_bad_repeat_is_reported_with_its_path` | the `ConfigError` text contains `scenario.signals.0.timeline.repeat: a repeating timeline must end with a point at its repeat time 90.0, but its last point is at 75.0` |
+| `test_a_bad_repeat_is_reported_with_its_path` | the `ConfigError` text contains the §5.8.1 "must end with a point" line |
 | `test_every_repeat_problem_is_reported_at_once` | all three rule failures appear in one error |
+| `test_a_nonfinite_timeline_input_is_reported_with_its_path` | `.nan` or `.inf` from YAML, through `load_profile`, gives `...points.3.value: Input should be a finite number` |
 
 In `tests/unit/test_scenario_runner.py`:
 
 | Test | Assertion |
 |---|---|
-| `test_a_linear_value_is_truncated_into_an_integer_signal` | a linear rpm timeline gives `2454.999999999999` at t=15.3, and `engine.rpm == 2454`. This records §3.6 and changes nothing |
+| `test_a_linear_value_is_truncated_into_an_integer_signal` | at t=15.3, the linear rpm `2454.999999999999` is stored as `2454`, and at t=105.3 it is stored as `2455`. This documents §5.6; it is not a periodicity requirement |
 | `test_a_repeating_timeline_does_not_repeat_events` | a repeat-60 timeline and one event at 40: after `apply(100)` and `apply(160)`, `pending_events == 0` and the store was updated once |
 
-## 5. The moving-vehicle demo profile (proposal)
+## 7. The extension's demo profile (post-V1.0)
 
-### 5.1 A new file, not an edit
+### 7.1 A new file, not an edit
 
-- Proposed name: **`src/ecu_simulator/profiles/ice_drive_cycle.yaml`**.
-- Editing `ice_scenario.yaml` would break existing tests (fact):
-  - `tests/unit/test_scenario_profile.py:35-45` pins its six driven paths;
-  - `:65-73` pins speed bytes at eight instants (for example `410d1e` at t=20);
-  - `:76-85` pins the coolant bytes;
-  - `:96-103` pins the multi-PID reply at 45 s;
-  - `:115-123` pins event timing;
-  - `tests/unit/observe/test_snapshots.py:20-70` builds it;
-  - it is also the Phase 7 manual acceptance subject (`conformance.md:242-249`), and
-    `README.md:185` names it.
+- Proposed name: `src/ecu_simulator/profiles/ice_drive_cycle.yaml`. The landing is decided
+  post-V1.0, per §2.
+- Editing `ice_scenario.yaml` would break (fact):
+  - `tests/unit/test_scenario_profile.py:35-45, 65-73, 76-85, 96-103, 115-123`;
+  - `tests/unit/observe/test_snapshots.py:20-70`.
+- It would also change the Phase 7 manual acceptance subject (`conformance.md:242-249`)
+  and the `README.md:185` example.
 - `ice_default.yaml` stays scenario-free (`conformance.md:252-254`).
 
-### 5.2 The cycle
+### 7.2 The cycle
 
 - 90 s, `repeat: 90`, `interpolate: linear`.
-- Idle, pull away, accelerate in 2nd gear, upshift, top gear, cruise, brake with engine
-  braking, clutch in, idle.
-- Two gear ratios keep rpm consistent with speed.
-- Where rpm and speed have knots at the same times and `rpm = ratio × speed` at both ends,
-  linear interpolation keeps that ratio at every instant in between.
+- rpm and speed share knot times, so `rpm = ratio × speed` holds between knots.
 
 | Phase | Cycle time (s) | Speed (km/h) | rpm | Throttle (%) | Load (%) |
 |---|---|---|---|---|---|
@@ -375,25 +662,20 @@ In `tests/unit/test_scenario_runner.py`:
 | Upshift | 15–16 | 50 → 55 | 2800 → 1650 | 45 | 75 |
 | Top gear, 30 rpm per km/h | 16–21 | 55 → 80 | 1650 → 2400 | 45 | 75 |
 | Cruise | 21–60 | 80 | 2400 | 45 → 18 by 22 s, then 18 | 75 → 35 by 22 s, then 35 |
-| Brake, engine braking in top gear | 60–70 | 80 → 26.7 | 2400 → 800 | 18 → 0 by 60 s | 10 (overrun) |
+| Brake, engine braking | 60–70 | 80 → 26.7 | 2400 → 800 | 18 → 0 by 60 s | 10 (overrun) |
 | Clutch in, rolling to a stop | 70–75 | 26.7 → 0 | 800 | 0 | 10 → 20 by 71 s |
 | Idle | 75–90 | 0 | 800 | 0 | 20 |
 
-- Acceleration is 5 km/h per second. Braking is 5.33 km/h per second, about 1.5 m/s².
-- The coolant warm-up **does not repeat**. It uses the existing `ramp` from 20 °C to 90 °C
-  over 240 s, which then holds (`generators.py:60-73`). It is still rising through the
-  first two cycles and reaches 90 °C during the third cycle.
+- The coolant does not repeat: a `ramp` from 20 to 90 °C over 240 s.
 - Stated simplifications:
   - the shift skips from 2nd to top gear;
   - the throttle is not lifted during the shift;
-  - MAF, MAP, intake temperature and timing advance stay at their configured idle
-    values. §9 asks whether to drive them.
+  - MAF, MAP, intake temperature and timing advance stay at their idle values
+    (open question 5).
 
-### 5.3 The proposed file (scenario part)
+### 7.3 The file (scenario part)
 
-The `vehicle` block and the `ecus` block are as in `ice_scenario.yaml`
-(`ice_scenario.yaml:30-52, 121-170`): `rpm: 800`, `coolant_temp: 20`, the same endpoints,
-and the same three trouble codes. There are **no `dtc_events`** (§9).
+The `vehicle` and `ecus` blocks are as in `ice_scenario.yaml`, with no `dtc_events`.
 
 ```yaml
 scenario:
@@ -460,30 +742,31 @@ scenario:
       over: 240
 ```
 
-## 6. Odometer and distance
+## 8. Odometer and distance
 
-### 6.1 Facts
+### 8.1 Facts
 
 - `CommonState.odometer: int = 0  # km` (`vehicle/state.py:27`).
 - A profile cannot set it:
-  - `VehicleConfig` has no `odometer` field (`config/schema.py:84-92`);
+  - `VehicleConfig` has no such field (`config/schema.py:84-92`);
   - unknown keys are refused (`schema.py:51-54`);
   - `build_vehicle` does not pass it (`app.py:97-103`).
-- Nothing drives it. It is not in either shipped scenario.
-- No PID reads it. No `MODE01_DEFINITIONS` entry lists `vehicle.odometer`
-  (`protocols/obd/pids.py:114-268`), and 0x31 and 0xA6 are not in the table.
-- A scenario *may* drive it today. `signal_types` reports it as `int`
-  (`state.py:123-136`), and the schema accepts numeric paths (`schema.py:277-304`).
+- Nothing drives it.
+- No PID reads it (`protocols/obd/pids.py:114-268`), and 0x31 and 0xA6 are not in the
+  table.
+- A scenario may drive it today (`state.py:123-136`, `schema.py:277-304`).
 
-### 6.2 Rejected
+### 8.2 Rejected
 
 | Option | Why it is rejected |
 |---|---|
-| A looping odometer ramp or timeline | Distance decreases at every loop boundary. **Rejected by the owner, and here** |
-| A non-looping `ramp` at the cycle's average speed (the analysis's interim idea) | It never decreases, but it rises while the car is stopped and stops rising at `over`. It is not a real source, so it would still be misleading |
-| An accumulator in the runner (`odometer += speed × Δt`) | It adds runner state. The result depends on the tick and request history, not on `t`. That breaks "idempotent for fixed `t`" and the pure-function rule (`runner.py:8-22`, `0006:285-297`) |
+| A looping odometer ramp or timeline | Distance decreases at every loop boundary. **Rejected by the owner** |
+| A non-looping `ramp` at the cycle's average speed | It rises while the car is stopped, and stops at `over`. It is not a real source |
+| An accumulator in the runner | It adds runner state, and it breaks idempotence for a fixed `t` and the pure-function rule (`runner.py:8-22`, `0006:285-297`) |
 
-### 6.3 Option O1: a derived `distance` generator (the smallest correct source)
+### 8.3 O1: a derived `distance` generator (deferred to a later decision)
+
+Kept as the specified real source. **It is not part of any current work.**
 
 ```yaml
 - path: vehicle.odometer
@@ -492,151 +775,90 @@ scenario:
   from: 12000            # km at t = 0
 ```
 
-- **Value:** `from + D(t) / 3600` km, where `D(t)` is the integral of the `of` timeline's
-  generator value, in km/h, over `[0, t]`.
-- **Closed form for a repeating linear timeline:**
-  - `(k, tc) = divmod(t, repeat)`;
-  - `D(t) = k × A + P(tc)`;
-  - `A` is the per-cycle area, the sum of the trapezoids (precomputed);
-  - `P(tc)` is the cumulative trapezoids up to the segment containing `tc`, plus a partial
-    trapezoid.
-  - For the demo, `A = 640 + 3120 + 600 = 4360` km·s/h, which is **1.211111 km per cycle**.
-- **Without `repeat`:** the area up to the last point, plus `vn × (t − an)` while the last
-  value is held.
-- **With `interpolate: step`:** rectangles instead of trapezoids.
-- **It never decreases, and it is continuous at the boundary:**
-  - validation requires every `of` point value to be `>= 0` (proposed message:
-    `of: distance needs a speed that is never negative, but point 3 of vehicle.speed is -5.0`);
-  - at `t = k × repeat`, `P = 0` and `D = k × A`, which equals the left limit.
-- **Exact arithmetic.** It is computed in `fractions.Fraction`: the double `t` converts
-  exactly, `divmod` is exact, and there is one rounding at the end. That rounding is
-  monotone, so a float can never undo a boundary. A float-only
-  `k × A + P(tc)` could, in principle, sit one ulp below `(k+1) × A`.
-  - Checked in-process on a 0.001 s grid from 0 to 400 s: monotonic
-    (Appendix A.1).
-  - Cost: about 14.5 µs per call with precomputed areas, against about 0.8 µs for a linear
-    timeline (Appendix A.4). It is on the request path of scenario profiles only. That
-    needs measuring before it is accepted, given the open latency `STOP`.
-- **Resolution.** The runner truncates it into the `int` field (`runner.py:151`), so it
-  steps by whole kilometres: 12000 → 12001 at 58 s, when the first cycle's area reaches 3600 km·s/h, and 12048 km at 1 h. `int()` is
-  non-decreasing, so truncation keeps the order.
-- It integrates the generator's speed, not the truncated stored speed. That is the
-  physically right quantity, and it keeps the odometer a function of `t` alone.
-- **What it changes in the design:**
-  - it is a **seventh generator** (reversing `0006:523`);
-  - a generator then references another generator's *configuration*, though never state;
-  - `of` is resolved at profile validation, and must name a `timeline` in the same
-    scenario;
-  - for the smallest version, `of` is restricted to `vehicle.speed`, so the km/h → km
-    units are fixed.
+- **Value:** `from + D(t) / 3600` km.
+  - With `repeat`: `(k, tc) = divmod(t, repeat)`, and `D(t) = k × A + P(tc)` in closed
+    form, where `A` is the per-cycle area.
+  - For the §7 cycle, `A = 4360` km·s/h, which is **1.211111 km per cycle**.
+- **It never decreases:**
+  - every `of` value must be `>= 0`;
+  - the computation is exact in `fractions.Fraction`, with one monotone rounding at the
+    end;
+  - a check on a 0.001 s grid from 0 to 400 s found it monotonic (Appendix A.1).
+- **Cost:** about 14.5 µs per call (Appendix A.4).
+- **Resolution:** `int` km, so 12001 at 58 s and 12048 at 1 h.
+- **It reverses "exactly six generators"** (`0006:523`), and it lets a generator reference
+  another generator's configuration. It needs its own decision record.
 
-  All of this needs its own decision record.
+### 8.4 O2: no odometer in the demo (approved)
 
-### 6.4 Option O2: no odometer in the demo
-
-- It needs no code and no decision beyond this one.
-- The odometer stays 0 in state, and the GUI must mark it unavailable (§7).
+- **Approved by the owner on 2026-09-29.** Neither the stepped profile (§4) nor the
+  extension profile (§7) drives `vehicle.odometer`.
+- It stays 0 in state, and §9 marks it unavailable in the GUI.
 - A tester loses nothing, because no PID reports it.
 
-### 6.5 Recommendation
+### 8.5 OBD PIDs 0xA6 and 0x31 (deferred to a later decision)
 
-- **Ship the demo with O2.**
-- Keep O1 as the specified real source. It becomes a separate decision once the timeline
-  extension has landed, if the owner wants distance on screen.
-- When a profile drives `vehicle.odometer`, the §7 availability rule marks it available
-  automatically.
+- **0xA6** needs a project evidence entry before any encoding is asserted
+  (`docs/decisions/0003-phase-5-obd-evidence.md`, `pids.py:13-25`). Adding it would change
+  the `01 A0` mask bytes, because the masks derive from the table (`pids.py:10-11`).
+- **0x31** must reset when the codes are cleared, so it is not a pure function of `t`.
 
-### 6.6 Would any OBD PID report it? No, not in this design
+## 9. GUI: the odometer as "unavailable"
 
-- **0xA6 (odometer)** is not implemented. Its encoding needs a project evidence entry
-  first, under the Phase 5 evidence bar (`docs/decisions/0003-phase-5-obd-evidence.md`,
-  `pids.py:13-25`). **No encoding is asserted here.** Adding it would be one table row
-  plus that evidence. The masks would extend the chain on their own (`pids.py:10-11`), and
-  that changes the `01 A0` bytes, so it is a wire change with its own review.
-- **0x31 (distance since codes cleared)** is not a scenario feature. It must reset when
-  Mode 04 or UDS 0x14 clears the codes, which couples it to `DtcStore` and makes it not a
-  pure function of `t`. It is out of scope.
+### 9.1 Facts
 
-## 7. GUI: the odometer as "unavailable"
-
-### 7.1 Facts
-
-- `/vehicle` returns `signals: dict(runtime.vehicle.signals)`, which is every field of
-  every component (`observe/snapshots.py:15-21`, `vehicle/state.py:150-156`). WS `state`
-  embeds the same dict (`snapshots.py:51-52`).
+- `/vehicle` returns every signal (`observe/snapshots.py:15-21`,
+  `vehicle/state.py:150-156`). WS `state` embeds the same dict (`snapshots.py:51-52`).
 - 0010 §5 defines `signals` as `{dotted path → value}` (`0010:399`).
-- The GUI lists every path it receives (`api/static/app.js:458-495`). It shows
-  `fmtValue(raw)` (`:502-503`), where `fmtValue(null)` would print `"null"` (`:109-112`).
-  - The units map has **no** `vehicle.odometer` entry (`:41-46`), so today the row reads
-    `odometer | 0 |` with no unit, not "0 km". It is still misleading, because 0 reads as
-    a measurement.
-- For an ICE vehicle, `vehicle.odometer` is the only signal a profile cannot set. Every
-  other `CommonState` and `IceState` field has a `VehicleConfig` or `EngineConfig` field
+- The GUI lists every path it receives (`api/static/app.js:458-495`), shown through
+  `fmtValue` (`:502-503`). `fmtValue(null)` would print `"null"` (`:109-112`).
+  - There is **no** `vehicle.odometer` in the units map (`:41-46`), so the row reads
+    `odometer | 0 |` with no unit. That still reads as a measurement.
+- For an ICE vehicle, `vehicle.odometer` is the only signal a profile cannot set
   (`schema.py:61-92`, `state.py:18-52`). HEV and BEV also carry unconfigurable
   `battery.current`, `motor.*` and `charging.*` (`state.py:55-80`, `schema.py:78-81`).
   No PID reads any of them.
 
-### 7.2 Options
+### 9.2 Options
 
 | | (a) `odometer: int \| None = None`; `/vehicle` sends `null` | (b) the snapshot omits unsourced signals | (c) an explicit availability list |
 |---|---|---|---|
-| API (0010 §5) | A value can now be `null`, which is a type change inside `signals`. Needs a 0010 amendment | A path disappears from `signals`. The meaning of `signals` changes to "sourced signals" | **Additive:** `/vehicle` and WS `state` gain `unavailable: ["vehicle.odometer"]`, the paths with no source. `signals` is unchanged. Needs a 0010 §5 amendment |
-| V1.0 code on `modernization` | **Yes.** `state.py:27`. Also, `signal_types` takes `type(getattr(...))` (`state.py:133`), which would become `NoneType`. The schema would then refuse any scenario that drives the odometer as "not a numeric signal" (`schema.py:297-298`), and the runner's integer check would see `None` (`runner.py:107-110`). So `signal_types` must read annotations instead | None | None. It is computed in `observe/` from `runtime.config.profile`: the configurable fields and the driven scenario paths |
-| GUI | Must special-case `null` (today it prints `"null"`) | The row vanishes silently, which hides that the model has the field | Renders `—` with an "unavailable, no source" style and a tooltip: "no source: not settable in a profile and not driven by the scenario" |
-| Existing tests | `test_vehicle_state.py:126` asserts `odometer == 0`, and changes. The schema and runner tests need the annotation change | `test_snapshots.py` still passes (it checks serialisation and non-mutation, `:20-48`). Mockup data changes | None break. New assertions are added |
-| Branch and records | `modernization` (V1.0 code) and `gui`; 0006 or 0002 (the state model), and 0010 | `gui`; 0010 | **`gui` only; 0010 §5 amendment** |
+| API (0010 §5) | A value can become `null`. Needs a 0010 amendment | A path disappears from `signals` | **Additive:** `/vehicle` and WS `state` gain `unavailable: ["vehicle.odometer"]`. Needs a 0010 §5 amendment |
+| V1.0 code | **Yes:** `state.py:27`. Also `signal_types` uses `type(getattr(...))` (`state.py:133`), which becomes `NoneType`, so the schema would refuse to drive it (`schema.py:297-298`), and the runner's integer check changes (`runner.py:107-110`) | None | None. It is computed in `observe/` from `runtime.config.profile` |
+| GUI | Must special-case `null` | The row vanishes silently | Renders `—`, with "unavailable, no source" styling and a tooltip |
+| Existing tests | `test_vehicle_state.py:126` changes, and so do the schema and runner tests | Mockup data changes | None break |
+| Branch and records | `modernization` and `gui`; 0006 or 0002, and 0010 | `gui`; 0010 | **`gui` only; 0010 §5** |
 
-### 7.3 Recommendation: (c)
+### 9.3 Recommendation: (c) (not yet decided by the owner)
 
-- It is the only option that changes no V1.0 code. It fits the `gui` branch rule
-  (`0010:14-18`) and keeps the API additive.
-- `unavailable` is computed **once per runtime**, not per message. It is static for a run,
-  so it adds no publisher work on the hot path (relevant while the latency `STOP` is
-  open).
-- The rule: a path is unavailable when **no profile field can set it and no scenario
-  generator drives it**.
-  - With O2 (§6.4), `vehicle.odometer` is unavailable on every shipped profile.
-  - With O1 (§6.3), the demo drives it, so it becomes available, with no GUI change.
-- The state still holds 0, and `signals` still reports 0. This is honest about the model:
-  the API reports state, and the list says that this value has no source.
-- Option (a) is the better long-run model: "unknown" should be unrepresentable as a
-  number. It is worth proposing on `modernization` after V1.0, with the `signal_types`
-  change, but not for this demo.
+- It changes no V1.0 code, so it fits the `gui` rule.
+- The list is computed once per runtime, so it adds no per-message publisher work.
+- **The rule:** a path is unavailable when no profile field can set it and no scenario
+  generator drives it. Under O2, `vehicle.odometer` is unavailable on every profile,
+  including the stepped demo.
+- (a) is the better long-run model. It is a candidate for `modernization` after V1.0.
 
-## 8. Expected OBD bytes (computed)
+## 10. Expected OBD bytes for the extension profile (§7)
 
-### 8.1 Method
+### 10.1 Method
 
-- The demo's values are not in code yet. Each value is computed from §5.3's points by
-  §3.3's linear rule and §3.4's mapping, by a reference evaluator in the session scratchpad
-  (Appendix A.1). The coolant uses the existing `ramp` formula verbatim.
-- Those values then go through the **real** simulator:
-  - a profile built from `ice_scenario.yaml` whose scenario is replaced by `constant`
-    generators holding each value;
-  - then `parse_profile`, `app.build_runtime(..., clock=SimulatedClock())`, and the real
-    `Dispatcher` answering `01 0C 0D 11 04 05` on `0x7E0`.
-- So the runner's truncation (`runner.py:151`) and the encoders
-  (`pids.py:79-99, 115-132, 160-177, 205-213`) are the shipped code.
+- The §7 values were computed by a reference evaluator of §5.3 and §5.4 (Appendix A.1).
+- They were then fed through the real simulator, as `constant` generators: the real
+  schema, runner, dispatcher and encoders.
 
-### 8.2 Where truncation happens (fact)
+### 10.2 Truncation (fact)
 
-There are two truncations in series:
-
-1. **The runner:** `int(value)` for signals whose initial value is an `int`
-   (`runner.py:107-110, 151`): `vehicle.speed`, `engine.rpm`. Throttle, load and coolant
-   are floats and are stored unchanged.
-2. **The encoder:** `_byte` and `_word` apply `int()` and clamp (`pids.py:79-84`):
+1. **The runner** writes `int(value)` for integer signals (`runner.py:107-110, 151`):
+   speed and rpm.
+2. **The encoders** apply `int()` and clamp (`pids.py:79-84`):
    - 0x0C is `_word(rpm × 4)`;
    - 0x0D is `_byte(speed)`;
    - 0x11 and 0x04 are `_byte(% × 255 / 100)`;
    - 0x05 is `_byte(°C + 40)`.
 
-For example, 52.5 km/h is stored as 52 (`0D 34`), and a coolant of 23.5 °C encodes as
-63 (`05 3F`).
+### 10.3 Values and replies
 
-### 8.3 Values and replies at representative times
-
-Request `01 0C 0D 11 04 05`. The replies are payloads as the dispatcher returns them.
+Request `01 0C 0D 11 04 05`.
 
 | Label | t (s) | tc (s) | rpm | Speed (km/h) | Throttle | Load | Coolant (°C) | Stored rpm, speed | Reply |
 |---|---|---|---|---|---|---|---|---|---|
@@ -646,7 +868,7 @@ Request `01 0C 0D 11 04 05`. The replies are payloads as the dispatcher returns 
 | mid-upshift | 15.5 | 15.5 | 2225 | 52.5 | 45 | 75 | 24.521 | 2225, **52** | `41 0C 22 C4 0D 34 11 72 04 BF 05 40` |
 | upshift ends, top gear | 16.0 | 16.0 | 1650 | 55 | 45 | 75 | 24.667 | 1650, 55 | `41 0C 19 C8 0D 37 11 72 04 BF 05 40` |
 | cruise | 40.0 | 40.0 | 2400 | 80 | 18 | 35 | 31.667 | 2400, 80 | `41 0C 25 80 0D 50 11 2D 04 59 05 47` |
-| mid-brake, engine braking | 65.0 | 65.0 | 1600 | 53.333 | 0 | 10 | 38.958 | 1600, **53** | `41 0C 19 00 0D 35 11 00 04 19 05 4E` |
+| mid-brake | 65.0 | 65.0 | 1600 | 53.333 | 0 | 10 | 38.958 | 1600, **53** | `41 0C 19 00 0D 35 11 00 04 19 05 4E` |
 | just before the boundary | 89.999 | 89.999 | 800 | 0 | 0 | 20 | 46.250 | 800, 0 | `41 0C 0C 80 0D 00 11 00 04 33 05 56` |
 | one ulp before the boundary | 89.99999999999999 | 89.99999999999999 | 800 | 0 | 0 | 20 | 46.250 | 800, 0 | `41 0C 0C 80 0D 00 11 00 04 33 05 56` |
 | **exactly at the boundary** | 90.0 | **0.0** | 800 | 0 | 0 | 20 | 46.250 | 800, 0 | `41 0C 0C 80 0D 00 11 00 04 33 05 56` |
@@ -656,70 +878,72 @@ Request `01 0C 0D 11 04 05`. The replies are payloads as the dispatcher returns 
 | 2nd boundary | 180.0 | 0.0 | 800 | 0 | 0 | 20 | 72.500 | 800, 0 | `41 0C 0C 80 0D 00 11 00 04 33 05 70` |
 | warm, 4th cycle, cruise | 310.0 | 40.0 | 2400 | 80 | 18 | 35 | 90.000 | 2400, 80 | `41 0C 25 80 0D 50 11 2D 04 59 05 82` |
 
-Read with the table:
-
-- **The loop boundary is continuous.** The cycle ends in the idle segment it begins
-  with, so all four cycle-driven PIDs are unchanged across 89.999 → 90.0 → 90.001.
-- **The coolant does not reset.** At the same cycle time, t=12 and t=102 give `05 3F` and
-  `05 59`, and t=40 and t=130 give `05 47` and `05 61`. The coolant holds `05 82` (90 °C)
-  from 240 s.
-- **The cycle bytes repeat** at exactly representable times: t=12 and 102, 40 and 130,
-  0 and 90 and 180.
-- **Odometer (O1 only).** Appendix A.1 also records the odometer O1 would produce: 12000.034 km at
-  12 s, 12001.211 km at 90 s, 12002.422 km at 180 s, and 12004.233 km at 310 s
-  (Appendix A.1). It is shown in the GUI only, and never on the wire.
-- **The truncation hazard, shown (§3.6; Appendix A.2):**
+- **The loop boundary is continuous.** The cycle-driven PIDs are unchanged across
+  89.999 → 90.0 → 90.001.
+- **The coolant does not reset:** `05 3F` at t=12, `05 59` at t=102.
+- **The odometer, under O1 only (deferred).** Appendix A.1 also lists the values O1 would
+  produce: 12000.034 km at 12 s, 12001.211 km at 90 s, 12002.422 km at 180 s. They would
+  appear in the GUI only.
+- **Decimal times one cycle apart (§5.6):**
 
 | t | tc | rpm (generator) | Stored rpm | 0x0C bytes |
 |---|---|---|---|---|
 | 15.3 | 15.3 | 2454.999999999999 | 2454 | `26 58` |
 | 105.3 | 15.299999999999997 | 2455.000000000003 | 2455 | `26 5C` |
-| 61.0 | 61.0 | 2240.0 (speed 74.66666666666667, stored **74**, `0D 4A`) | 2240 | `23 00` |
 
-### 8.4 Framing (inferred from configuration, not computed)
+### 10.4 Framing (inferred, not computed)
 
-- `obd_physical` pads with `0x00` (`ice_scenario.yaml:158-164`), which the demo keeps.
-- The 12-byte reply needs an ISO-TP first frame and one consecutive frame, as the
-  analysis noted for the same request. This design does not claim any wire capture.
+- `obd_physical` pads with `0x00` (`ice_scenario.yaml:158-164`).
+- The 12-byte reply needs an ISO-TP first frame and one consecutive frame.
+- No wire capture is claimed.
 
-## 9. Open questions for the owner
+## 11. Open questions for the owner
 
-1. **Branch and gate:** A, B or C from §2, and whether that is a 0006 amendment or a new
-   decision record (`0011-timeline-interpolation-and-repeat`).
-2. **The closing-point rule** (§3.4): accept it, or prefer "`repeat` > last `at`" with a
-   defined hold-then-jump?
-3. **Odometer:** O2 now (recommended), with O1 as a later decision? Or O1 together with the
-   extension, knowingly reversing "exactly six generators"?
-4. **GUI:** option (c), recommended? And should the list name a reason (for example
-   `{"vehicle.odometer": "no_source"}`) instead of bare paths?
-5. **The demo's realism:**
-   - add a third gear (two more rpm points) instead of the 2nd-to-top skip shift?
-   - lift the throttle during the shift?
-   - drive MAF and MAP too, so that `01 10` and `01 0B` move with load?
-6. **DTC events in the demo:** none (proposed), or reuse P0128 while the engine is cold?
-   Events never repeat either way (§4.1).
-7. **Cycle length and warm-up:** 90 s and 240 s as proposed?
+1. **The sooner path (§4):** build the stepped profile now, as a no-code stopgap?
+2. **Its location (§4.5):** L3 `docs/examples/` on `gui` (recommended), L1, L2 or L4?
+3. **Its step:** `interval: 1` with 90 values (recommended), or coarser?
+4. **The GUI (§9):** option (c), recommended? And should the list name a reason, for
+   example `{"vehicle.odometer": "no_source"}`?
+5. **The demo's realism, for both profiles:**
+   - a third gear;
+   - a throttle lift during the shift;
+   - driving MAF and MAP.
+6. **DTC events** in the demo: none (proposed), or P0128 while the engine is cold?
+7. **Cycle and warm-up:** 90 s and 240 s?
+8. **The §5.8.2 finding:** should finiteness also be enforced on the existing generators,
+   `tick` and event `at`? That is a V1.0 schema tightening, so it is a separate decision.
 
-## 10. Implementation plan outline (only after approval)
+The extension's landing, O1 and PIDs 0xA6 and 0x31 are already deferred by the owner
+(§2), and are not asked again.
+
+## 12. Implementation plan outline (only after approval)
 
 Each task is test-first, in its own commit, with no amend.
 
+**Now, if the owner approves §4 and §9 (`gui` only; no V1.0 code):**
+
 | # | Task | Files | Tests |
 |---|---|---|---|
-| 0 | Record the owner's rulings: the branch, and the 0006 amendment or new record | `docs/decisions/0006-…` or `0011-…`; `docs/modernization-plan.md` if the scope moves | — |
-| 1 | **Pin** the `ice_scenario.yaml` goldens against unchanged code | `tests/unit/test_scenario_goldens.py` (new) | §4.2 items 1 and 3, green on the unchanged code |
-| 2 | Add the `interpolate` and `repeat` fields and the closing-point validation | `scenario/generators.py` (`TimelineSignal` only) | §4.3 validation tests, and `test_scenario_schema.py` additions |
-| 3 | Linear and repeat evaluation; the default path left byte for byte as it is | `scenario/generators.py` | §4.3 value tests; §4.2 items 1 to 3 still green |
-| 4 | Correct the stale comment | `tests/unit/test_scenario_schema.py:229` | — |
-| 5 | The demo profile | `src/ecu_simulator/profiles/ice_drive_cycle.yaml` (new) | new `tests/unit/test_drive_cycle_profile.py`: validates; five driven paths; §8.3 table rows as byte assertions at the exactly representable times; the coolant not reset (t=12 vs 102); rpm = 56 × speed on 9–15 s, and 30 × speed on 16–21 s and 60–70 s, at quarter-second times; throttle ≥ 45 and load ≥ 75 while accelerating; throttle 0 and load ≤ 10 while braking |
-| 6 | Direct verification (plan §10) | — | an in-process run of the §8.3 table; a vcan run of the demo with `isotpsend` and `candump` on a vcan host, recorded under `docs/validation/` |
-| 7 | Docs | `docs/conformance.md` row wording (`:217`); `README.md` demo line; profile comments | — |
-| 8 | (`gui`) The `unavailable` list | `observe/snapshots.py`, `api/static/app.js`, `api/static/*.css`, 0010 §5 amendment | `test_snapshots.py`: `ice_default` → `["vehicle.odometer"]`; a profile driving it → `[]`; present in WS `state` and within `STATE_MAX_BYTES`; `tests/unit/api/test_server_http.py`: the `/vehicle` key; the owner's manual rendering checklist (0010 §7, with no JS test framework) |
-| 9 | (Optional, separate decision) the `distance` generator | `scenario/generators.py`, `config/schema.py` (the `of` resolution), new decision record | monotonic across boundaries on a dense grid; exact `k × A` at multiples; refusal of a negative speed point; a latency measurement before acceptance |
+| N1 | The stepped profile | `docs/examples/ice_drive_cycle_stepped.yaml` (if L3), and its generating script beside it or in the plan | new `tests/unit/test_drive_cycle_stepped_example.py`: it loads through `load_profile`; four stepped paths plus the coolant `ramp`; **every list has exactly 90 values with `interval: 1`**; the §4.3 rows as byte assertions; rpm = 56 × speed on steps 9–15 and 30 × speed on steps 16–21; the coolant rises from t=12 to t=102; `vehicle.odometer` not driven |
+| N2 | Direct verification (plan §10) | `docs/validation/` | an in-process run of §4.3, and a vcan run with `--profile` and `--api`, recorded on a vcan host |
+| N3 | The `unavailable` list | `observe/snapshots.py`, `api/static/app.js`, CSS, 0010 §5 amendment | `test_snapshots.py`: `ice_default` gives `["vehicle.odometer"]`, a profile that drives it gives `[]`, and it is present in WS `state`; the HTTP key; the manual rendering checklist (0010 §7) |
+
+**Post-V1.0, where the owner then decides (§2):**
+
+| # | Task | Files | Tests |
+|---|---|---|---|
+| P0 | A decision record amending 0006 §5.1 and §5.3 | `docs/decisions/` | — |
+| P1 | **Pin** the `ice_scenario.yaml` goldens on unchanged code | `tests/unit/test_scenario_goldens.py` | §6.2 items 1 and 3 |
+| P2 | The fields, the closing-point rule and the finiteness checks | `scenario/generators.py` (`TimelineSignal`, `TimelinePoint`) | §6.3 validation tests |
+| P3 | Linear and repeat evaluation | `scenario/generators.py` | §6.3 value tests; §6.2 still green |
+| P4 | Correct the stale comment | `tests/unit/test_scenario_schema.py:229` | — |
+| P5 | The linear profile, replacing the stepped example | `ice_drive_cycle.yaml` wherever P0 puts it | §10.3 rows at whole-second times; coolant not reset; rpm/speed ratios; throttle and load by phase |
+| P6 | Direct verification and docs | `docs/validation/`, `conformance.md:217`, `README.md` | — |
+| — | O1 and PIDs 0xA6/0x31 | only after their own later decision | — |
 
 ---
 
-## Appendix A. Commands and output
+## Appendix A. The extension: commands and output
 
 All runs used `.venv/bin/python` (Python 3.12.12, Pydantic 2.13.5), in-process, with no
 CAN. Scripts are in the session scratchpad, not in the repo.
@@ -826,7 +1050,7 @@ def at(t):
         "engine.coolant_temp": ramp(t, *COOLANT),
     }, tc
 
-# ... TIMES list as in §8.3, one row printed per time, then a monotonicity check of
+# ... TIMES list as in §10.3, one row printed per time, then a monotonicity check of
 # distance_km on a 0.001 s grid from 0 to 400 s.
 ```
 
@@ -860,7 +1084,7 @@ odometer(900.0) = 12012.111111 km -> stored int 12012
 odometer(3600.0) = 12048.444444 km -> stored int 12048
 ```
 
-### A.2 The truncation hazard, and the step and linear boundary example (`extra.py`, which reuses A.1's functions)
+### A.2 Decimal times, and the step and linear boundary example (`extra.py`, which reuses A.1's functions)
 
 The dictionaries in the first three lines are abridged here with `...`. The last line
 prints `math.fmod(0.1*3, 0.3)`, `0.1*3`, `math.fmod(270.0, 90.0)` and
@@ -882,9 +1106,8 @@ step 120.0 0.0 10 linear 10.0
 5.551115123125783e-17 0.30000000000000004 0.0 0.0
 ```
 
-The last line shows that `fmod` is exact on its inputs. `0.1*3` is not `0.3`, so its
-remainder is not zero. That is why §3.6 promises determinism in the double `t`, not in
-decimal time.
+`fmod` is exact on its inputs. `0.1*3` is not `0.3`, so its remainder is not zero. That is
+why §5.6 requires determinism in the double `t`, not in decimal time.
 
 ### A.3 Today's refusal of the new keys, and Pydantic's messages
 
@@ -905,4 +1128,113 @@ $ .venv/bin/python -   # Literal["step","linear"] and Field(gt=0) on Pydantic 2.
 ```
 linear timeline, us/call: 0.818
 exact distance, us/call: 14.5   (Fraction arithmetic, areas precomputed)
+```
+
+## Appendix B. The stepped profile through the real generators (`stepped_profile.py`)
+
+The script samples the §7 knot lines at whole seconds into 90-value lists. It writes a
+profile made of `ice_scenario.yaml`'s header and `vehicle` block, the stepped scenario of
+§4.2, and `ice_scenario.yaml`'s `ecus` block without `dtc_events`. It loads that file with
+the real `load_profile`, and asks the real `Dispatcher` at each `t` on a fresh runtime
+driven by `SimulatedClock`. The scenario section written to the file is exactly the YAML
+in §4.2.
+
+```python
+KNOTS = {  # the §7 knots, used only to author the lists
+    "vehicle.speed": [(0, 0), (5, 0), (21, 80), (60, 80), (75, 0), (90, 0)],
+    "engine.rpm": [(0, 800), (5, 800), (9, 1120), (15, 2800), (16, 1650), (21, 2400), (60, 2400), (70, 800), (90, 800)],
+    "engine.throttle": [(0, 0), (5, 0), (6, 45), (21, 45), (22, 18), (59, 18), (60, 0), (90, 0)],
+    "engine.engine_load": [(0, 20), (5, 20), (6, 75), (21, 75), (22, 35), (59, 35), (60, 10), (70, 10), (71, 20), (90, 20)],
+}
+
+def sample(points, t):
+    for (a0, v0), (a1, v1) in zip(points, points[1:]):
+        if a0 <= t < a1:
+            return v0 + ((v1 - v0) * (t - a0)) / (a1 - a0)
+    return points[-1][1]
+
+# values = [str(int(sample(pts, i))) if path == "vehicle.speed" else fmt(sample(pts, i)) for i in range(90)]
+# ... written as `type: stepped, interval: 1`, ten values per line, plus the coolant ramp.
+
+profile = load_profile(out)                       # real ruamel loader + schema
+
+def ask(t, req="010C0D110405"):
+    clock = SimulatedClock()
+    rt = app.build_runtime(app.RuntimeConfig.build(profile), clock=clock)
+    clock.advance(t)
+    r = rt.dispatcher(DiagnosticRequest(bytes.fromhex(req), 0x7E0))
+    return rt.vehicle.signals, r.payload.hex(" ").upper()
+```
+
+```
+$ .venv/bin/python scratchpad/stepped_profile.py scratchpad/ice_drive_cycle_stepped.yaml
+valid: True [('vehicle.speed', 'stepped', 90), ('engine.rpm', 'stepped', 90), ('engine.throttle', 'stepped', 90), ('engine.engine_load', 'stepped', 90), ('engine.coolant_temp', 'ramp', None)]
+label                                             t | step | rpm  spd  thr   load  cool    | 01 0C 0D 11 04 05 ->
+idle                                            2.0 |    2 |  800   0   0.0  20.0  20.583 | 41 0C 0C 80 0D 00 11 00 04 33 05 3C
+mid-acceleration, 2nd gear                     12.0 |   12 | 1960  35  45.0  75.0  23.500 | 41 0C 1E A0 0D 23 11 72 04 BF 05 3F
+same step, half a second later                 12.5 |   12 | 1960  35  45.0  75.0  23.646 | 41 0C 1E A0 0D 23 11 72 04 BF 05 3F
+upshift begins                                 15.0 |   15 | 2800  50  45.0  75.0  24.375 | 41 0C 2B C0 0D 32 11 72 04 BF 05 40
+t=15.3                                         15.3 |   15 | 2800  50  45.0  75.0  24.462 | 41 0C 2B C0 0D 32 11 72 04 BF 05 40
+mid-upshift                                    15.5 |   15 | 2800  50  45.0  75.0  24.521 | 41 0C 2B C0 0D 32 11 72 04 BF 05 40
+upshift ends, top gear                         16.0 |   16 | 1650  55  45.0  75.0  24.667 | 41 0C 19 C8 0D 37 11 72 04 BF 05 40
+cruise                                         40.0 |   40 | 2400  80  18.0  35.0  31.667 | 41 0C 25 80 0D 50 11 2D 04 59 05 47
+brake, first step                              61.0 |   61 | 2240  74   0.0  10.0  37.792 | 41 0C 23 00 0D 4A 11 00 04 19 05 4D
+mid-brake                                      65.0 |   65 | 1600  53   0.0  10.0  38.958 | 41 0C 19 00 0D 35 11 00 04 19 05 4E
+just before the boundary                     89.999 |   89 |  800   0   0.0  20.0  46.250 | 41 0C 0C 80 0D 00 11 00 04 33 05 56
+one ulp before                    89.99999999999999 |   89 |  800   0   0.0  20.0  46.250 | 41 0C 0C 80 0D 00 11 00 04 33 05 56
+exactly at the boundary                        90.0 |    0 |  800   0   0.0  20.0  46.250 | 41 0C 0C 80 0D 00 11 00 04 33 05 56
+just after the boundary                      90.001 |    0 |  800   0   0.0  20.0  46.250 | 41 0C 0C 80 0D 00 11 00 04 33 05 56
+2nd cycle, mid-acceleration                   102.0 |   12 | 1960  35  45.0  75.0  49.750 | 41 0C 1E A0 0D 23 11 72 04 BF 05 59
+t=105.3                                       105.3 |   15 | 2800  50  45.0  75.0  50.712 | 41 0C 2B C0 0D 32 11 72 04 BF 05 5A
+2nd cycle, cruise                             130.0 |   40 | 2400  80  18.0  35.0  57.917 | 41 0C 25 80 0D 50 11 2D 04 59 05 61
+2nd boundary                                  180.0 |    0 |  800   0   0.0  20.0  72.500 | 41 0C 0C 80 0D 00 11 00 04 33 05 70
+warm, 4th cycle, cruise                       310.0 |   40 | 2400  80  18.0  35.0  90.000 | 41 0C 25 80 0D 50 11 2D 04 59 05 82
+```
+
+## Appendix C. Nonfinite input today, and the proposed messages
+
+YAML loading through the project's loader (`config/loader.py:22-26`):
+
+```
+$ .venv/bin/python -   # _reader().load("a: .nan\nb: .inf\nc: -.inf\nd: nan\ne: 1e400\nf: .NaN")
+{'a': nan, 'b': inf, 'c': -inf, 'd': 'nan', 'e': inf, 'f': nan}
+```
+
+`ice_scenario.yaml` with one nonfinite edit per case, through `parse_profile`:
+
+```
+timeline value nan -> ACCEPTED
+timeline at inf (last) -> ACCEPTED
+timeline at nan (last) -> scenario.signals.0.timeline.points.10.at: Input should be greater than or equal to 0
+ramp over inf -> ACCEPTED
+ramp to nan -> ACCEPTED
+sine period nan -> scenario.signals.3.sine.period: Input should be greater than 0
+sine centre inf -> ACCEPTED
+stepped value inf -> ACCEPTED
+stepped interval inf -> ACCEPTED
+constant value nan -> ACCEPTED
+sequence for inf -> ACCEPTED
+tick inf -> ACCEPTED
+event at inf -> ACCEPTED
+engine.coolant_temp nan (initial) -> ACCEPTED
+engine.throttle nan (initial, bounded) -> vehicle.engine.throttle: Input should be less than or equal to 100
+```
+
+What an accepted value does on a request (`01 0D 11` through the real `Dispatcher`):
+
+```
+float throttle inf -> raises OverflowError cannot convert float infinity to integer
+int speed nan -> raises ValueError cannot convert float NaN to integer
+```
+
+The proposed constraint, on Pydantic 2.13.5 (`Field(..., allow_inf_nan=False)`):
+
+```
+{'repeat': nan}  [(('repeat',), 'finite_number', 'Input should be a finite number')]
+{'repeat': inf}  [(('repeat',), 'finite_number', 'Input should be a finite number')]
+{'repeat': -inf} [(('repeat',), 'finite_number', 'Input should be a finite number')]
+{'at': nan, 'value': 1}  [(('at',), 'finite_number', 'Input should be a finite number')]
+{'at': inf, 'value': 1}  [(('at',), 'finite_number', 'Input should be a finite number')]
+{'at': 1, 'value': nan}  [(('value',), 'finite_number', 'Input should be a finite number')]
+{'at': 1, 'value': -inf} [(('value',), 'finite_number', 'Input should be a finite number')]
 ```
