@@ -1,39 +1,50 @@
-[   0.00 s] gui demo capture, 2026-09-28T23:58:35+00:00
+[   0.00 s] gui demo capture, 2026-09-29T16:21:18+00:00
 [   0.00 s] start simulator: --profile src/ecu_simulator/profiles/ice_scenario.yaml --interface vcan0 --api 127.0.0.1:8765
-[   0.40 s] start headless Chrome: /usr/bin/google-chrome
-[   1.54 s] holding 1 API request(s) for the loading shot
-[   1.58 s] screenshot a-loading.png: Connecting | 
-[   3.42 s] screenshot h1-empty-fresh-start.png: Live | 0 exchanges, last seq 0 (live)
-[   3.42 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
-[   3.43 s] waiting 21.0 s, until about scenario t = 24 s
-[  24.58 s] screenshot b1-live.png: Live | 81 exchanges, last seq 81 (live)
-[  24.58 s] waiting 6.8 s, until about scenario t = 31 s
-[  31.55 s] screenshot b2-live-7s-later.png: Live | 107 exchanges, last seq 107 (live)
-[  32.87 s] screenshot b3-live-supported-pid-ranges.png: Live | 112 exchanges, last seq 112 (live)
-[  33.98 s] screenshot d1-filter-service-0x19.png: Live | 12 of 116 shown, last seq 116 (live)
-[  39.16 s] screenshot d2-paused-held-rows.png: Live | 116 exchanges, last seq 136 (live)
-[  42.31 s] screenshot d3-resumed-log-following.png: Live | 148 exchanges, last seq 148 (live)
-[  45.36 s] after the wheel scroll up, the follow control reads: '11 new rows below, jump to newest'
-[  45.48 s] screenshot d4-scrolled-up-new-rows-below.png: Live | 159 exchanges, last seq 159 (live)
-[  47.04 s] after clicking it, the follow control reads: ''
-[  47.16 s] screenshot d5-jumped-to-newest.png: Live | 166 exchanges, last seq 166 (live)
-[  47.29 s] screenshot c1-dtc-pending.png: Live | 167 exchanges, last seq 167 (live)
-[  47.29 s] waiting 33.1 s, until about scenario t = 80 s
-[  80.57 s] screenshot c2-dtc-confirmed-mil.png: Live | 293 exchanges, last seq 293 (live)
-[  82.26 s] screenshot g1-narrow-390.png: Live | 299 exchanges, last seq 299 (live)
-[  82.45 s] screenshot g2-narrow-390-full-page.png: Live | 300 exchanges, last seq 300 (live)
-[  84.22 s] screenshot w-desktop-2000x1100.png: Live | 306 exchanges, last seq 306 (live)
-[  85.26 s] stop traffic, then SIGTERM the simulator
-[  89.62 s] screenshot e-disconnected-stale.png: Disconnected, retry in 4 s | 311 exchanges, last seq 311
-[  89.62 s] start simulator: --profile src/ecu_simulator/profiles/ice_scenario.yaml --interface vcan0 --api 127.0.0.1:8765
-[  89.92 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
-[  95.81 s] restart marker offset from the log's centre: -961.6328125
-[  96.55 s] screenshot f-reconnected-after-restart.png: Live | 337 exchanges, last seq 26 (live)
-[  96.55 s] stop traffic and simulator; start the no-scenario profile
-[  96.73 s] start simulator: --profile src/ecu_simulator/profiles/ice_default.yaml --interface vcan0 --api 127.0.0.1:8765
-[ 100.63 s] screenshot h2-no-scenario.png: Live | 0 exchanges, last seq 0 (live)
-[ 100.63 s] resources from other origins on the final load: 0
-[ 100.63 s] console messages, exceptions and browser log entries over the whole run: 2
-[ 100.63 s]   log error (network): Failed to load resource: net::ERR_CONNECTION_REFUSED
-[ 100.63 s]   log error (network): Failed to load resource: net::ERR_CONNECTION_REFUSED
-[ 100.63 s] done
+[   0.30 s] start headless Chrome: /usr/bin/google-chrome
+[   1.35 s] holding 1 API request(s) for the loading shot
+[   1.39 s] screenshot a-loading.png: Connecting | 
+[   3.18 s] screenshot h1-empty-fresh-start.png: Live | 0 exchanges, last seq 0 (live)
+[   3.18 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[   3.18 s] waiting 21.1 s, until about scenario t = 24 s
+[  24.43 s] screenshot b1-live.png: Live | 81 exchanges, last seq 81 (live)
+[  24.43 s] waiting 6.9 s, until about scenario t = 31 s
+[  31.44 s] screenshot b2-live-7s-later.png: Live | 107 exchanges, last seq 107 (live)
+[  32.57 s] screenshot b3-live-supported-pid-ranges.png: Live | 112 exchanges, last seq 112 (live)
+[  33.69 s] screenshot d1-filter-service-0x19.png: Live | 12 of 116 shown, last seq 116 (live)
+[  38.86 s] screenshot d2-paused-held-rows.png: Live | 116 exchanges, last seq 136 (live)
+[  42.01 s] screenshot d3-resumed-log-following.png: Live | 148 exchanges, last seq 148 (live)
+[  45.18 s] screenshot j-1440-rows-below.png: Live | 159 exchanges, last seq 159 (live)
+[  45.19 s] j-1440 rows below, just before the shot: {'shown': True, 'text': '22 rows below, jump to newest', 'n': 22, 'counted': 22, 'partial': 1, 'overlap': False, 'in_header': True, 'last_seq': '159 exchanges, last seq 159 (live)'}
+[  45.19 s] j-1440 rows below, just after the shot:  {'shown': True, 'text': '22 rows below, jump to newest', 'n': 22, 'counted': 22, 'partial': 1, 'overlap': False, 'in_header': True, 'last_seq': '159 exchanges, last seq 159 (live)'}
+[  46.83 s] screenshot j-1440-jumped.png: Live | 166 exchanges, last seq 166 (live)
+[  46.83 s] j-1440 after the click: {'shown': False, 'text': 'Jump to newest', 'n': None, 'counted': 0, 'partial': 0, 'overlap': False, 'in_header': True, 'last_seq': '165 exchanges, last seq 165 (live)'}
+[  46.94 s] screenshot c1-dtc-pending.png: Live | 166 exchanges, last seq 166 (live)
+[  46.94 s] waiting 33.4 s, until about scenario t = 80 s
+[  80.48 s] screenshot c2-dtc-confirmed-mil.png: Live | 293 exchanges, last seq 293 (live)
+[  82.13 s] screenshot g1-narrow-390.png: Live | 300 exchanges, last seq 300 (live)
+[  82.31 s] screenshot g2-narrow-390-full-page.png: Live | 301 exchanges, last seq 301 (live)
+[  85.43 s] screenshot j-390-rows-below.png: Live | 312 exchanges, last seq 312 (live)
+[  85.43 s] j-390 rows below, just before the shot: {'shown': True, 'text': '16 rows below, jump to newest', 'n': 16, 'counted': 16, 'partial': 1, 'overlap': False, 'in_header': True, 'last_seq': '312 exchanges, last seq 312 (live)'}
+[  85.43 s] j-390 rows below, just after the shot:  {'shown': True, 'text': '16 rows below, jump to newest', 'n': 16, 'counted': 16, 'partial': 1, 'overlap': False, 'in_header': True, 'last_seq': '312 exchanges, last seq 312 (live)'}
+[  87.14 s] screenshot j-390-jumped.png: Live | 319 exchanges, last seq 319 (live)
+[  87.14 s] j-390 after the click: {'shown': False, 'text': 'Jump to newest', 'n': None, 'counted': 0, 'partial': 0, 'overlap': False, 'in_header': True, 'last_seq': '319 exchanges, last seq 319 (live)'}
+[  88.92 s] screenshot w-desktop-2000x1100.png: Live | 325 exchanges, last seq 325 (live)
+[  92.18 s] screenshot j-2000-rows-below.png: Live | 338 exchanges, last seq 338 (live)
+[  92.18 s] j-2000 rows below, just before the shot: {'shown': True, 'text': '20 rows below, jump to newest', 'n': 20, 'counted': 20, 'partial': 1, 'overlap': False, 'in_header': True, 'last_seq': '337 exchanges, last seq 337 (live)'}
+[  92.18 s] j-2000 rows below, just after the shot:  {'shown': True, 'text': '21 rows below, jump to newest', 'n': 21, 'counted': 21, 'partial': 1, 'overlap': False, 'in_header': True, 'last_seq': '338 exchanges, last seq 338 (live)'}
+[  93.94 s] screenshot j-2000-jumped.png: Live | 344 exchanges, last seq 344 (live)
+[  93.94 s] j-2000 after the click: {'shown': False, 'text': 'Jump to newest', 'n': None, 'counted': 0, 'partial': 0, 'overlap': False, 'in_header': True, 'last_seq': '344 exchanges, last seq 344 (live)'}
+[  95.00 s] stop traffic, then SIGTERM the simulator
+[  99.21 s] screenshot e-disconnected-stale.png: Disconnected, retry in 4 s | 349 exchanges, last seq 349
+[  99.21 s] start simulator: --profile src/ecu_simulator/profiles/ice_scenario.yaml --interface vcan0 --api 127.0.0.1:8765
+[  99.51 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[ 105.39 s] restart marker offset from the log's centre: -961.4921875
+[ 106.11 s] screenshot f-reconnected-after-restart.png: Live | 375 exchanges, last seq 26 (live)
+[ 106.11 s] stop traffic and simulator; start the no-scenario profile
+[ 106.25 s] start simulator: --profile src/ecu_simulator/profiles/ice_default.yaml --interface vcan0 --api 127.0.0.1:8765
+[ 110.15 s] screenshot h2-no-scenario.png: Live | 0 exchanges, last seq 0 (live)
+[ 110.15 s] resources from other origins on the final load: 0
+[ 110.15 s] console messages, exceptions and browser log entries over the whole run: 2
+[ 110.15 s]   log error (network): Failed to load resource: net::ERR_CONNECTION_REFUSED
+[ 110.15 s]   log error (network): Failed to load resource: net::ERR_CONNECTION_REFUSED
+[ 110.15 s] done

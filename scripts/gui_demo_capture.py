@@ -64,9 +64,9 @@ class Run:
         self.logfile.write(line + "\n")
         self.logfile.flush()
 
-    def spawn(self, cmd: list[str], logname: str) -> subprocess.Popen[bytes]:
+    def spawn(self, cmd: list[str], logname: str, env: dict[str, str] | None = None) -> subprocess.Popen[bytes]:
         out = (self.outdir / logname).open("ab")
-        proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, cwd=ROOT)
+        proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, cwd=ROOT, env=env)
         out.close()
         self.procs.append(proc)
         return proc
@@ -208,14 +208,58 @@ class DevTools:
 
 
 CONN = "document.getElementById('conn-text').textContent"
-FOLLOW_TEXT = "(function(){var b=document.getElementById('btn-follow'); return b.hidden ? '' : b.textContent;})()"
+# One snapshot of the jump control against the DOM, taken in a single evaluation so both
+# numbers describe the same moment. `counted` is every shown log row (exchange or marker)
+# whose top edge is at or below the log box's bottom edge, counted here independently of
+# the page's own code; `partial` is the row cut by that edge, if any. `overlap` is true if
+# the control's box intersects the log box.
+JUMP_STATE = """(function(){
+  var b = document.getElementById('btn-follow'), w = document.getElementById('logwrap');
+  var wr = w.getBoundingClientRect(), br = b.getBoundingClientRect();
+  var rows = document.querySelectorAll('#log-body > tr'), counted = 0, partial = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i].getBoundingClientRect();
+    if (r.height === 0) continue;
+    if (r.top >= wr.bottom - 1) counted++; else if (r.bottom > wr.bottom + 1) partial++;
+  }
+  var shown = !b.classList.contains('is-off') && getComputedStyle(b).visibility !== 'hidden';
+  var overlap = shown && br.left < wr.right && br.right > wr.left && br.top < wr.bottom && br.bottom > wr.top;
+  var m = /^([0-9,]+) rows? below/.exec(b.textContent);
+  return {shown: shown, text: b.textContent, n: m ? Number(m[1].replace(/,/g, '')) : null,
+          counted: counted, partial: partial, overlap: overlap,
+          in_header: !!b.closest('.panel__head'), last_seq: document.getElementById('log-count').textContent};
+})()"""
+
+
+async def jump_pair(run: Run, cdp: DevTools, label: str) -> None:
+    """At the current width: a real wheel scroll up over the log, a shot of the header's
+    "N rows below" control with N checked against the DOM, then a real click on it and a
+    shot back at the newest row with the control hidden."""
+    await cdp.js("document.getElementById('log-panel').scrollIntoView({block: 'start'})")
+    await asyncio.sleep(0.5)
+    await cdp.wheel("#logwrap", -700)
+    await asyncio.sleep(2.5)
+    before = await cdp.js(JUMP_STATE)
+    await cdp.shot(run, f"j-{label}-rows-below.png")
+    after = await cdp.js(JUMP_STATE)
+    run.log(f"j-{label} rows below, just before the shot: {before}")
+    run.log(f"j-{label} rows below, just after the shot:  {after}")
+    await cdp.click("#btn-follow")
+    await asyncio.sleep(1.5)
+    jumped = await cdp.js(JUMP_STATE)
+    await cdp.shot(run, f"j-{label}-jumped.png")
+    run.log(f"j-{label} after the click: {jumped}")
 
 
 async def launch_chrome(run: Run, chrome: str, profile_dir: str) -> subprocess.Popen[bytes]:
     run.log(f"start headless Chrome: {chrome}")
     proc = run.spawn([chrome, "--headless=new", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
                       "--no-first-run", "--no-default-browser-check", f"--user-data-dir={profile_dir}",
-                      f"--remote-debugging-port={DEVTOOLS_PORT}", "about:blank"], "chrome.log")
+                      f"--remote-debugging-port={DEVTOOLS_PORT}", "about:blank"], "chrome.log",
+                     # Chrome puts its singleton socket directory (com.google.Chrome.*) under
+                     # TMPDIR and does not always remove it; keep it inside the profile
+                     # directory, which is removed on exit.
+                     env={**os.environ, "TMPDIR": profile_dir})
     return proc
 
 
@@ -322,15 +366,8 @@ async def session(run: Run, chrome: str, profile_dir: str) -> None:
             # After the filter reset, pause and resume, the log still follows the newest rows.
             await asyncio.sleep(3.0)
             await cdp.shot(run, "d3-resumed-log-following.png")
-            # A real wheel scroll up: following stops and new rows are counted below.
-            await cdp.wheel("#logwrap", -700)
-            await asyncio.sleep(3.0)
-            run.log(f"after the wheel scroll up, the follow control reads: {await cdp.js(FOLLOW_TEXT)!r}")
-            await cdp.shot(run, "d4-scrolled-up-new-rows-below.png")
-            await cdp.click("#btn-follow")
-            await asyncio.sleep(1.5)
-            run.log(f"after clicking it, the follow control reads: {await cdp.js(FOLLOW_TEXT)!r}")
-            await cdp.shot(run, "d5-jumped-to-newest.png")
+            # j. The jump control at 1440: a real wheel scroll up, then a real click on it.
+            await jump_pair(run, cdp, "1440")
 
             # c. The DTC panel: P0128 pending at t = 40 s; confirmed with the MIL at t = 75 s.
             await until_scenario(44)
@@ -343,10 +380,13 @@ async def session(run: Run, chrome: str, profile_dir: str) -> None:
             await asyncio.sleep(1.5)
             await cdp.shot(run, "g1-narrow-390.png")
             await cdp.shot(run, "g2-narrow-390-full-page.png", full_page=True)
+            await jump_pair(run, cdp, "390")
             # The owner's own desktop width.
             await cdp.viewport(*OWNER_WIDE)
+            await cdp.js("window.scrollTo(0, 0)")
             await asyncio.sleep(1.5)
             await cdp.shot(run, "w-desktop-2000x1100.png")
+            await jump_pair(run, cdp, "2000")
             await cdp.viewport(*WIDE)
             await asyncio.sleep(1.0)
 
