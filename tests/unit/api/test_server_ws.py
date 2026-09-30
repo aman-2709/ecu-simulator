@@ -92,6 +92,45 @@ async def test_state_after_hello_and_a_later_pushed_state_carry_null_and_nonfini
 
 
 @pytest.mark.asyncio
+async def test_same_value_recovery_reaches_the_client_once(session, monkeypatch):  # M3b §8.3, §12.1
+    # The default profile has no scenario: nothing changes the state, so only the
+    # first-good publish can send the second state.
+    s = build(state_interval_s=0.02)
+    assert s.runtime.runner is None
+    await s.start()
+    try:
+        async with session.ws_connect(url(s, "/api/v1/events"), origin=origin(s)) as ws:
+            assert (await next_json(ws))["type"] == "hello"
+            first = await asyncio.wait_for(ws.receive(), 2)
+            assert json.loads(first.data)["type"] == "state"
+            original, calls = snapshots.dtcs, []
+
+            def fails_three_times(runtime):
+                calls.append(1)
+                if len(calls) <= 3:
+                    raise RuntimeError("injected")
+                return original(runtime)
+            monkeypatch.setattr(snapshots, "dtcs", fails_three_times)
+            states = []
+            deadline = time.monotonic() + 1.0          # 50 attempts at 20 ms: well past the recovery
+            while (left := deadline - time.monotonic()) > 0:
+                try:
+                    msg = await asyncio.wait_for(ws.receive(), left)
+                except TimeoutError:
+                    break
+                assert msg.type == aiohttp.WSMsgType.TEXT, msg
+                event = json.loads(msg.data)
+                if event["type"] == "state":
+                    states.append(msg.data)
+                else:
+                    assert event["type"] == "dropped", event
+            assert s.publisher.state_encode_failed == 3 and len(calls) > 10
+            assert states == [first.data]              # one second state, identical, and no further one
+    finally:
+        await s.stop()
+
+
+@pytest.mark.asyncio
 async def test_origin_missing_or_foreign_is_403_before_the_upgrade(server, session):
     for bad in (None, "http://evil.example", f"http://127.0.0.1:{server.port + 1}"):
         with pytest.raises(aiohttp.WSServerHandshakeError) as info:

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import socket
 import time
 
@@ -162,6 +163,105 @@ def test_an_oversized_state_refuses_to_construct(monkeypatch):
     monkeypatch.setattr(snapshots, "STATE_MAX_BYTES", 10)
     with pytest.raises(ApiStartupError, match="256 KiB"):
         build()
+
+
+async def wait_until(predicate, timeout=2.0):
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        if time.monotonic() > deadline:
+            return False
+        await asyncio.sleep(0.01)
+    return True
+
+
+async def get_status(session, server):
+    async with session.get(url(server, "/api/v1/status")) as r:
+        assert r.status == 200
+        return (await r.json())["api"]
+
+
+@pytest.mark.asyncio
+async def test_status_carries_the_encoding_health_fields(server, session):  # M3b §8.3
+    api = await get_status(session, server)
+    assert api["state_encode_failed"] == 0 and api["vehicle_encode_failed"] == 0
+    assert set(api["state_encoding"]) == {"ok", "last_ok_at", "last_failed_at"}
+    assert api["state_encoding"]["ok"] is True and api["state_encoding"]["last_failed_at"] is None
+
+
+def test_the_initial_push_sets_ok_and_last_ok_at():  # M3b §8.3: no task has run yet
+    s = build()
+    assert s.publisher.state_encoding["ok"] is True
+    assert s.publisher.state_encoding["last_ok_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_health_is_for_the_full_state_not_for_get_vehicle(server, session, monkeypatch):  # M3b §8.3
+    def broken_dtcs(runtime):
+        raise RuntimeError("injected DTC failure")
+    monkeypatch.setattr(snapshots, "dtcs", broken_dtcs)
+    assert await wait_until(lambda: server.publisher.state_encode_failed >= 1)
+    first = await get_status(session, server)
+    assert first["state_encoding"]["ok"] is False and first["state_encoding"]["last_failed_at"] is not None
+    count = first["state_encode_failed"]
+    assert await wait_until(lambda: server.publisher.state_encode_failed > count)
+    assert (await get_status(session, server))["state_encode_failed"] > count     # still rising
+    async with session.get(url(server, "/api/v1/vehicle")) as r:
+        assert r.status == 200                                       # the vehicle part is fine
+    after = await get_status(session, server)
+    assert after["state_encoding"]["ok"] is False                    # and did not report the full state healthy
+    assert after["vehicle_encode_failed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_a_residual_vehicle_encode_failure_is_500_and_counted(session, monkeypatch):  # M3b §8.3
+    # A long state interval: the state task makes its first attempt at start, then none
+    # during the test, so state_encoding can only change through GET /vehicle.
+    s = build(state_interval_s=60)
+    await s.start()
+    try:
+        assert await wait_until(lambda: s.publisher.state_encoding["last_ok_at"] is not None)
+        await asyncio.sleep(0.05)
+        before = await get_status(session, s)
+        original = snapshots.vehicle
+
+        def as_of_nan(runtime, unavailable):
+            return {**original(runtime, unavailable), "as_of": float("nan")}   # past the sanitiser
+        monkeypatch.setattr(snapshots, "vehicle", as_of_nan)
+        for n in (1, 2):
+            async with session.get(url(s, "/api/v1/vehicle")) as r:
+                assert r.status == 500
+                assert await r.text() == "vehicle state could not be encoded (decisions/0010 §4.3)"
+            after = await get_status(session, s)                     # /status is still 200
+            assert after["vehicle_encode_failed"] == n
+            assert after["state_encoding"] == before["state_encoding"]
+            assert after["state_encode_failed"] == before["state_encode_failed"]
+    finally:
+        await s.stop()
+
+
+def test_a_nonfinite_value_at_startup_starts_sanitised_and_ok():  # M3b §8.3
+    s = build(prepare=lambda runtime: runtime.vehicle.set("engine.coolant_temp", float("inf")))
+    conn, _, _ = s.publisher.connect()
+    state = json.loads(conn.take_state())
+    assert state["vehicle"]["signals"]["engine.coolant_temp"] is None
+    assert state["vehicle"]["nonfinite"] == ["engine.coolant_temp"]
+    assert s.publisher.state_encoding["ok"] is True
+
+
+def dtcs_with_a_nan(runtime):
+    return {"engine": {"codes": [], "mil": False, "extra": float("nan")}}   # only the guard catches it
+
+
+def dtcs_raising(runtime):
+    raise RuntimeError("injected")
+
+
+@pytest.mark.parametrize("fault, name", [(dtcs_with_a_nan, "ValueError"), (dtcs_raising, "RuntimeError")])
+def test_a_residual_startup_failure_is_an_api_startup_error_naming_its_type(monkeypatch, fault, name):
+    monkeypatch.setattr(snapshots, "dtcs", fault)
+    with pytest.raises(ApiStartupError, match=name) as caught:
+        build()
+    assert "256 KiB" not in str(caught.value)                        # not reported as the size rule
 
 
 @pytest.mark.asyncio

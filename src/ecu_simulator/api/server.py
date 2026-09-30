@@ -8,6 +8,8 @@ WebSocket client receives it (0010 §4.5).
 from __future__ import annotations
 
 import asyncio
+import functools
+import json
 import logging
 import re
 import time
@@ -36,6 +38,7 @@ WS_WRITER_LIMIT = 64 * 1024     # explicit: the default differs between aiohttp 
 WRITER_GRACE_S = 2.0            # a send under way when the socket closes gets this long to resolve
 BODY_TIMEOUT_S = 2.0            # a length-less request body must arrive within this, or 408
 EVENTS = "/api/v1/events"
+STRICT_DUMPS = functools.partial(json.dumps, allow_nan=False)   # M3b §8.3: never NaN or Infinity on the wire
 INT = re.compile(r"-?[0-9]{1,19}")
 # Close codes the server sends when the Publisher, or a dead writer, closed the connection.
 CLOSE_REASONS = {CLOSE_TOO_SLOW: b"client too slow", CLOSE_INTERNAL_ERROR: b"internal error"}
@@ -162,8 +165,16 @@ class ApiServer:
     ) -> None:
         # 0010 §5, ninth revision: signals with no source in this profile, computed once here.
         self.unavailable = availability.unavailable(runtime.config.profile)
+        # Encoded once (M3b §8.3): non-finite signals are sanitised; any other failure to build
+        # or encode, the strict guard's ValueError included, refuses to start, naming its type.
         try:
-            snapshots.check_state_size(runtime, self.unavailable)
+            initial_state = snapshots.state_message(runtime, self.unavailable)
+        except Exception as error:
+            raise ApiStartupError(
+                f"--api cannot start: the initial state could not be encoded ({type(error).__name__}: {error})"
+            ) from error
+        try:
+            snapshots.check_state_size(initial_state)
         except ValueError as error:
             raise ApiStartupError(str(error)) from error
         self.runtime = runtime
@@ -173,7 +184,7 @@ class ApiServer:
                                    connection_options=connection_options)
         self.handler = ObservedDispatcher(runtime.dispatcher, self.handoff, self.publisher.wake)
         # Owner decision 2026-09-27: state exists before the first client can connect.
-        self.publisher.push_state(snapshots.state_message(runtime, self.unavailable))
+        self.publisher.push_initial_state(initial_state)
         self.started_at = time.time()
         self.port: int | None = None
         self._state_interval_s = state_interval_s
@@ -281,7 +292,13 @@ class ApiServer:
         ))
 
     async def _vehicle(self, request: web.Request) -> web.Response:
-        return web.json_response(snapshots.vehicle(self.runtime, self.unavailable))
+        # Strict, as state_message (M3b §8.3). A residual failure is counted apart from the
+        # full-state health, which this part-snapshot never touches.
+        try:
+            return web.json_response(snapshots.vehicle(self.runtime, self.unavailable), dumps=STRICT_DUMPS)
+        except Exception as error:
+            self.publisher.vehicle_encode_failure(error)
+            raise web.HTTPInternalServerError(text="vehicle state could not be encoded (decisions/0010 §4.3)") from None
 
     async def _dtcs(self, request: web.Request) -> web.Response:
         return web.json_response(snapshots.dtcs(self.runtime))

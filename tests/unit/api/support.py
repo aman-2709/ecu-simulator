@@ -1,7 +1,7 @@
 import asyncio
 
 
-def build(**kw):
+def build(*, prepare=None, **kw):
     from ecu_simulator import app
     from ecu_simulator.api.options import ApiOptions
     from ecu_simulator.api.server import ApiServer
@@ -10,6 +10,8 @@ def build(**kw):
 
     config = app.RuntimeConfig.build(load_profile(default_profile_path()), "vcan0")
     runtime = app.build_runtime(config)
+    if prepare is not None:
+        prepare(runtime)                    # before ApiServer: what it sees at construction
     options = ApiOptions("127.0.0.1", 0, profile="profiles/ice_default.yaml", version="test")
     return ApiServer(runtime, app.build_endpoints(config), options, **kw)
 

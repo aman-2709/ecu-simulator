@@ -79,8 +79,9 @@ def state_message(runtime: app.Runtime, unavailable: Sequence[str]) -> str:
                       separators=(",", ":"), allow_nan=False)
 
 
-def check_state_size(runtime: app.Runtime, unavailable: Sequence[str]) -> None:
-    size = len(state_message(runtime, unavailable).encode())
+def check_state_size(text: str) -> None:
+    """The size rule, on an already encoded ``state_message``: the caller encodes it once."""
+    size = len(text.encode())
     if size > STATE_MAX_BYTES:
         raise ValueError(f"state message is {size} bytes, over the 256 KiB limit (decisions/0010 §4.3)")
 

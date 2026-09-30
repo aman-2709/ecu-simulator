@@ -27,7 +27,7 @@ def test_snapshots_serialise_and_fit(name):
     rt = runtime(name)
     for snap in (snapshots.vehicle(rt, missing(rt)), snapshots.dtcs(rt), snapshots.ecus(rt)):
         json.dumps(snap)
-    snapshots.check_state_size(rt, missing(rt))
+    snapshots.check_state_size(snapshots.state_message(rt, missing(rt)))
 
 
 def test_snapshots_never_mutate_and_never_call_sync():
@@ -178,7 +178,7 @@ def test_oversized_state_is_refused():
     rt = runtime()
     rt.vehicle.common.vin = "V" * (300 * 1024)   # test-only object, discarded after the test
     with pytest.raises(ValueError, match="256 KiB"):
-        snapshots.check_state_size(rt, missing(rt))
+        snapshots.check_state_size(snapshots.state_message(rt, missing(rt)))
 
 
 def test_status_has_every_section_5_field_including_profile():
