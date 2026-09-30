@@ -2949,3 +2949,137 @@ In a namespace, the simulator with `--profile docs/examples/ice_drive_cycle_step
 --api 127.0.0.1:8765` and the traffic generator; live screenshots at 1440, 2000 and 390 px
 showing the vehicle moving across a loop boundary and the odometer as "—"; recorded in
 `docs/validation/gui-m3a-live-demo.md`.
+
+## M3b checkpoint 1: observer JSON and health safeguards (owner, 2026-09-30)
+
+Authority: `docs/plans/gui-m3b-graphs-design.md` at `c63a9c4` (§4.1, §8.1-8.3, §12.1, §14.1,
+§16, §17 checkpoint 1) and decision 0010's tenth to twelfth revisions (§4.3, §5, §9.3). The
+owner accepted C9 (an exhausted recovery episode needs "Retry now"; ordinary disconnects keep
+the automatic reconnect); that is page behaviour, built at checkpoint 2. Checkpoint 1 is
+server code and Python tests only: nothing under `api/static/`, no uPlot, no
+`scripts/gui_fault_server.py`. Faults are injected in-process by the tests (`VehicleState.set`,
+monkeypatching `snapshots` functions, a raising snapshot callable); no profile file carries a
+non-finite value, and DEV-26 is not touched. The diagnostic path is not touched.
+
+Global constraints: `.venv/bin/python` (3.12); `ruff check .` (never `ruff format`), bare
+`mypy`, line length 120; tests only inside `unshare -r -n`; never touch the host vcan0/can0;
+no Co-Authored-By trailer, no amend, no force, no push. **Sanitising never mutates runtime
+state**: it builds new containers and never writes to the `VehicleState`, the runner or the
+DTC stores.
+
+### Task 26: `nonfinite`, sanitising, and the strict state encoder
+
+**Files:** `src/ecu_simulator/observe/snapshots.py`; `tests/unit/observe/test_snapshots.py`;
+`tests/unit/api/test_server_http.py`, `tests/unit/api/test_server_ws.py`.
+
+- `snapshots.vehicle(runtime, unavailable)`: in `signals`, a value that is a Python `float`
+  and not `math.isfinite` becomes `None`; every other value is unchanged. A new key
+  `nonfinite`: the sorted list of those paths **not** in `unavailable`, always present,
+  possibly empty. A path in `unavailable` whose value is non-finite is sent as `None` and
+  listed only in `unavailable` (§8.2 precedence).
+- `state_message` encodes with `json.dumps(..., separators=(",", ":"), allow_nan=False)`.
+- Tests (§12.1 "The non-finite rule"): `nan`, `inf`, `-inf` set with `VehicleState.set`;
+  finite floats, ints, bools and strings unchanged; `nonfinite == []` with none; precedence
+  (the path passed in `unavailable` and set non-finite); `state_message` parses under
+  `json.loads(..., parse_constant=<raises>)`. **Non-mutation:** after `vehicle()` and
+  `state_message()`, the runtime still holds the non-finite values (`math.isnan` / `== inf`
+  via `VehicleState.get`), every other stored value is unchanged, and a second call gives an
+  equal result.
+- **The guard, at the encoder** (§12.1, C11): with `snapshots.dtcs` monkeypatched to return a
+  well-formed ECU entry with one extra float field `nan`, and separately with the runner's
+  last applied time set to `inf` (the test may set the runner's private `_last_applied`),
+  `state_message` raises `ValueError` ("Out of range float values are not JSON compliant"),
+  and the same payload encodes without error under default `json.dumps` (shown in the test).
+- API (happy path; `GET /vehicle` still uses the existing `web.json_response` here):
+  `GET /vehicle` with a non-finite signal set in the runtime answers 200 with `null` and
+  `nonfinite`; the WS `state` after `hello`, and a later pushed `state`, carry `null` and
+  `nonfinite`. `test_server_ws.py:63`'s exact `vehicle` key set gains `nonfinite`.
+
+### Task 27: the state task: containment, encoding health, the first-good publish
+
+**Files:** `src/ecu_simulator/observe/publisher.py`; `tests/unit/observe/test_publisher.py`.
+
+- `Publisher.__init__` gains keyword `wall: Callable[[], float] = time.time` (the wall clock
+  for `state_encoding`'s timestamps, beside the existing `monotonic`), and the attributes
+  `state_encode_failed = 0`, `vehicle_encode_failed = 0`, `state_encoding = {"ok": True,
+  "last_ok_at": None, "last_failed_at": None}`, and a private must-publish flag.
+- `run_state` is exactly §8.3's pseudocode: `try: text = snapshot()`; `except Exception`
+  → `state_encode_failed += 1`, `ok = False`, `last_failed_at = wall()`,
+  `_log_once("state encode", error)`, must-publish set; `else` → `ok = True`,
+  `last_ok_at = wall()`, push if must-publish or the text differs from the last pushed
+  text, then clear must-publish. `push_dropped()` runs every turn, failed or not; then
+  `await asyncio.sleep(interval_s)`. `CancelledError` is not caught. `ok` is only ever the
+  stored result of the latest attempt; nothing compares timestamps.
+- `push_initial_state(text)`: `push_state(text)`, then `ok = True`, `last_ok_at = wall()`.
+  (Task 28's `ApiServer` uses it for the startup push.)
+- `vehicle_encode_failure(error)`: `vehicle_encode_failed += 1`,
+  `_log_once("vehicle encode", error)`; never touches `state_encoding`.
+- `stats()` gains `state_encode_failed`, `vehicle_encode_failed`, and `state_encoding` (a
+  copy, so a caller cannot change it).
+- Tests (§12.1 "The state task, encoding health and the first-good publish", all bullets):
+  raise-once-then-new-text (task alive, counter 1, `ok` false then true, timestamps from an
+  injected `wall`, last good state kept on every connection during the failure, new text
+  pushed, `push_dropped` ran in the failed turn); same-value recovery (identical text pushed
+  again: each connection's one-slot state is set and a registered connection's
+  `next_message()` returns it; the following identical attempt pushes nothing); `ok` sequence
+  true/false/true under a frozen clock and under a clock going backwards; a connection
+  registered during a failure gets the last good text; logging once per exception type
+  (`caplog`), a second type logs again; `CancelledError` ends the task. **The guard, through
+  `run_state`** (§12.1, C11): with a real `snapshots.state_message` snapshot over a runtime
+  whose DTC part (monkeypatched) or `as_of` carries a non-finite float, the failure is
+  contained (counter, `ok` false, task running, no push, pending state = last good text);
+  after the injected value is removed, the next attempt succeeds, `ok` true, and the
+  first-good text is pushed.
+
+### Task 28: strict `GET /vehicle`, the startup refusal, `/status`, and 0010's markers
+
+**Files:** `src/ecu_simulator/api/server.py`, `src/ecu_simulator/observe/snapshots.py` (only
+if the startup split needs it); `tests/unit/api/test_server_http.py`,
+`tests/unit/api/test_server_ws.py`; `docs/decisions/0010-gui-observer-api.md`,
+`docs/plans/gui-m3b-graphs-design.md` (status line only).
+
+- `GET /vehicle`: build `snapshots.vehicle` and encode with `json.dumps(allow_nan=False)`
+  (e.g. `web.json_response(..., dumps=functools.partial(json.dumps, allow_nan=False))`). Any
+  `Exception` building or encoding → `publisher.vehicle_encode_failure(error)` and HTTP 500
+  with the text `vehicle state could not be encoded (decisions/0010 §4.3)`.
+- Startup: the size rule keeps its message. **Every other** exception building or encoding
+  the initial state (including a `ValueError` from the strict guard) becomes
+  `ApiStartupError` whose message names the exception type. The initial push uses
+  `publisher.push_initial_state`, so `/status` starts with `ok: true` and `last_ok_at` set.
+- `GET /status` `api` carries `state_encode_failed`, `vehicle_encode_failed`, `state_encoding`
+  (through `Publisher.stats`).
+- Tests (§12.1 "The API", every bullet not done in Task 26): full-state health against
+  `GET /vehicle` (DTC part raising while running: `/status` `ok == false`, counter rising;
+  `GET /vehicle` 200 and `ok` still false after it); residual `GET /vehicle` failure (500 with
+  the text, `vehicle_encode_failed` rises, `state_encoding` unchanged, `GET /status` 200);
+  the `/status` fields; startup with a non-finite runtime value (starts, sanitised,
+  `ok == true`); startup residual failure (`ApiStartupError` naming the type); same-value
+  recovery over the wire with no scenario (`hello`, `state`; the snapshot raises for three
+  attempts, then recovers to identical text; the client receives a second, identical
+  `state` and no further `state`). Faults through monkeypatching `snapshots` functions in the
+  test, never a private server seam.
+- 0010 and the design's status line: the checkpoint-1 items (§4.3 rows, §5 fields and the
+  non-finite rule, §9.3 rows, the status lines, §10's M3b row) change from "specified, not
+  (yet) implemented" to implemented at M3b checkpoint 1; the page items stay designed, not
+  implemented. A thirteenth-revision note says so. Nothing else in 0010 changes.
+
+### Task 29: the overhead measurement (§17, 1.5)
+
+**Files:** `scripts/gui_m3b_state_cost.py`; `docs/validation/gui-m3b-overhead.md`.
+
+- `scripts/gui_m3b_state_cost.py`: builds the runtime from `ice_scenario.yaml` (as
+  `gui_m1_early_check.py` builds from a profile, interface `vcan0`, no socket opened),
+  computes `unavailable`, applies the scenario once so `as_of` is set, warms up, then times
+  **10,000** `snapshots.state_message` calls with `perf_counter_ns`, and reports median,
+  p99 and max per call in µs, plus separately the build alone (`vehicle` + `dtcs`) and the
+  encode alone, so build and encode costs are distinguishable. It prints the path of the
+  `ecu_simulator` package it imported. It works unchanged against the code before and
+  after checkpoint 1 (same function signatures).
+- Runs, same host and same `.venv` Python: **before** = the `c63a9c4` source (exported with
+  `git archive` into the scratchpad and put first on `PYTHONPATH`), **after** = the
+  checkpoint-1 head; three runs each. The M1 early check (`scripts/gui_m1_early_check.py`)
+  before and after, three runs each, reporting `longest_turn_s`.
+- The record reports **state build/encode cost and the publisher turn in separate
+  sections**, never combined; the host, Python version, commits, commands and the raw
+  output; and states that the state task is not a publisher turn. The optional M2 early
+  check is not run at checkpoint 1. The M2 latency STOP stays open and is not affected.
