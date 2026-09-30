@@ -10,6 +10,7 @@ import pytest
 aiohttp = pytest.importorskip("aiohttp", reason="needs the optional [gui] extra (aiohttp)")
 
 from ecu_simulator.observe import snapshots  # noqa: E402
+from ecu_simulator.observe.publisher import Publisher  # noqa: E402
 from ecu_simulator.transport import DiagnosticRequest  # noqa: E402
 from tests.unit.api.support import build, check_delivery_unknown_allowance, url  # noqa: E402
 
@@ -489,7 +490,8 @@ async def test_a_client_reset_while_backpressured_is_delivery_unknown_once():  #
 @pytest.mark.asyncio
 async def test_a_publisher_task_that_fails_is_logged_at_once(caplog, monkeypatch):
     s = build()
-    monkeypatch.setattr(snapshots, "state_message", lambda runtime, unavailable: 1 / 0)   # run_state's snapshot raises
+    # A failing snapshot is contained by run_state (M3b §8.3), so the fault is one it does not catch.
+    monkeypatch.setattr(Publisher, "push_dropped", lambda self: 1 / 0)
     await s.start()
     try:
         assert await wait_until(lambda: any(

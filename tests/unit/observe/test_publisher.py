@@ -4,9 +4,13 @@ import json
 import logging
 import socket
 import time
+from pathlib import Path
 
 import pytest
 
+from ecu_simulator import app
+from ecu_simulator.config import load_profile
+from ecu_simulator.observe import availability, snapshots
 from ecu_simulator.observe.handoff import ExchangeRecord, HandOff
 from ecu_simulator.observe.limits import TURN_MAX_RECORDS, TURN_MAX_S
 from ecu_simulator.observe.publisher import Publisher, TooManyClients
@@ -441,3 +445,229 @@ def test_a_connection_over_its_allowance_is_counted_after_its_ledger_is_evicted(
 def test_no_offender_no_count():
     p, _ = closes_with_one_offender(offender=False)
     assert p.stats(issued=2)["closed_totals"]["delivery_unknown_over_allowance"] == 0
+
+
+# --- The state task: containment, encoding health and the first-good publish (M3b §8.3, §12.1) ---
+
+PROFILES = Path(app.__file__).parent / "profiles"
+
+
+def scripted(p, steps, observe=None):
+    """Run ``p.run_state`` over ``steps``, one per attempt: a text to return, an exception to
+    raise, or a callable to call. Each attempt first records what the previous one left, so
+    ``seen[i]`` is the state after attempt ``i`` (``seen[0]`` before any); ``observe(i)`` may add
+    to it. The attempt after the last step raises CancelledError, which ends the task. ``events``
+    orders the attempts, pushes and ``dropped`` notices."""
+    seen: list[dict] = []
+    events: list[str] = []
+    real_push, real_dropped = p.push_state, p.push_dropped
+    def push(text: str) -> None:
+        events.append(f"push:{text}")
+        real_push(text)
+    def dropped() -> None:
+        events.append("dropped")
+        real_dropped()
+    p.push_state, p.push_dropped = push, dropped
+    def snapshot() -> str:
+        stats = p.stats(issued=0)
+        seen.append({"failed": stats["state_encode_failed"], **stats["state_encoding"],
+                     "extra": observe(len(seen)) if observe else None})
+        events.append("attempt")
+        if len(seen) > len(steps):
+            raise asyncio.CancelledError
+        step = steps[len(seen) - 1]
+        if isinstance(step, BaseException):
+            raise step
+        return step() if callable(step) else step
+    return snapshot, seen, events
+
+
+async def run_script(p, steps, observe=None):
+    snapshot, seen, events = scripted(p, steps, observe)
+    task = asyncio.create_task(p.run_state(snapshot, interval_s=0))
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    return seen, events
+
+
+def ticks(*values):
+    return iter(values).__next__
+
+
+def test_state_encoding_starts_ok_and_stats_returns_a_copy():
+    p = publisher(HandOff())
+    stats = p.stats(issued=0)
+    assert (stats["state_encode_failed"], stats["vehicle_encode_failed"]) == (0, 0)
+    assert stats["state_encoding"] == {"ok": True, "last_ok_at": None, "last_failed_at": None}
+    stats["state_encoding"]["ok"] = False
+    assert p.stats(issued=0)["state_encoding"]["ok"] is True
+
+
+def test_push_initial_state_pushes_and_records_a_good_attempt():
+    p = publisher(HandOff(), wall=lambda: 7.0)
+    conn, _, _ = p.connect()
+    p.push_initial_state("s")
+    assert conn.next_message() == "s"
+    assert p.stats(issued=0)["state_encoding"] == {"ok": True, "last_ok_at": 7.0, "last_failed_at": None}
+
+
+def test_vehicle_encode_failure_is_counted_logged_once_and_leaves_state_encoding(caplog):
+    p = publisher(HandOff(), wall=lambda: 7.0)
+    before = p.stats(issued=0)["state_encoding"]
+    with caplog.at_level(logging.ERROR, logger="ecu_simulator.observe.publisher"):
+        p.vehicle_encode_failure(ValueError("x"))
+        p.vehicle_encode_failure(ValueError("y"))
+    stats = p.stats(issued=0)
+    assert stats["vehicle_encode_failed"] == 2 and stats["state_encode_failed"] == 0
+    assert stats["state_encoding"] == before
+    assert len([r for r in caplog.records if "vehicle encode" in r.getMessage()]) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_failed_attempt_is_contained_and_a_new_text_follows():
+    p = publisher(HandOff(), wall=ticks(10.0, 20.0, 30.0))
+    a, _, _ = p.connect()
+    b, _, _ = p.connect()
+    def observe(i):
+        return [a.take_state(), b.take_state()] if i == 2 else None
+    seen, events = await run_script(p, ["a", RuntimeError("boom"), "b"], observe)
+    assert [s["ok"] for s in seen] == [True, True, False, True]
+    assert [s["failed"] for s in seen] == [0, 0, 1, 1]
+    assert (seen[2]["last_ok_at"], seen[2]["last_failed_at"]) == (10.0, 20.0)
+    assert (seen[3]["last_ok_at"], seen[3]["last_failed_at"]) == (30.0, 20.0)
+    assert seen[2]["extra"] == ["a", "a"]                      # the last good state kept on every connection
+    assert events == ["attempt", "push:a", "dropped",
+                      "attempt", "dropped",                    # no push, but dropped still ran
+                      "attempt", "push:b", "dropped",
+                      "attempt"]                               # the task survived to try again
+    assert (a.take_state(), b.take_state()) == ("b", "b")
+
+
+@pytest.mark.asyncio
+async def test_the_first_good_attempt_is_pushed_even_with_the_same_text():
+    p = publisher(HandOff(), wall=lambda: 1.0)
+    a, _, _ = p.connect()
+    b, _, _ = p.connect()
+    def drain(conn):
+        out = []
+        while (text := conn.next_message()) is not None:
+            out.append(text)
+        return out
+    def observe(i):
+        if i in (1, 2, 4):
+            return [drain(a), [b.take_state()]]
+        if i == 3:
+            return [[a.next_message()], [b.take_state()]]
+        return None
+    seen, events = await run_script(p, ["s", RuntimeError("boom"), "s", "s"], observe)
+    assert seen[1]["extra"][1] == ["s"]
+    assert "s" not in seen[2]["extra"][0] and seen[2]["extra"][1] == [None]   # nothing pushed on failure
+    assert seen[3]["extra"] == [["s"], ["s"]]                  # pushed again, and next_message() returns it
+    assert "s" not in seen[4]["extra"][0] and seen[4]["extra"][1] == [None]   # the next same text is not
+    assert [e for e in events if e.startswith("push")] == ["push:s", "push:s"]
+    assert events == ["attempt", "push:s", "dropped", "attempt", "dropped",
+                      "attempt", "push:s", "dropped", "attempt", "dropped", "attempt"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wall", [lambda: 5.0, ticks(30.0, 20.0, 10.0)], ids=["frozen", "backwards"])
+async def test_ok_is_the_latest_attempt_whatever_the_clock_does(wall):
+    p = publisher(HandOff(), wall=wall)
+    seen, _ = await run_script(p, ["s", RuntimeError("boom"), "s"])
+    assert [s["ok"] for s in seen] == [True, True, False, True]
+
+
+@pytest.mark.asyncio
+async def test_a_connection_registered_during_a_failure_gets_the_last_good_text():
+    p = publisher(HandOff())
+    late = []
+    def observe(i):
+        if i == 2:
+            conn, hello, _ = p.connect()
+            late.append(conn)
+            return hello["type"]
+        return None
+    seen, _ = await run_script(p, ["s", RuntimeError("boom"), RuntimeError("boom")], observe)
+    assert seen[2]["extra"] == "hello" and seen[2]["ok"] is False
+    assert late[0].next_message() == "s"                       # last known, not current
+
+
+@pytest.mark.asyncio
+async def test_state_encode_failures_log_once_per_exception_type(caplog):
+    p = publisher(HandOff())
+    with caplog.at_level(logging.ERROR, logger="ecu_simulator.observe.publisher"):
+        seen, _ = await run_script(p, [ValueError("a"), ValueError("b"), TypeError("c")])
+    records = [r.getMessage() for r in caplog.records if "state encode" in r.getMessage()]
+    assert len(records) == 2 and "ValueError" in records[0] and "TypeError" in records[1]
+    assert seen[-1]["failed"] == 3
+
+
+@pytest.mark.asyncio
+async def test_cancelled_error_still_ends_the_state_task():
+    p = publisher(HandOff())
+    calls: list[int] = []
+    def snapshot() -> str:
+        calls.append(1)
+        return "s"
+    task = asyncio.create_task(p.run_state(snapshot, interval_s=0))
+    while len(calls) < 2:
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert task.cancelled() and p.state_encode_failed == 0
+
+
+def real_runtime(name):
+    return app.build_runtime(app.RuntimeConfig.build(load_profile(PROFILES / name), "vcan0"))
+
+
+async def guard_through_run_state(rt, inject, remove):
+    """C11 through run_state: a good attempt, one with the injected non-finite value, one after
+    it is removed. The strict encoder raises on the second, and run_state contains it."""
+    p = Publisher(HandOff(), rt.router, {}, wall=ticks(1.0, 2.0, 3.0))
+    conn, _, _ = p.connect()
+    unavailable = availability.unavailable(rt.config.profile)
+    def real() -> str:
+        return snapshots.state_message(rt, unavailable)
+    def injected() -> str:
+        inject()
+        return real()
+    def removed() -> str:
+        remove()
+        return real()
+    def observe(i):
+        return conn.take_state() if i == 2 else None
+    seen, events = await run_script(p, [real, injected, removed], observe)
+    good = real()
+    assert (seen[2]["failed"], seen[2]["ok"]) == (1, False)    # contained: counted, not ok
+    assert seen[2]["extra"] == good                            # pending state = the last good text
+    assert events == ["attempt", f"push:{good}", "dropped",
+                      "attempt", "dropped",                    # no push on the failure
+                      "attempt", f"push:{good}", "dropped",    # the first-good publish, same text
+                      "attempt"]                               # the task kept running
+    assert (seen[3]["failed"], seen[3]["ok"]) == (1, True)
+    assert conn.take_state() == good
+
+
+@pytest.mark.asyncio
+async def test_guard_through_run_state_contains_a_nonfinite_dtc_field(monkeypatch):
+    rt = real_runtime("ice_default.yaml")
+    original = snapshots.dtcs
+    def bad(runtime):
+        out = original(runtime)
+        out["engine"] = {**out["engine"], "extra": float("nan")}
+        return out
+    await guard_through_run_state(rt, lambda: monkeypatch.setattr(snapshots, "dtcs", bad),
+                                  lambda: monkeypatch.setattr(snapshots, "dtcs", original))
+
+
+@pytest.mark.asyncio
+async def test_guard_through_run_state_contains_a_nonfinite_as_of():
+    rt = real_runtime("ice_scenario.yaml")
+    original = rt.runner._last_applied
+    def inject():
+        rt.runner._last_applied = float("inf")                # the brief permits setting this private field
+    def remove():
+        rt.runner._last_applied = original
+    await guard_through_run_state(rt, inject, remove)

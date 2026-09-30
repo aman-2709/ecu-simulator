@@ -56,6 +56,7 @@ class Publisher:
         *,
         encode: Callable[..., str] = encode_exchange,
         monotonic: Callable[[], float] = time.monotonic,
+        wall: Callable[[], float] = time.time,
         max_turn_records: int = TURN_MAX_RECORDS,
         max_turn_s: float = TURN_MAX_S,
         max_clients: int = MAX_CLIENTS,
@@ -67,6 +68,7 @@ class Publisher:
         self._endpoints = endpoints
         self._encode = encode
         self._monotonic = monotonic
+        self._wall = wall
         self._max_turn_records = max_turn_records
         self._max_turn_s = max_turn_s
         self._max_clients = max_clients
@@ -86,6 +88,12 @@ class Publisher:
         self.encode_failed = 0
         self.fanout_failed = 0
         self.writer_failed = 0
+        # M3b §8.3: health of the periodic full-state snapshot. ok is the stored result of the
+        # latest attempt; the timestamps are for reporting only and never decide it.
+        self.state_encode_failed = 0
+        self.vehicle_encode_failed = 0
+        self.state_encoding: dict[str, Any] = {"ok": True, "last_ok_at": None, "last_failed_at": None}
+        self._must_publish = False
         self._logged: set[tuple[str, str]] = set()
         self._connection_options = dict(connection_options or {})
         self.connections_opened = 0
@@ -243,6 +251,8 @@ class Publisher:
             "forced_disconnects": self.forced_disconnects, "longest_turn_s": self.longest_turn_s,
             "encode_failed": self.encode_failed, "fanout_failed": self.fanout_failed,
             "writer_failed": self.writer_failed,
+            "state_encode_failed": self.state_encode_failed, "vehicle_encode_failed": self.vehicle_encode_failed,
+            "state_encoding": dict(self.state_encoding),
             "connections": [c.ledger(self.published) for c in self.connections],
             "closed_connections": [c.ledger(self.published) for c in self.closed],
             "connections_opened": self.connections_opened,
@@ -262,11 +272,38 @@ class Publisher:
                                          "client_dropped": conn.client_dropped,
                                          "forced_disconnects": self.forced_disconnects}, separators=(",", ":")))
 
+    def push_initial_state(self, text: str) -> None:
+        """The startup push: a failed initial encode refuses to start, so this one is good (M3b §8.3)."""
+        self.push_state(text)
+        self.state_encoding["ok"] = True
+        self.state_encoding["last_ok_at"] = self._wall()
+
+    def vehicle_encode_failure(self, error: Exception) -> None:
+        """A ``GET /vehicle`` answer failed to encode. Never touches ``state_encoding`` (M3b §8.3)."""
+        self.vehicle_encode_failed += 1
+        self._log_once("vehicle encode", error)
+
     async def run_state(self, snapshot: Callable[[], str], interval_s: float = STATE_MIN_INTERVAL_S) -> None:
-        """Push ``state`` at most every ``interval_s``, and only when it changed (0010 §4.3)."""
+        """Push ``state`` at most every ``interval_s``, and only when it changed (0010 §4.3).
+
+        A failed snapshot is contained (M3b §8.3): counted, ``ok`` false, nothing pushed, so every
+        connection keeps the last good state. The first good snapshot after it is pushed even when
+        its text is unchanged. CancelledError is not an Exception, so shutdown is unchanged.
+        """
         while True:
-            text = snapshot()
-            if text != self._last_state:
-                self.push_state(text)
+            try:
+                text = snapshot()
+            except Exception as error:
+                self.state_encode_failed += 1
+                self.state_encoding["ok"] = False
+                self.state_encoding["last_failed_at"] = self._wall()
+                self._log_once("state encode", error)
+                self._must_publish = True
+            else:
+                self.state_encoding["ok"] = True
+                self.state_encoding["last_ok_at"] = self._wall()
+                if self._must_publish or text != self._last_state:
+                    self.push_state(text)
+                    self._must_publish = False
             self.push_dropped()
             await asyncio.sleep(interval_s)
