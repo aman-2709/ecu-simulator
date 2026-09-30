@@ -168,8 +168,10 @@ line. The per-run ranges overlap (before 0.905/0.927/1.004 ms, after 0.943/1.020
 ms), and `git diff c63a9c4 17d6e3b` shows no change to any code on this script's path:
 `Publisher.drain_turn` and `Publisher._publish` are untouched, and `handoff.py`,
 `wrapper.py`, `events.py` and `connection.py` are byte-identical between the two commits
-(`publisher.py`'s only changes are to `__init__`, `stats()` and `run_state`, none of which
-this script's drain loop calls). With three runs a side, this record cannot separate the
+(`publisher.py`'s changes are to `__init__`, `stats()` and `run_state`, plus two new
+methods, `push_initial_state` and `vehicle_encode_failure`, called only from
+`api/server.py`; none is called by this script's drain loop). With three runs a side,
+this record cannot separate the
 +93 µs from run-to-run variation on unchanged code; it is reported as measured, not
 explained. The +0.28 µs overhead-median change is, by the same evidence, also a change on
 code this script does not exercise differently between the two commits.
