@@ -7,10 +7,14 @@ read-only browser MVP. M1, the observer core, and M2 (`ApiServer`, `--api`, the 
 extra, §6 security, §4.3 limits, the API tests and the CI job) are built on branch `gui`.
 **M2's early check is a `STOP` that remains open and is not accepted:** condition 4's
 median wire latency exceeds condition 1's median + 0.10 ms
-(`docs/validation/gui-m2-early-check.md`). M3 has not started. The only visual work is
-an offline static mockup of the M3a views, under `docs/mockups/m3a-dashboard/`: it is not
-served and shows sample data only, and the owner decided that wiring to live data waits
-for the owner's visual feedback. M4 has not run.
+(`docs/validation/gui-m2-early-check.md`). **M3a, the live frontend, is built and live on
+`gui`:** it serves live data only (`docs/validation/gui-m3a-live-demo.md`). The offline
+mockup under `docs/mockups/m3a-dashboard/` is not served. **M3b, live signal graphs, is
+designed and not implemented** (`docs/plans/gui-m3b-graphs-design.md`, tenth revision
+below). The `nonfinite` field and the state-encoding containment of §4.3 and §5 are
+**specified, not implemented**. M4 has not run. **Still open, and unchanged by any of
+this:** the M2 latency `STOP`, the hosted-CI `CAN_ISOTP` gap (§9.3), the Phase 8b gate,
+and the branch rule below.
 
 This work lives on branch `gui`, which starts from `modernization` at `a57b98f`. It is
 **not merged into `modernization` until V1.0 is tagged.** A GUI remains a V1.0 non-goal
@@ -149,6 +153,46 @@ changed), and no V1.0 or Phase 8b gate. The M2 early-check `STOP` stays open:
   shipped profiles and the stepped demo, the list is `["vehicle.odometer"]`;
 - the page shows a listed signal as "—" with the text "unavailable, no source", live and
   stale alike.
+
+A tenth revision, on 2026-09-30, records the owner's review of the M3b design
+(`docs/plans/gui-m3b-graphs-design.md`, first version `9a69d2e`). **Its scope is design
+only: nothing in it is implemented, and implementation approval follows the owner's review
+of the revised design.** It changes no threshold of P1–P9, no V1.0 code, and no V1.0 or
+Phase 8b gate. The M2 early-check `STOP` and the hosted `CAN_ISOTP` gap stay open, and
+`gui` is still not merged into `modernization` before V1.0 is tagged.
+
+- **Approved as designed:**
+  - five separate live graphs (speed, rpm, throttle, load, coolant), with the VIN kept as
+    text;
+  - the 30 s / 2 min / 10 min windows;
+  - stepped rendering;
+  - bounded browser history;
+  - gaps at restart and disconnect;
+  - "rpm" as the unit in both the graph and the signal table;
+  - no sample data in the shipped page.
+- **Required and now specified in the design:**
+  - a collapsible graphs section above the log, open by default, with a pixel budget that
+    keeps at least 5 log rows visible at 1440 × 900, and a 390 px layout;
+  - "Pause graphs", separate from the log's pause, which keeps buffering within the limits
+    and resumes at the latest data;
+  - acceptance checks through visible readouts and read-only `data-*` attributes, never
+    uPlot internals;
+  - cost figures labelled as estimates until measured;
+  - the CSP check in Chrome **and Firefox** on the manual checklist. It is unverified until
+    someone runs it, and M3b is not accepted before then.
+- **The non-finite rule and state-encoding containment** (§4.3, §5), specified and **not
+  yet implemented**:
+  - a non-finite signal value is sent as JSON `null`, with its path in a new, sorted
+    `nonfinite` list;
+  - state encoding is strict, and a failure never ends the periodic state task;
+  - a new `state_encode_failed` counter;
+  - on the page, malformed messages are reported and stop the page claiming Live.
+
+  This is the observer API's rule. It is **separate from DEV-26**, which is about rejecting
+  non-finite values at profile load, on `modernization`: a different layer, recorded and
+  scheduled there, and not mixed into this work.
+- **§7, §9.3 and the §10 M3b row** are rewritten to the design. uPlot is pinned at 1.6.32
+  by SHA-256, and the CSP is unchanged.
 
 The evidence for the routing and ordering claims is in §12.
 
@@ -328,6 +372,7 @@ applies.
 | Per-client queue | 1024 messages | 4 MiB of encoded JSON | **The new `exchange` message is dropped** and that client's `client_dropped` increments. `state` and `dropped` messages are never queued behind others: each client has a one-slot latest `state` and a one-slot latest `dropped` notice, which are **replaced** rather than queued, and sent before the next queued exchange. After 5 s of continuous overflow the client is disconnected with close code 1013 and the reason `"client too slow"`, and `forced_disconnects` increments |
 | WebSocket clients | 4 | — | A 5th connection is refused with HTTP 503 before the upgrade, and `refused_clients` increments |
 | Single encoded `state` message | — | 256 KiB | Checked once when the API starts. A profile whose state encodes larger makes `--api` refuse to start (exit 2), rather than truncating state at runtime |
+| State encoding (tenth revision: **specified, not yet implemented**) | — | — | A non-finite signal value is sanitised to `null` and listed in `nonfinite` (§5) **before** encoding, and the state is encoded with `json.dumps(allow_nan=False)` as a guard. If building or encoding a periodic `state` still fails, **that push is skipped**, the previous state stays current, `state_encode_failed` increments, the failure is logged once per exception type (as `encode_failed` is), and the state task continues. A failed `GET /vehicle` encode answers 500 and increments the same counter. At startup, a failure other than the size rule makes `--api` refuse to start (exit 2). Nothing is dropped from the exchange stream |
 | Publisher turn | 64 records | 1 ms of loop time | The publisher yields (`await asyncio.sleep(0)`) and continues on a later turn. Nothing is dropped. A backlog that keeps growing ends in `HandOff`'s own overflow above |
 | `state` push rate | at most 4 Hz | — | Coalesced into the one-slot latest `state`, which is not a drop |
 | Incoming HTTP body | — | 1 KiB | 413. v1 routes are GET-only, so a body is never needed. A body of undeclared length (chunked) that does not complete within **2 s** gets **408** (added 2026-09-27) |
@@ -411,8 +456,8 @@ version prefix means a future write API cannot silently change v1.
 
 | Endpoint | Returns |
 |---|---|
-| `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `longest_turn_s` [the longest publisher turn, in seconds, since the publisher was created: a running maximum, never reset; P9], `encode_failed`, `fanout_failed`, `writer_failed`, `connections_opened`, `closed_unresolved`, `closed_totals` [cumulative, §5.1], `connections` [one **ledger** per open connection, §5.1], `closed_connections` [the ledgers of the last 64 closed connections, final values]} |
-| `GET /vehicle` | `kind`, `vin`, `signals` {dotted path → value}, `as_of` (the scenario time of the last application, equal to `t_last_applied`; `null` without a scenario), `unavailable` (ninth revision: a sorted list of the dotted paths with no source in the loaded profile, neither settable by the profile schema nor driven by its scenario, computed once at startup; `signals` still carries their stored values) |
+| `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `longest_turn_s` [the longest publisher turn, in seconds, since the publisher was created: a running maximum, never reset; P9], `encode_failed`, `fanout_failed`, `writer_failed`, `state_encode_failed` [tenth revision, specified, not yet implemented: failed state encodes, skipped pushes and failed `GET /vehicle` answers, cumulative; §4.3], `connections_opened`, `closed_unresolved`, `closed_totals` [cumulative, §5.1], `connections` [one **ledger** per open connection, §5.1], `closed_connections` [the ledgers of the last 64 closed connections, final values]} |
+| `GET /vehicle` | `kind`, `vin`, `signals` {dotted path → value}, `as_of` (the scenario time of the last application, equal to `t_last_applied`; `null` without a scenario), `unavailable` (ninth revision: a sorted list of the dotted paths with no source in the loaded profile, neither settable by the profile schema nor driven by its scenario, computed once at startup; `signals` still carries their stored values), `nonfinite` (tenth revision, **specified, not yet implemented**: a sorted list, always present, of the dotted paths whose value is not a finite number in this snapshot; each is sent as `null` in `signals`) |
 | `GET /dtcs` | per ECU: `[{code, pending, confirmed, indicator_requested}]`, and `mil` |
 | `GET /ecus` | per ECU: endpoints {`name`, `rx_id`, `tx_id`, `functional`, `receive`, `reply_via`, `padding`} and protocols {`name`, `sids`} |
 | `GET /exchanges?limit=N&after=S` | up to N (default and maximum 500) exchange events with `seq > S` (default: the most recent N), oldest first, together with `watermark`, `oldest_seq` and `gap` (§4.5) |
@@ -428,7 +473,7 @@ WebSocket messages, server → client:
  "response": "410c0c80", "response_len": 4, "response_truncated": false,
  "outcome": "responded", "error": null, "dispatch_us": 41,
  "summary": "OBD 01 0C — engine speed"}
-{"type": "state", "vehicle": {"...": "as GET /vehicle, including unavailable"}, "dtcs": {"...": "as GET /dtcs"}}
+{"type": "state", "vehicle": {"...": "as GET /vehicle, including unavailable and nonfinite"}, "dtcs": {"...": "as GET /dtcs"}}
 {"type": "dropped", "handoff_dropped": 0, "client_dropped": 12, "forced_disconnects": 0}
 ```
 
@@ -461,6 +506,18 @@ WebSocket messages, server → client:
   with 1011 and `writer_failed` increments (added 2026-09-27). Each failure is logged once
   per stage and exception type, and counted every time. Neither should ever happen; the
   counters make it visible if it does.
+- **Non-finite values** (tenth revision, 2026-09-30; **specified, not yet implemented**).
+  A float signal value that is `NaN`, `inf` or `-inf` is sent as JSON `null` in `signals`,
+  and its path is listed in `nonfinite`, in `GET /vehicle` and in every `state`
+  message. The API therefore never emits a token that is not JSON.
+  - `unavailable` means **no source**; `nonfinite` means **an invalid reading from a
+    source**. A path is never in both. If both would apply, `unavailable` wins: a path
+    with no source has produced no reading, so it cannot have produced an invalid one.
+    Its value is still sent as `null`. Today the case cannot arise, because every
+    state-model default is finite.
+  - Encoding failures are contained as §4.3 says, and counted in `state_encode_failed`.
+  - This is the observer's rule, whatever the source. It is separate from DEV-26
+    (rejecting non-finite values at profile load, on `modernization`).
 
 ### 5.1 The per-connection ledger
 
@@ -560,14 +617,32 @@ in-flight exchange to that resolution, so that it counts as exactly what happene
   - a DTC panel;
   - an exchange log, filterable by ECU, service and outcome (`no_response`, `unrouted`,
     `error`), with pause and clear. It shows a gap marker wherever `seq` jumps (§4.5).
-- Milestone 3b vendors **uPlot** (MIT) for per-signal sparklines, with its licence file
-  and pinned version. The MVP (3a) works without it.
+- **Milestone 3b: live signal graphs** (revised in the tenth revision, 2026-09-30;
+  **designed, not implemented**; `docs/plans/gui-m3b-graphs-design.md`):
+  - five separate graphs: `vehicle.speed` (km/h), `engine.rpm` (rpm), `engine.throttle`
+    (%), `engine.engine_load` (%) and `engine.coolant_temp` (°C). The VIN stays text;
+  - drawn only from the `state` messages and `GET /vehicle` the page receives, against
+    scenario time (`as_of`), as **steps**: a stored value holds until the next apply;
+  - the page holds a **bounded history**: one ring per signal, at most 4096 points and
+    600 s. **There is no server-side state history and no backfill**;
+  - windows of 30 s, 2 min (default) and 10 min, the choice kept in `localStorage`;
+  - a collapsible section above the log, open by default;
+  - its own "Pause graphs", separate from the log's pause, which keeps buffering;
+  - a gap at a disconnect, at an invalid value, and when the page stops claiming Live
+    over malformed messages (§5); a cleared graph at a restart; never a line across any
+    of them.
+  - uPlot is vendored as the published `uPlot.iife.min.js` and `uPlot.min.css`, **pinned
+    at 1.6.32 by SHA-256**, with its MIT licence served as `uPlot-LICENSE.txt`. Each is a
+    fixed route (§6). **The CSP is unchanged.** The page works without uPlot, and says
+    so.
 - Decoding stays in Python (§5), so the JavaScript only renders. The frontend is checked
   by the API tests that produce what it renders and, **in M3**, by tests that every
   frontend file is served with its content type, and by the owner's manual rendering
   checklist, which is the M3a and M3b exit (revised 2026-09-27; this was at M4). M2
   serves one placeholder page and tests only that page.
-  There is no JavaScript test framework in v1.
+  There is no JavaScript test framework in v1. M3b's automated browser checks run in the
+  Chrome capture script on a vcan host. They read visible readouts and read-only `data-*`
+  attributes, never uPlot internals. The CSP check in **Chrome and Firefox** is manual.
 
 ## 8. The future control boundary (designed, not built)
 
@@ -725,7 +800,9 @@ pass.
 | vcan integration: a real ISO-TP request produces the matching WebSocket `exchange` event | `.[dev,gui]` and a kernel with `CAN_ISOTP` | **No.** It skips on hosted runners (`linux-azure` has no `can_isotp`). It is **pending a compatible runner** ([0009](0009-self-hosted-vcan-runner.md)), runs locally, and is **never counted as validated from a CI run that skipped it** |
 | Performance (§9.2) | vcan and `CAN_ISOTP` | No. Local, recorded evidence |
 
-| Frontend files (M3): every file M3 adds is served with its content type, and nothing else is | `.[dev,gui]` and loopback | **Yes**, in the `.[dev,gui]` job, from M3 |
+| Frontend files (M3): every file M3 adds is served with its content type, and nothing else is. From M3b, the vendored uPlot files are also **pinned by SHA-256**, its licence is shipped and linked, and the page loads it before `app.js` (tenth revision) | `.[dev,gui]` and loopback | **Yes**, in the `.[dev,gui]` job, from M3 |
+| Non-finite values and state-encoding containment (tenth revision, **specified, not yet implemented**): `null` plus a sorted `nonfinite` list; `unavailable` wins over `nonfinite`; strict encoding; the state task survives a failed snapshot and counts `state_encode_failed`; 500 from `GET /vehicle`; the startup refusal | nothing (`observe`); `.[dev,gui]` and loopback (`api`) | **Yes**, every job for `observe`, the `.[dev,gui]` job for `api` |
+| M3b browser checks: held value at the left edge, bounded history, disconnect gap, restart reset, window persistence, pause while buffering, non-finite values, malformed messages, overflow | vcan, Chrome, the capture script | **No.** Local, recorded evidence. Firefox is manual only |
 
 The CI changes, made on branch `gui` only:
 - a job installing `.[dev,gui]` for the `api` tests;
@@ -744,7 +821,7 @@ reported as local results, with their commands.
 | **M1** | `observe`: `HandOff`, `ObservedDispatcher`, `Publisher`, snapshots, sequence and watermark; the §9.1 proofs, including the differential comparison; the ordering tests; the M1 early check | yes, core, no dependencies | Tests green in CI; differential comparison clean; M1 early check reported |
 | **M2** | `ApiServer`, `--api`, the `[gui]` extra, §6 security, §4.3 limits, API tests, the CI job; the M2 early check | yes | API tests green in CI on a `gui` push; M2 early check reported |
 | **M3a** | Frontend MVP: status, vehicle, DTCs, exchange log with gap markers | yes | Frontend file tests green in CI; owner runs the manual rendering checklist |
-| **M3b** | Sparklines with vendored uPlot | yes | Owner runs the manual view checklist for sparklines |
+| **M3b** | Live signal graphs with vendored uPlot 1.6.32 (§7); the non-finite rule and state-encoding containment (§4.3, §5). **Designed, not implemented** (tenth revision) | yes | The frontend file tests and the non-finite and containment tests are green in CI; the capture-run browser checks pass on a vcan host; the owner runs the manual view checklist; **and the CSP check passes in both Chrome and Firefox**, which is manual and unverified until run |
 | **M4** | Full benchmark (§9.2) and MVP acceptance report | benchmark scripts only | P1–P9 met and the forced-close run passed in every round, or failures reported; owner accepts |
 | Later | Raw CAN frame panel (optional, read-only, a raw CAN socket in the API process) | — | Separate approval |
 | Later | `ControlPort` controls (§8) | — | Own decision record first |

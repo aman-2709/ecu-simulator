@@ -1,27 +1,41 @@
 # GUI M3b: live signal graphs — design
 
-Status: **design only, for the owner's review. Nothing here is implemented.** No file under
-`src/` or `tests/` is changed, and nothing is vendored, until the owner approves this
-document and the 0010 amendment it needs (§14).
+Status: **revised after the owner's review of 2026-09-30. Design only: nothing is
+implemented, and nothing is vendored.** Implementation approval follows the owner's review
+of this revision.
+- **Approved as designed** (owner, 2026-09-30, §2): five separate graphs with the VIN kept
+  as text; the 30 s / 2 min / 10 min windows; stepped rendering; bounded browser history;
+  gaps at restart and disconnect; "rpm" as the unit in the graph and the signal table; no
+  sample data in the shipped page.
+- **Revised here, as the owner required:** the layout and its pixel budget (§5.2, §7); the
+  graph pause (§6.9); the non-finite rule, its containment on the server, and the page's
+  handling of malformed messages (§8); the acceptance checks (§12); Firefox (§13); the
+  estimates (§11); and decision 0010, amended in the same commit (§15).
+- The first version of this document is `9a69d2e`.
 
-Written on branch `gui` at `4f00694` (worktree `.claude/worktrees/gui`).
-- Every "fact" was checked against the code at that commit, with file:line.
+Written on branch `gui` (worktree `.claude/worktrees/gui`), against the code at `4f00694`.
+- Every "fact" was checked against that code, with file:line.
 - Everything under a "Proposal" heading, or written as "M3b will", is a proposal.
 - uPlot facts come from the npm tarball `uplot-1.6.32.tgz` (downloaded 2026-09-30, npm
   `shasum` `c800a63b432bad692d6d746f44f0882aa73a49ae`) and from uPlot's documentation via
-  Context7 (`/leeoniya/uplot`). Figures marked **estimate** were not measured.
+  Context7 (`/leeoniya/uplot`).
+- **Every cost figure is an estimate until it is measured** (§11). Pixel figures for
+  1440 × 900 were measured from the M3a screenshot
+  `docs/validation/gui-m3a-live-demo/m-cruising.png`; the rest are arithmetic from CSS.
 
 **Unaffected and still open:**
 - **The M2 early-check latency `STOP` stays open and is not accepted**
-  (`docs/decisions/0010-gui-observer-api.md:8-10`, `docs/validation/gui-m2-early-check.md`).
-  M3b changes nothing on the server, so it neither measures nor changes that result.
+  (`docs/decisions/0010-gui-observer-api.md`, status; `docs/validation/gui-m2-early-check.md`).
+  M3b does not measure it. §8.3 changes the state task, which is server code; see §16.
 - **The hosted-CI `CAN_ISOTP` gap stays open.** GitHub-hosted runners have no `can_isotp`,
-  so the vcan integration test skips there (0010 §9.3, `:725`). Decision 0009 proposes the
-  runner that would close the gap. Every live check below runs on a vcan host only.
+  so the vcan integration test skips there (0010 §9.3). Decision 0009 proposes the runner
+  that would close it. Every live check below runs on a vcan host only.
+- **The Phase 8b gate and the V1.0 branch rule are unchanged.** `gui` is not merged into
+  `modernization` until V1.0 is tagged (0010, status).
 
 ## 1. The request
 
-The owner's words:
+The owner's words, first review:
 
 > "Design M3b live signal graphs for the existing read-only GUI. Use only real WebSocket
 > state updates and a bounded browser-side history; start with speed, RPM, throttle/load
@@ -33,717 +47,805 @@ The owner's words:
 > review; do not implement M3b yet. Keep the M2 latency STOP and hosted CAN_ISOTP gap open."
 
 **Not proposed:** a new endpoint, a new message type, a state history on the server, a
-change to the state rate or to any `observe/` code, a build step, a JavaScript test
+change to the state rate or to the diagnostic path, a build step, a JavaScript test
 framework, any control from the browser.
 
-## 2. What 0010 already says (facts)
+**Proposed, and new since `9a69d2e`, at the owner's request:** one additive field,
+`nonfinite`, on `GET /vehicle` and the WS `state` message; one additive counter,
+`state_encode_failed`, on `GET /status`; and containment of state-encoding failures in the
+server (§8). These are API and server changes. They touch neither the state rate nor the
+diagnostic path.
 
-| Where | What it says | What M3b must do |
+## 2. Owner decisions (2026-09-30)
+
+**Approved as designed:**
+- five separate live graphs (speed, rpm, throttle, load, coolant), with the VIN kept as
+  text;
+- the 30 s / 2 min / 10 min windows;
+- stepped rendering;
+- bounded browser history;
+- gaps at restart and disconnect;
+- "rpm" as the unit in both the graph and the signal table;
+- no sample data in the shipped page.
+
+**Revisions required** (summarised; each is answered in the section named):
+1. **Layout:** a collapsible section above the log, open by default, with the graph
+   height capped so the log stays usable at 1440 × 900. A pixel budget, and the 390 px
+   layout (§5.2, §7).
+2. **Pause:** "Pause graphs" is separate from the log's pause. Paused graphs keep
+   buffering within the limits; resume jumps to the latest data (§6.9).
+3. **The non-finite rule,** kept separate from DEV-26's profile validation on
+   `modernization`, which is a different layer: `null` plus a sorted `nonfinite` list;
+   containment of any encoding failure in the state task, `GET /vehicle` and the startup
+   check; and a page that reports malformed messages and stops claiming Live (§8).
+4. **Acceptance checks** through visible readouts and read-only `data-*` attributes, never
+   uPlot internals, for the behaviours most likely to regress (§12).
+5. **Firefox:** the CSP check stays manual, for Chrome and Firefox; unverified until run
+   (§13).
+6. **Estimates** labelled as such, with the method of measurement (§11).
+7. **Decision 0010** amended: status line, M3b wording, `nonfinite` and containment as
+   specified-not-implemented, a tenth-revision note (§15).
+
+## 3. What 0010 said about M3b before this revision (facts)
+
+| Where (0010 at `4f00694`) | What it said | What M3b does |
 |---|---|---|
-| `0010:563-564` (§7) | "Milestone 3b vendors **uPlot** (MIT) for per-signal sparklines, with its licence file and pinned version. The MVP (3a) works without it." | Vendor uPlot with its licence and a pinned version. The page must still work if the graphs fail |
-| `0010:555-556` (§7) | "No build step, no npm, and no CDN at runtime … The page is static HTML, CSS and plain JavaScript modules, served by `ApiServer`." | Vendor the prebuilt IIFE file. No bundler, no `npm install` at build or run time |
-| `0010:565-570` (§7) | Decoding stays in Python. Frontend checked by file tests and the owner's manual checklist, "the M3a and M3b exit". "There is no JavaScript test framework in v1." | Graph only what the API already decodes. No JS tests |
-| `0010:550-551` (§6) | "The static files are package data, served from a fixed directory, with no directory listing and no path parameters." | Each new file gets its own fixed route |
-| `0010:728` (§9.3) | "Frontend files (M3): every file M3 adds is served with its content type, and nothing else is." Runs in the `.[dev,gui]` job | Extend those tests to the vendored files |
-| `0010:747` (§10) | M3b: "Sparklines with vendored uPlot"; exit: "Owner runs the manual view checklist for sparklines" | §12 is that checklist |
-| `0010:332` (§4.3) | "`state` push rate: at most 4 Hz … Coalesced into the one-slot latest `state`, which is not a drop" | Unchanged. The graphs take what arrives |
-| `0010:415` (§5) | `GET /vehicle`: `kind`, `vin`, `signals`, `as_of` ("`null` without a scenario"), `unavailable` | The graphs read exactly these fields |
+| §7, `:563-564` | "Milestone 3b vendors **uPlot** (MIT) for per-signal sparklines, with its licence file and pinned version. The MVP (3a) works without it." | Vendors uPlot 1.6.32 with its licence, pinned by hash. The page still works if the graphs fail |
+| §7, `:555-556` | "No build step, no npm, and no CDN at runtime" | The prebuilt IIFE file is vendored as published |
+| §7, `:565-570` | Decoding stays in Python; frontend file tests and the owner's manual checklist are "the M3a and M3b exit"; no JavaScript test framework | Graphs only what the API decodes; no JS tests |
+| §6, `:550-551` | Static files are package data, from a fixed directory, no listing, no path parameters | Each new file gets its own fixed route |
+| §9.3, `:728` | "every file M3 adds is served with its content type, and nothing else is" | Extended to the vendored files |
+| §10, `:747` | M3b: "Sparklines with vendored uPlot"; exit "Owner runs the manual view checklist for sparklines" | Rewritten in the tenth revision (§15) |
+| §4.3, `:332` | "`state` push rate: at most 4 Hz" | Unchanged |
+| §5, `:415` | `GET /vehicle`: `kind`, `vin`, `signals`, `as_of` (`null` without a scenario), `unavailable` | Gains `nonfinite` (§8.2) |
 
-**Fit.** This design fits §6, §7 and §9.3 as written, and keeps the CSP unchanged (§9).
-It needs a small **wording amendment** to 0010, not a change of direction: the graphs have
-axes and a time-window selector, so they are more than sparklines; and the pinned version
-and files should be named (§14).
+## 4. How state reaches the page (facts)
 
-## 3. How state reaches the page (facts)
-
-### 3.1 The server side
+### 4.1 The server side
 
 - **The push loop.** `Publisher.run_state` takes a snapshot, pushes it only if its text
-  differs from the last one pushed, then sleeps `interval_s` (`observe/publisher.py:265-272`).
-  The interval is `STATE_MIN_INTERVAL_S = 0.25` (`observe/limits.py:16`), passed in by
-  `ApiServer` (`api/server.py:179`, `:247`). So the page receives **change events at most
-  every 0.25 s**, not a fixed sample rate.
-- **The message.** `snapshots.state_message` is `{"type": "state", "vehicle": …, "dtcs": …}`
-  (`observe/snapshots.py:75-77`). `vehicle` holds `kind`, `vin`, `signals` (every stored
-  value), `as_of` and `unavailable` (`snapshots.py:35-45`).
-- **`as_of`** is `runner.last_applied`, or `None` when the profile has no scenario
-  (`snapshots.py:43`). `last_applied` is the highest scenario time applied
-  (`scenario/runner.py:116-119`). `apply` refuses a `t` earlier than the last one
-  (`runner.py:136-146`), so within one run **`as_of` never decreases**.
-- **What moves `as_of`.** Two callers apply the scenario:
-  - the dispatcher, before every request (0010 §12 E3);
-  - the periodic tick, which sleeps `period` and then calls `sync()` (`app.py:261-265`).
-    `period` is the profile's `scenario.tick`, default 1.0 s (`config/schema.py:194`); the
-    stepped demo uses 0.5 s (`docs/examples/ice_drive_cycle_stepped.yaml:48`).
-- **Consequence: with a scenario, a state message arrives on every push turn in which
-  anything applied.** `as_of` is part of the message, so any apply changes the text.
-  - With a tester polling: up to 4 Hz.
-  - On an idle bus: about once per tick (1 Hz by default, 2 Hz in the demo).
-  - A **value** changes only when its generator's output changes. Under the stepped demo,
-    speed and rpm change once a second.
-- **Without a scenario** the runner is `None` (`app.py:184-193`) and nothing changes the
-  state, so after its first `state` a connection receives **no further state messages**.
-- **Before the first apply.** The scenario origin is read once when the runtime is built
-  (`app.py:222-224`). The tick first applies one `period` after `run()` enters
-  `scenario_tick` (`app.py:261-265`, `:352`), unless a request applies it earlier. Until
-  then `as_of` is `null` **even though a scenario exists**, and `signals` hold the profile's
-  initial values.
-- **Restart.** A new process has a new `started_at`, set when `ApiServer` is built
-  (`api/server.py:177`), and reported by `GET /status` (`snapshots.py:95`). Its scenario
-  time starts again at 0 (`scenario/sync.py:8-10`).
+  differs from the last one, then sleeps (`observe/publisher.py:265-272`). The interval is
+  `STATE_MIN_INTERVAL_S = 0.25` (`observe/limits.py:16`), passed in by `ApiServer`
+  (`api/server.py:179`, `:247`). So the page receives **change events at most every
+  0.25 s**, not a fixed sample rate.
+- **`run_state` has no `try`.** An exception from `snapshot()` ends the task. `ApiServer`
+  then logs "observer state task failed; the observer API is degraded until restart"
+  (`api/server.py:146-149`, `:249-250`), and no client gets another `state` for the rest
+  of the run.
+- **The message.** `snapshots.state_message` is `json.dumps({"type": "state", "vehicle": …,
+  "dtcs": …})` (`observe/snapshots.py:56-58`). `json.dumps` is called with its default
+  `allow_nan=True`. `vehicle` holds `kind`, `vin`, `signals` (every stored value), `as_of`
+  and `unavailable` (`snapshots.py:16-26`).
+- **`GET /vehicle`** is `web.json_response(snapshots.vehicle(...))` (`api/server.py:283-284`),
+  which also uses `json.dumps` with its defaults.
+- **Startup.** `ApiServer.__init__` runs `snapshots.check_state_size` (`api/server.py:165-168`,
+  `snapshots.py:61-64`), which encodes the state once, then pushes the initial state
+  (`api/server.py:176`). Only the size `ValueError` becomes `ApiStartupError`; any other
+  exception propagates out of the constructor.
+- **`as_of`** is `runner.last_applied`, or `None` without a scenario (`snapshots.py:24`).
+  `apply` refuses a `t` earlier than the last one (`scenario/runner.py:136-146`), so within
+  one run **`as_of` never decreases**.
+- **What moves `as_of`:** the dispatcher, before every request (0010 §12 E3), and the tick,
+  which sleeps `period` then calls `sync()` (`app.py:261-265`). `period` is
+  `scenario.tick`, default 1.0 s (`config/schema.py:194`); the stepped demo uses 0.5 s
+  (`docs/examples/ice_drive_cycle_stepped.yaml:48`).
+- **Consequence:** with a scenario, a state message arrives on every push turn in which
+  anything applied: up to 4 Hz with a tester, about once per tick on an idle bus. A value
+  changes only when its generator's output changes; under the stepped demo, speed and rpm
+  change once a second.
+- **Without a scenario** the runner is `None` (`app.py:184-193`), nothing changes the
+  state, and a connection receives **no state message after its first**.
+- **Before the first apply** (up to one `period` after start, `app.py:261-265`, `:352`),
+  `as_of` is `null` even though a scenario exists.
+- **Restart.** A new process has a new `started_at` (`api/server.py:177`), reported by
+  `GET /status` (`snapshots.py:76`). Its scenario time starts again at 0
+  (`scenario/sync.py:8-10`).
 - **No history of state.** The server keeps one latest `state` per client
-  (`publisher.py:254-257`, 0010 §4.3). There is no endpoint for past values.
-  `GET /exchanges` holds exchanges only (0010 §5).
+  (`publisher.py:254-257`, 0010 §4.3). `GET /exchanges` holds exchanges only.
 
-### 3.2 The page today (`src/ecu_simulator/api/static/`)
+### 4.2 What a non-finite value does today (facts and standard behaviour)
+
+- The state model's floats accept `NaN` and `±inf`. DEV-26 (open, on `modernization`)
+  records that a profile can put them there, through the schema's unconstrained floats
+  (for example `config/schema.py:65`, `engine.coolant_temp`) or a scenario generator.
+- `json.dumps` writes them as the bare tokens `NaN`, `Infinity` and `-Infinity`, which are
+  not JSON. That is Python's documented default. So today the WS `state` and
+  `GET /vehicle` would carry them.
+- `JSON.parse` rejects those tokens. That is the ECMAScript definition. So:
+  - the page's `onMessage` drops the whole frame **silently**: `try { m = JSON.parse(text); }
+    catch (e) { return; }` (`app.js:260`). Nothing is counted or shown. With a scenario
+    that keeps producing a non-finite value, every `state` is dropped, and the page keeps
+    showing its last good values with the lamp still "Live";
+  - `GET /vehicle` fails in `getJSON`, so the first load of a run fails as a request
+    error.
+- Not measured in the page. The two JSON behaviours are standard; §12 adds a live check.
+
+### 4.3 The page today (`src/ecu_simulator/api/static/`)
 
 - **Files.** `index.html` loads `app.css` and `app.js` (`index.html:9-10`). `app.js` is one
-  IIFE, no modules (`app.js:9`).
-- **State in.** `onMessage` parses each frame. A frame that is not valid JSON is **dropped
-  silently** (`app.js:258-267`, the `try` at `:260`). A `state` message calls
-  `applyState(vehicle, dtcs)`, which stores it and re-renders the vehicle and DTC panels
-  (`app.js:300-304`). The first data of a run comes from `GET /vehicle`, `/dtcs` and
-  `/ecus` in `connect()` (`app.js:156-170`).
-- **Restart detection.** `connect()` fetches `GET /status` first. If `started_at` differs
-  from the stored `S.runStartedAt`, it adds a "Simulator restarted." marker to the log,
-  resets `lastSeq`, and refetches the snapshots (`app.js:147-160`). A restart can only be
-  seen on a (re)connect: the old process's socket has closed first.
-- **Resume.** A reconnect opens `/events?after=lastSeq` (`app.js:188`). The server then
-  sends `hello` and a `state` (0010 §4.5). `onHello` adds a "Connection lost, then
-  resumed." marker (`app.js:269-297`).
-- **Stale.** `fail()` sets the phase to `down` or `refused` (`app.js:223-240`).
-  `renderLink()` sets `body.is-stale`, shows every `.stale-tag` with "Stale, as of HH:MM:SS
-  UTC", and fills the link banner (`app.js:408-452`). CSS hatches every panel's top edge
-  and fades `.panel__body` to 0.62 opacity (`app.css:116-125`). **Stale data is kept and
-  labelled, never cleared.**
-- **Vehicle panel.** The header shows "as of scenario t = N s", or "no scenario: values as
-  configured" when `as_of` is null (`app.js:457`). The VIN is shown once, as text, in the
-  panel's key-value line, and its signal row is left out (`app.js:458-472`). A path in
-  `unavailable` is shown as "—" with "unavailable, no source" (`app.js:461-464`,
-  `:491-500`).
-- **Units.** `UNITS` is a display map from the bundled profiles' comments
-  (`app.js:39-47`). **It has no entry for `engine.rpm`**, so the rpm row shows no unit
-  today. The other four M3b signals are there: `vehicle.speed` km/h, `engine.throttle` %,
-  `engine.engine_load` %, `engine.coolant_temp` °C.
-- **Log controls.** Pause, clear and the filters act on the log view only
-  (`app.js:864-875`; `index.html:67-83`, "Log view controls (this view only)").
-- **Layout** (`app.css:128-136`, `:320-398`):
-  - above 1100 px wide and 640 px high: a fixed-height shell with a side column
-    `clamp(380px, 25vw, 520px)` (DTCs, then vehicle signals) and the log filling the rest;
-  - up to 1100 px: one column, the side panels first;
-  - up to 700 px: log rows become blocks.
-  The root font grows with the viewport (`app.css:31-34`), and sizes are in rem.
-- **Existing ResizeObserver use**: `app.js:791-797`.
+  IIFE (`app.js:9`).
+- **State in.** `onMessage` parses each frame (`app.js:258-267`). A `state` message calls
+  `applyState` (`app.js:300-304`). The first data of a run comes from `GET /vehicle`,
+  `/dtcs` and `/ecus` in `connect()` (`app.js:156-170`).
+- **Restart detection.** `connect()` compares `GET /status`'s `started_at` with the stored
+  one and, if it changed, adds "Simulator restarted." to the log and refetches the
+  snapshots (`app.js:147-160`).
+- **Resume.** A reconnect opens `/events?after=lastSeq` (`app.js:188`); `hello` and a
+  `state` follow (0010 §4.5); `onHello` marks "Connection lost, then resumed."
+  (`app.js:269-297`).
+- **Going down.** `fail()` sets the phase to `down` or `refused` (`app.js:223-240`). The
+  status poll runs every 2 s with a 5 s timeout, and a failed poll calls `fail()`
+  (`app.js:14`, `:19`, `:243-256`). **So a simulator that stops answering, for example
+  under `SIGSTOP`, takes the page down within about 7 s**, although its socket stays open.
+- **Stale.** `renderLink()` sets `body.is-stale`, shows every `.stale-tag` with "Stale, as
+  of HH:MM:SS UTC", and fills the banner (`app.js:408-452`); CSS hatches each panel's top
+  edge and fades `.panel__body` (`app.css:116-125`). Stale data is kept and labelled.
+- **Vehicle panel.** Header "as of scenario t = N s" or "no scenario: values as configured"
+  (`app.js:457`). The VIN is shown once, as text (`app.js:458-472`). A path in
+  `unavailable` shows "—" and "unavailable, no source" (`app.js:461-464`, `:491-500`).
+- **Units.** `UNITS` (`app.js:39-47`) has km/h, %, % and °C for the other four signals,
+  and **no entry for `engine.rpm`**.
+- **Log controls** act on the log only (`app.js:864-875`; `index.html:67`).
+- **Layout** (`app.css:128-136`, `:320-398`): above 1100 px wide and 640 px high, a
+  fixed-height shell with a side column `clamp(380px, 25vw, 520px)` and the log filling the
+  rest; up to 1100 px, one column; up to 700 px, log rows become blocks. The root font is
+  `clamp(0.875rem, 0.45vw + 0.55rem, 1.125rem)` (`app.css:34`): about 15.3 px at 1440 px
+  wide and 14 px at 390 px, at the browser's default 16 px.
 
-### 3.3 The served file list (facts)
+### 4.4 The served file list (facts)
 
-- `api/server.py:44-48` `FRONTEND` maps each route to `(file, content type)`: `/` →
-  `index.html`, `/app.css`, `/app.js`. Every body is read once, at construction, from
-  `importlib.resources` (`server.py:186-188`), and each route gets its own handler
-  (`server.py:268-275`). Nothing from the request selects a file.
-- `FRONTEND_HEADERS` (`server.py:51-59`) put this CSP on every frontend response:
-  `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self';
-  img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none';
-  object-src 'none'`, with `nosniff`, `no-referrer` and `no-cache`.
-- `tests/unit/api/test_frontend_files.py` keeps its own copy of the list (`:14-18`) and of
-  the headers (`:19-27`), and asserts that:
-  - each route serves its file with its type, charset and body (`:34-41`), with the
-    headers (`:44-49`);
-  - **the static directory holds exactly the served files** (`:60-63`);
-  - files are read once (`:66-83`), other paths are 404 (`:86-134`), other methods 405
-    (`:137-142`), the Host guard applies (`:145-149`);
-  - `index.html`, `app.js` and `app.css` contain no `http://`, `https://` or `//cdn`, and
-    **not the word "sample"** (`:152-157`).
-- **Packaging.** `pyproject.toml:63` puts `src/ecu_simulator/api/static/*` in the wheel as
-  artifacts. The glob already covers any new file there, so **`pyproject.toml` needs no
-  change**. CI installs editable (`.github/workflows/ci.yml:88`), so CI reads the source
-  tree; the wheel is checked by hand (§11.3).
+- `api/server.py:44-48` `FRONTEND` maps each route to `(file, content type)`. Each body is
+  read once, at construction (`server.py:186-188`), with its own handler
+  (`server.py:268-275`).
+- `FRONTEND_HEADERS` (`server.py:51-59`) set the CSP `default-src 'self'; script-src 'self';
+  style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none';
+  form-action 'none'; frame-ancestors 'none'; object-src 'none'`, with `nosniff`,
+  `no-referrer` and `no-cache`.
+- `tests/unit/api/test_frontend_files.py` keeps its own copy of the list (`:14-18`) and
+  asserts: body, type and charset per route (`:34-41`); the headers (`:44-49`); **the static
+  directory holds exactly the served files** (`:60-63`); read once (`:66-83`); other paths
+  404 (`:86-134`); other methods 405 (`:137-142`); the Host guard (`:145-149`); and no
+  `http://`, `https://`, `//cdn` or **"sample"** in `index.html`, `app.js` and `app.css`
+  (`:152-157`).
+- **Packaging.** `pyproject.toml:63` ships `src/ecu_simulator/api/static/*`. The glob
+  covers new files, so `pyproject.toml` needs no change. CI installs editable
+  (`.github/workflows/ci.yml:88`).
 
-## 4. The renderer
+## 5. The renderer and the layout
 
-### 4.1 uPlot 1.6.32 (facts)
+### 5.1 uPlot 1.6.32 (facts), and the choice
 
 | | |
 |---|---|
-| Version | **1.6.32**, the npm `latest` on 2026-09-30. Licence MIT, "Copyright (c) 2022 Leon Sorokin" |
-| Files to vendor | `dist/uPlot.iife.min.js` (defines the global `uPlot`), `dist/uPlot.min.css`, `LICENSE` |
-| `uPlot.iife.min.js` | 51,081 B raw, 22,009 B gzip -9. SHA-256 `19c8d4c6ad88929a79f4ae49d6f7161566dfd0ba3d15cc495e974f787eb78f1f` |
+| Version | **1.6.32**, npm `latest` on 2026-09-30. MIT, "Copyright (c) 2022 Leon Sorokin" |
+| `uPlot.iife.min.js` | 51,081 B raw, 22,009 B gzip -9. SHA-256 `19c8d4c6ad88929a79f4ae49d6f7161566dfd0ba3d15cc495e974f787eb78f1f`. First line `/*! https://github.com/leeoniya/uPlot (v1.6.32) */` |
 | `uPlot.min.css` | 1,857 B raw, 772 B gzip. SHA-256 `df630c6a8d6f8eeaff264b50f73ce5b114f646ffd9a0bb74f049b0a00135fa04` |
 | `LICENSE` | 1,078 B raw, 660 B gzip. SHA-256 `8f989229699b4fe2f1a0432d0e9edc338a8a911e250e2d1b01ecd770a5f5b1bd` |
-| First line of the JS | `/*! https://github.com/leeoniya/uPlot (v1.6.32) */` |
 
-The server does not compress, so the page will fetch **54,016 B more**, raw, on each load
-over loopback.
+The server does not compress, so each page load fetches 54,016 B more over loopback.
 
-**What it needs from the page** (from the uPlot docs, and a scan of the minified file):
-- **A container element and pixel sizes.** `new uPlot(opts, data, target)` with
-  `opts.width` and `opts.height` in CSS px. Resizing is the page's job, with
-  `u.setSize({width, height})`. uPlot has no ResizeObserver of its own (0 occurrences).
-  It follows `devicePixelRatio` changes itself, via `matchMedia` (1 occurrence).
-- **One canvas per chart** (one `getContext` call in the build), plus a few positioned
-  `div`s. Its stylesheet sets `.uplot { width: min-content }`, so the chart is exactly
-  as wide as the width it is given.
-- **Data** is columnar: `[xs, ys]`. The x values must be ascending and unique; y values are
-  numbers or `null`. The docs ask for arrays of length ≥ 2. `null` makes a gap when the
-  series has `spanGaps: false`.
-- **Stepped paths**: `paths: uPlot.paths.stepped({align: 1})`. `align: 1` holds each value
-  until the next x, then steps.
-- **Fixed scales** (`auto: false, range: [0, 100]`) are also a speed-up: the data is not
-  scanned for the range.
+**What it needs:** a container and pixel sizes (`new uPlot(opts, data, target)`,
+`u.setSize`); one canvas per chart (one `getContext` in the build); columnar data with
+ascending unique x and numbers or `null` for y, length ≥ 2; `null` breaks the line with
+`spanGaps: false`; `paths: uPlot.paths.stepped({align: 1})` holds each value to the next x.
+It follows `devicePixelRatio` itself (`matchMedia`) but has no ResizeObserver.
+`.uplot { width: min-content }`, so a chart is exactly as wide as it is told.
 
-**CSP.** The scan of `uPlot.iife.min.js` found:
-- 0 × `setAttribute("style"`, 0 × `cssText`, 0 × `createElement("style")`,
-  0 × `innerHTML`, 0 × `insertAdjacentHTML`;
-- 0 × `eval(`, 0 × `new Function`;
-- 0 × `fetch(`, 0 × `XMLHttpRequest`, 0 × `localStorage`;
-- 12 × `.style.` property writes, such as `l.style[e]=t+"px"`, and `el.style.transform`.
+**CSP:** a scan of the minified file found 0 × `setAttribute("style"`, `cssText`,
+`createElement("style")`, `innerHTML`, `insertAdjacentHTML`, `eval(`, `new Function`,
+`fetch(`, `XMLHttpRequest` and `localStorage`; and 12 × `.style.` property writes. CSSOM
+property writes are not inline style under CSP; the stylesheet is same-origin. **So the
+CSP stays exactly as it is.** This is an inference; the manual Chrome and Firefox checks
+confirm it (§13).
 
-Property writes through the CSSOM are not "inline style" as CSP defines it; `style-src`
-restricts `<style>` elements, `style="…"` in markup and `setAttribute('style', …)`. The
-stylesheet is a same-origin file. **So uPlot needs no CSP change**, and the CSP stays
-exactly as in `server.py:51-59`. This is an inference from the scan and the CSP rules; the
-capture script (§11.2) and the owner's Firefox check (§12) confirm it in real browsers.
+**Published performance** (uPlot README; Chrome 113, Ryzen 7 PRO 5850U, 2023-03-11):
+166,650 points in 34 ms cold, heap peak 21 MB and final 3 MB (v1.6.24); "~31,000 pts/ms".
 
-The only URL in the file is the banner comment above. It makes no network request.
+**Against a hand-written renderer:** a canvas or SVG renderer would be about 200–300 lines,
+fully reviewable, with no vendoring. But it must reinvent axes, tick spacing, HiDPI and
+resize handling, which is where hand-written charts break. uPlot is 22 KB gzip, pinned by
+hash, and already named in 0010. **Recommendation, unchanged: uPlot.**
 
-**Published performance** (uPlot README, "Performance"; Chrome 113, AMD Ryzen 7 PRO 5850U,
-2023-03-11):
-- uPlot v1.6.24 draws the 166,650-point benchmark in **34 ms** cold, with heap peak
-  **21 MB** and final **3 MB**;
-- "scaling linearly at ~31,000 pts/ms" (its 10M-point bench page).
+### 5.2 Proposal: the graphs section at 1440 × 900 (revised)
 
-### 4.2 uPlot against a hand-written renderer
+**Placement.** A collapsible section, **"Signal graphs", above the exchange log in the
+main column, open on every page load.** The open or closed state is not saved, so the
+default is always open.
+- The toggle is a button in the section head, "Hide graphs" / "Show graphs", with
+  `aria-expanded` and `aria-controls`. A `<details>` element is not used, because the head
+  also holds buttons, and interactive content inside `<summary>` is not reliable.
+- Closed, the section keeps only its head, which reads "Signal graphs — hidden, still
+  recording". The rings keep buffering (§6.3), and nothing is drawn.
+- **Wide shell:** the second grid column becomes a flex column: the graphs section
+  (natural height, `flex: none`) above the log panel (`flex: 1 1 auto; min-height: 0`), so
+  the log keeps the rest and scrolls inside, as now.
 
-| | uPlot 1.6.32 | Hand-written canvas | Hand-written SVG |
+**Cards.** Five cards in a grid, `repeat(auto-fit, minmax(11rem, 1fr))`: one row at 1440
+and above.
+- Line 1: the name and unit on the left, the current value on the right: "Speed · km/h …
+  **80**".
+- The plot.
+- Line 2: "min 0 · max 80 in 2 min".
+
+**The height cap.** Plot height is `clamp(3rem, 9vh, 4.75rem)`: about 73 px at 1440 × 900,
+81 px at 2000 × 1100, never above 4.75 rem. The head uses the compact button style of the
+log's "Jump to newest" control (`app.css:259-263`), so it is one short row.
+
+**Pixel budget at 1440 × 900, dpr 1.** "Measured" rows come from the M3a screenshot
+`m-cruising.png`. "Arithmetic" rows are CSS at a 15.3 px rem, to be confirmed by the
+capture run (§12.2).
+
+| Part | Height | Source |
+|---|---|---|
+| Status bar | 90 px | measured |
+| Layout top padding | 13 px | measured |
+| **Graphs section** | **≈ 186 px** | arithmetic, below |
+| — top border, head (compact buttons, 0.571 rem padding), rule | 3 + 40 + 1 px | arithmetic |
+| — body padding (0.571 rem top, 0.857 rem bottom) | 22 px | arithmetic |
+| — card: line 1 (20), plot (73), line 2 (17), card padding (10) | 120 px | arithmetic |
+| Gap between section and log | 13 px | the layout gap, 0.857 rem |
+| Log head | 45 px | measured |
+| Log filter bar (wraps to two rows at this width) | 124 px | measured |
+| Log table header | 27 px | measured |
+| **Log rows region** | **≈ 303 px** (502 px today) | 502 measured, minus 199 |
+| Log footer | 80 px | measured |
+| Bottom padding | 18 px | measured |
+| **Total** | 900 px | |
+
+- **Log rows left visible: at least 5 full rows**. The M3a rows at this width are about
+  52 px (two lines: summary and endpoint); single-line rows are about 30 px, so 5–10 rows
+  show, against about 9–16 today.
+- **Requirement:** with the section open at 1440 × 900, **at least 5 full log rows are
+  visible**. The capture run checks it (§12.2). If it fails, the plot height is reduced
+  before anything else is changed.
+- Closing the section returns about 145 px to the log.
+- Not proposed, but noted: the log's filter bar wraps to 124 px at this width. Fitting it
+  on one row would return about 50 px. That is a separate change, if the owner wants it.
+
+### 5.3 Signals, units and scales
+
+| Graph | Path | Unit | y scale |
 |---|---|---|---|
-| Code added | 51 KB vendored (22 KB gzip), not reviewed line by line; pinned by hash | About 200–300 lines in `app.js` (**estimate**), all reviewable | About the same, plus DOM paths |
-| Axes, tick spacing, nice numbers, HiDPI, resize | Built in and widely used | Must be written and tested by hand. This is where most chart bugs live | Ticks by hand; HiDPI free |
-| Step-hold and gaps | `paths.stepped({align: 1})`, `null` gaps | Easy to write | Easy to write |
-| CSP | No change (§4.1) | No change | No change, if attributes are set through the DOM |
-| Licence and vendoring | MIT licence file shipped, version and hash pinned, three more served files | None | None |
-| 0010 | Named in §7 already: no change of direction | Departure: needs its own amendment and a reason | Same |
-| Tests | Python file tests only; no JS tests (0010 §7) | Same, and more untested JS | Same |
-| Per-draw cost at our sizes | Well under 1 ms of path work (§10) | Similar | A 2,400-point `d` string rebuilt up to 4 times a second per graph; fine, but more garbage |
-
-**Recommendation: uPlot, as 0010 already says.** A hand-written renderer would be smaller,
-and fully reviewable. But the part it would have to reinvent — axes, ticks and HiDPI
-handling — is where hand-written charts usually break. uPlot's cost is 22 KB gzip on
-loopback, plus a pinned, hashed file that nobody reviews line by line. That is the same
-trade 0010 made when it named uPlot. Not recommended: a departure, which would need a
-reason that the owner does not have today, and an amendment.
-
-## 5. Proposal: which signals, and how they are shown
-
-### 5.1 The graphs
-
-| Graph | Path | Unit (display map) | y scale |
-|---|---|---|---|
-| Speed | `vehicle.speed` | km/h | from 0 to a nice value above the window's maximum, at least 20 |
-| Engine speed | `engine.rpm` | **rpm** (new map entry, §5.3) | from 0 to a nice value above the window's maximum, at least 1000 |
+| Speed | `vehicle.speed` | km/h | 0 to a nice value above the window's maximum, at least 20 |
+| Engine speed | `engine.rpm` | **rpm** (new `UNITS` entry, approved) | 0 to a nice value above the window's maximum, at least 1000 |
 | Throttle | `engine.throttle` | % | fixed 0–100 |
 | Engine load | `engine.engine_load` | % | fixed 0–100 |
-| Coolant | `engine.coolant_temp` | °C | the window's minimum and maximum, padded by 2 °C, never narrower than 10 °C |
+| Coolant | `engine.coolant_temp` | °C | window minimum and maximum, padded by 2 °C, at least 10 °C wide |
 
-**Throttle and load are two separate graphs**, one directly above the other, both on a
-fixed 0–100 % axis.
-- Why separate:
-  - 0010 §7 says "per-signal sparklines";
-  - one line per graph needs no legend and no colour or dash to tell lines apart, which
-    keeps "not colour alone" trivially true;
-  - each has its own text readout (§8).
-- Why this is not a loss: the two share the same unit and the same fixed scale, and they
-  sit next to each other (above one another on narrow screens), so they can be compared by
-  eye.
-- The alternative, one graph with two lines (solid and dashed) and a text legend, saves
-  one panel. It is open question 1.
+- Five separate graphs, as approved. Throttle and load sit next to each other on the same
+  fixed scale.
+- The VIN stays text (`app.js:469-472`). Only numbers are graphed.
+- `"engine.rpm": "rpm"` is added to `UNITS`, so the signal table's rpm row shows "rpm"
+  too.
 
-**The VIN stays text**, exactly where it is (`app.js:469-472`). Only numbers are graphed:
-the page never graphs a string or a boolean.
-
-Other signals (fuel level, HEV and BEV battery and motor) are not in M3b. Adding one later
-is one row in the table above.
-
-### 5.2 Where the graphs go
-
-A new panel, **"Signal graphs"**, at the top of the main column, above the exchange log.
-- **Wide** (above 1100 px, fixed-height shell): the second grid column becomes a flex
-  column holding the graphs panel (its natural height) and the log panel (the rest,
-  `min-height: 0`, scrolling inside as now). The graphs sit in a grid,
-  `repeat(auto-fit, minmax(11rem, 1fr))`. At 1440 px the main column is about 1000 px, so
-  the five graphs fit in one row of about 190 px each; at 2000 px, one wider row.
-- **Medium** (up to 1100 px): the order is side panels, graphs, log, as a single column.
-- **Narrow** (up to 700 px, including 390 px): one graph per row, full panel width (§7).
-- Each graph is a small card:
-  - a caption with the name and unit, "Speed, km/h";
-  - the plot, **6 rem** high (about 84 px at 1440, 108 px at 2000);
-  - the readout line (§8).
-
-The side column is not used: it is already full at 1440 (DTCs and the signal table), and
-graphs 380 px wide are no better than the main column's.
-
-### 5.3 A unit for rpm
-
-- **Fact:** `UNITS` has no `engine.rpm` (`app.js:41-46`).
-- **Proposal:** add `"engine.rpm": "rpm"`. It is presentation only, like the rest of the
-  map. It also gives the signal table's rpm row a unit. Whether to write "rpm" or "1/min"
-  is open question 7.
-
-## 6. Proposal: data model and time axis
+## 6. Proposal: data model and behaviour
 
 ### 6.1 The time base: scenario time (`as_of`)
 
-Each graph's x value is **`as_of`, the scenario time the values were applied at**. It is
-not the time the browser received them.
+Each x value is **`as_of`**, the scenario time the values were applied at, not the
+browser's receive time.
+- It has no network or coalescing jitter; it never decreases within a run
+  (`runner.py:136-146`); the demo's steps land on whole seconds and its loop on multiples of
+  90 s; and the vehicle panel already speaks in it (`app.js:457`).
+- Its costs are handled below: `null` without a scenario (§6.5), a freeze while
+  disconnected (§6.7), and a reset on restart (§6.8).
+- The x-axis is "scenario t, s" (`scales.x.time: false`).
+- **What `as_of` does not say.** `apply` sets every driven signal to its value at `t`
+  (`runner.py:128-148`), and the publisher sees only the latest state per turn. A step is
+  therefore drawn at the `as_of` of the first message that shows it, which can be up to one
+  push interval (0.25 s) or one tick after the apply that made it.
 
-| | Scenario time `as_of` (chosen) | Browser receive time |
-|---|---|---|
-| Meaning | The exact scenario time the stored value was applied (`snapshots.py:43`) | When this page happened to receive it |
-| Jitter | None from the network or the 0.25 s coalescing | Up to 0.25 s of coalescing, plus delivery delay and timer throttling in background tabs |
-| Order | Never decreases within a run (`runner.py:136-146`) | Monotonic if `performance.now()` is used |
-| Scenario steps | Land on the profile's own times: the demo's 1 s steps at whole seconds, its loop at 90 s, 180 s … | Shifted by delivery delay |
-| Loop boundary | Keeps increasing; not a reset (§6.6) | Keeps increasing |
-| Paused page | Not affected | Not affected |
-| No scenario | `null`: nothing to graph (§6.5) | Could draw a flat line, but the values never change |
-| Disconnect | Frozen while down; the gap is drawn explicitly (§6.7) | Gap drawn by elapsed wall time |
-| Restart | Starts again at 0: the graphs must be cleared (§6.8) | Continuous, so two runs could share an axis |
-| Matches the page | The vehicle panel already says "as of scenario t = N s" (`app.js:457`) | — |
+### 6.2 Step-hold
 
-The receive-time column's one real advantage, keeping two runs on one axis, is not wanted:
-the design never joins two runs (§6.8). So scenario time wins.
-
-**The x-axis is labelled "scenario t, s"**, with ticks in whole seconds. uPlot's
-`scales.x.time` is `false` (a numeric axis).
-
-**What `as_of` does not say.** A value in a message was applied at `as_of`, but it may have
-**changed** at any apply since the previous message: `apply` sets every driven signal to
-its generator's value at `t` (`runner.py:128-148`), and the publisher sees only the latest
-state per turn. So a step on the graph is drawn at the message's `as_of`, which can be up to
-one push interval (0.25 s under load) or one tick (on an idle bus) after the apply that
-changed it. Under the stepped demo on an idle bus, steps fall on ticks at 0.5 s multiples,
-so each step is drawn at the whole second or half a second after it.
-
-### 6.2 Step-hold semantics
-
-A stored signal **holds its value until the next apply**. Nothing in the simulator
-interpolates between applies. The graph therefore draws **steps, never ramps**:
-- `paths: uPlot.paths.stepped({align: 1})`: a horizontal line from each point to the next
-  x, then a vertical step;
-- a **continuous** generator is drawn as a fine staircase, one step per message, because
-  that is what the stored value did. The coolant ramp and `ice_scenario.yaml`'s sine on
-  `engine.engine_load` (`src/ecu_simulator/profiles/ice_scenario.yaml:103-104`) are
-  examples. A linear path would draw a ramp between points and claim values the simulator
-  never stored;
-- **the last value holds to the latest `as_of`.** At draw time the page adds one point,
-  (latest `as_of`, last value), to the data given to uPlot. It is not stored. So a value
-  that has not changed for 30 s still reaches the right edge, and every series has at
-  least two points, as uPlot's docs ask.
+A stored value **holds until the next apply**; nothing interpolates. So the graphs draw
+steps, never ramps (`paths.stepped({align: 1})`). A continuous generator, such as the
+coolant ramp or `ice_scenario.yaml`'s sine on `engine.engine_load`
+(`src/ecu_simulator/profiles/ice_scenario.yaml:103-104`), is drawn as a fine staircase,
+because that is what the stored value did. At draw time one point, (latest `as_of`, last
+value), is added so the hold reaches the right edge; it is not stored.
 
 ### 6.3 The ring buffer
 
-One ring per graphed signal, preallocated when the graph is built:
-
-| Field | Type | Size |
-|---|---|---|
-| `t` | `Float64Array(4096)` | 32 KiB |
-| `v` | `Float64Array(4096)` | 32 KiB |
-| `start`, `count` | integers | — |
-
-- **A point is stored only when the value changes**, or after a gap (§6.7). A message that
-  moves only `as_of` updates one number per run, `lastAsOf`, which drives the right edge
-  (§6.2). The stepped demo stores at most one point per second per signal; the worst case
-  is a signal that changes on every message.
-- **A gap** is stored as a point whose value is `NaN`. At draw time it becomes `null` for
-  uPlot, which breaks the line (`spanGaps: false`).
-- **Equal `as_of`.** A message whose `as_of` equals the last stored `t` replaces the last
-  value instead of adding a point, so x stays unique. The reconnect `GET /vehicle` and the
-  `state` after `hello` can carry the same `as_of`.
-- **Caps, both enforced on every append:**
-  - **time**: points older than the latest `as_of` minus 600 s (the longest window) are
-    dropped, except the newest of them, which is kept so the line enters from the left
-    edge;
-  - **count**: 4096 points. At the maximum rate of 4 messages a second, 10 min is 2,400
-    points, so the time cap normally applies first. The count cap is a hard bound if the
-    rate assumption is ever wrong. If it ever trims points still inside the window, the
-    readout says "history starts at t = N s".
-- **Bytes:** 64 KiB per signal, **320 KiB for five**, allocated once. The worst-case live
-  data, 2,400 points × 5 signals × 2 arrays × 8 bytes, is 192,000 B (188 KiB), inside that.
-- **History beyond 10 min is discarded.** The page keeps no more; the server keeps none
-  (§3.1). This is said in the panel's fine print.
+One ring per graphed signal, preallocated: `t` and `v` as `Float64Array(4096)`, plus
+`start` and `count`.
+- A point is stored **only when the value changes**, or around a gap. A message that moves
+  only `as_of` updates `lastAsOf`.
+- A gap is a point whose value is `NaN`, turned into `null` for uPlot.
+- An `as_of` equal to the last stored `t` replaces that point, so x stays unique.
+- **Caps, enforced on every append:** points older than the latest `as_of` − 600 s are
+  dropped, **except the newest of them, which is kept so the held value enters the window
+  from its left edge**; and never more than **4096** points (10 min at 4 Hz is 2,400).
+- **Bytes:** 64 KiB per signal, 320 KiB for five, allocated once.
+- History beyond 10 min is discarded, and the panel's fine print says so.
 
 ### 6.4 The window
 
-- **Choices: 30 s, 2 min, 10 min. Default: 2 min**, which shows the stepped demo's whole
-  90 s cycle with room on both sides.
-- A three-button group in the panel header, `role="group"`, `aria-pressed` on each, as the
-  log's buttons are styled (`app.css:228-235`). It applies to all five graphs.
-- **The x range is always the full window**, `[latest as_of − W, latest as_of]`. The scale
-  does not change while history is short: a page that connected 40 s ago shows 40 s of line
-  and an empty left part, with "history starts at t = N s (when this page connected)".
-- **Saved in `localStorage`**, key `ecu-simulator.graphs.window`, value `30`, `120` or
-  `600`. Every read and write is in `try/catch`; any failure or unknown value means the
-  default. It is a view preference only: nothing is sent to the simulator.
+- **30 s, 2 min (default), 10 min**, as approved: a three-button group in the section
+  head, `aria-pressed`, applying to all five graphs.
+- The x range is always the full window, `[latest as_of − W, latest as_of]`. While history
+  is shorter, the left part is empty, with "history starts at t = N s (when this page
+  connected)".
+- Saved in `localStorage` under `ecu-simulator.graphs.window` (`30`, `120` or `600`), every
+  access in `try/catch`; any failure or unknown value means 2 min.
 
 ### 6.5 Missing signals and missing time
 
 | Case | How the page knows | What it shows |
 |---|---|---|
-| **The path is in `unavailable`** (no source in this profile) | `vehicle.unavailable` (0010 §5, ninth revision) | A labelled card with no plot: "Speed — unavailable, no source", the same words as the table (`app.js:496`). Not reachable for these five paths with the shipped profiles or the demo, where only `vehicle.odometer` is unavailable (0010:148-150); the profile schema can set all five |
-| **The path is not on this vehicle kind** (a BEV has no `engine.*`, `vehicle/state.py:104-110`) | The path is absent from `signals` | No card. One line in the panel: "Not on this vehicle (bev): engine.rpm, engine.throttle, engine.engine_load, engine.coolant_temp." |
-| **The value is not a finite number** (`typeof v !== "number"` or `!Number.isFinite(v)`) | Checked on every message | A gap in the line (a `NaN` point), and "not a number in the last message" in that card's readout. Never an exception |
-| **`as_of` is `null` and `GET /status` says `scenario.enabled` is false** | `S.status.scenario.enabled` (`snapshots.py:96`) | No plots. "No scenario: the values are constant, as configured. Graphs follow scenario time." |
-| **`as_of` is `null` and a scenario is enabled** (before the first tick, §3.1) | The same two fields | No plots yet. "Waiting for the first scenario tick." The first message with an `as_of` starts the graphs |
-
-**DEV-26 and non-finite values.** DEV-26 (a `modernization` defect, not fixed on `gui`)
-lets a profile put `NaN` or `±inf` into a scenario signal. Facts, from Python's and
-JavaScript's standard JSON behaviour, not measured in the page:
-- `json.dumps` writes `NaN` and `Infinity` by default. `snapshots.state_message` uses it
-  without `allow_nan=False` (`snapshots.py:76`), and `web.json_response` uses it too
-  (`server.py:284`);
-- `JSON.parse` rejects those tokens. So **such a message never reaches the graphs**: the
-  page drops the whole frame (`app.js:260`), and a `GET /vehicle` would fail to parse.
-
-The graphs' `Number.isFinite` check is therefore defensive: it covers a value that
-arrives as a string, a boolean or `null`, and any future encoder. It keeps the rule "a gap,
-never a crash". The silent drop at `app.js:260` is M3a behaviour. Making it visible (a
-count of unparseable messages in the status bar) is **open question 6**, not part of M3b
-unless the owner asks. Changing the server's JSON encoding is out of scope: it would change
-the API.
+| Path in `unavailable` (no source) | `vehicle.unavailable` | A card with no plot: "— unavailable, no source", the table's words. Not reachable for these five paths with the shipped profiles |
+| Path not on this vehicle kind (a BEV has no `engine.*`, `vehicle/state.py:104-110`) | Absent from `signals` | No card; one line: "Not on this vehicle (bev): engine.rpm, …" |
+| Path in `nonfinite`, or its value is not a finite number | §8.4 | "invalid value" as text, and a gap |
+| `as_of` null, `scenario.enabled` false (`snapshots.py:77`) | `GET /status` | No plots: "No scenario: the values are constant, as configured. Graphs follow scenario time." |
+| `as_of` null, a scenario enabled | The same fields | No plots yet: "Waiting for the first scenario tick." |
 
 ### 6.6 Scenario loop boundaries
 
-- **Facts.** `stepped` returns `values[floor(t / interval) mod len(values)]`
-  (`scenario/generators.py:96-103`). `t` is elapsed time since the runtime started, and it
-  never wraps (`scenario/sync.py:30-35`). So at the demo's 90 s boundary **`as_of` keeps
-  increasing** (89.5, 90.0, 90.5 …). Only the index into `values` wraps.
-- **The demo wraps idle to idle.** At `t = 89` and `t = 90` the four stepped signals have
-  the same values: speed 0 and 0, rpm 800 and 800, throttle 0 and 0, load 20 and 20
-  (`docs/examples/ice_drive_cycle_stepped.yaml:62`, `:54`; `:76`, `:68`; `:90`, `:82`;
-  `:104`, `:96`). The values do not change, so no point is stored (§6.3), and the line
-  runs flat through 90 s. The next steps come at 96 s (speed 5, rpm 880, throttle 45,
-  load 75), as they did at 6 s.
-- **Coolant** is a ramp of absolute time, from 20 to 90 °C over 240 s, then held
-  (`ice_drive_cycle_stepped.yaml:107-111`). It ignores the loop; the graph shows one
-  staircase rising to 240 s, then a flat line.
-- **No cycle markers.** The page cannot know the cycle length: neither `GET /status`
-  (`snapshots.py:93-99`) nor `state` carries the scenario's configuration. The design
-  does not guess one. With the axis in scenario seconds, 90, 180 and 270 s are readable
-  tick values. Exposing the cycle length would be an API change for a later decision
-  (open question 8).
+- `stepped` returns `values[floor(t / interval) mod len(values)]`
+  (`scenario/generators.py:96-103`). `t` is elapsed time and never wraps
+  (`scenario/sync.py:30-35`), so at the demo's 90 s boundary `as_of` keeps increasing and
+  only the index wraps.
+- **The demo wraps idle to idle.** At t = 89 and t = 90: speed 0 and 0, rpm 800 and 800,
+  throttle 0 and 0, load 20 and 20 (`ice_drive_cycle_stepped.yaml:62`/`:54`, `:76`/`:68`,
+  `:90`/`:82`, `:104`/`:96`). No value changes, so no point is stored, and the line runs
+  flat through 90 s. The next steps come at 96 s.
+- Coolant ignores the loop: a ramp from 20 to 90 °C over 240 s, then held
+  (`ice_drive_cycle_stepped.yaml:107-111`).
+- **No cycle markers.** Neither `GET /status` (`snapshots.py:67-81`) nor `state` carries
+  the cycle length, and the design does not guess one.
 
 ### 6.7 Disconnect and reconnect
 
-- **While down**, the graphs keep their data and are labelled stale, like every other panel:
-  the `.stale-tag` in the panel head, the hatched top edge, the faded body
-  (`app.css:116-125`), and "Stale, as of HH:MM:SS UTC". **The right edge stops at the last
-  `as_of` received**; the graphs do not scroll on their own while stale.
-- **The line breaks, and nothing is interpolated across the outage.** When `fail()` runs
-  on a page that was live, each ring records a pending break. When the first message of
-  the next connection arrives:
-  1. the last value is closed off at the last `as_of` received before the drop, as an
-     explicit point, so the hold is drawn only as far as the page actually knows;
-  2. a `NaN` point is added between that and the new `as_of`;
-  3. the new value is added.
-  The gap is as wide as the scenario time that passed.
-- **Resume.** On reconnect the page already fetches `GET /status` and, for the first data
-  of a run, `GET /vehicle` (`app.js:147-170`); then `hello` and a `state` arrive (0010
-  §4.5). Whichever comes first resumes the series.
-- **No backfill. The API keeps no history of state**, only the latest one (§3.1). What
-  happened to the signals during the outage is not known to the page, and the gap says so:
-  "No data from t = A to t = B s (disconnected)" in each affected readout. Reconstructing
-  values from logged OBD responses would put protocol decoding in the browser, which 0010
-  §5 and §7 forbid.
+- While down, the graphs keep their data with the page's stale styling, and the right edge
+  stops at the last `as_of` received.
+- **The line breaks; nothing is interpolated.** `fail()` on a live page sets a pending break.
+  On the first message of the next connection, each ring adds: the last value at the last
+  known `as_of` (so the hold stops where knowledge stops), then a `NaN` point, then the new
+  value.
+- On reconnect, `GET /status`, then `hello` and a `state` resume the series (§4.3).
+- **No backfill. The API keeps no history of state**, so the outage is unknown to the page.
+  The readout says "No data from t = A to t = B s (disconnected)". Rebuilding values from
+  logged OBD responses would put decoding in the browser, which 0010 §5 and §7 forbid.
 
 ### 6.8 Simulator restart
 
-- **Detection:** the existing `started_at` check in `connect()` (`app.js:149-155`). As a
-  second guard, an `as_of` lower than the ring's last `t` is treated the same way: within
-  one run it cannot happen (`runner.py:136-146`).
-- **Behaviour: the graphs are cleared**, the rings reset and the pending break dropped. A
-  note replaces the empty left part: "Simulator restarted at HH:MM:SS UTC. Graphs start
-  again from scenario t = 0; the previous run's graphs were cleared." The log keeps its
-  own "Simulator restarted." marker, as today.
-- **Why clear, not segment.** The new run's scenario time starts at 0 again, so the two
-  runs cannot share one ascending axis without inventing an offset. Two runs are never
-  joined into one line.
-- Keeping the previous run on screen, as a separate segment with a marker, is **open
-  question 2**.
+- Detected by the existing `started_at` check (`app.js:149-155`); an `as_of` below the
+  ring's last `t` is treated the same way, as it cannot happen within a run.
+- **The graphs are cleared**, with the note "Simulator restarted at HH:MM:SS UTC. Graphs
+  start again from scenario t = 0; the previous run's graphs were cleared." Two runs are
+  never joined. The log keeps its own marker.
 
-### 6.9 Pause, clear and filters
+### 6.9 Pause (revised)
 
-- **The log's pause, clear and filters do not touch the graphs.** They are labelled as the
-  log's own controls (`index.html:67`), and exchange filters mean nothing for signals.
-- **The graphs get their own "Pause graphs" toggle** in their panel header,
-  `aria-pressed`, the same style as "Pause view".
-  - While paused, drawing and readouts freeze, and the panel says "Paused at t = N s".
-  - Incoming data is still stored, within the same caps. Resuming jumps to live.
-  - If a resize happens while paused, the frozen window is redrawn from the rings; points
-    already trimmed by the 10-min cap are gone, and the readout says so.
-- **No "clear graphs" button.** A restart clears them (§6.8); otherwise there is nothing to
-  clear for.
-- Everything is view-only; the page still sends nothing on the socket
-  (`app.js:3-8`).
-- Whether a graph pause is wanted at all is open question 4.
+- **"Pause graphs" is its own toggle** in the section head, `aria-pressed`, separate from
+  the log's "Pause view". Neither affects the other, and the log's filters and clear do not
+  touch the graphs.
+- **While paused:** drawing, the current values and the min/max freeze, and the head says
+  "Paused at t = N s". **Every message is still stored in the rings, within the same caps**
+  (§6.3): 600 s and 4096 points. Nothing is dropped beyond what those caps drop.
+- **Resume jumps to the latest data**: the window ends at the latest `as_of` received, not
+  where the pause began.
+- If a resize happens while paused, the frozen window is redrawn from the rings. Points the
+  600 s cap has trimmed are gone, and the readout says "history trimmed while paused".
+- Hiding the section (§5.2) does not pause; it only stops drawing.
+- No "clear graphs": a restart clears them.
 
-## 7. Proposal: narrow screens (390 px)
+## 7. Proposal: 390 px (revised)
 
-- **Layout.** One card per row. At 390 px the layout's side padding is 0.571 rem and the
-  panel body's 0.714 rem (`app.css:353-355`), so each plot is about 350 px wide and 6 rem
-  high. The five cards take about 35 rem of page height, below the side panels and above
-  the log.
-- **Sizing.** A `ResizeObserver` on the graphs grid (the page already uses one,
-  `app.js:791-797`) calls `u.setSize({width: floor(card content width), height})` for
-  each graph, coalesced into one animation frame. Because `.uplot` is `min-content` wide
-  (§4.1) and is always given its container's width, a chart can never be wider than its
-  card.
-- **Axes on narrow cards.** The y-axis is 3 rem wide at most, and uPlot's tick spacing is
-  kept at 50 px or more on x, so a 350 px plot gets about five x labels. Axis text uses
-  the page's font (`--sans`) at 0.786 rem, read from computed style when the charts are
-  built and on resize.
-- **Window buttons** wrap under the panel title as the log bar's buttons do
+- **Order:** status bar, the two side panels, the graphs section, then the log, as the
+  medium and narrow layouts already stack (`app.css:335-398`). The section is open by
+  default here too.
+- **Head:** two rows. "Signal graphs" and "Hide graphs" on the first, the three window
+  buttons and "Pause graphs" on the second, full width, like the log's buttons
   (`app.css:358-359`).
-- **The overflow check** in `scripts/gui_demo_capture.py:213-233` measures `#vehicle`,
-  `html` and `body`. M3b adds:
-  - `#graphs` (the panel body), whose `scrollWidth` must not exceed its `clientWidth`;
-  - every `.uplot` element, whose width must not exceed its card's `clientWidth`.
-  It runs at 1440, 390 and 2000, as now (`:47-49`, `:402-417`, `:592-605`).
+- **Cards:** one per row. With a 14 px rem, the layout padding is 8 px each side and the
+  panel body's 10 px (`app.css:353-355`), so each plot is about **352 px wide**. The y-axis
+  takes at most 3 rem (42 px), leaving about 310 px of plot. Plot height at 390 × 844:
+  `clamp(3rem, 9vh, 4.75rem)` gives 66 px.
+- **Height:** a card about 115 px; five cards and gaps about 610 px; with the head, about
+  690 px. The page scrolls vertically at this width anyway.
+- **No horizontal overflow:** a ResizeObserver on the card grid (as `app.js:791-797` already
+  uses one) calls `u.setSize({width: floor(card content width), height})`, coalesced into
+  one animation frame. A `min-content` chart given its card's width cannot be wider.
+- Axis text is the page's `--sans` at 0.786 rem, read from computed style; x ticks at least
+  50 px apart, so about five labels.
 
-## 8. Proposal: accessibility
+## 8. Proposal: the non-finite rule, containment, and malformed messages (new)
 
-- **Text alternatives.** Each card is a `<figure>`. Its `<figcaption>` holds the name and
-  unit. Below the plot, a text line gives the current value, and the minimum and maximum
-  in the window: "Now 80 km/h · min 0, max 80 in the last 2 min · as of t = 45.5 s". The
-  plot container is `aria-hidden="true"`: the text carries the content.
-- **Not colour alone.**
-  - Each graph has one line in the page's ink colour, so no colour tells lines apart.
-  - Stale state uses the hatch, the "Stale, as of …" tag and the banner, as elsewhere.
-  - A gap is a break in the line **and** words in the readout.
-  - A restart is a written note.
-  - "Unavailable" is a dash and words.
-- **No chatter.** Readouts are not `aria-live`; they change up to four times a second. A
-  screen reader user reads them on demand.
-- **Keyboard.** The window buttons and "Pause graphs" are ordinary buttons. uPlot's cursor,
-  legend and selection are off (`cursor: {show: false}`, `legend: {show: false}`), so the
-  plot has no pointer-only features that the text lacks.
-- **Reduced motion.** Graphs move only when data arrives; nothing is animated.
+### 8.1 Scope and layers
 
-## 9. Constraints kept
+- **This is the observer API's rule, not profile validation.** DEV-26, open on
+  `modernization`, is about rejecting non-finite values **at profile load**. That is the
+  config layer, and it is recorded and scheduled there. Nothing here depends on it, fixes
+  it, or is mixed into it.
+- The observer rule holds **whatever the source**: a profile today, or any future writer.
+  The API never emits a token that is not JSON, and the state task never dies from
+  encoding.
+- The diagnostic path is unchanged. DEV-26's crash in the OBD encoder
+  (`protocols/obd/pids.py:80`, recorded in DEV-26) is not touched.
+
+### 8.2 The API: `null` and `nonfinite`
+
+- **In `signals`**, a value that is a Python `float` and not `math.isfinite` is sent as
+  JSON **`null`**. Other values are unchanged (`int` and `bool` cannot be non-finite;
+  strings are sent as they are).
+- **A new field, `nonfinite`:** the dotted paths whose value was sent as `null` for that
+  reason, **sorted, always present, possibly empty.**
+- **Where:** `GET /vehicle`, every WS `state` message (including the one sent on connect),
+  and so the initial state and the startup size check, because all of them are built by the
+  same `snapshots.vehicle`.
+- **Per snapshot, not per run.** Unlike `unavailable`, which is fixed at startup
+  (`observe/availability.py`), `nonfinite` describes the values in that snapshot. It costs
+  one `isfinite` per float signal, about 20 per snapshot, at most 4 times a second
+  (**estimate:** a few microseconds).
+- **`unavailable` and `nonfinite` stay distinct.** *No source* means nothing in the profile
+  can set the path, so its stored value is a default and not a reading. *Invalid reading*
+  means a source produced a value that is not a finite number.
+- **A path is never in both. If both would apply, `unavailable` wins:** the path is listed
+  only in `unavailable`, and its value is still sent as `null`, because JSON cannot carry
+  it.
+  - Why: `unavailable` is a static fact about the profile. A path with no source has
+    produced no reading, so it cannot have produced an invalid one; listing it in
+    `nonfinite` would suggest a source that does not exist.
+  - Today this case cannot arise: a path with no source holds its state-model default, and
+    every default is finite (`vehicle/state.py:19-81`). The rule makes the answer explicit
+    in case a future default changes.
+- **Example:**
+  `{"kind": "ice", "vin": "…", "signals": {"engine.coolant_temp": null, …}, "as_of": 12.5,
+  "unavailable": ["vehicle.odometer"], "nonfinite": ["engine.coolant_temp"]}`.
+
+### 8.3 Containing encoding failures on the server
+
+The mechanism is **sanitise, then encode strictly, then contain**:
+1. **Sanitise before `json.dumps`:** `snapshots.vehicle` builds `signals` with non-finite
+   floats replaced by `None`, and builds `nonfinite` (§8.2).
+2. **Encode strictly:** `state_message` calls `json.dumps(..., allow_nan=False)`, and
+   `GET /vehicle` uses `web.json_response` with `dumps` bound to the same strict call. After
+   step 1, a non-finite value can no longer reach the encoder. The strict flag is the guard
+   that turns any that still does, anywhere in the message, into an exception instead of
+   invalid JSON.
+3. **Contain any residual failure:**
+   - **The periodic state task** (`publisher.py:265-272`): `snapshot()` runs inside
+     `try/except Exception`. On failure, **that push is skipped**, the previous state
+     stays current for every client, the new counter **`state_encode_failed`** increments,
+     and the failure is logged **once per exception type**, through the same `_log_once`
+     that `_publish` uses for `encode_failed` (`publisher.py:113-116`, `:151-156`). The
+     loop then continues: `push_dropped()` still runs and the next interval is tried as
+     usual. `CancelledError` is not caught, so shutdown is unchanged.
+   - **`GET /vehicle`:** a residual failure answers **HTTP 500** with the text "vehicle
+     state could not be encoded (decisions/0010 §4.3)", increments `state_encode_failed`,
+     and is logged once per type. Every other route keeps working.
+   - **Startup** (`check_state_size` and the initial `push_state`,
+     `api/server.py:165-176`): non-finite values are already sanitised, so they start
+     normally. Any **other** failure becomes `ApiStartupError`, so `--api` refuses to start
+     with exit 2 and a message naming the exception type, as the 256 KiB rule does. There
+     is no earlier state to fall back on, and 0010 §4.5 requires one before the first
+     client.
+- **`state_encode_failed`** is a new field of `GET /status` `api`: failed state encodes,
+  cumulative, never reset, counting both skipped pushes and failed `GET /vehicle` answers.
+  The log line names which.
+- **Why skip rather than send a fallback:** exchanges need a fallback event to keep `seq`
+  contiguous (0010 §5). `state` has no sequence and is replaced, not queued (0010 §4.3), so
+  the latest good state is the honest thing to keep. The page learns of the failure from
+  the counter (§8.4).
+
+### 8.4 The page: invalid values and malformed messages
+
+**Invalid values.**
+- A path in `nonfinite`, or any graphed or tabled value that is not a finite number and not
+  in `unavailable`, is shown as **"invalid value"** as text, in the signal table and in
+  that graph's line 1. Not colour alone: the words are there.
+- **The graph leaves a gap, never a line to or from it.** When an invalid value arrives at
+  `as_of = t`, the ring stores the last valid value at the last `as_of` it was known valid,
+  then a `NaN` point at `t`. When a valid value returns at a later `as_of`, it starts a new
+  segment there. Nothing is drawn between the last valid point and the next valid point.
+  uPlot's gap handling for stepped paths is checked through the `data-*` attributes and by
+  eye (§12, §13); if its default draws the hold past the last valid point, the
+  implementation sets the series' gap alignment so it does not.
+
+**Malformed messages** (a WS frame that fails `JSON.parse`, or parses to something that is
+not an object). Today they are swallowed (`app.js:260`). M3b will:
+- **Count them.** `malformedTotal` for the page's lifetime, and `malformedRun`, the number
+  in a row since the last valid frame.
+- **Show them.** When `malformedTotal > 0`, the status bar gains a readout "Malformed
+  messages **N**, last HH:MM:SS UTC". It is not hidden again.
+- **Stop claiming Live** (a new "degraded" state) when any of these holds:
+  1. `malformedRun ≥ 3`;
+  2. a malformed frame arrived, and **10 s** passed with no valid `state` after it;
+  3. the polled `state_encode_failed` (§8.3) is higher than when the last valid `state`
+     arrived, and **10 s** passed with no valid `state` since the page saw the increase.
+  - The 10 s wait is long compared with a 0.25 s push and the demo's 0.5 s tick. Only a
+    scenario with a tick above 10 s and no traffic could wait that long between states,
+    and then only after a malformed frame or a failed encode, which is already an anomaly.
+- **While degraded:**
+  - the lamp is not green, and reads "Connected, data invalid";
+  - a banner says why: "N malformed messages from the simulator; the vehicle, trouble-code
+    and graph panels show the last valid state, from HH:MM:SS UTC", or "The simulator could
+    not encode N state updates (`state_encode_failed`)";
+  - the vehicle, DTC and graphs panels get the stale marking, with the tag "Not current:
+    last valid state HH:MM:SS UTC". The exchange log is not marked, because its events
+    still arrive and are valid;
+  - each ring gets a pending break, as for a disconnect (§6.7).
+- **Leaving degraded:** the next valid `state` resets `malformedRun`, restores "Live", and
+  clears the stale marking. The total stays in the status bar.
+- The page never closes the socket over this and never sends anything on it.
+
+## 9. Proposal: accessibility
+
+- Each card is a `<figure>`: `<figcaption>` has the name and unit; line 1 has the current
+  value; line 2 has the min and max in the window. The plot container is
+  `aria-hidden="true"`; the text carries the content.
+- **Not colour alone:** one line per graph in the ink colour. Stale and degraded states
+  use the hatch, the tag and the banner. A gap is a break **and** words. A restart is a
+  note. "unavailable" and "invalid value" are words.
+- Readouts are not `aria-live`, because they change up to four times a second.
+- Buttons are ordinary buttons. uPlot's cursor, legend and selection are off, so the plot
+  has no pointer-only content.
+- Nothing is animated.
+
+## 10. Constraints kept, and files
 
 | Constraint | How |
 |---|---|
-| API state rate | Unchanged: `STATE_MIN_INTERVAL_S` and `run_state` are not touched (`limits.py:16`, `publisher.py:265-272`) |
-| Diagnostic path | Unchanged: no file under `observe/`, `ecu/`, `transport/` or `scenario/` changes. The only server change is three entries in `FRONTEND` |
-| Endpoints | None added. The three new routes are static files in the fixed list (0010 §6) |
-| Build step, npm, CDN | None. The IIFE file is vendored as published and loaded with `<script src="uPlot.iife.min.js" defer>` before `app.js` (`defer` keeps the order) |
-| CSP | **Unchanged**, `default-src 'self'` and the rest of `server.py:51-59` (§4.1) |
-| Offline | Every file is package data (`pyproject.toml:63`) |
-| M3a without uPlot | If `typeof uPlot !== "function"`, the graphs panel says "Graphs unavailable: the chart library did not load", and the rest of the page works (0010:563-564) |
-
-**Files and routes** (proposal):
+| API state rate | Unchanged: `STATE_MIN_INTERVAL_S` and the push rule stay; §8.3 adds a `try` around the snapshot only |
+| Diagnostic path | Unchanged: nothing in `ecu/`, `transport/`, `protocols/` or `scenario/`, and nothing on the hot path, changes |
+| Endpoints | None added. `nonfinite` and `state_encode_failed` are additive fields |
+| Build, npm, CDN | None: `<script src="uPlot.iife.min.js" defer>` before `app.js` |
+| CSP | Unchanged (§5.1) |
+| Offline | Package data (`pyproject.toml:63`) |
+| Without uPlot | If `typeof uPlot !== "function"`, the section says "Graphs unavailable: the chart library did not load", and the rest of the page works |
+| No sample data | The shipped page never contains or draws sample data; the test at `test_frontend_files.py:152-157` keeps banning the word |
 
 | Route | File under `static/` | Content type |
 |---|---|---|
 | `/uPlot.iife.min.js` | `uPlot.iife.min.js`, byte-identical to the tarball | `text/javascript` |
 | `/uPlot.min.css` | `uPlot.min.css`, byte-identical | `text/css` |
-| `/uPlot-LICENSE.txt` | `uPlot-LICENSE.txt`, the tarball's `LICENSE`, byte-identical | `text/plain` |
+| `/uPlot-LICENSE.txt` | the tarball's `LICENSE`, byte-identical | `text/plain` |
 
-- The licence is **served**, not only shipped. The "static directory holds exactly the
-  served files" rule (`test_frontend_files.py:60-63`) then needs no exception, and the
-  page's footer can link to it: "Graphs drawn with uPlot 1.6.32 (MIT licence)".
-- `index.html` links `uPlot.min.css` **before** `app.css`, so the page's rules win.
-- `FRONTEND` in `server.py:44-48` and the test's copy (`test_frontend_files.py:14-18`)
-  both gain the three rows. `pyproject.toml` does not change (§3.3).
+The licence is served, so the "exactly the served files" rule needs no exception, and the
+footer links to it. `uPlot.min.css` is linked before `app.css`.
 
-## 10. Estimated cost in the browser
+## 11. Cost in the browser: estimates until measured
 
-All of this is in the browser. **None of it touches the server**: the server gains three
-static routes that are read once at construction and served on page load. The M2 latency
-`STOP` concerns the simulator's loop under the M4 harness clients, which are not browsers.
-It is unaffected, and stays open.
+**Every figure in this section is an estimate.** None has been measured. §11.3 says how
+they will be.
 
-### 10.1 Memory
+### 11.1 Memory (estimate)
 
-| Item | Size | Basis |
+| Item | Estimate | Basis |
 |---|---|---|
-| Rings, 5 × 4096 × 2 × 8 B | **320 KiB**, fixed | §6.3 |
-| Worst-case live data inside them (10 min at 4 Hz) | 188 KiB | 2,400 × 5 × 2 × 8 B |
-| Arrays handed to uPlot per draw | about **190–380 KB** of short-lived garbage per full redraw at the worst case (**estimate**) | ≤ 2,403 points × 2 arrays × 5 graphs. Arrays holding `null` are not packed doubles in V8; 8–16 B per element is assumed |
-| Canvas backing stores: width × height × dpr² × 4 B each, five charts | 1440 × 900 at dpr 1: 190 × 84 px → 5 × 62 KiB ≈ **0.3 MiB**. At dpr 2: ≈ 1.2 MiB. 390 px phone at dpr 3: 350 × 108 px → 1050 × 324 × 4 ≈ 1.3 MiB each, ≈ **6.5 MiB** | Arithmetic from the §5.2 and §7 sizes |
-| uPlot code and instances | 51 KB of source; instance overhead small (**estimate**). For scale, the README's 166,650-point bench ends at a **3 MB** heap | README, "Performance" |
+| Rings | 320 KiB, fixed | 5 × 4096 × 2 × 8 B |
+| Worst-case live data in them | 188 KiB | 2,400 × 5 × 2 × 8 B |
+| Arrays handed to uPlot per redraw | about 190–380 KB of short-lived garbage at the worst case | 2,403 × 2 × 5 elements at an assumed 8–16 B each |
+| Canvases, 5 × width × height × dpr² × 4 B | 1440 × 900, dpr 1: 190 × 73 px → about 0.27 MiB. dpr 2: about 1.1 MiB. 390 px at dpr 3: 352 × 66 px → about 5.2 MiB | §5.2, §7 sizes |
+| uPlot code and instances | small; the README's 166,650-point bench ends at a 3 MB heap | README |
 
-**Total, estimate:** under 2 MiB on a desktop at dpr 1, and under about 8 MiB on a dpr-3
-phone. The canvases dominate. It does not grow over time: rings are fixed, and canvases
-change only with size.
+Total: under 2 MiB on a desktop at dpr 1, under about 7 MiB on a dpr-3 phone. Fixed
+rings, so no growth over time.
 
-### 10.2 CPU
+### 11.2 CPU (estimate)
 
-- **Per state message** (≤ 4 per second): the JSON is already parsed; the graphs add five
-  compare-and-append steps and set a "dirty" flag. Negligible.
-- **Drawing is coalesced with `requestAnimationFrame`**: at most one redraw per frame, and
-  in practice one per message, ≤ 4 per second. Each redraw copies the window out of the
-  rings, then calls `setData(data, false)` and `setScale("x", {min, max})` on each chart.
-- **Per redraw, worst case**: 5 × about 2,400 points. At uPlot's published ~31,000
-  points/ms, path building is about **0.4 ms**. With axes, text and canvas clears, the
-  **estimate** is 1–3 ms for all five on a laptop like the README's. At 4 per second that is
-  at most about 12 ms/s, **about 1 % of one core**. The stepped demo stores far fewer
-  points, so its cost is lower.
-- **Background tab**: `requestAnimationFrame` does not run, so nothing is drawn. Messages
-  are still stored; one redraw happens on return.
-- **Measured, not just estimated, at implementation**: the capture script records
-  Chrome's `Performance.getMetrics` `TaskDuration` and `JSHeapUsedSize` at the start and end
-  of a 60 s live stretch at 1440 and at 390 (§11.2). The result goes in the M3b live-demo
-  record.
-- **One honest caveat.** If the browser runs on the same host as the simulator, its
-  drawing shares that host's CPUs. The M4 benchmark (0010 §9.2) uses harness clients, not a
-  browser, so no M4 condition changes. Whether to measure a browser on the bench host
-  during a demo is open question 5.
+- Per message (≤ 4/s): five compare-and-append steps, and a dirty flag.
+- Redraws are coalesced by `requestAnimationFrame`, at most one per message. Worst case 5
+  × about 2,400 points: about 0.4 ms of path building at the published ~31,000 points/ms;
+  1–3 ms with axes and text; at 4 per second, **about 1 % of one core**.
+- A background or hidden section draws nothing; one redraw follows on return.
+- **Server side:** §8.2's `isfinite` pass, a few microseconds per snapshot at ≤ 4 Hz.
 
-## 11. Tests
+### 11.3 How they will be measured
 
-### 11.1 Python (the `.[dev,gui]` job, 0010 §9.3)
+In the capture run (§12.2), at 1440 × 900 and at 390 × 844, over a 60 s live stretch with
+the traffic script running:
+- **Heap:** `performance.memory.usedJSHeapSize` and `totalJSHeapSize` (Chrome only),
+  read at the start, every 10 s, and at the end;
+- **CPU:** a DevTools trace (`Tracing.start` / `Tracing.end`, categories
+  `devtools.timeline` and `v8`), saved with the run, from which the total main-thread task
+  time and the time in the graphs' redraw are read. `Performance.getMetrics`
+  `TaskDuration` is recorded as a cross-check;
+- **Canvas memory** is arithmetic from the measured canvas sizes, read from the `data-*`
+  attributes and each canvas's `width` and `height`.
 
-In `tests/unit/api/test_frontend_files.py`:
-- **The list grows.** The test's `FRONTEND` (`:14-18`) gains the three rows of §9. Every
-  existing parametrised test then covers them with no new code: body, content type and
-  charset (`:34-41`), security headers (`:44-49`), 405 on other methods (`:137-142`), the
-  Host guard (`:145-149`), read once (`:66-83`), and **the static directory holds exactly
-  these files** (`:60-63`).
-- **New: `test_vendored_uplot_is_the_pinned_release`.** The SHA-256 of each of the three
-  files equals the §4.1 value, and the JS starts with
-  `/*! https://github.com/leeoniya/uPlot (v1.6.32) */`. Changing the version means changing
-  this test on purpose.
-- **New: `test_the_uplot_licence_is_shipped_and_linked`.** `uPlot-LICENSE.txt` starts with
-  "The MIT License (MIT)" and contains "Copyright (c) 2022 Leon Sorokin"; `index.html`
-  links `uPlot-LICENSE.txt` by a relative URL.
-- **New: `test_the_page_loads_uplot_before_app_js`.** In `index.html`, `uPlot.min.css`
-  comes before `app.css`, and `uPlot.iife.min.js` comes before `app.js`, both relative and
-  `defer`.
-- **New: `test_vendored_uplot_makes_no_network_request`.** The JS contains no `fetch(`,
-  `XMLHttpRequest`, `WebSocket`, `http://` or `//cdn`, and its only `https://` is in the
-  banner.
-- **Unchanged, and deliberately so:** `test_the_page_names_only_its_own_files_and_relative_urls`
-  (`:152-157`) keeps checking `index.html`, `app.js` and `app.css` only. The vendored JS
-  has a URL in its banner, and its content is pinned by hash instead. That test also bans
-  the word "sample" in `app.js`, so the graph code must use "point" or "value".
+The results go in `docs/validation/gui-m3b-live-demo.md`, next to these estimates. Until
+then, §11.1 and §11.2 stay labelled as estimates. The browser shares the host's CPUs with
+the simulator when both run on one machine; M4 uses harness clients, not a browser, so no
+M4 condition changes.
 
-**No other Python test changes.** No API, `observe` or scenario behaviour changes, so
-`test_server_http.py`, `test_server_ws.py`, the `observe` unit tests and the ordering and
-ledger tests are untouched. `server.py` changes only in its `FRONTEND` table.
+## 12. Tests and acceptance checks (revised)
 
-### 11.2 Automated browser checks (the capture script, a vcan host only)
+### 12.1 Python (`.[dev,gui]` job, and the `observe` tests in every job)
 
-No JavaScript test framework (0010 §7). `scripts/gui_demo_capture.py` already drives
-Chrome over the DevTools protocol, and in `moving_session` it runs the stepped demo
-(`:560-626`). M3b adds:
-- **Overflow**: `#graphs` and each `.uplot` in the `OVERFLOW` expression (`:213-220`), at
-  1440, 390 and 2000 (§7). A failure makes `main()` exit 1, as now (`:666-667`).
-- **Structure**: exactly one `canvas` per available graph signal (five for the demo), each
-  with a non-zero width and height; no card for an absent path.
-- **Agreement**: each graph readout's "Now" value equals the signal table's cell for that
-  path, read in one evaluation.
-- **CSP**: `Page.addScriptToEvaluateOnNewDocument` installs a `securitypolicyviolation`
-  listener that collects events. After the run the list must be empty.
-- **Loop boundary**: a screenshot at scenario t ≈ 97 s with the 2-min window, showing the
-  flat idle line through 90 s and the steps from 96 s.
-- **Stale and restart**: after the existing SIGTERM (`:615-622`), a screenshot of the stale
-  graphs; then a new simulator is started, and the check waits for the restart note and
-  asserts every ring is empty except for the new run's points.
-- **Window**: click "30 s", reload the page, and assert "30 s" is still pressed
-  (`localStorage`).
-- **Cost**: `Performance.getMetrics` at the start and end of a 60 s stretch (§10.2).
+**Frontend files** (`tests/unit/api/test_frontend_files.py`):
+- the list (`:14-18`) gains the three rows of §10, so every existing parametrised test
+  covers them: body and type, headers, 405, the Host guard, read once, and **exactly the
+  served files**;
+- new `test_vendored_uplot_is_the_pinned_release`: each file's SHA-256 is §5.1's, and the
+  JS starts with the v1.6.32 banner;
+- new `test_the_uplot_licence_is_shipped_and_linked`: "The MIT License (MIT)", "Copyright
+  (c) 2022 Leon Sorokin", and a relative link in `index.html`;
+- new `test_the_page_loads_uplot_before_app_js`: CSS before `app.css`, JS before `app.js`,
+  relative, `defer`;
+- new `test_vendored_uplot_makes_no_network_request`: no `fetch(`, `XMLHttpRequest`,
+  `WebSocket`, `http://` or `//cdn`, and only the banner's `https://`.
 
-### 11.3 By hand, at implementation
+**The non-finite rule** (`tests/unit/observe/`, every job, no aiohttp):
+- `snapshots.vehicle` with `nan`, `inf` and `-inf` in float signals: each value is `None`,
+  `nonfinite` lists exactly those paths, sorted; finite floats, ints, bools and strings are
+  unchanged; with none, `nonfinite == []`;
+- **precedence:** a path forced into both `unavailable` and a non-finite value appears only
+  in `unavailable`, with `null`;
+- `state_message` output parses under `json.loads` with a `parse_constant` hook that raises,
+  so it contains no `NaN` or `Infinity` token;
+- `state_message` raises on an unserialisable value, which pins `allow_nan=False` and
+  strictness;
+- **the state task survives:** a `snapshot` that raises once, then succeeds. The task is
+  still running; `state_encode_failed == 1`; the previous state stayed current; the next
+  good state is pushed; `push_dropped` ran in the failed turn; two failures of one type log
+  once (`caplog`), a second type logs again;
+- `CancelledError` still ends the task.
 
-- `python -m build --wheel` and `unzip -l` on the wheel: the three new files are under
-  `ecu_simulator/api/static/`. CI installs editable (`ci.yml:88`), so CI does not see the
-  wheel.
+**The API** (`tests/unit/api/`, `.[dev,gui]` job):
+- `GET /vehicle` with a non-finite signal: 200, `null`, `nonfinite` set;
+- the WS initial `state` and a later pushed `state` carry `null` and `nonfinite`;
+- `GET /vehicle` with a residual failure (a monkeypatched snapshot with an unserialisable
+  value): 500 with the stated text, `state_encode_failed` incremented, and `GET /status`
+  still 200;
+- `GET /status` carries `state_encode_failed`;
+- **startup:** a non-finite initial value starts the API with the value sanitised; a
+  residual failure in `check_state_size` raises `ApiStartupError` naming the exception
+  type.
 
-## 12. The owner's manual checklist (the M3b exit, 0010:747)
+**Unchanged:** the API-off proofs, the differential comparison, the ordering, ledger and
+publisher-turn tests. The state task is not a publisher turn, and nothing on the hot path
+changes.
 
-On a vcan host, `--api 127.0.0.1:8080`, the stepped demo profile, with the traffic script
-running unless stated. Chrome, then Firefox.
+### 12.2 Acceptance checks in the capture run (`scripts/gui_demo_capture.py`)
 
-- [ ] Five graphs appear: speed km/h, engine speed rpm, throttle %, engine load %, coolant
-      °C. The VIN is still text in the vehicle panel header, and not graphed.
-- [ ] Speed and rpm are drawn as **steps**, not ramps: flat, then vertical.
-- [ ] The coolant line is a fine staircase that rises to about 240 s, then stays flat.
-- [ ] Across the **90 s loop boundary**, the idle lines run flat through 90 s, and the
-      next rise starts at 96 s. The time axis keeps increasing.
-- [ ] **30 s, 2 min, 10 min** each change all five graphs. The choice survives a reload.
-      With `localStorage` blocked (a private window with site data blocked), the page still
-      works at 2 min.
-- [ ] Each readout's "Now" matches the signal table. Min and max are right for the window.
-- [ ] **Stop the simulator** (SIGTERM): the graphs stay, hatched and tagged "Stale, as of
-      …", and stop at the last scenario time.
-- [ ] **Restart it within about 15 s**: the graphs clear and show the restart note. No line
-      joins the two runs.
-- [ ] **Disconnect without a restart**: set Chrome DevTools, Network, to "Offline" for
-      about 20 s, then back. The line has a gap, with nothing drawn across it, and the
-      readout names the gap's scenario times. (Not verified: whether Chrome closes an open
-      WebSocket when set offline. `kill -STOP` does not work, because a stopped process
-      keeps its socket open and the page has no heartbeat. If neither works, accept this
-      item from review.)
-- [ ] **No scenario** (`ice_default.yaml`): the panel says "No scenario: the values are
-      constant, as configured", with no plots.
-- [ ] **A BEV or HEV profile**, if one is at hand: absent engine paths are listed as "Not on
-      this vehicle", with no empty cards. If none is at hand, accept from review.
-- [ ] **390 px** (device toolbar): one graph per row, no horizontal scroll, readable axis
-      labels, the window buttons wrap.
-- [ ] **2000 px**: one row of five, and the log keeps most of the height.
-- [ ] **Pause graphs**: graphs freeze with "Paused at t = …"; the log keeps running; resume
-      jumps to live. "Pause view" on the log does not pause the graphs.
-- [ ] **Firefox**: no CSP errors in the console, and the graphs draw.
+**A canvas count alone proves nothing.** A canvas can exist and be blank, stale, joined
+across a gap or unbounded. So every check below reads two things only:
+- the **visible readouts**, as text: line 1's current value, and line 2's min and max;
+- a small set of **read-only diagnostic `data-*` attributes** on each graph container.
+  The page writes them after each ring update and draw; nothing in the page reads them;
+  they describe the page's own rings and drawing, never uPlot internals.
+
+| Attribute | Meaning |
+|---|---|
+| `data-path` | The signal's dotted path |
+| `data-state` | `ok`, `invalid`, `unavailable`, `absent`, `waiting` or `no-scenario` |
+| `data-points` | Points held in the ring now |
+| `data-cap` | The ring's capacity, 4096 |
+| `data-oldest-t` | `t` of the oldest point held |
+| `data-newest-t` | `t` of the newest point held |
+| `data-as-of` | The latest `as_of` received |
+| `data-drawn-to` | The right edge of the last draw (differs from `data-as-of` while paused) |
+| `data-window-s` | 30, 120 or 600 |
+| `data-left-value` | The value held at the window's left edge, or empty if none |
+| `data-segments` | Contiguous non-gap runs in the drawn window |
+| `data-gaps` | Gaps in the drawn window |
+| `data-run` | The `started_at` of the run the ring belongs to |
+| `data-paused` | `true` or `false` |
+
+Checks, each with its pass rule:
+
+| Behaviour | How the capture run exercises it | Passes if |
+|---|---|---|
+| **Held value at the left edge of a trimmed window** | Stepped demo, 30 s window, read at t ≈ 55 s: speed has been 80 since t = 21, so the last change is outside the window | `data-left-value` = 80; line 2 reads "min 80 · max 80 in 30 s"; `data-segments` = 1; `data-oldest-t` < `data-as-of` − 30 |
+| **Bounded history** | A long session (`--long`, about 11 min) on `ice_scenario.yaml`, whose sine on `engine.engine_load` changes on every message, with the traffic script running | For every graph at every 10 s sample: `data-points` ≤ `data-cap`; after 600 s, `data-oldest-t` ≥ `data-as-of` − 600 − 1 (the one retained point) and `data-left-value` is set |
+| **Disconnect gap** | Stop the traffic, `SIGSTOP` the simulator for 12 s, then `SIGCONT`. The status poll's 5 s timeout takes the page down (§4.3); the reconnect finds the same `started_at` | `data-run` unchanged; `data-gaps` rose by 1 and `data-segments` by 1; line 2 names the gap; the conn text returned to "Live" |
+| **Restart reset** | The existing SIGTERM (`gui_demo_capture.py:615-622`), then a new simulator | `data-run` changed; `data-oldest-t` ≥ 0 and `data-points` counts only the new run; the restart note is visible; no gap joins runs (`data-segments` = 1 after the first new point) |
+| **Window persists** | Click "30 s", reload | `data-window-s` = 30 on every graph; the "30 s" button has `aria-pressed="true"` |
+| **Pause while buffering** | Click "Pause graphs" for 10 s, then resume | While paused: `data-paused` = true, `data-drawn-to` and line 1 unchanged, `data-as-of` rising, `data-points` not falling except by the caps. After resume: `data-drawn-to` = `data-as-of`. The log kept running (its seq count rose) |
+| **Non-finite handling** | A capture-only profile, outside `src/`, whose `engine.coolant_temp` is `stepped` over `[20, .nan, 30]` every 10 s, run **without** traffic (a `01 05` request would hit DEV-26's encoder crash) | While invalid: `data-state` = `invalid`, line 1 reads "invalid value", and the table cell reads "invalid value". After: `data-gaps` ≥ 1 and `data-segments` ≥ 2; the conn text stayed "Live"; the malformed readout is absent (the API sent valid JSON) |
+| **Malformed messages** | `Page.addScriptToEvaluateOnNewDocument` wraps `window.WebSocket` so the script can reach the page's socket, then dispatches three `MessageEvent`s with the text `{bad` on it. Test instrumentation only; the page is unchanged | The "Malformed messages 3" readout is visible; the conn text is not "Live"; the banner is shown; the vehicle panel has the "Not current" tag. After the next real `state`: "Live" again, and the count still reads 3 |
+| **Overflow** | `#graphs` and each `.uplot` join the `OVERFLOW` expression (`gui_demo_capture.py:213-220`) at 1440, 390 and 2000 | No `scrollWidth` above its `clientWidth`, as today (`:223-233`) |
+| **Log rows at 1440 × 900** | Section open, log filled | At least 5 full log rows inside `#logwrap` |
+| **Agreement** | Every live screenshot | Each line-1 value equals the signal table's cell, read in one evaluation |
+| **Cost** | §11.3 | Recorded, not judged |
+
+**Two limits, stated:**
+- **DEV-26.** When DEV-26 is fixed on `modernization` and that fix reaches `gui`, the
+  non-finite profile will be refused at load. The browser check then needs another way to
+  put a non-finite value into the state, for example an in-process harness that serves the
+  API over a runtime whose value is set directly. The Python tests of §12.1 set it directly
+  already, so they do not depend on DEV-26.
+- **Chrome only.** The capture script drives Chrome over the DevTools protocol. Firefox is
+  a snap here, cannot run in the namespace automation, and no Playwright browser is to be
+  downloaded. So nothing in §12.2 covers Firefox (§13).
+
+### 12.3 By hand, at implementation
+
+`python -m build --wheel` and `unzip -l` show the three files under
+`ecu_simulator/api/static/`, since CI installs editable.
+
+## 13. The owner's manual checklist (the M3b exit)
+
+On a vcan host, `--api 127.0.0.1:8080`, the stepped demo, with the traffic script running
+unless stated.
+
+**CSP, both browsers. Unverified until someone actually runs it. M3b is not accepted
+before these two items are ticked:**
+- [ ] **Chrome:** load the page, open the console, watch one full 90 s cycle. No
+      Content-Security-Policy error; the graphs draw.
+- [ ] **Firefox:** the same. Record the Firefox version. (Firefox is a snap on this host
+      and cannot run in the namespace automation, so this is manual only.)
+
+**Views:**
+- [ ] Five graphs: speed km/h, engine speed rpm, throttle %, engine load %, coolant °C. The
+      signal table's rpm row shows "rpm". The VIN is still text in the vehicle header.
+- [ ] Speed and rpm are drawn as steps, not ramps. Coolant is a fine staircase to about
+      240 s, then flat.
+- [ ] Across the 90 s boundary, the idle lines run flat; the next rise is at 96 s.
+- [ ] At 1440 × 900 with the section open, at least 5 log rows are visible and usable.
+      "Hide graphs" gives the log the space back; a reload opens the section again.
+- [ ] 30 s, 2 min and 10 min change all five graphs; the choice survives a reload. With
+      site data blocked, the page still works at 2 min.
+- [ ] "Pause graphs" freezes the graphs only; the log keeps running; after 30 s, resume
+      shows the latest data, with nothing missing inside the window. "Pause view" on the
+      log does not pause the graphs.
+- [ ] Stop the simulator: the graphs stay, marked stale. Start it again: they clear with the
+      restart note; no line joins the runs.
+- [ ] `kill -STOP` the simulator for 12 s, then `kill -CONT`: the page goes down within
+      about 7 s, then comes back; the graphs show a gap with nothing drawn across it.
+- [ ] `ice_default.yaml` (no scenario): "No scenario: the values are constant, as
+      configured", with no plots.
+- [ ] The non-finite capture profile, without traffic: "invalid value" in the table and
+      the coolant graph, a gap in the line, and the page still "Live".
+- [ ] 390 px: one graph per row, the head on two rows, no horizontal scroll.
+- [ ] 2000 px: one row of five.
 - [ ] The footer's uPlot licence link opens the MIT text.
-- [ ] The page's DevTools Performance monitor shows CPU and heap in line with §10 during a
-      minute of live drawing.
+- [ ] The measured cost in the live-demo record (§11.3) is in line with the estimates, or
+      the difference is explained.
 
-## 13. Open questions for the owner
+## 14. Open questions for the owner
 
-1. **Throttle and load:** two graphs (proposed), or one graph with two lines told apart by
-   dash and a text legend?
-2. **Restart:** clear the graphs (proposed), or keep the previous run as a separate
-   segment to the left, with a marker?
-3. **Windows:** are 30 s, 2 min (default) and 10 min right?
-4. **Pause graphs:** wanted, or should the graphs never pause?
-5. **Cost on the bench host:** should the M3b live demo also measure the simulator host's
-   CPU with the page open during traffic? It is not an M4 condition, and M4 is unchanged.
-6. **Unparseable messages** (DEV-26's `NaN` in JSON): add a visible count of dropped,
-   unparseable frames to the status bar in M3b, or leave it for later?
-7. **The rpm unit label:** "rpm" (proposed) or "1/min"?
-8. **Cycle markers:** leave them out (proposed, the API has no cycle length), or record a
-   future API field for a later decision?
-9. **Placement:** above the log (proposed), or collapsible, to give the log more height at
-   1440 × 900?
+Answered in this review: throttle and load separate (Q1 of `9a69d2e`); windows (Q3); pause
+(Q4); unparseable messages (Q6, now §8.4); "rpm" (Q7); placement (Q9). Still open:
+1. **Restart:** clear the graphs (proposed), or keep the previous run as a separate segment
+   with a marker?
+2. **Cost on the bench host:** measure the simulator host's CPU with the page open during
+   traffic in the M3b live demo? It is not an M4 condition.
+3. **Cycle markers:** leave them out (proposed), or record a future API field for a later
+   decision?
+4. **The 10 s degraded threshold** (§8.4): acceptable, or should it follow the tick?
 
-## 14. The 0010 amendment needed (a proposal, applied only if the owner approves)
+## 15. Decision 0010: the tenth revision (made in the same commit)
 
-A **tenth revision**, wording only. It changes no threshold of P1–P9, no API, and no V1.0
-or Phase 8b gate. The M2 `STOP` stays open.
-- **§7 (`:563-564`).** Replace "for per-signal sparklines" with "for per-signal graphs of
-  speed, engine speed, throttle, engine load and coolant temperature, drawn against
-  scenario time (`as_of`) from the `state` messages the page receives, with a selectable
-  window and a bounded browser-side history. There is no server-side state history". Name
-  the pin: **uPlot 1.6.32**, served as `uPlot.iife.min.js`, `uPlot.min.css` and
-  `uPlot-LICENSE.txt`. State that the CSP is unchanged.
-- **§9.3 (`:728`).** Add: "vendored files are pinned by SHA-256".
-- **§10 (`:747`).** M3b's exit becomes "Frontend file tests green in CI; owner runs the
-  manual view checklist for the graphs", matching M3a's row (`:746`).
-- **Status (`:10-13`).** It still says "M3 has not started". M3a is built on `gui`. That
-  line is out of date whatever M3b does; the owner may want it corrected in the same
-  revision.
+`docs/decisions/0010-gui-observer-api.md` is amended, documentation only:
+- **Status:** M3a is built and live on `gui`; M3b is designed and not implemented; the
+  `nonfinite` field and the state-encoding containment are specified and not implemented.
+  The M2 `STOP`, the hosted `CAN_ISOTP` gap, the Phase 8b gate and the V1.0 branch rule
+  stay explicitly open.
+- **A tenth-revision note, 2026-09-30**, recording the owner's decisions of §2 and the
+  scope of the approval: design only, with implementation approval to follow review.
+- **§4.3:** a row for state encoding (§8.3), marked specified, not implemented.
+- **§5:** `nonfinite` on `GET /vehicle` and `state`, `state_encode_failed` on `GET /status`,
+  and the non-finite rule (§8.2), marked specified, not implemented.
+- **§7:** the M3b bullet rewritten to this design; the exit wording names the Firefox and
+  Chrome CSP check.
+- **§9.3:** the frontend-file row adds the SHA-256 pin; a row for the non-finite and
+  containment tests.
+- **§10:** the M3b row's deliverable and exit rewritten.
 
-## 15. Implementation outline (only after approval)
+## 16. Concerns for the owner
+
+- **M3b now changes server code.** §8.3 edits `observe/snapshots.py`, `observe/publisher.py`
+  and `api/server.py`. The change is off the hot path and adds a few microseconds per state
+  snapshot (estimate). But the M2 latency `STOP` is open, the state task shares the loop,
+  and P9 measures publisher turns, not the state task. The implementation should report the
+  snapshot's cost, and M4 measures the loop as a whole.
+- **The non-finite browser check depends on DEV-26 being unfixed on `gui`** (§12.2).
+
+## 17. Implementation outline (only after approval)
 
 Each task is committed on `gui`, and stops for review where the owner asks.
 
 | # | Task | Files |
 |---|---|---|
-| 1 | Record the 0010 tenth revision (§14), as approved | `docs/decisions/0010-gui-observer-api.md` |
-| 2 | Vendor uPlot 1.6.32 byte-identical from the npm tarball; record the tarball's `shasum`. Add the three `FRONTEND` rows. Tests first (§11.1): list, hashes, licence, load order, no network use | `src/ecu_simulator/api/static/uPlot.iife.min.js`, `uPlot.min.css`, `uPlot-LICENSE.txt`; `src/ecu_simulator/api/server.py`; `tests/unit/api/test_frontend_files.py` |
-| 3 | Markup and layout: the graphs panel above the log, the main column as a flex column, the card grid, the narrow rules, the stylesheet and script links, the licence link | `index.html`, `app.css` |
-| 4 | Data: the rings, ingest in `applyState`, the break in `fail()`, the reset on restart in `connect()`, `as_of` null handling, missing and non-finite values; the `engine.rpm` unit | `app.js` |
-| 5 | Drawing: uPlot instances with stepped paths, the scales, the right-edge hold, the window buttons and `localStorage`, readouts, pause, the ResizeObserver, the fallback when uPlot is missing | `app.js`, `app.css` |
-| 6 | Capture-script checks (§11.2) and a moving-session run | `scripts/gui_demo_capture.py` |
-| 7 | Live demo record, with screenshots, the cost figures, the overflow results, and the §12 checklist for the owner | `docs/validation/gui-m3b-live-demo.md`, with its captures |
+| 1 | The non-finite rule and containment, tests first (§8.2, §8.3, §12.1) | `src/ecu_simulator/observe/snapshots.py`, `observe/publisher.py`, `api/server.py`; `tests/unit/observe/`, `tests/unit/api/` |
+| 2 | Vendor uPlot 1.6.32 byte-identical; the three `FRONTEND` rows; the file tests | `src/ecu_simulator/api/static/uPlot.iife.min.js`, `uPlot.min.css`, `uPlot-LICENSE.txt`; `api/server.py`; `tests/unit/api/test_frontend_files.py` |
+| 3 | Markup and layout: the collapsible section, the flex main column, the height cap, 390 px, the links | `index.html`, `app.css` |
+| 4 | Page data: rings, ingest, breaks, restart reset, `as_of` null, invalid values, the rpm unit, malformed counting and the degraded state | `app.js`, `app.css` |
+| 5 | Drawing: uPlot instances, stepped paths and gaps, scales, windows and `localStorage`, readouts, pause, hide, resize, the fallback, the `data-*` attributes | `app.js`, `app.css` |
+| 6 | Capture-run checks (§12.2), the non-finite capture profile, the cost measurement (§11.3) | `scripts/gui_demo_capture.py`, a profile under `scripts/` |
+| 7 | Live-demo record with screenshots, measurements and the §13 checklist | `docs/validation/gui-m3b-live-demo.md` |
 
-**Still open after M3b:** the M2 latency `STOP`, and the hosted `CAN_ISOTP` gap. M3b
-closes neither.
+**Still open after M3b:** the M2 latency `STOP` and the hosted `CAN_ISOTP` gap. M3b closes
+neither, and does not change the Phase 8b gate or the V1.0 branch rule.
