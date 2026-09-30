@@ -455,7 +455,9 @@
     var v = S.vehicle, body = $("vehicle");
     if (!v) return;
     $("vehicle-meta").textContent = v.as_of == null ? "no scenario: values as configured" : "as of scenario t = " + v.as_of.toFixed(2) + " s";
-    var paths = Object.keys(v.signals || {});
+    // The VIN is shown once, in full, in the panel header (kind, VIN) above the table, so its
+    // signal row is left out. Presentation only: the API still carries vehicle.vin in signals.
+    var paths = Object.keys(v.signals || {}).filter(function (p) { return p !== "vehicle.vin"; });
     // 0010 §5, ninth revision: paths with no source in the profile. Their stored value is a
     // default, not a measurement, so it is never shown; the list is fixed for a run.
     var missing = {};

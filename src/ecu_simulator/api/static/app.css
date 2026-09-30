@@ -153,6 +153,8 @@ body.is-stale .readout:not(.readout--conn) dd { text-decoration: line-through 1p
 .fineprint { font-size: 0.857rem; color: var(--ink-2); margin-top: 0.571rem; }
 .kv { display: flex; flex-wrap: wrap; gap: 0.286rem 1.143rem; font-size: 0.929rem; color: var(--ink-2); margin-bottom: 0.429rem; }
 .kv b { color: var(--ink); font-weight: 600; }
+/* The full VIN, never elided: it may break anywhere rather than overflow a narrow panel. */
+.kv b.mono { overflow-wrap: anywhere; user-select: text; }
 
 /* ---------- vehicle ---------- */
 table { border-collapse: collapse; width: 100%; }
