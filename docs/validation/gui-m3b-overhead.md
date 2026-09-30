@@ -52,7 +52,12 @@ unshare -r -n bash -c "ip link set lo up && [PYTHONPATH=$BEFORE] .venv/bin/pytho
 
 `scripts/gui_m3b_state_cost.py` prints `ecu_simulator.__file__` as proof of which source
 tree it ran against; both before and after runs confirmed the expected path (see the raw
-output). It builds the runtime from the shipped `ice_scenario.yaml` profile on interface
+output). `scripts/gui_m1_early_check.py` prints no such path, so only the state-cost runs
+prove which tree ran; this is not a gap for that script, because the code on its path
+(`Publisher.drain_turn`, `Publisher._publish`, `HandOff`, `ObservedDispatcher`) is
+byte-identical between `c63a9c4` and `17d6e3b` (§2 below), so which tree it imported does
+not affect what it measures. `gui_m3b_state_cost.py` builds the runtime from the shipped
+`ice_scenario.yaml` profile on interface
 `vcan0` (`app.RuntimeConfig.build` / `app.build_runtime`, no socket opened -- as
 `gui_m1_early_check.py` builds), computes `unavailable = availability.unavailable(runtime.config.profile)`,
 applies the scenario once (`runtime.runner.apply(1.0)`) so `as_of` is set, warms up 200
@@ -77,9 +82,8 @@ separately from the sanitising added in `vehicle`). All figures in microseconds 
 | **median of runs** | **15.663** | **35.440** | **67.674** | **17.378** | **37.801** | **149.054** |
 
 **Diff (after − before): median +1.715 µs, p99 +2.361 µs, max +81.380 µs.** The max is a
-single sample per run and is noisy (two of the three after-runs show a >130 µs outlier
-consistent with a GC pause or scheduler preemption on an otherwise idle host); the median
-and p99 are the numbers to trust.
+single sample per run and is noisy (two of the three after-runs show a >130 µs outlier):
+single-sample tail, cause not measured. The median and p99 are the numbers to trust.
 
 ### Build alone (`vehicle` + `dtcs`)
 
@@ -126,9 +130,12 @@ end-to-end `state_message` number above already reflects each side's own actual 
 Diff, `allow_nan=False`: median −0.017 µs, p99 −0.244 µs. Diff, `allow_nan=True`: median
 +0.009 µs, p99 +0.928 µs. Both are within run-to-run noise (compare the ±0.1 µs spread
 across a side's own three runs): **encode itself did not get measurably more expensive**,
-with either flag value, and the `allow_nan` flag itself costs nothing measurable on a
-payload with no non-finite values to reject. The checkpoint-1 overhead is in the build,
-not the encode.
+with either flag value -- noting that the two sides' payloads are not byte-identical (the
+after payload's `vehicle` object carries an extra `"nonfinite":[]` key that the before
+payload does not have), so this is the cost of each side's own actual payload, not of a
+held-constant one -- and the `allow_nan` flag itself costs nothing measurable on a payload
+with no non-finite values to reject. The checkpoint-1 overhead is in the build, not the
+encode.
 
 ## 2. Publisher turn (M1 early check)
 
@@ -156,11 +163,16 @@ noise `docs/validation/gui-m1-early-check.md` already documents for this script'
 (a difference of two independently-computed p99s, not a p99 of differences); it is
 reported as measured, not smoothed over.
 
-The longest turn moved from a 0.927 ms median to 1.020 ms -- a small increase, still well
-under the 2 ms stop line, and consistent with `run_state`'s containment and counters
-(task 27) touching `Publisher` code even though the state task itself is not in this
-script's path. This is reported as measured; the M1 early check gives no lower-level
-breakdown of where inside a turn the extra time went.
+The run medians were 0.927 ms before and 1.020 ms after, still well under the 2 ms stop
+line. The per-run ranges overlap (before 0.905/0.927/1.004 ms, after 0.943/1.020/1.022
+ms), and `git diff c63a9c4 17d6e3b` shows no change to any code on this script's path:
+`Publisher.drain_turn` and `Publisher._publish` are untouched, and `handoff.py`,
+`wrapper.py`, `events.py` and `connection.py` are byte-identical between the two commits
+(`publisher.py`'s only changes are to `__init__`, `stats()` and `run_state`, none of which
+this script's drain loop calls). With three runs a side, this record cannot separate the
++93 µs from run-to-run variation on unchanged code; it is reported as measured, not
+explained. The +0.28 µs overhead-median change is, by the same evidence, also a change on
+code this script does not exercise differently between the two commits.
 
 ## Raw output
 

@@ -1,9 +1,9 @@
 # GUI M3b: live signal graphs — design
 
 Status: **revised after the owner's review of 2026-09-30. Checkpoint 1's code (§17), the
-observer JSON and health safeguards with their tests, is implemented on `gui`; its overhead
-measurement and checkpoint 2, the graphs, are not, and nothing is vendored** (0010,
-thirteenth revision).
+observer JSON and health safeguards with their tests, and its overhead measurement
+(docs/validation/gui-m3b-overhead.md), are implemented on `gui`; checkpoint 2, the graphs,
+is not, and nothing is vendored** (0010, thirteenth revision).
 - **Approved as designed** (owner, 2026-09-30, §2): five separate graphs with the VIN kept
   as text; the 30 s / 2 min / 10 min windows; stepped rendering; bounded browser history;
   gaps at restart and disconnect; "rpm" as the unit in the graph and the signal table; no
