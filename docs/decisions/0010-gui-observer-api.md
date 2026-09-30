@@ -10,9 +10,10 @@ median wire latency exceeds condition 1's median + 0.10 ms
 (`docs/validation/gui-m2-early-check.md`). **M3a, the live frontend, is built and live on
 `gui`:** it serves live data only (`docs/validation/gui-m3a-live-demo.md`). The offline
 mockup under `docs/mockups/m3a-dashboard/` is not served. **M3b, live signal graphs, is
-designed and not implemented** (`docs/plans/gui-m3b-graphs-design.md`, tenth revision
-below). The `nonfinite` field and the state-encoding containment of §4.3 and §5 are
-**specified, not implemented**. M4 has not run. **Still open, and unchanged by any of
+designed and not implemented** (`docs/plans/gui-m3b-graphs-design.md`, tenth and eleventh
+revisions below). The `nonfinite` field, the state-encoding containment, the encoding health
+in `GET /status` and the first-good publish rule of §4.3 and §5 are **specified, not
+implemented**. M4 has not run. **Still open, and unchanged by any of
 this:** the M2 latency `STOP`, the hosted-CI `CAN_ISOTP` gap (§9.3), the Phase 8b gate,
 and the branch rule below.
 
@@ -194,6 +195,57 @@ Phase 8b gate. The M2 early-check `STOP` and the hosted `CAN_ISOTP` gap stay ope
 - **§7, §9.3 and the §10 M3b row** are rewritten to the design. uPlot is pinned at 1.6.32
   by SHA-256, and the CSP is unchanged.
 
+An eleventh revision, on 2026-09-30, records the owner's third-round review of the M3b
+design. **The approval covers documentation only: nothing in it is implemented.** It
+changes no threshold of P1–P9, no V1.0 code, and no V1.0 or Phase 8b gate. The M2 latency
+`STOP`, the hosted `CAN_ISOTP` gap, the Phase 8b gate and the V1.0 branch rule stay open.
+All of the following is **specified, not implemented**:
+
+- **No silence rule.** State is delivered only on change, so the page never infers
+  anything from time without messages. Its health rests only on:
+  - connection or poll failures ("stale");
+  - malformed messages;
+  - reported state-encoding failures.
+
+  The last two mark the vehicle, DTC and graph data "last known", which is distinct from
+  "stale". A healthy session with no scenario stays "Live" indefinitely.
+- **Encoding health** in `GET /status` (§5), next to the cumulative counter:
+  `state_encoding: {ok, last_ok_at, last_failed_at}`.
+  - `ok` is set explicitly on every periodic attempt.
+  - The timestamps are for reporting only and never decide `ok`.
+  - Health covers the **complete** state snapshot, vehicle and DTCs. A successful
+    `GET /vehicle` never changes it; its own failures count in `vehicle_encode_failed`.
+- **The first good snapshot after a failure is always published**, even if its text equals
+  the last successful one, within the existing rate limit (§4.3).
+- **The browser clears "last known" only after applying a valid replacement `state` for its
+  current connection and run.**
+  - After an encoding failure, that `state` must also follow a `GET /status` that reports
+    `ok: true`.
+  - A healthy `/status` alone never clears it.
+- **Resynchronisation is a bounded reconnect.** No server change is needed: every new
+  connection already receives the current state right after `hello` (§4.5,
+  `observe/publisher.py:177-178`, `observe/writer.py:22-31`).
+  - The owner's brief said otherwise. The code was checked, and the design records the
+    contradiction and relies on the existing behaviour.
+  - During an encoding failure, that state is the last good one, so it does not count as
+    recovery.
+  - A REST re-fetch is not used, because `GET /vehicle` cannot prove the full state
+    recovered.
+- **Tests:**
+  - non-finite values and encoding failures are injected in-process: in the Python tests
+    through the runtime, and in the browser checks through a test server;
+  - no profile file is used, so none of it depends on DEV-26;
+  - the regression cases cover same-value recovery and a malformed state followed by
+    unchanged data;
+  - the SIGSTOP/SIGCONT check asserts the disconnected state and a recovery with
+    `started_at` unchanged and no restart marker.
+- **Two implementation checkpoints:**
+  - **checkpoint 1**: the observer JSON and health safeguards and their tests, with the
+    state build and encode cost and the publisher's longest turn measured before and
+    after. One rotated M2 early check may be run as a regression comparison, never as
+    acceptance. The M2 `STOP` stays unresolved unless its criteria pass;
+  - **checkpoint 2**: graph rendering and the browser checks.
+
 The evidence for the routing and ordering claims is in §12.
 
 ## 1. Purpose and scope
@@ -372,7 +424,8 @@ applies.
 | Per-client queue | 1024 messages | 4 MiB of encoded JSON | **The new `exchange` message is dropped** and that client's `client_dropped` increments. `state` and `dropped` messages are never queued behind others: each client has a one-slot latest `state` and a one-slot latest `dropped` notice, which are **replaced** rather than queued, and sent before the next queued exchange. After 5 s of continuous overflow the client is disconnected with close code 1013 and the reason `"client too slow"`, and `forced_disconnects` increments |
 | WebSocket clients | 4 | — | A 5th connection is refused with HTTP 503 before the upgrade, and `refused_clients` increments |
 | Single encoded `state` message | — | 256 KiB | Checked once when the API starts. A profile whose state encodes larger makes `--api` refuse to start (exit 2), rather than truncating state at runtime |
-| State encoding (tenth revision: **specified, not yet implemented**) | — | — | A non-finite signal value is sanitised to `null` and listed in `nonfinite` (§5) **before** encoding, and the state is encoded with `json.dumps(allow_nan=False)` as a guard. If building or encoding a periodic `state` still fails, **that push is skipped**, the previous state stays current, `state_encode_failed` increments, the failure is logged once per exception type (as `encode_failed` is), and the state task continues. A failed `GET /vehicle` encode answers 500 and increments the same counter. At startup, a failure other than the size rule makes `--api` refuse to start (exit 2). Nothing is dropped from the exchange stream |
+| State encoding (tenth revision: **specified, not yet implemented**) | — | — | A non-finite signal value is sanitised to `null` and listed in `nonfinite` (§5) **before** encoding, and the state is encoded with `json.dumps(allow_nan=False)` as a guard. If building or encoding a periodic `state` still fails, **that push is skipped**, the previous state stays current, `state_encode_failed` increments, the failure is logged once per exception type (as `encode_failed` is), and the state task continues. A failed `GET /vehicle` encode answers 500 and increments `vehicle_encode_failed` (eleventh revision), never `state_encoding`. At startup, a failure other than the size rule makes `--api` refuse to start (exit 2). Nothing is dropped from the exchange stream |
+| State encoding health and the first-good publish (eleventh revision: **specified, not yet implemented**) | — | — | Each periodic attempt sets `state_encoding.ok` explicitly: `true` on success, `false` on failure, with `last_ok_at` or `last_failed_at` for reporting only (never compared with a clock to decide `ok`). **After one or more failed attempts, the first successful attempt is pushed even if its text equals the last pushed text**; after that, only-when-changed applies again. The rate limit is unchanged: one attempt per 0.25 s, at most one push per attempt, into the one-slot state. A failed attempt pushes nothing, so a client that connects during a failure receives the last good state after `hello` (§4.5), which is last known, not current |
 | Publisher turn | 64 records | 1 ms of loop time | The publisher yields (`await asyncio.sleep(0)`) and continues on a later turn. Nothing is dropped. A backlog that keeps growing ends in `HandOff`'s own overflow above |
 | `state` push rate | at most 4 Hz | — | Coalesced into the one-slot latest `state`, which is not a drop |
 | Incoming HTTP body | — | 1 KiB | 413. v1 routes are GET-only, so a body is never needed. A body of undeclared length (chunked) that does not complete within **2 s** gets **408** (added 2026-09-27) |
@@ -456,7 +509,7 @@ version prefix means a future write API cannot silently change v1.
 
 | Endpoint | Returns |
 |---|---|
-| `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `longest_turn_s` [the longest publisher turn, in seconds, since the publisher was created: a running maximum, never reset; P9], `encode_failed`, `fanout_failed`, `writer_failed`, `state_encode_failed` [tenth revision, specified, not yet implemented: failed state encodes, skipped pushes and failed `GET /vehicle` answers, cumulative; §4.3], `connections_opened`, `closed_unresolved`, `closed_totals` [cumulative, §5.1], `connections` [one **ledger** per open connection, §5.1], `closed_connections` [the ledgers of the last 64 closed connections, final values]} |
+| `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `longest_turn_s` [the longest publisher turn, in seconds, since the publisher was created: a running maximum, never reset; P9], `encode_failed`, `fanout_failed`, `writer_failed`, `state_encode_failed` [tenth revision, specified, not yet implemented: failed periodic full-state attempts, each a skipped push, cumulative; §4.3], `vehicle_encode_failed` [eleventh revision, specified, not yet implemented: `GET /vehicle` answers that failed to encode, cumulative], `state_encoding` {`ok`, `last_ok_at`, `last_failed_at`} [eleventh revision, specified, not yet implemented: the result of the latest periodic full-state attempt, vehicle and DTCs; the timestamps are for reporting only; §4.3], `connections_opened`, `closed_unresolved`, `closed_totals` [cumulative, §5.1], `connections` [one **ledger** per open connection, §5.1], `closed_connections` [the ledgers of the last 64 closed connections, final values]} |
 | `GET /vehicle` | `kind`, `vin`, `signals` {dotted path → value}, `as_of` (the scenario time of the last application, equal to `t_last_applied`; `null` without a scenario), `unavailable` (ninth revision: a sorted list of the dotted paths with no source in the loaded profile, neither settable by the profile schema nor driven by its scenario, computed once at startup; `signals` still carries their stored values), `nonfinite` (tenth revision, **specified, not yet implemented**: a sorted list, always present, of the dotted paths whose value is not a finite number in this snapshot; each is sent as `null` in `signals`) |
 | `GET /dtcs` | per ECU: `[{code, pending, confirmed, indicator_requested}]`, and `mil` |
 | `GET /ecus` | per ECU: endpoints {`name`, `rx_id`, `tx_id`, `functional`, `receive`, `reply_via`, `padding`} and protocols {`name`, `sids`} |
@@ -515,7 +568,8 @@ WebSocket messages, server → client:
     with no source has produced no reading, so it cannot have produced an invalid one.
     Its value is still sent as `null`. Today the case cannot arise, because every
     state-model default is finite.
-  - Encoding failures are contained as §4.3 says, and counted in `state_encode_failed`.
+  - Encoding failures are contained as §4.3 says, counted in `state_encode_failed`, and
+    reported as current health in `state_encoding` (eleventh revision).
   - This is the observer's rule, whatever the source. It is separate from DEV-26
     (rejecting non-finite values at profile load, on `modernization`).
 
@@ -628,9 +682,12 @@ in-flight exchange to that resolution, so that it counts as exactly what happene
   - windows of 30 s, 2 min (default) and 10 min, the choice kept in `localStorage`;
   - a collapsible section above the log, open by default;
   - its own "Pause graphs", separate from the log's pause, which keeps buffering;
-  - a gap at a disconnect, at an invalid value, and when the page stops claiming Live
-    over malformed messages (§5); a cleared graph at a restart; never a line across any
-    of them.
+  - a gap at a disconnect, at an invalid value, and when the data becomes "last known"; a
+    cleared graph at a restart; never a line across any of them;
+  - page health (eleventh revision): "stale" on connection or poll failure; "last known"
+    on a malformed message or a reported encoding failure (`state_encoding.ok` false). It
+    clears only on an applied replacement `state` for the current connection and run,
+    reached by a bounded reconnect. Silence never changes it.
   - uPlot is vendored as the published `uPlot.iife.min.js` and `uPlot.min.css`, **pinned
     at 1.6.32 by SHA-256**, with its MIT licence served as `uPlot-LICENSE.txt`. Each is a
     fixed route (§6). **The CSP is unchanged.** The page works without uPlot, and says
@@ -802,7 +859,8 @@ pass.
 
 | Frontend files (M3): every file M3 adds is served with its content type, and nothing else is. From M3b, the vendored uPlot files are also **pinned by SHA-256**, its licence is shipped and linked, and the page loads it before `app.js` (tenth revision) | `.[dev,gui]` and loopback | **Yes**, in the `.[dev,gui]` job, from M3 |
 | Non-finite values and state-encoding containment (tenth revision, **specified, not yet implemented**): `null` plus a sorted `nonfinite` list; `unavailable` wins over `nonfinite`; strict encoding; the state task survives a failed snapshot and counts `state_encode_failed`; 500 from `GET /vehicle`; the startup refusal | nothing (`observe`); `.[dev,gui]` and loopback (`api`) | **Yes**, every job for `observe`, the `.[dev,gui]` job for `api` |
-| M3b browser checks: held value at the left edge, bounded history, disconnect gap, restart reset, window persistence, pause while buffering, non-finite values, malformed messages, overflow | vcan, Chrome, the capture script | **No.** Local, recorded evidence. Firefox is manual only |
+| Encoding health and the first-good publish (eleventh revision, **specified, not yet implemented**): `ok` set per attempt and never from the timestamps; a successful `GET /vehicle` leaves a failed full state failed; same-value recovery is pushed again, then only-when-changed resumes; a client connecting during a failure gets the last good state. Faults are injected in-process, never through a profile file | nothing (`observe`); `.[dev,gui]` and loopback (`api`) | **Yes**, every job for `observe`, the `.[dev,gui]` job for `api` |
+| M3b browser checks: no false invalidation (no scenario, 65 s "Live"), held value at the left edge, bounded history, SIGSTOP disconnect and recovery without restart, restart reset, window persistence, pause while buffering, non-finite values, malformed state then unchanged data, bounded resync, encoding failure and same-value recovery, overflow. Faults come from an in-process test server, not from the shipped page or a profile file | vcan, Chrome, the capture script | **No.** Local, recorded evidence. Firefox is manual only |
 
 The CI changes, made on branch `gui` only:
 - a job installing `.[dev,gui]` for the `api` tests;
@@ -821,7 +879,7 @@ reported as local results, with their commands.
 | **M1** | `observe`: `HandOff`, `ObservedDispatcher`, `Publisher`, snapshots, sequence and watermark; the §9.1 proofs, including the differential comparison; the ordering tests; the M1 early check | yes, core, no dependencies | Tests green in CI; differential comparison clean; M1 early check reported |
 | **M2** | `ApiServer`, `--api`, the `[gui]` extra, §6 security, §4.3 limits, API tests, the CI job; the M2 early check | yes | API tests green in CI on a `gui` push; M2 early check reported |
 | **M3a** | Frontend MVP: status, vehicle, DTCs, exchange log with gap markers | yes | Frontend file tests green in CI; owner runs the manual rendering checklist |
-| **M3b** | Live signal graphs with vendored uPlot 1.6.32 (§7); the non-finite rule and state-encoding containment (§4.3, §5). **Designed, not implemented** (tenth revision) | yes | The frontend file tests and the non-finite and containment tests are green in CI; the capture-run browser checks pass on a vcan host; the owner runs the manual view checklist; **and the CSP check passes in both Chrome and Firefox**, which is manual and unverified until run |
+| **M3b** | Live signal graphs with vendored uPlot 1.6.32 (§7); the non-finite rule and state-encoding containment (§4.3, §5). **Designed, not implemented** (tenth and eleventh revisions). Two checkpoints: (1) the observer JSON and health safeguards with their tests and a before-and-after measurement of state build and encode cost and of the publisher's longest turn; (2) graph rendering and the browser checks | yes | The frontend file tests and the non-finite and containment tests are green in CI; the capture-run browser checks pass on a vcan host; the owner runs the manual view checklist; **and the CSP check passes in both Chrome and Firefox**, which is manual and unverified until run |
 | **M4** | Full benchmark (§9.2) and MVP acceptance report | benchmark scripts only | P1–P9 met and the forced-close run passed in every round, or failures reported; owner accepts |
 | Later | Raw CAN frame panel (optional, read-only, a raw CAN socket in the API process) | — | Separate approval |
 | Later | `ControlPort` controls (§8) | — | Own decision record first |
