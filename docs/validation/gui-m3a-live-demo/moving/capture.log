@@ -1,31 +1,35 @@
-[   0.00 s] gui demo capture, 2026-09-29T21:50:26+00:00
+[   0.00 s] gui demo capture, 2026-09-30T17:55:10+00:00
 [   0.00 s] start simulator: --profile docs/examples/ice_drive_cycle_stepped.yaml --interface vcan0 --api 127.0.0.1:8765
-[   2.33 s] scenario origin estimated at wall 1790718626.904
+[   2.33 s] scenario origin estimated at wall 1790790910.936
 [   2.33 s] start headless Chrome: /usr/bin/google-chrome
-[   2.96 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
-[   2.96 s] waiting 0.7 s, until scenario t = 3.5 s
-[   3.81 s] screenshot m-idle-odometer-unavailable.png: Live | 4 exchanges, last seq 4 (live)
-[   3.81 s]   m-idle-odometer-unavailable.png vehicle table: {'meta': 'as of scenario t = 3.58 s', 'speed': '0 | km/h', 'rpm': '800 | ', 'coolant_temp': '21.04 | °C', 'engine_load': '20 | %', 'throttle': '0 | %'}
-[   3.81 s] waiting 6.9 s, until scenario t = 10.5 s
+[   2.99 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[   2.99 s] waiting 0.7 s, until scenario t = 3.5 s
+[   3.70 s] horizontal overflow check, moving 1440: #vehicle 378/378, html 1440/1440, body 1440/1440  ok
+[   3.79 s] screenshot m-idle-odometer-unavailable.png: Live | 4 exchanges, last seq 4 (live)
+[   3.79 s]   m-idle-odometer-unavailable.png vehicle table: {'meta': 'as of scenario t = 3.58 s', 'speed': '0 | km/h', 'rpm': '800 | ', 'coolant_temp': '21.04 | °C', 'engine_load': '20 | %', 'throttle': '0 | %'}
+[   3.79 s] waiting 6.9 s, until scenario t = 10.5 s
 [  10.82 s] screenshot m-accelerating.png: Live | 31 exchanges, last seq 31 (live)
 [  10.82 s]   m-accelerating.png vehicle table: {'meta': 'as of scenario t = 10.59 s', 'speed': '25 | km/h', 'rpm': '1400 | ', 'coolant_temp': '23.09 | °C', 'engine_load': '75 | %', 'throttle': '45 | %'}
 [  10.82 s] waiting 29.9 s, until scenario t = 40.5 s
 [  40.85 s] screenshot m-cruising.png: Live | 144 exchanges, last seq 144 (live)
-[  40.85 s]   m-cruising.png vehicle table: {'meta': 'as of scenario t = 40.31 s', 'speed': '80 | km/h', 'rpm': '2400 | ', 'coolant_temp': '31.76 | °C', 'engine_load': '35 | %', 'throttle': '18 | %'}
-[  40.88 s] waiting 4.8 s, until scenario t = 45.5 s
-[  45.85 s] screenshot m-2000-cruising.png: Live | 163 exchanges, last seq 163 (live)
-[  45.85 s]   m-2000-cruising.png vehicle table: {'meta': 'as of scenario t = 45.31 s', 'speed': '80 | km/h', 'rpm': '2400 | ', 'coolant_temp': '33.22 | °C', 'engine_load': '35 | %', 'throttle': '18 | %'}
-[  45.91 s] waiting 4.8 s, until scenario t = 50.5 s
-[  50.79 s] screenshot m-390-vehicle.png: Live | 182 exchanges, last seq 182 (live)
-[  50.80 s]   m-390-vehicle.png vehicle table: {'meta': 'as of scenario t = 50.31 s', 'speed': '80 | km/h', 'rpm': '2400 | ', 'coolant_temp': '34.68 | °C', 'engine_load': '35 | %', 'throttle': '18 | %'}
-[  50.84 s] waiting 14.9 s, until scenario t = 65.5 s
+[  40.85 s]   m-cruising.png vehicle table: {'meta': 'as of scenario t = 40.34 s', 'speed': '80 | km/h', 'rpm': '2400 | ', 'coolant_temp': '31.77 | °C', 'engine_load': '35 | %', 'throttle': '18 | %'}
+[  40.89 s] waiting 4.8 s, until scenario t = 45.5 s
+[  45.71 s] horizontal overflow check, moving 2000: #vehicle 498/498, html 2000/2000, body 2000/2000  ok
+[  45.86 s] screenshot m-2000-cruising.png: Live | 163 exchanges, last seq 163 (live)
+[  45.86 s]   m-2000-cruising.png vehicle table: {'meta': 'as of scenario t = 45.34 s', 'speed': '80 | km/h', 'rpm': '2400 | ', 'coolant_temp': '33.23 | °C', 'engine_load': '35 | %', 'throttle': '18 | %'}
+[  45.93 s] waiting 4.8 s, until scenario t = 50.5 s
+[  50.71 s] horizontal overflow check, moving 390: #vehicle 372/372, html 390/390, body 390/390  ok
+[  50.77 s] screenshot m-390-vehicle.png: Live | 181 exchanges, last seq 181 (live)
+[  50.78 s]   m-390-vehicle.png vehicle table: {'meta': 'as of scenario t = 50.34 s', 'speed': '80 | km/h', 'rpm': '2400 | ', 'coolant_temp': '34.68 | °C', 'engine_load': '35 | %', 'throttle': '18 | %'}
+[  50.82 s] waiting 14.9 s, until scenario t = 65.5 s
 [  65.86 s] screenshot m-braking.png: Live | 239 exchanges, last seq 239 (live)
-[  65.86 s]   m-braking.png vehicle table: {'meta': 'as of scenario t = 65.32 s', 'speed': '53 | km/h', 'rpm': '1600 | ', 'coolant_temp': '39.05 | °C', 'engine_load': '10 | %', 'throttle': '0 | %'}
-[  65.86 s] waiting 26.8 s, until scenario t = 92.5 s
-[  92.89 s] screenshot m-after-loop-idle.png: Live | 341 exchanges, last seq 341 (live)
-[  92.89 s]   m-after-loop-idle.png vehicle table: {'meta': 'as of scenario t = 92.57 s', 'speed': '0 | km/h', 'rpm': '800 | ', 'coolant_temp': '47 | °C', 'engine_load': '20 | %', 'throttle': '0 | %'}
-[  92.93 s] OBD cross-check of 01 0C / 01 0D: {'match': 57, 'edge-match': 19, 'edge-other-side': 0, 'mismatch': 0}
-[  92.93 s] stop traffic, then SIGTERM the simulator
-[  97.15 s] screenshot m-disconnected-stale.png: Disconnected, retry in 4 s | 341 exchanges, last seq 341
-[  97.15 s]   m-disconnected-stale.png vehicle table: {'meta': 'as of scenario t = 92.57 s', 'speed': '0 | km/h', 'rpm': '800 | ', 'coolant_temp': '47 | °C', 'engine_load': '20 | %', 'throttle': '0 | %'}
-[  97.15 s] done
+[  65.87 s]   m-braking.png vehicle table: {'meta': 'as of scenario t = 65.35 s', 'speed': '53 | km/h', 'rpm': '1600 | ', 'coolant_temp': '39.06 | °C', 'engine_load': '10 | %', 'throttle': '0 | %'}
+[  65.87 s] waiting 26.8 s, until scenario t = 92.5 s
+[  92.85 s] screenshot m-after-loop-idle.png: Live | 341 exchanges, last seq 341 (live)
+[  92.85 s]   m-after-loop-idle.png vehicle table: {'meta': 'as of scenario t = 92.35 s', 'speed': '0 | km/h', 'rpm': '800 | ', 'coolant_temp': '46.94 | °C', 'engine_load': '20 | %', 'throttle': '0 | %'}
+[  92.89 s] OBD cross-check of 01 0C / 01 0D: {'match': 57, 'edge-match': 19, 'edge-other-side': 0, 'mismatch': 0}
+[  92.89 s] stop traffic, then SIGTERM the simulator
+[  97.07 s] horizontal overflow check, moving 1440, stale: #vehicle 378/378, html 1440/1440, body 1440/1440  ok
+[  97.14 s] screenshot m-disconnected-stale.png: Disconnected, retry in 4 s | 341 exchanges, last seq 341
+[  97.14 s]   m-disconnected-stale.png vehicle table: {'meta': 'as of scenario t = 92.60 s', 'speed': '0 | km/h', 'rpm': '800 | ', 'coolant_temp': '47.01 | °C', 'engine_load': '20 | %', 'throttle': '0 | %'}
+[  97.14 s] done

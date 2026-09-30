@@ -23,8 +23,8 @@ them. Apart from those, the changes are the demo scripts and this record.
 
 | Item | Value |
 |---|---|
-| Branch, commit | `gui` at `128230fd03c28c6f339543631b26fe2d8401e8bd` (after Task 24's observer and page change: a signal no profile sets is listed as `unavailable` and shown as "—"). Retaken so that no shot shows the old odometer "0". The Task 21 jump control is unchanged. The capture script's update, committed on top, adds the `j-*` steps and keeps Chrome's temporary files inside its profile directory |
-| Date | 2026-09-29, 21:52:45 UTC (capture start) |
+| Branch, commit | `gui` at `e9475e0f65fa055761f62ca448a322ea9716fde8` (Task 25: the VIN shown once, in the panel header, not again as a table row; the capture script's horizontal-overflow check). Retaken so that no shot shows a VIN row. The odometer shows "—" (Task 24). The Task 21 jump control is unchanged. The capture script is used as committed at `e9475e0`, unchanged |
+| Date | 2026-09-30, 17:56:48 UTC (capture start) |
 | Kernel | Linux 6.8.0-138-generic |
 | CPU governor | `powersave` on all 12 CPUs (not pinned; this is not a timing run) |
 | Python | 3.12.12 (worktree `.venv`) |
@@ -34,7 +34,7 @@ them. Apart from those, the changes are the demo scripts and this record.
 The one command:
 
 ```
-scripts/run_gui_demo.sh <scratchpad>/run10
+scripts/run_gui_demo.sh <scratchpad>/run11
 ```
 
 The screenshots in [gui-m3a-live-demo/](gui-m3a-live-demo/) are all from that one run,
@@ -114,13 +114,13 @@ no source" under its name: neither `ice_scenario.yaml` nor `ice_default.yaml` se
 | [d1-filter-service-0x19.png](gui-m3a-live-demo/d1-filter-service-0x19.png) | **The service filter 0x19.** "12 of 116 shown", UDS 19 rows from 7E0 and 7E1 with "N exchanges hidden by filters (not a gap)" between them |
 | [d2-paused-held-rows.png](gui-m3a-live-demo/d2-paused-held-rows.png) | **Paused, after the filter was reset.** "View paused. 19 new exchanges are held"; "117 exchanges, last seq 136"; "Resume view" |
 | [d3-resumed-log-following.png](gui-m3a-live-demo/d3-resumed-log-following.png) | **3 s after Resume: the log follows** to row 147, with no scrolling. P0128 has just turned "Pending" |
-| [j-1440-rows-below.png](gui-m3a-live-demo/j-1440-rows-below.png) | **1440: after a real wheel scroll up (deltaY −700).** The log stays at rows 128–137; the header shows "159 exchanges, last seq 159 (live)" and, beside it, **"22 rows below, jump to newest"**. Counted from the DOM at the same moment: **22** rows wholly below the log box (138–159), plus 1 cut by its edge (137). Same before and after the shot. The control does not intersect the log box |
+| [j-1440-rows-below.png](gui-m3a-live-demo/j-1440-rows-below.png) | **1440: after a real wheel scroll up (deltaY −700).** The log stays at rows 128–137; the header shows "159 exchanges, last seq 159 (live)" and, beside it, **"22 rows below, jump to newest"**. Counted from the DOM: **22** rows wholly below the log box (138–159) just before the shot, **23** just after (one exchange arrived during the capture; the control then read 23), plus 1 cut by its edge. The control does not intersect the log box |
 | [j-1440-jumped.png](gui-m3a-live-demo/j-1440-jumped.png) | **1440: after a real click on it.** Back at the newest row, 166; the control is hidden, and 0 rows are below |
 | [c1-dtc-pending.png](gui-m3a-live-demo/c1-dtc-pending.png) | **DTC pending, t ≈ 45 s.** P0128 "Pending": a filled Pend. mark, rings under Conf. and Lamp; MIL off. UDS 19 on 7E1 answers `59 02 8c 01 28 01`. The log follows, at row 166 |
 | [c2-dtc-confirmed-mil.png](gui-m3a-live-demo/c2-dtc-confirmed-mil.png) | **DTC confirmed with the MIL, t ≈ 79 s.** P0128 "Confirmed" with filled Pend., Conf. and **Lamp marks, all fully visible**; "MIL on"; speed 40, rpm 1400, coolant 92 °C |
 | [g1-narrow-390.png](gui-m3a-live-demo/g1-narrow-390.png) | **390 px, viewport.** The status grid with the polled label; the trouble codes with MIL on and every column visible |
 | [g2-narrow-390-full-page.png](gui-m3a-live-demo/g2-narrow-390-full-page.png) | **390 px, full page.** Panels stacked; every vehicle signal; log rows as blocks, 295–300, ending at the newest |
-| [j-390-rows-below.png](gui-m3a-live-demo/j-390-rows-below.png) | **390: the page scrolled to the log panel, then a real wheel scroll up over the log.** The header reads "312 exchanges, last seq 312 (live)" with **"16 rows below, jump to newest"** on its own line under it. Counted from the DOM: **16** rows wholly below the log box just before the shot, **17** just after (the control then read 17; one exchange arrived during the capture), plus 1 cut by its edge each time. The control does not intersect the log box. At this width the log box extends past the bottom of the phone's screen, so the rows between 295 and the box's edge are inside the box but off-screen; both N and the count measure against the log box |
+| [j-390-rows-below.png](gui-m3a-live-demo/j-390-rows-below.png) | **390: the page scrolled to the log panel, then a real wheel scroll up over the log.** The header reads "312 exchanges, last seq 312 (live)" and, on its own line under it, **"17 rows below, jump to newest"** (the screenshot caught the control after one more exchange arrived). Counted from the DOM: **16** just before the shot while the control read 16, **17** just after while it read 17, plus 1 cut by its edge each time. The control does not intersect the log box. At this width the log box extends past the bottom of the phone's screen, so the rows between 295 and the box's edge are inside the box but off-screen; both N and the count measure against the log box |
 | [j-390-jumped.png](gui-m3a-live-demo/j-390-jumped.png) | **390: after a real click on it.** The log is at the newest rows (314 onward, last 319); the control is hidden, and 0 rows are below |
 | [w-desktop-2000x1100.png](gui-m3a-live-demo/w-desktop-2000x1100.png) | **2000×1100, the owner's width.** The whole DTC table; one-line summaries, including "01 20 — supported PIDs 21–40" and "01 00 — supported PIDs 01–20"; the polled label; the log at the newest row, 325 |
 | [j-2000-rows-below.png](gui-m3a-live-demo/j-2000-rows-below.png) | **2000: after a real wheel scroll up.** Rows 306–316 are in view; the header shows "338 exchanges, last seq 338 (live)" and **"21 rows below, jump to newest"**. Counted from the DOM: **21** just before and just after the shot, plus 1 cut by the edge each time. Rows 318–338 are the 21 below. The control does not intersect the log box |
@@ -197,15 +197,15 @@ generator for the odometer, and any new PIDs all stay deferred
 
 | Item | Value |
 |---|---|
-| Commit | `gui` at `128230fd03c28c6f339543631b26fe2d8401e8bd`. The capture script's `--moving` mode was committed on top; it adds capture steps only |
-| Date | 2026-09-29, 21:50:26 UTC (capture start) |
+| Commit | `gui` at `e9475e0f65fa055761f62ca448a322ea9716fde8` (Task 25: no VIN row; overflow check in the capture script) |
+| Date | 2026-09-30, 17:55:10 UTC (capture start) |
 | Kernel, governor, browser | as above: 6.8.0-138-generic, `powersave`, Chrome 151 headless |
 | Isolation | `unshare -r -n`, a private `lo` and `vcan0`, behind the same namespace guard. The owner's own simulator on the host `vcan0` was not touched |
 
 The command:
 
 ```
-scripts/run_gui_demo.sh --moving <scratchpad>/mv1
+scripts/run_gui_demo.sh --moving <scratchpad>/mv2
 ```
 
 Inside the namespace it runs:
@@ -228,14 +228,14 @@ with "unavailable, no source".
 
 | File | Page's scenario t | Speed (km/h) | rpm | Coolant (°C) | OBD rows in view (reply) |
 |---|---|---|---|---|---|
-| [m-idle-odometer-unavailable.png](gui-m3a-live-demo/m-idle-odometer-unavailable.png) | 3.31 s | 0 | 800 | 20.97 | 01 0C `41 0c 0c 80` (800), 01 0D `41 0d 00` (0) |
-| [m-accelerating.png](gui-m3a-live-demo/m-accelerating.png) | 10.31 s | 25 | 1400 | 23.01 | 01 0C `41 0c 15 e0` (1400), row 30 |
-| [m-cruising.png](gui-m3a-live-demo/m-cruising.png) | 40.31 s | 80 | 2400 | 31.76 | 01 0C `41 0c 25 80` (2400), 01 0D `41 0d 50` (80) |
-| [m-2000-cruising.png](gui-m3a-live-demo/m-2000-cruising.png) (2000×1100) | 45.31 s | 80 | 2400 | 33.22 | 01 0C `41 0c 25 80`, 01 0D `41 0d 50` |
-| [m-390-vehicle.png](gui-m3a-live-demo/m-390-vehicle.png) (390 px, scrolled to the vehicle panel) | 50.31 s | 80 | 2400 | 34.68 | (log below the fold) |
-| [m-braking.png](gui-m3a-live-demo/m-braking.png) | 65.32 s | 53 | 1600 | 39.05 | 01 0C `41 0c 1b 80` (1760, sent at t ≈ 64.81, step 64), 01 0D `41 0d 35` (53, t ≈ 65.06) |
-| [m-after-loop-idle.png](gui-m3a-live-demo/m-after-loop-idle.png) | 92.32 s | 0 | 800 | **46.93** | 01 0C `41 0c 0c 80` (800), 01 0D `41 0d 00` (0) |
-| [m-disconnected-stale.png](gui-m3a-live-demo/m-disconnected-stale.png) | 92.57 s (stale) | 0 | 800 | 47 | stale view after SIGTERM; odometer **still "—"** |
+| [m-idle-odometer-unavailable.png](gui-m3a-live-demo/m-idle-odometer-unavailable.png) | 3.09 s | 0 | 800 | 20.9 | 01 0C `41 0c 0c 80` (800), 01 0D `41 0d 00` (0) |
+| [m-accelerating.png](gui-m3a-live-demo/m-accelerating.png) | 10.34 s | 25 | 1400 | 23.02 | 01 0C `41 0c 15 e0` (1400), row 30 |
+| [m-cruising.png](gui-m3a-live-demo/m-cruising.png) | 40.34 s | 80 | 2400 | 31.77 | 01 0C `41 0c 25 80` (2400), 01 0D `41 0d 50` (80) |
+| [m-2000-cruising.png](gui-m3a-live-demo/m-2000-cruising.png) (2000×1100) | 45.34 s | 80 | 2400 | 33.23 | 01 0C `41 0c 25 80`, 01 0D `41 0d 50` |
+| [m-390-vehicle.png](gui-m3a-live-demo/m-390-vehicle.png) (390 px, scrolled to the vehicle panel) | 50.34 s | 80 | 2400 | 34.68 | (log below the fold) |
+| [m-braking.png](gui-m3a-live-demo/m-braking.png) | 65.20 s | 53 | 1600 | 39.02 | 01 0C `41 0c 1b 80` (1760, sent at t ≈ 64.84, step 64), 01 0D `41 0d 35` (53, t ≈ 65.09) |
+| [m-after-loop-idle.png](gui-m3a-live-demo/m-after-loop-idle.png) | 92.35 s | 0 | 800 | **46.94** | 01 0C `41 0c 0c 80` (800), 01 0D `41 0d 00` (0) |
+| [m-disconnected-stale.png](gui-m3a-live-demo/m-disconnected-stale.png) | 92.60 s (stale) | 0 | 800 | 47.01 | stale view after SIGTERM; odometer **still "—"** |
 
 What the shots show:
 
@@ -247,13 +247,13 @@ What the shots show:
   - step 92 − 90 = 2 (idle again after the loop): 0 and 800.
 
   Every shot's speed and rpm equal the value for its step.
-- **The loop is crossed.** At t = 92.32 s the vehicle is back at idle, and the coolant reads
-  46.93 °C, against 20.97 °C at t = 3.31 s in the first cycle. The ramp gives
-  20 + 70 × 92.32 / 240 = 20 + 26.93 = 46.93 °C. The coolant does not repeat with the
+- **The loop is crossed.** At t = 92.35 s the vehicle is back at idle, and the coolant reads
+  46.94 °C, against 20.9 °C at t = 3.09 s in the first cycle. The ramp gives
+  20 + 70 × 92.35 / 240 = 20 + 26.94 = 46.94 °C. The coolant does not repeat with the
   cycle, as §4.1 says.
-- **The two "coolant" values in the disconnected shot differ** (47 there, 46.93 in the live
-  shot). That is because the stale view shows the page's last state, at t = 92.57 s. The
-  page rounds to two decimals, and 46.999 reads as 47.
+- **The two "coolant" values in the disconnected shot differ** (47.01 there, 46.94 in the live
+  shot). That is because the stale view shows the page's last state, at t = 92.60 s, where
+  the ramp is 47.01.
 
 ### OBD cross-check (01 0C and 01 0D)
 
@@ -277,8 +277,8 @@ The rule:
 | mismatched | **0** |
 
 Two examples:
-- the braking shot's `41 0c 1b 80` is 1760 rpm. It was sent at t ≈ 64.81 s, which is step
-  64, where the design has 1760. The page's 1600 at t = 65.32 is step 65. Both are right
+- the braking shot's `41 0c 1b 80` is 1760 rpm. It was sent at t ≈ 64.84 s, which is step
+  64, where the design has 1760. The page's 1600 at t = 65.20 is step 65. Both are right
   for their own moment.
 - the reply at t ≈ 15.05 s, `41 0c 2b c0`, is 2800 rpm: step 15, the upshift, as in the
   design's §4.3 table (`0C 2B C0` at t = 15.0 and 15.3).
@@ -317,6 +317,44 @@ The caveats are the same as for Option A below:
 
 The cycle is 90 s long, and the coolant keeps warming for 240 s. To get screenshots only,
 fully isolated, run `scripts/run_gui_demo.sh --moving <outdir>`.
+
+## Task 25: the VIN row removed, and the horizontal-overflow check
+
+Both sets above were retaken at `e9475e0` so that no shot shows a VIN row.
+
+- **`9a417a4`** removes the duplicate VIN row from the vehicle table. The full VIN stays in
+  the panel header, where it can wrap and be selected. That row was what made `#vehicle`
+  overflow sideways at 1440. The implementer measured `#vehicle` scrollWidth/clientWidth
+  **with normal scrollbars**:
+
+  | Width | Before | After |
+  |---|---|---|
+  | 1440 | 387/363 (24 px overflow) | 363/363 |
+  | 390 | | 372/372 |
+  | 2000 | | 483/483 |
+
+- **`e9475e0`** adds a check to `scripts/gui_demo_capture.py`. At each width it shoots, live and stale, it
+  compares scrollWidth with clientWidth for `#vehicle`, `html` and `body`, writes
+  `overflow-check.txt`, and exits 1 on any overflow. Both runs exited 0, and every line reads `ok`:
+
+  | Run | Check | `#vehicle` | `html` | `body` |
+  |---|---|---|---|---|
+  | M3a ([overflow-check.txt](gui-m3a-live-demo/overflow-check.txt)) | 390 | 372/372 | 390/390 | 390/390 |
+  | | 2000 | 498/498 | 2000/2000 | 2000/2000 |
+  | | 1440 | 378/378 | 1440/1440 | 1440/1440 |
+  | moving ([moving/overflow-check.txt](gui-m3a-live-demo/moving/overflow-check.txt)) | 1440 | 378/378 | 1440/1440 | 1440/1440 |
+  | | 2000 | 498/498 | 2000/2000 | 2000/2000 |
+  | | 390 | 372/372 | 390/390 | 390/390 |
+  | | 1440, stale | 378/378 | 1440/1440 | 1440/1440 |
+
+- **Limit of this check.** The capture script runs Chrome with `--hide-scrollbars`, so the
+  panel's clientWidth includes the space a scrollbar would take: 378 and 498 here, against
+  363 and 483 with normal scrollbars. An overflow smaller than the scrollbar width, about
+  15 px, can therefore pass this check and still show a horizontal scrollbar in a normal
+  browser. The implementer's measurements above were taken with normal scrollbars.
+
+The M2 latency `STOP` and the 68 CAN_ISOTP tests skipped by hosted CI remain open. This
+retake does not touch either.
 
 ## Owner startup commands (for your own browser)
 

@@ -3,7 +3,7 @@ read-only traffic on vcan0 at 4/s; Ctrl-C to stop
      2 functional 7DF->7E8 01 0C      -> 41 0C 0C 80
      3 functional 7DF->7E8 01 0D      -> 41 0D 00
      4 functional 7DF->7E8 01 05      -> 41 05 40
-     5 functional 7DF->7E8 01 04      -> 41 04 90
+     5 functional 7DF->7E8 01 04      -> 41 04 8F
      6 physical 7E0->7E8  22 F1 90   -> 7F 22 11
      7 functional 7DF->7E8 01 11      -> 41 11 14
      8 functional 7DF->7E8 01 2F      -> 41 2F 9B
@@ -255,7 +255,7 @@ read-only traffic on vcan0 at 4/s; Ctrl-C to stop
    254 functional 7DF->7E8 01 0C      -> 41 0C 23 F0
    255 functional 7DF->7E8 01 0D      -> 41 0D 50
    256 functional 7DF->7E8 01 05      -> 41 05 84
-   257 functional 7DF->7E8 01 04      -> 41 04 2E
+   257 functional 7DF->7E8 01 04      -> 41 04 2D
    258 physical 7E0->7E8  22 F1 90   -> 7F 22 11
    259 functional 7DF->7E8 01 11      -> 41 11 3D
    260 functional 7DF->7E8 01 2F      -> 41 2F 96
@@ -273,7 +273,7 @@ read-only traffic on vcan0 at 4/s; Ctrl-C to stop
    272 functional 7DF->7E8 01 0C      -> 41 0C 20 D0
    273 functional 7DF->7E8 01 0D      -> 41 0D 50
    274 functional 7DF->7E8 01 05      -> 41 05 84
-   275 functional 7DF->7E8 01 04      -> 41 04 64
+   275 functional 7DF->7E8 01 04      -> 41 04 63
    276 physical 7E0->7E8  22 F1 90   -> 7F 22 11
    277 functional 7DF->7E8 01 11      -> 41 11 68
    278 functional 7DF->7E8 01 2F      -> 41 2F 96
@@ -327,7 +327,7 @@ read-only traffic on vcan0 at 4/s; Ctrl-C to stop
    326 functional 7DF->7E8 01 0C      -> 41 0C 15 E0
    327 functional 7DF->7E8 01 0D      -> 41 0D 28
    328 functional 7DF->7E8 01 05      -> 41 05 84
-   329 functional 7DF->7E8 01 04      -> 41 04 45
+   329 functional 7DF->7E8 01 04      -> 41 04 46
    330 physical 7E0->7E8  22 F1 90   -> 7F 22 11
    331 functional 7DF->7E8 01 11      -> 41 11 3D
    332 functional 7DF->7E8 01 2F      -> 41 2F 93
@@ -354,7 +354,7 @@ read-only traffic on vcan0 at 4/s; Ctrl-C to stop
      2 functional 7DF->7E8 01 0C      -> 41 0C 0C 80
      3 functional 7DF->7E8 01 0D      -> 41 0D 00
      4 functional 7DF->7E8 01 05      -> 41 05 3D
-     5 functional 7DF->7E8 01 04      -> 41 04 70
+     5 functional 7DF->7E8 01 04      -> 41 04 71
      6 physical 7E0->7E8  22 F1 90   -> 7F 22 11
      7 functional 7DF->7E8 01 11      -> 41 11 14
      8 functional 7DF->7E8 01 2F      -> 41 2F 9B
