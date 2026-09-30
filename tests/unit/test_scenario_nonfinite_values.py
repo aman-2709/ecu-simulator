@@ -174,7 +174,11 @@ async def test_the_transport_catches_the_dispatcher_exception_and_sends_no_reply
     await _settle()
 
     assert fake.sent == []
-    assert caplog.text.count("handler failed for request") == 2
+    handler_failures = [record for record in caplog.records if "handler failed for request" in record.getMessage()]
+    assert len(handler_failures) == 2
+    # Tied to DEV-26 specifically, not just any handler exception: this is the runner's
+    # `int(value)` on an integral signal (`scenario/runner.py:151`), a ValueError.
+    assert all(record.exc_info is not None and record.exc_info[0] is ValueError for record in handler_failures)
 
     clock.advance(5.0)  # t=11, into [10, 15): the step is 30, not NaN
     fake.feed.send(bytes.fromhex("0100"))  # the loop is still alive and serves normally
@@ -190,5 +194,10 @@ async def test_the_transport_catches_the_dispatcher_exception_and_sends_no_reply
 @xfail_deviation("DEV-26", "a nonfinite scenario value is accepted at load instead of rejected")
 def test_a_nonfinite_scenario_value_is_rejected_at_load(tmp_path):
     """The behavior decision 0002 promises: rejected at load, with a path-qualified message."""
-    with pytest.raises(ConfigError, match=r"scenario\.signals\.0\.values\.1"):
+    # The path includes the discriminated union's tag (`SignalScenario`,
+    # `scenario/generators.py:169-172`; `_format` joins the whole pydantic `loc`,
+    # `config/schema.py:344`). Confirmed against a scratch `allow_inf_nan=False` on
+    # `SteppedSignal.values` (never landed on this branch): the message reads
+    # "scenario.signals.0.stepped.values.1: Input should be a finite number".
+    with pytest.raises(ConfigError, match=r"scenario\.signals\.0\.stepped\.values\.1"):
         load_profile(write_profile(tmp_path))
