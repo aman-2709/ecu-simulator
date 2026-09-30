@@ -292,8 +292,8 @@ class ApiServer:
         ))
 
     async def _vehicle(self, request: web.Request) -> web.Response:
-        # Strict, as state_message (M3b §8.3). A residual failure is counted apart from the
-        # full-state health, which this part-snapshot never touches.
+        # Strict, as state_message (M3b §8.3). vehicle_encode_failed counts any residual failure
+        # to build or encode this answer, apart from the full-state health, which it never touches.
         try:
             return web.json_response(snapshots.vehicle(self.runtime, self.unavailable), dumps=STRICT_DUMPS)
         except Exception as error:

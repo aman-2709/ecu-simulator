@@ -181,6 +181,18 @@ def test_oversized_state_is_refused():
         snapshots.check_state_size(snapshots.state_message(rt, missing(rt)))
 
 
+@pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan")])
+def test_status_sends_a_nonfinite_t_last_applied_as_null(bad):
+    # /status stays lenient (it must answer during a state-encoding failure), so the value
+    # is sanitised here; as_of in vehicle() is left alone as the strict guard's test site.
+    rt = runtime("ice_scenario.yaml")
+    rt.runner._last_applied = bad                   # test-only object, discarded after the test
+    status = snapshots.status(rt, Publisher(HandOff(), rt.router, {}), 0, 1_790_000_000.0, "t", "p")
+    parsed = json.loads(json.dumps(status), parse_constant=_raising_parse_constant)   # aiohttp's default dumps
+    assert parsed["scenario"]["t_last_applied"] is None
+    assert rt.runner.last_applied is bad            # never mutated
+
+
 def test_status_has_every_section_5_field_including_profile():
     rt = runtime("ice_scenario.yaml")
     publisher = Publisher(HandOff(), rt.router, {})

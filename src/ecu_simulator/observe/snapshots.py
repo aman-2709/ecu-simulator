@@ -93,11 +93,16 @@ def status(
     where its profile came from: M2 passes the path the command line loaded.
     """
     runner = runtime.runner
+    # /status stays lenient, to answer during a state-encoding failure: so a non-finite
+    # t_last_applied is sent as null here (M3b §8.2), never as a non-JSON token.
+    t_last_applied = runner.last_applied if runner else None
+    if isinstance(t_last_applied, float) and not math.isfinite(t_last_applied):
+        t_last_applied = None
     return {
         "version": version, "interface": runtime.config.interface, "profile": profile,
         "started_at": started_at, "uptime_s": time.time() - started_at,
         "scenario": {"enabled": runner is not None,
-                     "t_last_applied": runner.last_applied if runner else None,
+                     "t_last_applied": t_last_applied,
                      "pending_events": runner.pending_events if runner else 0},
         "api": publisher.stats(issued),
     }
