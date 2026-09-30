@@ -1,0 +1,7 @@
+=== m1-early-check before run 1 2026-09-30T22:46:27Z
+bare median 14.93 us  p99 31.41 us
+wrapped median 21.61 us  p99 40.66 us
+overhead median 6.68 us  p99 9.25 us
+full HandOff: 65 turns, longest turn 1.004 ms
+within the M1 early-check limits
+exit=0
