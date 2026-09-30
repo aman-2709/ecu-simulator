@@ -1,5 +1,6 @@
 import copy
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -55,11 +56,113 @@ def test_vehicle_reports_as_of_the_last_application():
 def test_vehicle_shape_carries_the_unavailable_list_beside_the_stored_value():
     rt = runtime()
     v = snapshots.vehicle(rt, ("vehicle.odometer",))
-    assert set(v) == {"kind", "vin", "signals", "as_of", "unavailable"}     # 0010 §5, ninth revision
+    assert set(v) == {"kind", "vin", "signals", "as_of", "unavailable", "nonfinite"}  # §8.2
     assert v["unavailable"] == ["vehicle.odometer"]
     assert v["signals"]["vehicle.odometer"] == 0                             # signals still carries it
+    assert v["nonfinite"] == []
     message = json.loads(snapshots.state_message(rt, ("vehicle.odometer",)))
     assert set(message) == {"type", "vehicle", "dtcs"} and message["vehicle"] == v
+
+
+def test_nonfinite_signals_become_null_and_are_listed_sorted():
+    rt = runtime()
+    rt.vehicle.set("engine.coolant_temp", float("nan"))
+    rt.vehicle.set("engine.intake_temp", float("inf"))
+    rt.vehicle.set("engine.throttle", float("-inf"))
+    v = snapshots.vehicle(rt, missing(rt))
+    assert v["signals"]["engine.coolant_temp"] is None
+    assert v["signals"]["engine.intake_temp"] is None
+    assert v["signals"]["engine.throttle"] is None
+    assert v["nonfinite"] == sorted(["engine.coolant_temp", "engine.intake_temp", "engine.throttle"])
+
+
+class _FakeRuntime:
+    """A stand-in carrying only what ``snapshots.vehicle`` reads, to reach a bool signal
+    (``charging.active``), which no on-disk profile currently has (only ICE profiles exist).
+    """
+
+    def __init__(self, vehicle_state, runner=None):
+        self.vehicle = vehicle_state
+        self.runner = runner
+
+
+def test_finite_values_of_every_type_are_unchanged():
+    rt = runtime()
+    v = snapshots.vehicle(rt, missing(rt))
+    assert v["signals"]["engine.coolant_temp"] == 90.0          # finite float
+    assert v["signals"]["engine.rpm"] == 800                    # int
+    assert v["signals"]["vehicle.vin"] == "TESTVIN0123456789"   # string
+    assert isinstance(v["signals"]["engine.coolant_temp"], float)
+
+    from ecu_simulator.vehicle.state import BevPowertrain, CommonState, VehicleState
+    bev = VehicleState(CommonState(vin="BEVVIN"), BevPowertrain())
+    bev.set("charging.active", True)
+    fake = snapshots.vehicle(_FakeRuntime(bev), ())
+    assert fake["signals"]["charging.active"] is True            # bool unchanged
+    assert fake["nonfinite"] == []
+
+
+def test_nonfinite_is_empty_list_when_none_are_nonfinite():
+    rt = runtime()
+    assert snapshots.vehicle(rt, missing(rt))["nonfinite"] == []
+
+
+def test_unavailable_wins_precedence_over_nonfinite():
+    rt = runtime()
+    rt.vehicle.set("vehicle.odometer", float("nan"))
+    v = snapshots.vehicle(rt, ("vehicle.odometer",))
+    assert v["unavailable"] == ["vehicle.odometer"]
+    assert v["nonfinite"] == []                    # listed only in unavailable
+    assert v["signals"]["vehicle.odometer"] is None  # still sent as null
+
+
+def _raising_parse_constant(token):
+    raise ValueError(f"unexpected constant: {token}")
+
+
+def test_state_message_parses_with_a_parse_constant_guard():
+    rt = runtime()
+    rt.vehicle.set("engine.coolant_temp", float("nan"))
+    text = snapshots.state_message(rt, missing(rt))
+    parsed = json.loads(text, parse_constant=_raising_parse_constant)
+    assert parsed["vehicle"]["signals"]["engine.coolant_temp"] is None
+
+
+def test_nonfinite_values_are_not_mutated_and_a_second_call_agrees():
+    rt = runtime()
+    rt.vehicle.set("engine.coolant_temp", float("nan"))
+    rt.vehicle.set("engine.intake_temp", float("inf"))
+    before = copy.deepcopy(rt.vehicle.signals)
+    first = snapshots.vehicle(rt, missing(rt))
+    snapshots.state_message(rt, missing(rt))
+    second = snapshots.vehicle(rt, missing(rt))
+    assert math.isnan(rt.vehicle.get("engine.coolant_temp"))
+    assert rt.vehicle.get("engine.intake_temp") == float("inf")
+    after = rt.vehicle.signals
+    assert math.isnan(after.pop("engine.coolant_temp")) and math.isnan(before.pop("engine.coolant_temp"))
+    assert after == before                          # every other stored value is unchanged
+    assert first == second
+
+
+def test_guard_catches_a_nonfinite_dtc_field_the_sanitiser_does_not_look_at(monkeypatch):
+    rt = runtime()
+    bad = {"engine": {"codes": [{"code": "P0001", "pending": True, "confirmed": True,
+                                  "indicator_requested": False}],
+                       "mil": False, "extra": float("nan")}}
+    monkeypatch.setattr(snapshots, "dtcs", lambda runtime: bad)
+    payload = {"type": "state", "vehicle": snapshots.vehicle(rt, missing(rt)), "dtcs": bad}
+    json.dumps(payload)                              # default json.dumps: no error, proving the point
+    with pytest.raises(ValueError, match="Out of range float values are not JSON compliant"):
+        snapshots.state_message(rt, missing(rt))
+
+
+def test_guard_catches_a_nonfinite_as_of_the_sanitiser_does_not_look_at():
+    rt = runtime("ice_scenario.yaml")
+    rt.runner._last_applied = float("inf")            # the brief permits setting this private field
+    payload = {"type": "state", "vehicle": snapshots.vehicle(rt, missing(rt)), "dtcs": snapshots.dtcs(rt)}
+    json.dumps(payload)                               # default json.dumps: no error, proving the point
+    with pytest.raises(ValueError, match="Out of range float values are not JSON compliant"):
+        snapshots.state_message(rt, missing(rt))
 
 
 def test_dtcs_and_ecus_shape():

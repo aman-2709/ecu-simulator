@@ -36,9 +36,20 @@ async def test_vehicle_carries_the_unavailable_list(server, session):
     # 0010 §5, ninth revision: one added key; signals still carries the stored value.
     async with session.get(url(server, "/api/v1/vehicle")) as r:
         body = await r.json()
-    assert set(body) == {"kind", "vin", "signals", "as_of", "unavailable"}
+    assert set(body) == {"kind", "vin", "signals", "as_of", "unavailable", "nonfinite"}  # §8.2
     assert body["unavailable"] == ["vehicle.odometer"]
     assert body["signals"]["vehicle.odometer"] == 0
+    assert body["nonfinite"] == []
+
+
+@pytest.mark.asyncio
+async def test_vehicle_with_a_nonfinite_signal_answers_200_null_and_nonfinite(server, session):
+    server.runtime.vehicle.set("engine.coolant_temp", float("nan"))
+    async with session.get(url(server, "/api/v1/vehicle")) as r:
+        assert r.status == 200
+        body = await r.json()
+    assert body["signals"]["engine.coolant_temp"] is None
+    assert body["nonfinite"] == ["engine.coolant_temp"]
 
 
 @pytest.mark.asyncio

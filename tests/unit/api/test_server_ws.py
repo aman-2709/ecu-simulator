@@ -60,11 +60,34 @@ async def test_the_state_message_carries_the_unavailable_list(server, session):
     async with session.ws_connect(url(server, "/api/v1/events"), origin=origin(server)) as ws:
         assert (await next_json(ws))["type"] == "hello"
         state = await next_json(ws)
-    assert state["type"] == "state" and set(state["vehicle"]) == {"kind", "vin", "signals", "as_of", "unavailable"}
+    assert state["type"] == "state"
+    assert set(state["vehicle"]) == {"kind", "vin", "signals", "as_of", "unavailable", "nonfinite"}  # §8.2
     assert state["vehicle"]["unavailable"] == ["vehicle.odometer"]
     assert state["vehicle"]["signals"]["vehicle.odometer"] == 0
+    assert state["vehicle"]["nonfinite"] == []
     async with session.get(url(server, "/api/v1/vehicle")) as r:
         assert (await r.json())["unavailable"] == state["vehicle"]["unavailable"]
+
+
+@pytest.mark.asyncio
+async def test_state_after_hello_and_a_later_pushed_state_carry_null_and_nonfinite(server, session):
+    server.runtime.vehicle.set("engine.coolant_temp", float("nan"))
+    server.publisher.push_state(snapshots.state_message(server.runtime, server.unavailable))
+    async with session.ws_connect(url(server, "/api/v1/events"), origin=origin(server)) as ws:
+        assert (await next_json(ws))["type"] == "hello"
+        state = await next_json(ws)
+        assert state["type"] == "state"
+        assert state["vehicle"]["signals"]["engine.coolant_temp"] is None
+        assert state["vehicle"]["nonfinite"] == ["engine.coolant_temp"]
+
+        server.runtime.vehicle.set("engine.coolant_temp", 91.0)       # recovered
+        server.runtime.vehicle.set("engine.intake_temp", float("inf"))
+        server.publisher.push_state(snapshots.state_message(server.runtime, server.unavailable))
+        pushed = await next_json(ws)
+    assert pushed["type"] == "state"
+    assert pushed["vehicle"]["signals"]["engine.coolant_temp"] == 91.0
+    assert pushed["vehicle"]["signals"]["engine.intake_temp"] is None
+    assert pushed["vehicle"]["nonfinite"] == ["engine.intake_temp"]
 
 
 @pytest.mark.asyncio

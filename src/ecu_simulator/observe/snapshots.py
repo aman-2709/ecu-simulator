@@ -5,6 +5,7 @@ reported as last applied, with the scenario time it was applied at.
 from __future__ import annotations
 
 import json
+import math
 import time
 from collections.abc import Sequence
 from typing import Any
@@ -16,13 +17,30 @@ from ecu_simulator.observe.limits import STATE_MAX_BYTES
 def vehicle(runtime: app.Runtime, unavailable: Sequence[str]) -> dict[str, Any]:
     """``unavailable`` is ``availability.unavailable(profile)``, computed once by the caller
     (0010 §5, ninth revision). ``signals`` still carries every stored value, listed or not.
+
+    A ``float`` signal that is not ``math.isfinite`` is sanitised to ``None`` and its path
+    listed in ``nonfinite`` -- unless it is already in ``unavailable``, which wins (§8.2): a
+    path with no source cannot also have produced an invalid reading. Builds new containers;
+    never touches ``runtime``.
     """
+    unavailable_set = set(unavailable)
+    signals: dict[str, Any] = {}
+    nonfinite = []
+    for path, value in runtime.vehicle.signals.items():
+        if isinstance(value, float) and not math.isfinite(value):
+            signals[path] = None
+            if path not in unavailable_set:
+                nonfinite.append(path)
+        else:
+            signals[path] = value
+    nonfinite.sort()
     return {
         "kind": runtime.vehicle.powertrain.kind,
         "vin": runtime.vehicle.common.vin,
-        "signals": dict(runtime.vehicle.signals),
+        "signals": signals,
         "as_of": runtime.runner.last_applied if runtime.runner is not None else None,
         "unavailable": list(unavailable),
+        "nonfinite": nonfinite,
     }
 
 
@@ -54,8 +72,11 @@ def ecus(runtime: app.Runtime) -> dict[str, Any]:
 
 
 def state_message(runtime: app.Runtime, unavailable: Sequence[str]) -> str:
+    # allow_nan=False is the guard of last resort (§8.3, §14.1 C11): vehicle() already
+    # sanitises signals, but dtcs() and as_of are not sanitised, so a non-finite value
+    # reaching either of those raises ValueError here instead of producing invalid JSON.
     return json.dumps({"type": "state", "vehicle": vehicle(runtime, unavailable), "dtcs": dtcs(runtime)},
-                      separators=(",", ":"))
+                      separators=(",", ":"), allow_nan=False)
 
 
 def check_state_size(runtime: app.Runtime, unavailable: Sequence[str]) -> None:
