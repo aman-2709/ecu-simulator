@@ -58,6 +58,7 @@ class Run:
         self.procs: list[subprocess.Popen[bytes]] = []
         self.t0 = time.monotonic()
         self.logfile = (outdir / "capture.log").open("a")
+        self.overflow_failures: list[str] = []
 
     def log(self, message: str) -> None:
         line = f"[{time.monotonic() - self.t0:7.2f} s] {message}"
@@ -209,6 +210,27 @@ class DevTools:
 
 
 CONN = "document.getElementById('conn-text').textContent"
+# Horizontal clipping: the vehicle panel's body, the page and the body, as [name, scrollWidth,
+# clientWidth]. Any scrollWidth over its clientWidth is content cut off or scrolled sideways.
+OVERFLOW = """(function(){
+  var v = document.getElementById('vehicle');
+  return [['#vehicle', v], ['html', document.documentElement], ['body', document.body]].map(function (p) {
+    return [p[0], p[1].scrollWidth, p[1].clientWidth];
+  });
+})()"""
+
+
+async def check_overflow(run: Run, cdp: DevTools, label: str) -> None:
+    """Record, in overflow-check.txt, whether anything overflows horizontally at this width.
+    A failure does not stop the run (the screenshots are still wanted); main() exits 1."""
+    measured = await cdp.js(OVERFLOW)
+    bad = [f"{name} {scroll} > {client}" for name, scroll, client in measured if scroll > client]
+    line = f"{label}: " + ", ".join(f"{n} {s}/{c}" for n, s, c in measured) + (f"  OVERFLOW: {bad}" if bad else "  ok")
+    with (run.outdir / "overflow-check.txt").open("a") as fh:
+        fh.write(line + "\n")
+    run.log(f"horizontal overflow check, {line}")
+    if bad:
+        run.overflow_failures.append(line)
 # One snapshot of the jump control against the DOM, taken in a single evaluation so both
 # numbers describe the same moment. `counted` is every shown log row (exchange or marker)
 # whose top edge is at or below the log box's bottom edge, counted here independently of
@@ -379,6 +401,7 @@ async def session(run: Run, chrome: str, profile_dir: str) -> None:
             # g. One narrow width, the whole page.
             await cdp.viewport(*NARROW)
             await asyncio.sleep(1.5)
+            await check_overflow(run, cdp, "M3a 390")
             await cdp.shot(run, "g1-narrow-390.png")
             await cdp.shot(run, "g2-narrow-390-full-page.png", full_page=True)
             await jump_pair(run, cdp, "390")
@@ -386,10 +409,12 @@ async def session(run: Run, chrome: str, profile_dir: str) -> None:
             await cdp.viewport(*OWNER_WIDE)
             await cdp.js("window.scrollTo(0, 0)")
             await asyncio.sleep(1.5)
+            await check_overflow(run, cdp, "M3a 2000")
             await cdp.shot(run, "w-desktop-2000x1100.png")
             await jump_pair(run, cdp, "2000")
             await cdp.viewport(*WIDE)
             await asyncio.sleep(1.0)
+            await check_overflow(run, cdp, "M3a 1440")
 
             # e. Disconnected: stop the traffic, then the simulator (SIGTERM).
             run.log("stop traffic, then SIGTERM the simulator")
@@ -564,6 +589,7 @@ async def moving_session(run: Run, chrome: str, profile_dir: str) -> None:
                 run.log(f"  {name} vehicle table: {await cdp.js(VEHICLE_READ)}")
 
             await until_scenario(3.5)
+            await check_overflow(run, cdp, "moving 1440")
             await shot("m-idle-odometer-unavailable.png")
             await until_scenario(10.5)
             await shot("m-accelerating.png")
@@ -571,10 +597,12 @@ async def moving_session(run: Run, chrome: str, profile_dir: str) -> None:
             await shot("m-cruising.png")
             await cdp.viewport(*OWNER_WIDE)
             await until_scenario(45.5)
+            await check_overflow(run, cdp, "moving 2000")
             await shot("m-2000-cruising.png")
             await cdp.viewport(*NARROW)
             await cdp.js("document.getElementById('vehicle-panel').scrollIntoView({block: 'start'})")
             await until_scenario(50.5)
+            await check_overflow(run, cdp, "moving 390")
             await shot("m-390-vehicle.png")
             await cdp.js("window.scrollTo(0, 0)")
             await cdp.viewport(*WIDE)
@@ -591,6 +619,7 @@ async def moving_session(run: Run, chrome: str, profile_dir: str) -> None:
             run.stop(sim)
             await cdp.wait_for(f"{CONN} !== 'Live'", timeout=10)
             await asyncio.sleep(4.0)
+            await check_overflow(run, cdp, "moving 1440, stale")
             await shot("m-disconnected-stale.png")
             cdp.reader.cancel()
     run.log("done")
@@ -634,6 +663,9 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("interrupted; every process was stopped", file=sys.stderr)
         return 130
+    if run.overflow_failures:
+        print("horizontal overflow at: " + "; ".join(run.overflow_failures), file=sys.stderr)
+        return 1
     return 0
 
 
