@@ -10,11 +10,10 @@ median wire latency exceeds condition 1's median + 0.10 ms
 (`docs/validation/gui-m2-early-check.md`). **M3a, the live frontend, is built and live on
 `gui`:** it serves live data only (`docs/validation/gui-m3a-live-demo.md`). The offline
 mockup under `docs/mockups/m3a-dashboard/` is not served. **M3b, live signal graphs, is
-designed and not implemented** (`docs/plans/gui-m3b-graphs-design.md`, tenth to twelfth
-revisions below). The `nonfinite` field, the state-encoding containment, the encoding health
-in `GET /status` and the first-good publish rule of §4.3 and §5 are **implemented at M3b
-checkpoint 1** (thirteenth revision); the graphs and the page's health model are not. M4
-has not run. **Still open, and unchanged by any of
+partly implemented** (`docs/plans/gui-m3b-graphs-design.md`, tenth to thirteenth revisions
+below): checkpoint 1 (the `nonfinite` field, the state-encoding containment, the encoding
+health in `GET /status` and the first-good publish rule of §4.3 and §5) is **implemented**;
+checkpoint 2 (the graphs and the page) is **designed, not implemented**. M4 has not run. **Still open, and unchanged by any of
 this:** the M2 latency `STOP`, the hosted-CI `CAN_ISOTP` gap (§9.3), the Phase 8b gate,
 and the branch rule below.
 
@@ -159,7 +158,8 @@ changed), and no V1.0 or Phase 8b gate. The M2 early-check `STOP` stays open:
 A tenth revision, on 2026-09-30, records the owner's review of the M3b design
 (`docs/plans/gui-m3b-graphs-design.md`, first version `9a69d2e`). **Its scope is design
 only: nothing in it is implemented, and implementation approval follows the owner's review
-of the revised design.** It changes no threshold of P1–P9, no V1.0 code, and no V1.0 or
+of the revised design.** (Thirteenth revision: its server items are implemented at M3b
+checkpoint 1; the page items are not.) It changes no threshold of P1–P9, no V1.0 code, and no V1.0 or
 Phase 8b gate. The M2 early-check `STOP` and the hosted `CAN_ISOTP` gap stay open, and
 `gui` is still not merged into `modernization` before V1.0 is tagged.
 
@@ -602,7 +602,9 @@ WebSocket messages, server → client:
 - **Non-finite values** (tenth revision, 2026-09-30; **implemented at M3b checkpoint 1**).
   A float signal value that is `NaN`, `inf` or `-inf` is sent as JSON `null` in `signals`,
   and its path is listed in `nonfinite`, in `GET /vehicle` and in every `state`
-  message. The API therefore never emits a token that is not JSON.
+  message; a non-finite `t_last_applied` is sent as `null` in `GET /status`, which stays
+  lenient so that it answers during an encoding failure (thirteenth revision). The API
+  therefore never emits a token that is not JSON.
   - `unavailable` means **no source**; `nonfinite` means **an invalid reading from a
     source**. A path is never in both. If both would apply, `unavailable` wins: a path
     with no source has produced no reading, so it cannot have produced an invalid one.
@@ -712,7 +714,9 @@ in-flight exchange to that resolution, so that it counts as exactly what happene
   - an exchange log, filterable by ECU, service and outcome (`no_response`, `unrouted`,
     `error`), with pause and clear. It shows a gap marker wherever `seq` jumps (§4.5).
 - **Milestone 3b: live signal graphs** (revised in the tenth revision, 2026-09-30;
-  **designed, not implemented**; `docs/plans/gui-m3b-graphs-design.md`):
+  **designed, not implemented**; `docs/plans/gui-m3b-graphs-design.md`. Thirteenth
+  revision: the server items are implemented at M3b checkpoint 1; the graphs and the page
+  are not):
   - five separate graphs: `vehicle.speed` (km/h), `engine.rpm` (rpm), `engine.throttle`
     (%), `engine.engine_load` (%) and `engine.coolant_temp` (°C). The VIN stays text;
   - drawn only from the `state` messages and `GET /vehicle` the page receives, against

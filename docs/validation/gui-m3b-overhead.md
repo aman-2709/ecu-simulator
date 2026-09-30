@@ -83,7 +83,9 @@ separately from the sanitising added in `vehicle`). All figures in microseconds 
 
 **Diff (after − before): median +1.715 µs, p99 +2.361 µs, max +81.380 µs.** The max is a
 single sample per run and is noisy (two of the three after-runs show a >130 µs outlier):
-single-sample tail, cause not measured. The median and p99 are the numbers to trust.
+single-sample tail, cause not measured. The median is the figure to rely on. The p99
+difference is given as measured, but the per-run p99 ranges overlap (before 32.27-35.58 µs,
+after 34.07-38.46 µs), so it is within run-to-run variation.
 
 ### Build alone (`vehicle` + `dtcs`)
 
@@ -201,6 +203,6 @@ verbatim under `docs/validation/gui-m3b-overhead-runs/`:
   the optional M2 early check that design §17 (1.5) allows as a non-acceptance regression
   comparison was **not run**.
 - **The M2 latency `STOP` stays open.** Nothing here is evidence toward or against its
-  acceptance criteria, which are judged only at M4 against a real wire measurement.
+  acceptance criteria; it stays unresolved unless its acceptance criteria actually pass.
 - All figures are reported as measured. No claim is made beyond what is printed in the
   raw output files.
