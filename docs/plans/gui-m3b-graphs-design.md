@@ -24,6 +24,15 @@ of this revision.
   - two implementation checkpoints, with overhead measurements.
 
   Contradictions found, with their resolutions, are in §14.1.
+- **Fourth revision (owner, 2026-09-30, §2.2):**
+  - one health model: a recovery requirement, and two variables for connection and data;
+  - polling continues while last known;
+  - one retry budget per recovery episode, with ordinary disconnects left as in M3a;
+  - a corrected history assertion;
+  - a strict-encoding test that only the guard can pass;
+  - "last known" wording.
+
+  Documentation only. Implementation starts in a later session from checkpoint 1 (§17).
 
 Written on branch `gui` (worktree `.claude/worktrees/gui`), against the code at `4f00694`.
 - Every "fact" was checked against that code, with file:line.
@@ -143,6 +152,28 @@ This round's eight points:
    checkpoints.
 8. **0010:** §4.3 and §5 updated (specified, not implemented), and an eleventh-revision
    note (§15).
+
+### 2.2 Fourth round (owner, 2026-09-30): six fixes
+
+1. **One health model.**
+   - A recovery requirement starts on connection establishment or on a fault, and clears
+     only when its required `state` is applied; after an encoding fault, only after an
+     `ok: true` read.
+   - Healthy polls never start or restart it, and `hello` alone never clears it.
+   - "Live" is redefined in these terms (§8.4, §8.6; §14.1 C7).
+2. **Polling continues while "last known"**, using two variables: the connection state
+   (`live`, `down` or `refused`), which drives polling and reconnects, and the data
+   validity (`current` or `last-known`, with its reason) (§8.4; §14.1 C8).
+3. **One retry budget per recovery episode.**
+   - Every way an attempt can end counts against it, and there is one timer at a time.
+   - It resets only on recovery, and exhaustion ends in a manual "Retry now".
+   - An ordinary disconnect keeps M3a's indefinite reconnect.
+   - A test with all four client slots occupied (§8.5, §12.2; §14.1 C9).
+4. **The history assertion** allows the one predecessor point that step-hold needs,
+   `data-points-before-window` ≤ 1, plus the count cap (§12.2; §14.1 C10).
+5. **The strict-encoding guard test** puts a non-finite value where the sanitiser does not
+   look (§12.1; §14.1 C11).
+6. **"Last known", not "stays current"**, in 0010 §4.3 and in the test list.
 
 ## 3. What 0010 said about M3b before this revision (facts)
 
@@ -649,120 +680,158 @@ loop:
   alignment so it does not. The `data-*` attributes and the manual check verify it
   (§12, §13).
 
-**Health rests on exactly three signals. Silence is never one of them.** State is delivered
-only on change (§4.1), and with no scenario a healthy connection receives no `state` after
-its first. So the page never infers anything from time without messages. It has **no
-"no valid state for T seconds" rule, in any form**.
+**Health: two separate variables, and one recovery requirement** (revised in the twelfth
+revision; this replaces the second and third revisions' rules, §14.1 C7).
 
-| Signal | Detected by | Page condition | Words | Clears when |
-|---|---|---|---|---|
-| **Connection or poll failure** | the socket closes, or a `GET /status` poll or connect-time fetch fails (5 s timeout, `app.js:19`, `:243-256`); unchanged M3a behaviour | **Stale** (`down` or `refused`) | "Disconnected" / "Refused"; tag "Stale, as of HH:MM:SS UTC" | The existing reconnect: `hello` on a new connection (`app.js:269-297`) |
-| **Malformed message**: a WS frame that fails `JSON.parse`, or parses to a non-object | `onMessage` | **Last known (malformed)** | "Connected, last known data"; tag "Last known, HH:MM:SS UTC"; banner "A message from the simulator could not be read …" | The resync of §8.5 applies a valid `state` |
-| **Reported encoding failure**: `state_encoding.ok` is `false` in any `GET /status` the page reads (the connect-time fetch or the 2 s poll) | the status handlers | **Last known (encoding)** | "Connected, last known data"; tag as above; banner "The simulator could not encode its state (`state_encode_failed` N) …" | See "Clearing" below |
+Silence is never a signal. State is delivered only on change (§4.1), so with no scenario a
+healthy connection receives no `state` after its first. The page has **no "no valid state
+for T seconds" rule, in any form**.
 
-- **"Last known" is not "stale".** Stale means the page lost the simulator: nothing
-  arrives. Last known means the page is connected and exchanges still arrive, but the
-  vehicle and DTC data cannot be trusted to be current. They are marked differently:
-  - **stale** keeps the M3a marking on every panel: the hatched top edge, the faded body,
-    and "Stale, as of …" (`app.css:116-125`);
-  - **last known** marks only the vehicle, DTC and graphs panels, with a dotted top edge
-    (not the hatch) and the words "Last known, HH:MM:SS UTC". The time is when the page
-    last applied a valid `state`. Values are not faded, so they stay readable. The
-    exchange log is not marked, because its events still arrive and are valid.
-  - The lamp is not green in either condition. Stale: "Disconnected, retry in N s", as
-    today. Last known: "Connected, last known data", with an amber outline lamp.
-  - Stale takes precedence: while disconnected, the page is stale whatever else holds.
-- **Graphs:** entering either condition sets each ring's pending break (§6.7), so no line
-  joins the data before and after.
-- **Counts stay visible.** A status-bar readout "Malformed messages **N**, last HH:MM:SS
-  UTC" appears when N > 0. The polled readouts show `state_encode_failed` when it is
-  above 0. Neither is hidden again.
+**Variable 1, connection state: `S.conn` = `live`, `down` or `refused`** (plus M3a's
+`loading` before the first attempt).
+- It is M3a's `S.phase`, renamed, with the same meaning.
+- It is `live` from `hello` until the socket closes or a poll or fetch fails (`app.js:223-240`,
+  `:243-256`, `:269-297`).
+- **Polling and reconnecting depend on this variable only.**
+- **M3b fixes a fact of `app.js`:** `poll()` returns without rescheduling when `!isLive()`
+  (`app.js:248`), and `isLive()` is `S.phase === "live"` (`app.js:117`). With the two
+  variables, `isLive()` tests `S.conn === "live"` only. So a page whose data is "last known"
+  **keeps polling**, and can therefore read `state_encoding.ok: true` and recover.
 
-**Clearing "last known": only an applied replacement.** In both cases the page clears the
-condition **only after it receives and applies a valid `state` for the current connection
-and run**:
-- **current connection:** the `state` arrived on the socket of the page's current attempt
-  (the existing `S.gen` token, `app.js:137-146`);
-- **current run:** that attempt's `GET /status` had the same `started_at` as the page's
-  run (`app.js:149-155`). A restart clears the graphs and starts a new run anyway (§6.8).
+**Variable 2, data validity: `S.data` = `current` or `last-known`**, with a reason and a
+time.
+- The reason is `connecting`, `malformed` or `encoding`.
+- The time is when the page last applied a valid `state`.
+- It is governed by the **recovery requirement** below, and by nothing else.
 
-A healthy `/status` alone never clears it. The two causes differ in **what counts as a
-replacement**:
-- **Malformed:** the first valid `state` applied **after the resync began** (§8.5) clears
-  it.
-- **Encoding:** a valid `state` clears it only if it is applied **after** the page has read
-  `state_encoding.ok == true` in a `GET /status` for this connection and run. A `state`
-  applied while the page's latest reading of `ok` is `false` does not clear it. That
-  includes the last-good state a reconnect delivers during a failure (§8.3).
-- **The race, and how it is closed:**
-  - When the server recovers, the forced first-good push (§8.3) may reach the page
-    **before** the poll that reports `ok: true`, and then no further `state` may come
-    (no scenario, no changes).
-  - So when the page reads `ok` change from `false` to `true`, it starts the resync of
-    §8.5. That delivers the current state after `hello`.
-  - `ok` and `_last_state` are updated in the same synchronous step on the server's single
-    loop (§8.3). So any connection accepted after a `/status` reply that said `ok: true`
-    is given the post-recovery state.
-- If both causes are active, both must clear. The marking stays until the last one does.
+**The recovery requirement.** It is at most one pending requirement, with a kind:
 
-**Recovery, summarised:**
-- stale → live on `hello`, as in M3a;
-- last known (malformed) → live when the resync's `state` is applied;
-- last known (encoding) → live when `ok` has been read `true` and a `state` is applied
-  after that.
+| Kind | Starts when | Cleared only by |
+|---|---|---|
+| `connect` | a socket is established, new or resumed: M3a's initial connect, any reconnect, any resync (§8.5) | the first valid `state` applied on **that** socket |
+| `malformed` | a malformed frame: fails `JSON.parse`, or parses to a non-object | the first valid `state` applied on a socket established **after** the fault, by the resync |
+| `encoding` | the page reads `state_encoding.ok: false` in a `GET /status`: the connect-time fetch or a poll | a valid `state` applied on a socket established **after** the page read `ok: true` |
 
-### 8.5 Bounded resynchronisation: a reconnect, not a REST re-fetch
+- **A fault overrides.** A `malformed` or `encoding` fault replaces a pending `connect`
+  requirement. An `encoding` fault during a pending `malformed` requirement keeps both
+  reasons, and the stricter rule (the `encoding` rule) must then be met.
+- **Ordinary healthy polls never start or restart a requirement.** A poll with `ok: true`
+  while `S.data` is `current` does nothing. A poll with `ok: false` while an `encoding`
+  requirement is already pending does nothing.
+- **A poll with `ok: true` while an `encoding` requirement is pending** starts the resync of
+  §8.5; it does not clear anything by itself.
+- **`hello` alone never clears a requirement.** It makes `S.conn` `live`; `S.data` stays
+  `last-known` until the requirement's `state` is applied.
+- **Why a new socket always gets its `state`:** the server pushes the initial state before
+  it binds (`api/server.py:176`), so `_last_state` is never `None` while clients can
+  connect, and every new connection receives it right after `hello` (§4.1). A `connect`
+  requirement therefore clears one frame after `hello` in the normal case.
+- **"Valid" `state`** means: parsed, `type` `state`, `vehicle` and `dtcs` objects, and
+  received on the page's current socket (the `S.gen` token, `app.js:137-146`) within the
+  current run (`started_at` as read by that attempt's `GET /status`, `app.js:149-155`).
+- **Encoding fault while `S.data` is `current`:** `current` becomes `last-known`
+  (`encoding`) on the poll that reads `ok: false`. The page does not reconnect yet. It
+  keeps polling (variable 1), and resyncs once when it reads `ok: true`.
+- **Encoding fault read at connect:** the attempt's `GET /status` says `ok: false`, so the
+  new socket starts an `encoding` requirement, not a `connect` one. The last good state
+  that follows `hello` (§8.3) is applied for display, but does not clear it. This is how a
+  page loaded during a failure starts "last known".
 
-**Chosen: the page resynchronises by reconnecting the WebSocket**, with its existing
-`after=lastSeq` resume, and applies the `state` that follows `hello`.
-- **No server change is needed for this.** Every new connection already gets the current
-  state right after `hello` (§4.1). The owner's brief said a new connection gets no
-  `state`, which the code contradicts. §14.1, C1, records this.
-- **Why a reconnect, not `GET /vehicle` and `/dtcs`:**
-  - The `state` after `hello` is the **complete** snapshot, vehicle and DTCs, produced by
-    the same encoder as the pushes, which health is defined on (§8.3). A REST re-fetch is
-    two separate encodes, and `GET /vehicle` can succeed while the full state fails. It
-    could therefore never prove encoding recovery (§2.1, point 2). This is the tension the
-    owner anticipated, §14.1, C2.
-  - The exchange stream resumes by `after=lastSeq`, with no gap or duplicate beyond what
-    the server's history reports (0010 §4.5). An exchange whose frame was the malformed
-    one is re-delivered from history, because `lastSeq` did not advance past it.
-  - It reuses the page's existing reconnect path, markers and backoff.
-- **How it runs:**
-  1. **Trigger:** a malformed frame, or `ok` read changing from `false` to `true`.
-  2. The page closes its socket itself (normal closure). The `S.gen` token makes the old
-     socket's late events harmless, as today (`app.js:137-146`).
-  3. It calls `connect()`, which fetches `GET /status` first, so `started_at` and
-     `state_encoding.ok` are read before the socket opens.
-  4. It opens `/events?after=lastSeq`, receives `hello` and the `state`, and applies them.
-     The log gets the marker "Resynchronised after an unreadable message", not "Connection
-     lost".
-- **Bounded:**
-  - one resync per trigger, and at most **3 automatic resyncs in a row** that each end in
-    another malformed frame before a valid `state`;
-  - the waits between them are 1, 2 and 4 s, the existing backoff's first steps
-    (`app.js:15-16`);
-  - after the third, the page stops resyncing and shows "Could not resynchronise: messages
-    from the simulator are unreadable. Retry now". It stays "last known", never "Live".
-  - A valid `state` resets the count.
-  - While last known (encoding), the page does **not** reconnect in a loop. It waits for
-    the 2 s poll to read `ok: true`, then resyncs once.
-- **No scenario, no changes:** the resync still ends with a valid `state`, the one after
-  `hello`, so recovery never depends on a spontaneous update. §12.2 tests exactly this.
+**"Live"**, the lamp's green and the word, means exactly: **`S.conn` is `live` and
+`S.data` is `current`**, that is, the socket is open, the polls succeed, and no recovery
+requirement is pending. Time without messages never changes either variable.
+
+**Transitions:**
+
+| From | Event | To |
+|---|---|---|
+| any | the socket closes, or a poll or fetch fails | `S.conn` `down` (or `refused`); `S.data` unchanged; marking **stale** |
+| `S.conn` not `live` | a reconnect's `hello` | `S.conn` `live`; a `connect` requirement (or `encoding`, if its `GET /status` said `ok: false`) |
+| `connect` pending | the `state` after `hello` is applied | `S.data` `current`: **Live** |
+| `S.data` `current` | a malformed frame | `last-known` (`malformed`); resync (§8.5) |
+| `S.data` `current` | a poll reads `ok: false` | `last-known` (`encoding`); keep polling |
+| `encoding` pending | a poll reads `ok: true` | resync (§8.5); still `last-known` |
+| `malformed` or `encoding` pending | the resync's socket applies a valid `state`, and for `encoding` its `GET /status` read `ok: true` | `S.data` `current`: **Live** |
+| `S.data` `current` | a poll reads `ok: true`, or any time passes with no message | nothing |
+
+**Marking.** "Last known" is not "stale":
+- **stale** (`S.conn` not `live`) keeps the M3a marking on every panel: the hatched top
+  edge, the faded body and "Stale, as of …" (`app.css:116-125`). While stale, it takes
+  precedence over "last known".
+- **last known** (`S.conn` `live`, `S.data` `last-known`) marks only the vehicle, DTC and
+  graphs panels, with a dotted top edge and "Last known, HH:MM:SS UTC". Values are not
+  faded. The exchange log is not marked, because its events still arrive and are valid.
+  - The lamp is an amber outline, "Connected, last known data".
+  - For `connecting`, the lamp reads "Connected, waiting for state" and no banner is shown:
+    it lasts one frame normally.
+  - For `malformed` and `encoding`, a banner names the cause.
+- Entering `last-known` (`malformed` or `encoding`) or `down` sets each ring's pending
+  break (§6.7).
+- The counts stay visible: "Malformed messages **N**, last HH:MM:SS UTC" once N > 0, and
+  `state_encode_failed` once above 0.
+
+### 8.5 Recovery episodes: a bounded reconnect, with one retry budget
+
+**The resync is a reconnect**: the page closes its socket (normal closure), runs
+`connect()` (which reads `GET /status` first), opens `/events?after=lastSeq`, and applies the
+`state` after `hello`.
+- **No server change is needed:** every new connection already gets the current state
+  after `hello` (§4.1). The brief's contrary statement is §14.1, C1.
+- **Why not REST:** the `state` after `hello` is the complete snapshot, from the encoder
+  that health is defined on (§8.3). `GET /vehicle` can succeed while the full state fails,
+  so a REST re-fetch could never prove recovery (§14.1, C2). The exchange stream resumes by
+  `after=lastSeq`, and an exchange whose frame was the malformed one is re-delivered from
+  history, because `lastSeq` did not advance past it (0010 §4.5).
+- The log gets "Resynchronised after an unreadable message" or "Resynchronised after the
+  simulator's state recovered", not "Connection lost".
+
+**Two regimes, stated explicitly:**
+
+| | Ordinary disconnect | Recovery episode |
+|---|---|---|
+| Starts on | the socket closing, or a poll or fetch failing, with **no** episode active | a malformed frame; or, for an `encoding` requirement, the poll that reads `ok: true` |
+| Retries | **M3a's indefinite reconnect, unchanged**: waits double from 1 s to a 15 s cap (`app.js:15-18`), for as long as it takes | **one budget of 3 attempts per episode**, the first after 1 s, then 2 s, then 4 s |
+| Why | so the page recovers from a routine simulator stop or restart on its own | so an unreadable or unrecoverable stream cannot cause a reconnect loop |
+| Ends | on `hello`, and then the `connect` requirement as usual | on a recovered `state` (§8.4), or on exhaustion |
+
+- **Every way an attempt can end counts against the budget:**
+  - a malformed frame before the `state`;
+  - a 503 refusal;
+  - a timeout of the status fetch or the WebSocket handshake (5 s, `app.js:19`, `:191-195`);
+  - a close before the `state`;
+  - for an `encoding` episode, a `GET /status` that says `ok: false` again.
+- **The budget is reset only by a successful recovery.** Nothing else resets it: not
+  `hello`, not a healthy poll, not the time elapsed.
+- **Exhaustion** ends the episode in the manual state: "Could not recover: … Retry now",
+  with no automatic attempt. `S.conn` is then `down` if the last attempt left no socket, or
+  `live` if it left an open socket whose `state` never qualified; `S.data` stays
+  `last-known`. "Retry now" starts a new episode with a fresh budget.
+- **A restart ends the episode.** If an attempt's `GET /status` shows a new `started_at`,
+  the M3a restart path runs: the graphs clear, and the new run starts with a `connect`
+  requirement. The failed budget does not carry into the new run.
+- **One timer at a time, never overlapping.**
+  - The page has a single retry timer, `S.retryTimer`, which M3a already uses for
+    reconnects (`app.js:143-145`, `:236-238`), and at most one attempt in flight
+    (`S.connecting`, `app.js:141-142`).
+  - Ordinary reconnects and recovery attempts share that timer. Arming it always clears
+    the previous one, and nothing is armed while an attempt is in flight.
+  - `fail()` consults the episode: during an episode, a failure consumes budget and arms
+    the episode's next wait; otherwise it arms M3a's backoff.
+- **The 503 case is expected, not exceptional.** A page that closes its own socket and
+  reconnects can meet its own old slot still held. The server's close handshake may take
+  up to `WS_CLOSE_TIMEOUT_S` = 2 s (`api/server.py:34`, `:88-104`) before the handler ends
+  and the slot is freed. With 4 clients the new upgrade can then get 503. The 1 s first
+  wait lowers that chance; the budget bounds it. §12.2 tests it.
 - The page never sends anything on the socket; closing it is not a message.
-- **Cost:** one reconnect per episode, each a small `GET /status` plus a WebSocket upgrade
-  and the history. It is bounded as above, and uses one of the 4 client slots, as the page
-  does today.
 
 ### 8.6 What "Live" means after M3b
 
-"Live" means all three of these hold:
-- the socket is open and the latest poll succeeded;
-- no malformed frame is unresolved;
-- the latest `state_encoding.ok` the page read is `true` and has been followed by an
-  applied `state`.
+"Live" is `S.conn = live` **and** `S.data = current`, as §8.4 defines them:
+- `S.conn` is driven by the socket, polls and fetches, exactly as in M3a;
+- `S.data` changes only through the recovery requirement.
 
-Time without messages never changes it.
+A healthy, unchanging session, with the socket open, successful polls reading `ok: true`
+and no new `state`, therefore stays Live indefinitely. §12.2's 65 s case checks it.
 
 ## 9. Proposal: accessibility
 
@@ -867,15 +936,32 @@ its fix.
 - **Precedence:** a path forced into both `unavailable` and a non-finite value appears only
   in `unavailable`, with `null`.
 - `state_message` parses under `json.loads` with a `parse_constant` hook that raises, so no
-  `NaN` or `Infinity` token can hide in it. With an unserialisable value it raises, which
-  pins `allow_nan=False` and strictness.
+  `NaN` or `Infinity` token can hide in it.
+- **The `allow_nan=False` guard itself** (twelfth revision). An unserialisable value
+  proves nothing here, because default `json.dumps` raises on it too. So the tests put a
+  non-finite float **where the sanitiser does not look**, where only the guard can catch it.
+  The value is injected in-process by the test:
+  - in the DTC part: `snapshots.dtcs` is monkeypatched to return a well-formed ECU entry
+    with one extra float field set to `nan`;
+  - in `as_of`: the runner's last applied time is set to `inf`.
+
+  For each, `state_message` raises `ValueError` ("Out of range float values are not JSON
+  compliant"). The same input encodes without error under default `json.dumps`, which the
+  test also shows, so the test fails if the guard is removed. Then, through `run_state`,
+  the failure is **contained**:
+  - `state_encode_failed` increments and `state_encoding.ok` is `false`;
+  - the task is still running;
+  - no push was made, and every connection's pending state is the last good text, the
+    last known state;
+  - after the injected value is removed, the next attempt succeeds, `ok` is `true`, and
+    the first-good text is pushed.
 
 **The state task, encoding health and the first-good publish** (`tests/unit/observe/`):
 - A snapshot that raises once, then succeeds with a new text:
   - the task is still running, and `state_encode_failed == 1`;
   - `state_encoding.ok` was `false` after the failure and `true` after the success;
   - `last_failed_at` and `last_ok_at` were set from an injected clock;
-  - the previous state stayed current during the failure;
+  - the last good state was kept, unchanged, as the last known state during the failure;
   - the new text was pushed, and `push_dropped` ran in the failed turn.
 - **Same-value recovery:** the snapshot raises once, then succeeds with **exactly the last
   pushed text**. The text is **pushed again**: each connection's one-slot state is set, and
@@ -937,16 +1023,25 @@ across a gap or unbounded. So every check reads only these:
 | `data-drawn-to` | The right edge of the last draw (differs from `data-as-of` while paused) |
 | `data-window-s` | 30, 120 or 600 |
 | `data-left-value` | The value held at the window's left edge, or empty if none |
+| `data-points-before-window` | Points held with `t` older than the selected window's start. Under step-hold the ring keeps **at most one** such point, the predecessor that supplies the held value at the left edge; with the 10 min window selected, the window's start is the retention horizon |
 | `data-segments` | Contiguous non-gap runs in the drawn window |
 | `data-gaps` | Gaps in the drawn window |
 | `data-run` | The `started_at` of the run the ring belongs to |
 | `data-paused` | `true` or `false` |
 
-The page's own condition is exposed the same way on `<body>`:
-- `data-health`: `live`, `stale`, `last-known`;
-- `data-last-known`: empty, `malformed`, `encoding`, or both;
-- `data-malformed-total`;
-- `data-resyncs`: resyncs in the current episode.
+The page's own condition is exposed the same way on `<body>`. These attributes mirror the
+two variables of §8.4:
+- `data-conn`: `loading`, `live`, `down` or `refused` (variable 1);
+- `data-data`: `current` or `last-known` (variable 2);
+- `data-reason`: empty, `connecting`, `malformed`, `encoding`, or `malformed encoding`;
+- `data-health`: derived, `live` only when `data-conn` = `live` and `data-data` = `current`;
+  otherwise `stale` (connection not live) or `last-known`;
+- `data-episode`: `none`, `active` or `exhausted`;
+- `data-attempts`: attempts used in the current episode (0–3);
+- `data-timers`: retry timers armed now (the page's own count; must never exceed 1);
+- `data-polls`: `GET /status` polls completed since load (shows that polling continues
+  while last known);
+- `data-malformed-total`.
 
 Two servers are used:
 - the **real simulator** (`ecu-simulator --api`) for everything except fault injection;
@@ -954,19 +1049,20 @@ Two servers are used:
 
 | Case | How the check exercises it | Passes if |
 |---|---|---|
-| **No false invalidation** (§2.1, point 1) | Real simulator, `ice_default.yaml` (no scenario), **no traffic**, the page left alone for **65 s**. That is longer than every timer in the page: the 5 s fetch timeout, the 15 s backoff cap and the 30 s stability window (`app.js:15-19`) | At every 5 s sample: conn text "Live"; `body[data-health]` = `live`; no "Last known" or "Stale" tag; no banner; `data-malformed-total` = 0. The page received exactly one `state` in the whole period (counted by the WebSocket wrapper below) |
+| **No false invalidation** (§2.1, point 1) | Real simulator, `ice_default.yaml` (no scenario), **no traffic**, the page left alone for **65 s**. That is longer than every timer in the page: the 5 s fetch timeout, the 15 s backoff cap and the 30 s stability window (`app.js:15-19`) | At every 5 s sample: conn text "Live"; `data-conn` = `live`, `data-data` = `current`, `data-health` = `live`; no "Last known" or "Stale" tag; no banner; `data-malformed-total` = 0; `data-episode` = `none`; `data-polls` rose by about 30 (healthy polls ran and changed nothing). The page received exactly one `state` in the whole period (counted by the WebSocket wrapper below) |
 | **Held value at the left edge of a trimmed window** | Stepped demo, 30 s window, read at t ≈ 55 s: speed has been 80 since t = 21 | `data-left-value` = 80; line 2 reads "min 80 · max 80 in 30 s"; `data-segments` = 1; `data-oldest-t` < `data-as-of` − 30 |
-| **Bounded history** | `--long` (about 11 min) on `ice_scenario.yaml`, whose sine on `engine.engine_load` changes on every message, with traffic | At every 10 s sample, for every graph: `data-points` ≤ `data-cap`. After 600 s: `data-oldest-t` ≥ `data-as-of` − 601 and `data-left-value` is set |
-| **Disconnect without restart** (SIGSTOP) | Stepped demo. Stop the traffic. Read `started_at` from `GET /status`. `SIGSTOP` the simulator, and wait for the page | **Within 8 s** (2 s poll + 5 s timeout + 1 s): conn text starts "Disconnected"; `body[data-health]` = `stale`; the banner is shown; the panels carry "Stale, as of". This asserts the poll timeout really takes the page down, not merely that the process paused |
+| **Bounded history** | `--long` (about 11 min) on `ice_scenario.yaml`, whose sine on `engine.engine_load` changes on every message, with traffic | The **10 min window** is selected. At every 10 s sample, for every graph: `data-points` ≤ `data-cap`, and `data-points-before-window` ≤ 1 (the predecessor only). After 600 s: `data-points-before-window` = 1 and `data-left-value` is set. **Not** asserted: any bound on `data-oldest-t`. A signal that has been constant for longer than the window rightly keeps one older predecessor point, whatever its age. A second graph that is constant for the whole run, coolant after 240 s, must show `data-points-before-window` ≤ 1 while its `data-oldest-t` is older than the window |
+| **Disconnect without restart** (SIGSTOP) | Stepped demo. Stop the traffic. Read `started_at` from `GET /status`. `SIGSTOP` the simulator, and wait for the page | **Within 8 s** (2 s poll + 5 s timeout + 1 s): conn text starts "Disconnected"; `data-conn` = `down`, `data-health` = `stale`, `data-episode` = `none` (an ordinary disconnect uses M3a's indefinite backoff, not a budget); the banner is shown; the panels carry "Stale, as of". This asserts the poll timeout really takes the page down, not merely that the process paused |
 | … then SIGCONT | `SIGCONT`, and wait for "Live" (within the backoff, ≤ 16 s) | `GET /status` `started_at` **equals** the value read before; the log has **no** "Simulator restarted." marker, and has "Connection lost, then resumed."; `data-run` unchanged; `data-gaps` rose by 1 and `data-segments` by 1; line 2 names the gap's scenario times; seq continuity in the log (no duplicate seq) |
 | **Restart reset** | The existing SIGTERM (`gui_demo_capture.py:615-622`), then a new simulator | `data-run` changed; `data-oldest-t` ≥ 0 and `data-points` counts only the new run; the restart note and marker are visible; `data-segments` = 1 after the first new point |
 | **Window persists** | Click "30 s", reload | `data-window-s` = 30 everywhere; "30 s" has `aria-pressed="true"` |
 | **Pause while buffering** | "Pause graphs" for 10 s, then resume | While paused: `data-paused` = true; `data-drawn-to` and line 1 unchanged; `data-as-of` rising; `data-points` not falling except by the caps. After: `data-drawn-to` = `data-as-of`. The log kept running |
 | **Non-finite values** | Fault-injection server, scenario profile, **no profile file with a non-finite value**: the harness sets `engine.coolant_temp` to `nan` for scenario t ∈ [10, 20) s, in-process (§12.3). No traffic | While invalid: `data-state` = `invalid`; line 1 and the table read "invalid value"; conn text "Live"; `data-malformed-total` = 0. After: `data-gaps` ≥ 1, `data-segments` ≥ 2, and no point is drawn between the last valid and the next valid `t` |
-| **Malformed state, then unchanged data** (regression) | Real simulator, `ice_default.yaml`, no traffic, so no `state` will come on its own. The WebSocket wrapper dispatches one `MessageEvent` with `{bad` on the page's socket | Immediately: `data-health` = `last-known`, `data-last-known` = `malformed`, the tag "Last known", `data-malformed-total` = 1. Within 3 s: the resync reconnected; `data-health` = `live`; the tag is gone; the log shows "Resynchronised after an unreadable message"; `started_at` unchanged; no restart marker; seq continuity |
-| **Malformed, bounded** | As above, but the wrapper answers every new socket's first frame with `{bad` | Exactly 3 automatic resyncs (`data-resyncs` = 3), 1, 2 and 4 s apart; then "Could not resynchronise …" with "Retry now"; the page never shows "Live" meanwhile. Removing the wrapper's fault and pressing "Retry now" recovers |
-| **Encoding failure, then recovery to changed data** | Fault-injection server, stepped scenario: the harness makes the full snapshot raise for 5 s | Within one poll (≤ 3 s): `data-last-known` = `encoding`, the banner names `state_encode_failed`. The graphs get a break. After the fault ends: `live` again, and only after a `state` was applied following a `/status` with `ok: true` |
-| **Same-value recovery** (regression) | Fault-injection server, **no scenario**: the snapshot raises for 5 s, then recovers to **identical** text | `data-last-known` = `encoding` during the fault; after it, `live` within one poll plus one resync (≤ 5 s); the wrapper saw a `state` after the recovery (the forced push, the post-`hello` state, or both). A page loaded **during** the fault starts as "last known", not "Live", although it received a `state` after `hello` |
+| **Malformed state, then unchanged data** (regression) | Real simulator, `ice_default.yaml`, no traffic, so no `state` will come on its own. The WebSocket wrapper dispatches one `MessageEvent` with `{bad` on the page's socket | Immediately: `data-conn` = `live`, `data-data` = `last-known`, `data-reason` = `malformed`, the tag "Last known", `data-malformed-total` = 1, `data-episode` = `active`. Within 3 s: the resync reconnected, `hello` arrived, and the `state` after it was applied; `data-health` = `live`, `data-episode` = `none`, `data-attempts` = 0; the tag is gone; the log shows "Resynchronised after an unreadable message"; `started_at` unchanged; no restart marker; seq continuity |
+| **Malformed, bounded** | As above, but the wrapper answers every new socket's first frame with `{bad` | Exactly 3 attempts (`data-attempts` = 3), started 1, 2 and 4 s after the previous one ended (± 0.3 s, from the wrapper's socket timestamps); then `data-episode` = `exhausted`, "Could not recover …" with "Retry now". **No further socket is opened** in the following 30 s. `data-timers` ≤ 1 at every 100 ms sample; `data-health` never `live` meanwhile. Removing the fault and pressing "Retry now" recovers with a fresh budget |
+| **Recovery with all four client slots occupied** (the 503 case) | Real simulator, `ice_default.yaml`, no traffic. The capture script holds **3** WebSocket clients of its own, so the page is the fourth. The wrapper dispatches `{bad`, and the page closes its socket and resyncs. The server's close handshake can hold the old slot for up to `WS_CLOSE_TIMEOUT_S` = 2 s (`api/server.py:34`), so the first attempt may get 503. **Variant A:** the script leaves the slot free. **Variant B:** as soon as the page's old socket closes, a fourth script client takes the slot and holds it | Both: `data-timers` ≤ 1 at every 100 ms sample; no two attempts start less than 0.9 s apart; each attempt raises `data-attempts` by exactly 1; any 503 is counted in `refused_clients` and matches one attempt. **A:** recovery within the budget, then `data-health` = `live` and the budget reset. **B:** exactly 3 attempts, then `exhausted` and "Retry now", with no further upgrade request in 30 s (the server's `refused_clients` stops rising). Releasing the slot and pressing "Retry now" recovers |
+| **Encoding failure, then recovery to changed data** | Fault-injection server, stepped scenario: the harness makes the full snapshot raise for 5 s | Within one poll (≤ 3 s): `data-data` = `last-known`, `data-reason` = `encoding`, the banner names `state_encode_failed`; **`data-conn` stays `live` and `data-polls` keeps rising** (polling continues while last known). The graphs get a break. After the fault ends: `live` again, and only after a `state` was applied on a socket established after a `/status` with `ok: true` |
+| **Same-value recovery** (regression) | Fault-injection server, **no scenario**: the snapshot raises for 5 s, then recovers to **identical** text | `data-reason` = `encoding` during the fault, with `data-polls` rising; after it, `live` within one poll plus one resync (≤ 5 s); the wrapper saw a `state` after the recovery (the forced push, the post-`hello` state, or both). A page loaded **during** the fault starts as "last known", not "Live", although it received a `state` after `hello` |
 | **REST is not proof** | Fault-injection server: the DTC part of the snapshot fails and the vehicle part succeeds | `GET /vehicle` answers 200 throughout; the page stays "last known" until the fault ends, and then clears as above |
 | **Overflow** | `#graphs` and each `.uplot` in `OVERFLOW` (`gui_demo_capture.py:213-220`), at 1440, 390 and 2000 | No `scrollWidth` above its `clientWidth` |
 | **Log rows at 1440 × 900** | Section open, log filled | At least 5 full log rows inside `#logwrap` |
@@ -1095,6 +1191,44 @@ before these two items are ticked:**
   - Not a real conflict: the forced push uses the one attempt per interval that already
     exists, and replaces a one-slot state (§8.3). It is noted because it changes the push
     rule's text.
+- **C7. The third revision's §8.4 and §8.6 contradicted each other** (owner's fix 1).
+  - §8.4 had "stale → live on `hello`". §8.6 had Live requiring "the latest
+    `state_encoding.ok` … followed by an applied `state`". Read literally, every routine
+    poll would have taken a healthy, unchanging session out of Live.
+  - **Resolution:** both are replaced by one model (§8.4). A recovery requirement starts
+    only on connection establishment or a fault, and clears only on its required applied
+    `state`. Healthy polls never touch it, and `hello` alone never clears it.
+- **C8. The design needed a last-known page to keep polling, but `app.js` stops polling
+  whenever the page is not Live** (owner's fix 2).
+  - `poll()` returns without rescheduling when `!isLive()` (`app.js:248`), and `isLive()`
+    is `S.phase === "live"` (`app.js:117`). If "last known" were a phase, the page would
+    stop polling and never see `ok: true`.
+  - **Resolution:** two variables. `S.conn` drives polling and reconnects; `S.data`
+    carries validity. `isLive()` tests `S.conn` only.
+- **C9. The retry budget and M3a's indefinite reconnect overlap** (owner's fix 3).
+  - Unbounded retries are needed for routine restarts, and a budget is needed for
+    recovery episodes. A disconnect **during** an episode is both.
+  - **Resolution:**
+    - the budget applies only while an episode is active, and every attempt ending in that
+      window counts, as the owner listed: malformed, 503, timeout, close before `state`;
+    - an attempt that finds a new `started_at` ends the episode, and the new run starts
+      normally;
+    - outside an episode, M3a's backoff is unchanged.
+  - **Consequence, accepted and stated:** if the simulator stops during an episode and
+    stays away for longer than the budget (about 7 s of waits plus up to 5 s per timed-out
+    attempt), the page ends in "Retry now" and does not reconnect by itself (§16).
+- **C10. The bounded-history assertion `data-oldest-t ≥ data-as-of − 601` contradicted
+  step-hold** (owner's fix 4).
+  - The ring rightly keeps one predecessor point of any age, so the held value can enter
+    from the window's left edge (§6.3). A constant signal would have failed the assertion.
+  - **Resolution:** at most one point before the window (`data-points-before-window` ≤ 1),
+    plus the count cap.
+- **C11. The strict-encoding test could not tell `allow_nan=False` from the default**
+  (owner's fix 5).
+  - An unserialisable object raises under default `json.dumps` too.
+  - **Resolution:** the non-finite value is injected where the sanitiser does not look
+    (the DTC part and `as_of`). The test shows the same input encodes under the default,
+    and fails if the guard is removed.
 
 ### 14.2 Still open
 
@@ -1104,7 +1238,9 @@ before these two items are ticked:**
    traffic in the M3b live demo? It is not an M4 condition.
 3. **Cycle markers:** leave them out (proposed), or record a future API field for a later
    decision?
-4. **Resync bound:** three automatic resyncs, then a manual "Retry now". Is that right?
+4. **Recovery budget:** 3 attempts per episode (1, 2, 4 s), then a manual "Retry now".
+   With it, a simulator that stops during an episode is not reconnected automatically
+   (C9). Is that the intended trade?
 
 Answered earlier: separate throttle and load graphs, the windows, the pause, reporting
 unparseable messages, "rpm", and the placement.
@@ -1117,7 +1253,7 @@ Made in the same commits as this document, documentation only.
   - the M3b wording in §7, §9.3 and §10;
   - `nonfinite` and state-encoding containment in §4.3 and §5, marked specified, not
     implemented.
-- **The eleventh revision** (this commit, 2026-09-30):
+- **The eleventh revision** (`52094a1`, 2026-09-30):
   - records the owner's third-round decisions (§2.1), and that the approval covers
     documentation only;
   - §4.3 gains encoding health, the first-good publish rule, and the skipped push's
@@ -1126,8 +1262,17 @@ Made in the same commits as this document, documentation only.
   - §9.3 gains the fault-injection harness and the regression cases;
   - §10's M3b row names the two checkpoints.
 
-  All of it is specified, not implemented. The M2 latency `STOP`, the hosted `CAN_ISOTP`
-  gap, the Phase 8b gate and the V1.0 branch rule stay open.
+  All of it is specified, not implemented.
+- **The twelfth revision** (this commit, 2026-09-30):
+  - records that the owner's six fixes (§2.2) were applied;
+  - §4.3's wording is "last known", not "stays current";
+  - the page health model (two variables, the recovery requirement, one budget per
+    recovery episode) goes into §7;
+  - the guard test and the history assertion go into §9.3.
+
+  The scope is documentation only, and implementation starts in a later session from
+  checkpoint 1. The M2 latency `STOP`, the hosted `CAN_ISOTP` gap, the Phase 8b gate and
+  the V1.0 branch rule stay open.
 
 ## 16. Concerns for the owner
 
@@ -1140,8 +1285,12 @@ Made in the same commits as this document, documentation only.
   runtime objects. If a needed seam is private, checkpoint 1 stops and reports rather than
   widening an API for the harness.
 - **Resync uses a client slot briefly.** With 4 clients connected, a page's resync can be
-  refused (503). The page then shows the existing "refused" state and backs off, which is
-  correct but noisy.
+  refused (503) while the server's close handshake still holds the old slot (up to 2 s).
+  The budget bounds it, and §12.2 tests it; but a busy bench can exhaust a recovery budget
+  that a quieter one would not.
+- **Exhaustion stops automatic recovery (C9).** A simulator that stops during a recovery
+  episode, and stays away longer than the budget, leaves the page in "Retry now" until
+  someone presses it.
 
 ## 17. Implementation outline: two checkpoints (only after approval)
 
@@ -1177,7 +1326,7 @@ when the owner asks.
 |---|---|---|
 | 2.1 | Vendor uPlot 1.6.32 byte-identical; the three `FRONTEND` rows; the file tests | `src/ecu_simulator/api/static/uPlot.iife.min.js`, `uPlot.min.css`, `uPlot-LICENSE.txt`; `api/server.py`; `tests/unit/api/test_frontend_files.py` |
 | 2.2 | Markup and layout: the collapsible section, the flex main column, the height cap, 390 px, the links | `index.html`, `app.css` |
-| 2.3 | Page data and health: rings, ingest, breaks, restart reset, `as_of` null, invalid values, the rpm unit, malformed counting, "last known", the resync, the clear rules, the `data-*` attributes | `app.js`, `app.css` |
+| 2.3 | Page data and health: rings, ingest, breaks, restart reset, `as_of` null, invalid values, the rpm unit, malformed counting; `S.conn` and `S.data` (with `isLive()` and `poll()` on `S.conn` only), the recovery requirement, the recovery episode and its budget on the single retry timer, "last known"; the `data-*` attributes | `app.js`, `app.css` |
 | 2.4 | Drawing: uPlot instances, stepped paths and gaps, scales, windows and `localStorage`, readouts, pause, hide, resize, the fallback | `app.js`, `app.css` |
 | 2.5 | The fault-injection server and the capture-run checks (§12.2, §12.3), with the cost measurement (§11.3) | `scripts/gui_fault_server.py`, `scripts/gui_demo_capture.py` |
 | 2.6 | Live-demo record: screenshots, measurements, and the §13 checklist | `docs/validation/gui-m3b-live-demo.md` |

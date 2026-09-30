@@ -10,7 +10,7 @@ median wire latency exceeds condition 1's median + 0.10 ms
 (`docs/validation/gui-m2-early-check.md`). **M3a, the live frontend, is built and live on
 `gui`:** it serves live data only (`docs/validation/gui-m3a-live-demo.md`). The offline
 mockup under `docs/mockups/m3a-dashboard/` is not served. **M3b, live signal graphs, is
-designed and not implemented** (`docs/plans/gui-m3b-graphs-design.md`, tenth and eleventh
+designed and not implemented** (`docs/plans/gui-m3b-graphs-design.md`, tenth to twelfth
 revisions below). The `nonfinite` field, the state-encoding containment, the encoding health
 in `GET /status` and the first-good publish rule of §4.3 and §5 are **specified, not
 implemented**. M4 has not run. **Still open, and unchanged by any of
@@ -246,6 +246,33 @@ All of the following is **specified, not implemented**:
     acceptance. The M2 `STOP` stays unresolved unless its criteria pass;
   - **checkpoint 2**: graph rendering and the browser checks.
 
+A twelfth revision, on 2026-09-30, records six fixes the owner approved to the M3b design.
+They are applied in `docs/plans/gui-m3b-graphs-design.md`. **The scope is documentation
+only; implementation starts in a later session, from checkpoint 1.** Nothing here changes
+a threshold of P1–P9, V1.0 code, or any V1.0 or Phase 8b gate. The M2 latency `STOP`, the
+hosted `CAN_ISOTP` gap, the Phase 8b gate and the V1.0 branch rule stay open.
+
+- **One health model** replaces two rules that contradicted each other. A recovery
+  requirement starts on connection establishment or on a fault, and clears only when its
+  required `state` is applied; after an encoding fault, only after an `ok: true` read.
+  Healthy polls never start or restart it, and `hello` alone never clears it. "Live" is
+  the connection being live and the data current (§7).
+- **Two variables:** the connection state (`live`, `down` or `refused`) drives polling
+  and reconnects; the data validity (`current` or `last-known`) is separate. So a
+  last-known page keeps polling. Today's `app.js` stops polling whenever it is not live
+  (`poll()` and `isLive()`), which the implementation changes.
+- **One retry budget per recovery episode.** It covers every way an attempt ends, uses one
+  timer at a time, is reset only by recovery, and ends in a manual "Retry now". An
+  ordinary disconnect keeps M3a's indefinite reconnect. A test covers recovery with all
+  four client slots occupied, where the close handshake (`WS_CLOSE_TIMEOUT_S`, 2 s) can
+  cause a 503.
+- **The bounded-history check** allows the one predecessor point that step-hold needs
+  before the window, plus the count cap, instead of a bound on the oldest time.
+- **The strict-encoding test** injects a non-finite value where the sanitiser does not
+  look, so only `allow_nan=False` can catch it, and asserts containment.
+- **Wording:** after a failed encode, the retained state is "last known" (§4.3), not
+  current.
+
 The evidence for the routing and ordering claims is in §12.
 
 ## 1. Purpose and scope
@@ -424,7 +451,7 @@ applies.
 | Per-client queue | 1024 messages | 4 MiB of encoded JSON | **The new `exchange` message is dropped** and that client's `client_dropped` increments. `state` and `dropped` messages are never queued behind others: each client has a one-slot latest `state` and a one-slot latest `dropped` notice, which are **replaced** rather than queued, and sent before the next queued exchange. After 5 s of continuous overflow the client is disconnected with close code 1013 and the reason `"client too slow"`, and `forced_disconnects` increments |
 | WebSocket clients | 4 | — | A 5th connection is refused with HTTP 503 before the upgrade, and `refused_clients` increments |
 | Single encoded `state` message | — | 256 KiB | Checked once when the API starts. A profile whose state encodes larger makes `--api` refuse to start (exit 2), rather than truncating state at runtime |
-| State encoding (tenth revision: **specified, not yet implemented**) | — | — | A non-finite signal value is sanitised to `null` and listed in `nonfinite` (§5) **before** encoding, and the state is encoded with `json.dumps(allow_nan=False)` as a guard. If building or encoding a periodic `state` still fails, **that push is skipped**, the previous state stays current, `state_encode_failed` increments, the failure is logged once per exception type (as `encode_failed` is), and the state task continues. A failed `GET /vehicle` encode answers 500 and increments `vehicle_encode_failed` (eleventh revision), never `state_encoding`. At startup, a failure other than the size rule makes `--api` refuse to start (exit 2). Nothing is dropped from the exchange stream |
+| State encoding (tenth revision: **specified, not yet implemented**) | — | — | A non-finite signal value is sanitised to `null` and listed in `nonfinite` (§5) **before** encoding, and the state is encoded with `json.dumps(allow_nan=False)` as a guard. If building or encoding a periodic `state` still fails, **that push is skipped**, the last good state is kept as the **last known** state (it is not current, and `state_encoding.ok` says so), `state_encode_failed` increments, the failure is logged once per exception type (as `encode_failed` is), and the state task continues. A failed `GET /vehicle` encode answers 500 and increments `vehicle_encode_failed` (eleventh revision), never `state_encoding`. At startup, a failure other than the size rule makes `--api` refuse to start (exit 2). Nothing is dropped from the exchange stream |
 | State encoding health and the first-good publish (eleventh revision: **specified, not yet implemented**) | — | — | Each periodic attempt sets `state_encoding.ok` explicitly: `true` on success, `false` on failure, with `last_ok_at` or `last_failed_at` for reporting only (never compared with a clock to decide `ok`). **After one or more failed attempts, the first successful attempt is pushed even if its text equals the last pushed text**; after that, only-when-changed applies again. The rate limit is unchanged: one attempt per 0.25 s, at most one push per attempt, into the one-slot state. A failed attempt pushes nothing, so a client that connects during a failure receives the last good state after `hello` (§4.5), which is last known, not current |
 | Publisher turn | 64 records | 1 ms of loop time | The publisher yields (`await asyncio.sleep(0)`) and continues on a later turn. Nothing is dropped. A backlog that keeps growing ends in `HandOff`'s own overflow above |
 | `state` push rate | at most 4 Hz | — | Coalesced into the one-slot latest `state`, which is not a drop |
@@ -684,10 +711,22 @@ in-flight exchange to that resolution, so that it counts as exactly what happene
   - its own "Pause graphs", separate from the log's pause, which keeps buffering;
   - a gap at a disconnect, at an invalid value, and when the data becomes "last known"; a
     cleared graph at a restart; never a line across any of them;
-  - page health (eleventh revision): "stale" on connection or poll failure; "last known"
-    on a malformed message or a reported encoding failure (`state_encoding.ok` false). It
-    clears only on an applied replacement `state` for the current connection and run,
-    reached by a bounded reconnect. Silence never changes it.
+  - page health (eleventh revision, restated in the twelfth), as two separate variables:
+    - the **connection state** (`live`, `down` or `refused`) drives polling and
+      reconnects, so a page whose data is last known keeps polling;
+    - the **data validity** (`current` or `last-known`, with a reason) is governed only by
+      a **recovery requirement**. It starts when a socket is established, new or resumed,
+      or on a fault: a malformed frame, or a `GET /status` reporting
+      `state_encoding.ok: false`. It clears only when its required `state` is applied, on
+      the current connection and run; after an encoding fault, only on a socket
+      established after an `ok: true` read. Healthy polls never start or restart it,
+      `hello` alone never clears it, and silence never changes it;
+    - **"Live" means the connection state is `live` and the data is `current`**;
+  - recovery from a fault is a reconnect with **one retry budget per recovery episode**
+    (3 attempts, 1, 2 and 4 s apart, on a single timer). Every way an attempt ends counts
+    against it: a malformed frame, a 503, a timeout, or a close before the `state`. It is
+    reset only by recovery, and exhaustion ends in a manual "Retry now". **An ordinary
+    disconnect keeps M3a's indefinite reconnect, backoff capped at 15 s.**
   - uPlot is vendored as the published `uPlot.iife.min.js` and `uPlot.min.css`, **pinned
     at 1.6.32 by SHA-256**, with its MIT licence served as `uPlot-LICENSE.txt`. Each is a
     fixed route (§6). **The CSP is unchanged.** The page works without uPlot, and says
@@ -860,7 +899,8 @@ pass.
 | Frontend files (M3): every file M3 adds is served with its content type, and nothing else is. From M3b, the vendored uPlot files are also **pinned by SHA-256**, its licence is shipped and linked, and the page loads it before `app.js` (tenth revision) | `.[dev,gui]` and loopback | **Yes**, in the `.[dev,gui]` job, from M3 |
 | Non-finite values and state-encoding containment (tenth revision, **specified, not yet implemented**): `null` plus a sorted `nonfinite` list; `unavailable` wins over `nonfinite`; strict encoding; the state task survives a failed snapshot and counts `state_encode_failed`; 500 from `GET /vehicle`; the startup refusal | nothing (`observe`); `.[dev,gui]` and loopback (`api`) | **Yes**, every job for `observe`, the `.[dev,gui]` job for `api` |
 | Encoding health and the first-good publish (eleventh revision, **specified, not yet implemented**): `ok` set per attempt and never from the timestamps; a successful `GET /vehicle` leaves a failed full state failed; same-value recovery is pushed again, then only-when-changed resumes; a client connecting during a failure gets the last good state. Faults are injected in-process, never through a profile file | nothing (`observe`); `.[dev,gui]` and loopback (`api`) | **Yes**, every job for `observe`, the `.[dev,gui]` job for `api` |
-| M3b browser checks: no false invalidation (no scenario, 65 s "Live"), held value at the left edge, bounded history, SIGSTOP disconnect and recovery without restart, restart reset, window persistence, pause while buffering, non-finite values, malformed state then unchanged data, bounded resync, encoding failure and same-value recovery, overflow. Faults come from an in-process test server, not from the shipped page or a profile file | vcan, Chrome, the capture script | **No.** Local, recorded evidence. Firefox is manual only |
+| The strict-encoding guard (twelfth revision, **specified, not yet implemented**): a non-finite float placed where the sanitiser does not look (the DTC part, `as_of`) is caught only by `allow_nan=False`. The test shows the same input encodes under the default, so it fails if the guard is removed, and the failure is contained (counter, `ok: false`, task alive, last known state kept) | nothing (`observe`) | **Yes**, every job |
+| M3b browser checks: no false invalidation (no scenario, 65 s "Live", polls changing nothing), held value at the left edge, bounded history (at most one predecessor point before the window, plus the count cap), recovery with all four client slots occupied (the budget, no overlapping timers, no tight loop), polling while last known, SIGSTOP disconnect and recovery without restart, restart reset, window persistence, pause while buffering, non-finite values, malformed state then unchanged data, bounded resync, encoding failure and same-value recovery, overflow. Faults come from an in-process test server, not from the shipped page or a profile file | vcan, Chrome, the capture script | **No.** Local, recorded evidence. Firefox is manual only |
 
 The CI changes, made on branch `gui` only:
 - a job installing `.[dev,gui]` for the `api` tests;
