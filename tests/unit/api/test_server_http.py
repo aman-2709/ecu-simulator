@@ -217,10 +217,10 @@ async def test_a_residual_vehicle_encode_failure_is_500_and_counted(session, mon
     # A long state interval: the state task makes its first attempt at start, then none
     # during the test, so state_encoding can only change through GET /vehicle.
     s = build(state_interval_s=60)
+    t0 = s.publisher.state_encoding["last_ok_at"]           # set by the initial push
     await s.start()
     try:
-        assert await wait_until(lambda: s.publisher.state_encoding["last_ok_at"] is not None)
-        await asyncio.sleep(0.05)
+        assert await wait_until(lambda: s.publisher.state_encoding["last_ok_at"] != t0)   # the first attempt ran
         before = await get_status(session, s)
         original = snapshots.vehicle
 
