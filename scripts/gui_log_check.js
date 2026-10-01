@@ -525,24 +525,31 @@ check("a stale or shrunk pin re-pins to a full window (logFullEnd), honouring th
   ok(n > 1000, "too few re-pins exercised: " + n);
 });
 
-check("Older / Newer keep the rows in view in the window (the step shrinks)", function () {
-  var list = build("x x x x x x x x x x");
-  // Window 7..10 (size 4); the reader sees 7 and 8. Older by 3 would drop 8: it moves 2.
-  var o = opts({ size: 4, endId: 10 });
-  eq(L.logOlderEnd(list, shows, o, 3), 7, "without keep: 3 back");
-  eq(L.logOlderEnd(list, shows, o, 3, { firstId: 7, lastId: 8 }), 8, "with keep: 2 back");
-  // Twice with no scroll: the second press may not pass the rows in view.
-  eq(L.logOlderEnd(list, shows, opts({ size: 4, endId: 8 }), 3, { firstId: 7, lastId: 8 }), 8, "second press: no move");
-  // Newer: window 3..6; the reader sees 3 and 4, so the window must still start at or before 3.
-  o = opts({ size: 4, endId: 6 });
-  eq(L.logNewerEnd(list, shows, o, 3), 9, "without keep: 3 on");
-  eq(L.logNewerEnd(list, shows, o, 3, { firstId: 3, lastId: 4 }), 6, "with keep at the window's top: no move");
-  eq(L.logNewerEnd(list, shows, o, 3, { firstId: 5, lastId: 6 }), 8, "with keep lower down: 2 on");
-  eq(L.logNewerEnd(list, shows, opts({ size: 4, endId: 8 }), 3, { firstId: 8, lastId: 8 }), null, "reaching the newest follows");
-  // Randomized: after Older or Newer from any pinned window with any visible run inside it,
-  // every visible exchange is still in the window, the windows overlap (no exchange between
-  // them is skipped), and the move is the largest allowed one (a brute-force reference).
-  var r = rng(0x44), moved = 0;
+check("Older / Newer keep the reader's anchor row in the window: full step, reduced, or 0", function () {
+  var list = build("x x x x x x x x x x x x");
+  function v(t, b) { return { topId: t, bottomId: b }; }
+  // Window 7..12 (size 6). Older keeps the topmost row in view (the anchor) in the window.
+  var o = opts({ size: 6, endId: 12 });
+  eq(L.logOlderEnd(list, shows, o, 4), 8, "nothing in view given: 4 back");
+  eq(L.logOlderEnd(list, shows, o, 4, v(7, 8)), 8, "anchor at the window's top: the full step");
+  eq(L.logOlderEnd(list, shows, o, 4, v(9, 10)), 9, "anchor 9: reduced to 3");
+  eq(L.logOlderEnd(list, shows, o, 4, v(10, 12)), 12, "the window's far end in view: 0 (unchanged end)");
+  // Three presses with no scroll (step 3, rows 7-8 in view): full, then reduced to the anchor;
+  // the box then clamps to the window's end (6-7 in view), so the third press is 0.
+  var e1 = L.logOlderEnd(list, shows, o, 3, v(7, 8));
+  var e2 = L.logOlderEnd(list, shows, opts({ size: 6, endId: e1 }), 3, v(7, 8));
+  var e3 = L.logOlderEnd(list, shows, opts({ size: 6, endId: e2 }), 3, v(6, 7));
+  eq([e1, e2, e3], [9, 7, 7], "full, reduced to the anchor, then 0");
+  // Newer keeps the bottom-most row in view: the window still starts at or before it.
+  o = opts({ size: 6, endId: 8 });            // window 3..8
+  eq(L.logNewerEnd(list, shows, o, 3), 11, "nothing in view given: 3 on");
+  eq(L.logNewerEnd(list, shows, o, 3, v(7, 8)), 11, "anchor at the window's end: the full step");
+  eq(L.logNewerEnd(list, shows, o, 3, v(4, 5)), 10, "anchor 5: reduced to 2");
+  eq(L.logNewerEnd(list, shows, o, 3, v(3, 5)), 8, "the window's oldest row in view: 0 (unchanged end)");
+  eq(L.logNewerEnd(list, shows, opts({ size: 6, endId: 10 }), 3, v(9, 10)), null, "reaching the newest follows");
+  // Randomized: the anchor stays in the window, the windows overlap (no exchange between them
+  // is skipped), and the move is the largest allowed one (a brute-force reference).
+  var r = rng(0x44), moved = 0, zero = 0, reduced = 0;
   for (var c = 0; c < 3000; c += 1) {
     var lst = [], id = 1;
     for (var i = 5 + Math.floor(r() * 50); i > 0; i -= 1) {
@@ -555,27 +562,30 @@ check("Older / Newer keep the rows in view in the window (the step shrinks)", fu
     var size = 1 + Math.floor(r() * 8), step = 1 + Math.floor(r() * 8);
     var k = Math.floor(r() * M.length), oo = opts({ size: size, endId: M[k] });
     var w0 = exIdsOf(L.selectLog(lst, shows, oo));
-    var a0 = Math.floor(r() * w0.length), a1 = a0 + Math.floor(r() * (w0.length - a0));
-    var keep = { firstId: w0[a0], lastId: w0[a1] }, tag = "case " + c + " k=" + k + " size=" + size + " step=" + step + " keep=" + JSON.stringify(keep);
+    var t0 = Math.floor(r() * w0.length), b0 = t0 + Math.floor(r() * Math.min(4, w0.length - t0));
+    var seen = v(w0[t0], w0[b0]);
+    var tag = "case " + c + " k=" + k + " size=" + size + " step=" + step + " seen=" + JSON.stringify(seen);
     ["older", "newer"].forEach(function (dir) {
-      var end = dir === "older" ? L.logOlderEnd(lst, shows, oo, step, keep) : L.logNewerEnd(lst, shows, oo, step, keep);
+      var end = dir === "older" ? L.logOlderEnd(lst, shows, oo, step, seen) : L.logNewerEnd(lst, shows, oo, step, seen);
       var w1 = exIdsOf(L.selectLog(lst, shows, opts({ size: size, endId: end })));
-      for (var j = a0; j <= a1; j += 1) ok(w1.indexOf(w0[j]) >= 0, tag + " " + dir + ": the row in view " + w0[j] + " left the window");
+      var anchor = dir === "older" ? seen.topId : seen.bottomId;
+      ok(w1.indexOf(anchor) >= 0, tag + " " + dir + ": the anchor left the window");
       ok(w1[w1.length - 1] >= w0[0] && w1[0] <= w0[w0.length - 1], tag + " " + dir + ": the windows do not overlap");
-      // Reference: the end index the step would reach, limited by the rows in view.
-      var lo = M.indexOf(w0[a1]), hi = M.indexOf(w0[a0]) + size - 1, want;
+      var ai = M.indexOf(anchor), want, full, start = Math.max(0, k - size + 1);
       if (dir === "older") {
-        var t = Math.max(k - step, Math.min(size, M.length) - 1, lo);
-        want = k - size + 1 <= 0 ? M[k] : t < k ? M[t] : M[k];
+        var t = Math.max(k - step, Math.min(size, M.length) - 1, ai), tf = Math.max(k - step, Math.min(size, M.length) - 1);
+        want = k - size + 1 <= 0 || seen.bottomId >= M[k] ? M[k] : t < k ? M[t] : M[k];
+        full = t === tf;
       } else {
-        var u = Math.min(k + step, Math.max(k, hi));
-        want = u >= M.length - 1 ? null : M[u];
+        var u = seen.topId <= M[start] ? k : Math.min(k + step, Math.max(k, ai + size - 1));
+        want = u === k ? M[k] : u >= M.length - 1 ? null : M[u];
+        full = u === k + step;
       }
       eq(end, want, tag + " " + dir + ": the largest allowed move");
-      if (end !== M[k]) moved += 1;
+      if (end === M[k]) zero += 1; else if (!full) reduced += 1; else moved += 1;
     });
   }
-  ok(moved > 1000, "too few moves exercised: " + moved);
+  ok(moved > 500 && reduced > 100 && zero > 100, "too few full / reduced / zero moves: " + [moved, reduced, zero]);
 });
 
 console.log("LOGCHECK PASS (" + passed + " checks)");

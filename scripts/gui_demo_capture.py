@@ -255,9 +255,9 @@ async def check_overflow(run: Run, cdp: DevTools, label: str) -> None:
 # whose top edge is at or below the log box's bottom edge, counted here independently of
 # the page's own code; `partial` is the row cut by that edge, if any. `overlap` is true if
 # the control's box intersects the log box. Since the windowed log (Task 43) a pinned window
-# ends with a Newer row (tr.lognav, the window's navigation, not a log row): it is not
-# counted, and `beyond` is the control's "+ M beyond this window" (matching exchanges after
-# the window, not drawn), read from its text.
+# ends with a Newer row (tr.lognav, in its own tbody after #log-body: the window's navigation,
+# not a log row): it is not counted, and `beyond` is the control's "+ M beyond this window"
+# (matching exchanges after the window, not drawn), read from its text.
 JUMP_STATE = """(function(){
   var b = document.getElementById('btn-follow'), w = document.getElementById('logwrap');
   var wr = w.getBoundingClientRect(), br = b.getBoundingClientRect();

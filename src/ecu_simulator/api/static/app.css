@@ -494,3 +494,7 @@ button.compact { min-height: 0; padding: 0.143rem 0.571rem; font-size: 0.857rem;
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* The log's edge rows (the trimmed note, Older, Newer) stay in the page and are hidden when not
+   needed; this beats the narrow layout's display: block. */
+.log tr[hidden] { display: none; }

@@ -1487,23 +1487,31 @@
 
   // The window end after "Older": `step` matching exchanges back, but never past the oldest
   // full window. Returns opts.endId unchanged (null stays following) when nothing older matches.
-  // keep (optional) { firstId, lastId }: the exchanges the reader has in view; the step shrinks
-  // so that they all stay in the window (its end never moves before keep.lastId).
-  function logOlderEnd(entries, matches, opts, step, keep) {
+  // seen (optional) { topId, bottomId }: the topmost and bottom-most exchanges the reader has in
+  // view. Older keeps the top one (the anchor) in the window: the step shrinks if it would drop
+  // it. When the window's far end (its newest exchange) is already in view, the step is 0 and
+  // opts.endId comes back unchanged: the caller then shows the window's other end instead.
+  function logOlderEnd(entries, matches, opts, step, seen) {
     var p = logPlace(entries, matches, opts), k = p.end - 1;
     if (p.end - opts.size <= 0) return opts.endId;
+    if (seen && seen.bottomId != null && seen.bottomId >= entries[p.m[k]].id) return opts.endId;
     var to = Math.max(k - step, Math.min(opts.size, p.m.length) - 1);
-    if (keep && keep.lastId != null) to = Math.max(to, logAtOrBefore(entries, p.m, keep.lastId));
+    if (seen && seen.topId != null) to = Math.max(to, logAtOrBefore(entries, p.m, seen.topId));
     return to < k ? entries[p.m[to]].id : opts.endId;
   }
 
   // The window end after "Newer": `step` matching exchanges on; null (following again) when
-  // that reaches or passes the newest matching exchange, or when already following. With keep,
-  // the step shrinks so that the window still starts at or before keep.firstId.
-  function logNewerEnd(entries, matches, opts, step, keep) {
+  // that reaches or passes the newest matching exchange, or when already following. seen: as for
+  // Older, mirrored. Newer keeps the bottom-most exchange in view in the window (the window still
+  // starts at or before it); the step is 0 (opts.endId unchanged) when the window's oldest
+  // exchange is already in view.
+  function logNewerEnd(entries, matches, opts, step, seen) {
     if (opts.endId == null) return null;
     var p = logPlace(entries, matches, opts), to = p.end - 1 + step;
-    if (keep && keep.firstId != null) to = Math.min(to, Math.max(p.end - 1, logAtOrAfter(entries, p.m, keep.firstId) + opts.size - 1));
+    var start = Math.max(0, p.end - opts.size);
+    if (seen && seen.topId != null && p.end > 0 && seen.topId <= entries[p.m[start]].id) return opts.endId;
+    if (seen && seen.bottomId != null) to = Math.min(to, Math.max(p.end - 1, logAtOrAfter(entries, p.m, seen.bottomId) + opts.size - 1));
+    if (to <= p.end - 1) return opts.endId;
     return to >= p.m.length - 1 ? null : entries[p.m[to]].id;
   }
 
@@ -1619,22 +1627,66 @@
     if (hidden) parts.push(plural(hidden, side + " exchange", side + " exchanges") + " hidden by filters (not a gap)");
     return parts;
   }
-  function navButton(kind, text, label) {
-    return el("button", { type: "button", cls: "compact", "data-lognav": kind, "aria-label": label }, [text]);
+  // The window's edges, built once and updated in place (stable nodes, text set only when it
+  // changes), in their own table bodies around #log-body: the note on rows that left the cap
+  // and the Older row above, the Newer row below a pinned window. A focused button there
+  // keeps the focus through every routine render. Text, not colour alone.
+  var edges = null;
+  function edgeNodes() {
+    if (edges) return edges;
+    function nav(side, buttons) {
+      var text = el("p", { cls: "lognav__text" });
+      var tr = el("tr", { id: "lognav-" + side, cls: "lognav lognav--" + side, hidden: true }, [el("td", { colspan: "9" }, [
+        el("div", { cls: "lognav__in" }, [text, el("div", { cls: "lognav__buttons" }, buttons)])])]);
+      return { tr: tr, text: text };
+    }
+    var older = el("button", { type: "button", cls: "compact", "data-lognav": "older" }, ["Show older exchanges"]);
+    var newer = el("button", { type: "button", cls: "compact", "data-lognav": "newer" }, ["Show newer exchanges"]);
+    var newest = el("button", { type: "button", cls: "compact", "data-lognav": "newest",
+      "aria-label": "Jump to newest exchange and follow new ones" }, ["Jump to newest"]);
+    var title = el("span", { cls: "mark__title" }), note = el("span");
+    edges = {
+      trimmed: el("tr", { id: "log-trimmed", cls: "mark mark--note", hidden: true }, [el("td", { colspan: "9" }, [title, note])]),
+      trimmedTitle: title, trimmedText: note,
+      older: nav("older", [older]), newer: nav("newer", [newer, newest]), newerButton: newer
+    };
+    $("log-head").append(edges.trimmed, edges.older.tr);
+    $("log-tail").append(edges.newer.tr);
+    return edges;
   }
-  // The Older row at the top of the window, and the Newer row at the bottom of a pinned one:
-  // what lies beyond, and the buttons that bring it in. Text, not colour alone.
-  function navRow(side, c) {
-    var n = side === "older" ? c.olderMatching : c.newerMatching, step = Math.min(LOG_STEP, n);
+  function showEdge(node, on) { if (node.hidden === on) node.hidden = !on; }
+  // What lies beyond the window on one side: the count of matching exchanges there, then the
+  // gap / note / hidden counts.
+  function edgeText(side, c) {
+    var n = side === "older" ? c.olderMatching : c.newerMatching;
     var lead = n ? plural(n, side + " exchange matches", side + " exchanges match") + " your filters"
       : "No " + side + " exchange matches your filters";
-    var text = [lead].concat(beyondParts(c, side)).join("; ") + ".";
-    var buttons = [];
-    if (n) buttons.push(navButton(side, "Show " + fmtN(step) + " " + side, "Show " + plural(step, side + " exchange", side + " exchanges")));
-    if (side === "newer") buttons.push(navButton("newest", "Jump to newest", "Jump to the newest exchange and follow new ones"));
-    return el("tr", { cls: "lognav lognav--" + side }, [el("td", { colspan: "9" }, [
-      el("div", { cls: "lognav__in" }, [el("p", { cls: "lognav__text", text: text }), el("div", { cls: "lognav__buttons" }, buttons)])
-    ])]);
+    return [lead].concat(beyondParts(c, side)).join("; ") + ".";
+  }
+  function renderEdges(c) {
+    var x = edgeNodes(), trimmed = S.trimmed > 0 && !view.clearedAfter;
+    showEdge(x.trimmed, trimmed);
+    if (trimmed) {
+      var left = [plural(S.trimmed, "older row", "older rows")];
+      if (S.trimmedGaps) left.push(plural(S.trimmedGaps, "gap marker", "gap markers"));
+      if (S.trimmedNotes) left.push(plural(S.trimmedNotes, "connection note", "connection notes"));
+      setText(x.trimmedTitle, andList(left) + " left this view.");
+      setText(x.trimmedText, "The page keeps the newest " + fmtN(MAX_ROWS) + " exchanges it received. The rows were received, so their removal is not a gap." +
+        (view.leftCap && view.endId != null ? " Rows this view was showing left too, so it moved to the oldest exchanges kept." : ""));
+    }
+    showEdge(x.older.tr, c.olderMatching > 0);
+    if (c.olderMatching) setText(x.older.text, edgeText("older", c));
+    var newer = view.endId != null && c.newerMatching + c.markersNewer.gaps + c.markersNewer.notes + c.hiddenOutside.newer > 0;
+    showEdge(x.newer.tr, newer);
+    if (newer) { setText(x.newer.text, edgeText("newer", c)); showEdge(x.newerButton, c.newerMatching > 0); }
+  }
+  // Puts `nodes` in `parent` in order, touching only what differs: a row that stays is never
+  // removed and re-inserted, so it keeps the focus (and screen readers are not moved).
+  function syncChildren(parent, nodes) {
+    var want = new Set(nodes), c = parent.firstChild, next;
+    while (c) { next = c.nextSibling; if (!want.has(c)) parent.removeChild(c); c = next; }
+    c = parent.firstChild;
+    nodes.forEach(function (n) { if (n === c) c = c.nextSibling; else parent.insertBefore(n, c); });
   }
   function hiddenRow(n) {
     return el("tr", { cls: "hiddenrow" }, [el("td", { colspan: "9", text: plural(n, "exchange", "exchanges") + " hidden by filters (not a gap)" })]);
@@ -1650,7 +1702,7 @@
     var wrap = $("logwrap"), body = $("log-body");
     var topBefore = wrap.scrollTop;
     var anchors = view.follow ? [] : visibleAnchors(wrap);
-    var focus = logFocus();
+    var focused = logFocused();
     var sel = selectLog(S.entries, passes, logOpts()), c = sel.counts;
     var shrunk = view.endId != null && view.pinFirst != null && sel.firstId != null && sel.firstId > view.pinFirst &&
       c.olderMatching === 0 && c.shown < LOG_WINDOW && c.newerMatching > 0;
@@ -1663,27 +1715,17 @@
     view.pinFirst = view.endId != null ? sel.firstId : null;
     view.lastId = sel.lastId;
     view.counts = c;
-    var frag = document.createDocumentFragment(), rows = [], ids = [];
-    if (S.trimmed && !view.clearedAfter) {
-      var left = [plural(S.trimmed, "older row", "older rows")];
-      if (S.trimmedGaps) left.push(plural(S.trimmedGaps, "gap marker", "gap markers"));
-      if (S.trimmedNotes) left.push(plural(S.trimmedNotes, "connection note", "connection notes"));
-      frag.appendChild(markRow({ kind: "note", title: andList(left) + " left this view.",
-        text: "The page keeps the newest " + fmtN(MAX_ROWS) + " exchanges it received. The rows were received, so their removal is not a gap." +
-          (view.leftCap && view.endId != null ? " Rows this view was showing left too, so it moved to the oldest exchanges kept." : "") }));
-    }
-    if (c.olderMatching) frag.appendChild(navRow("older", c));
-    else if (c.hiddenOutside.older && c.shown) frag.appendChild(hiddenRow(c.hiddenOutside.older));
+    var nodes = [], rows = [], ids = [];
+    renderEdges(c);
+    if (!c.olderMatching && c.hiddenOutside.older && c.shown) nodes.push(hiddenRow(c.hiddenOutside.older));
     sel.items.forEach(function (item) {
-      if (item.kind === "hidden") { frag.appendChild(hiddenRow(item.n)); return; }
+      if (item.kind === "hidden") { nodes.push(hiddenRow(item.n)); return; }
       var tr = rowFor(item.entry);
-      frag.appendChild(tr);
+      nodes.push(tr);
       if (item.entry.kind === "ex") { rows.push(tr); ids.push(item.entry.id); }
     });
-    var newer = c.newerMatching + c.markersNewer.gaps + c.markersNewer.notes + c.hiddenOutside.newer;
-    if (view.endId != null && newer) frag.appendChild(navRow("newer", c));
-    else if (c.hiddenOutside.newer && c.shown) frag.appendChild(hiddenRow(c.hiddenOutside.newer));
-    body.replaceChildren(frag);
+    if (view.endId == null && c.hiddenOutside.newer && c.shown) nodes.push(hiddenRow(c.hiddenOutside.newer));
+    syncChildren(body, nodes);
     wrap.classList.toggle("is-empty", c.shown === 0);
     view.shownRows = rows;
     view.shownIds = ids;
@@ -1696,12 +1738,18 @@
       if (!keepAnchor(wrap, anchors)) showPin(wrap);
       noteLayoutScroll(topBefore);
     }
-    restoreFocus(focus);
+    keepFocus(focused);
     renderFollow();
-    var h = S.hello, mine = c.matching === c.inView, of = mine ? c.inView : c.matching;
+    var h = S.hello, mine = c.matching === c.inView, of = mine ? c.inView : c.matching, extra = [];
     var counted = c.shown === c.inView ? plural(c.inView, "exchange", "exchanges") :
       fmtN(c.shown) + " of " + fmtN(of) + (mine ? " shown" : " matching shown");
-    if (S.exCount !== of) counted += " (" + fmtN(S.exCount) + " retained)";
+    if (c.shown < c.inView && rows.length) {
+      var s0 = sel.items.filter(function (it) { return it.kind === "entry" && it.entry.kind === "ex"; });
+      var a0 = s0[0].entry.e.seq, a1 = s0[s0.length - 1].entry.e.seq;
+      extra.push(a0 <= a1 ? "seq " + fmtN(a0) + "–" + fmtN(a1) : "seq " + fmtN(a0) + " … " + fmtN(a1) + " across a restart");
+    }
+    if (S.exCount !== of) extra.push(fmtN(S.exCount) + " retained");
+    if (extra.length) counted += " (" + extra.join("; ") + ")";
     $("log-count").textContent = !h && S.lastSeq == null ? "" : counted +
       (S.lastSeq != null ? ", last seq " + S.lastSeq + (isLive() ? " (live)" : "") : "") + (S.duplicates ? ", " + S.duplicates + " duplicates ignored" : "");
   }
@@ -1746,17 +1794,15 @@
     var d = tr.getBoundingClientRect().bottom - wrap.getBoundingClientRect().bottom;
     if (Math.abs(d) >= 1) wrap.scrollTop += d;
   }
-  // A control inside the log keeps the keyboard focus across a render (the rows are rebuilt);
-  // when a window shift removed it, the focus moves to the log itself, not to the page's top.
-  function logFocus() {
+  // The focus is moved only when a render removed or hid the focused control in the log (a
+  // window shift took its row): then it goes to the log box itself, not to the page's top.
+  // A routine render leaves it alone.
+  function logFocused() {
     var a = document.activeElement;
-    if (!(a instanceof HTMLElement) || !$("log-body").contains(a)) return null;
-    return a.dataset.expand ? '[data-expand="' + a.dataset.expand + '"]' : a.dataset.lognav ? '[data-lognav="' + a.dataset.lognav + '"]' : "";
+    return a instanceof HTMLElement && a !== $("logwrap") && $("log").contains(a) ? a : null;
   }
-  function restoreFocus(selector) {
-    if (selector === null) return;
-    var t = selector ? $("log-body").querySelector(selector) : null;
-    (t || $("logwrap")).focus({ preventScroll: true });
+  function keepFocus(a) {
+    if (a && (!a.isConnected || !a.getClientRects().length)) $("logwrap").focus({ preventScroll: true });
   }
   // Shown exchange rows wholly below the visible part of the log: those the current filters
   // show, however they got there. Rows are in order, so a binary search finds the first one.
@@ -1818,24 +1864,36 @@
   // Older / Newer move a pinned window by LOG_STEP matching exchanges (Older first pins a
   // following window where it is); Newer reaching the newest, and Jump to newest, follow again.
   // The exchange rows in the log box stay in the window: the step shrinks if it would drop them.
+  // The reader's anchor stays in the window: Older keeps the topmost exchange row in view,
+  // Newer the bottom-most, and the step shrinks only if it would drop it. When the step is 0
+  // (the window's far end is already in view), the press scrolls the log box to the window's
+  // other end, where the rows it would bring lie, so it never does nothing.
   function moveWindow(kind) {
-    var opts = logOpts(view.endId != null ? view.endId : view.lastId);
-    var seen = visibleAnchors($("logwrap"));
-    var keep = seen.length ? { firstId: seen[0].id, lastId: seen[seen.length - 1].id } : null;
-    var end;
+    var wrap = $("logwrap"), opts = logOpts(view.endId != null ? view.endId : view.lastId);
+    var seen = visibleAnchors(wrap), end, still = false;
+    var inView = seen.length ? { topId: seen[0].id, bottomId: seen[seen.length - 1].id } : null;
     view.pinFirst = null; view.leftCap = false;
     if (kind === "older") {
       if (opts.endId == null) return;
-      view.endId = logOlderEnd(S.entries, passes, opts, LOG_STEP, keep);
-      view.follow = false;
-    } else if (kind === "newer" && opts.endId != null && (end = logNewerEnd(S.entries, passes, opts, LOG_STEP, keep)) != null) {
+      end = logOlderEnd(S.entries, passes, opts, LOG_STEP, inView);
+      still = end === opts.endId;
       view.endId = end;
       view.follow = false;
+    } else if (kind === "newer" && opts.endId != null) {
+      end = logNewerEnd(S.entries, passes, opts, LOG_STEP, inView);
+      still = end === opts.endId;
+      view.endId = end;
+      view.follow = end == null;
     } else {
       view.endId = null;
       view.follow = true;
     }
     renderLog();
+    if (still) {
+      var top = wrap.scrollTop;
+      wrap.scrollTop = kind === "older" ? 0 : wrap.scrollHeight;
+      noteLayoutScroll(top);
+    }
   }
   // A filter change keeps following if following; a pinned window moves to the nearest
   // exchange the new filters show at or before its pin (or after it, if none is), extended
@@ -1970,10 +2028,8 @@
         view.ecu = "all"; view.service = "all"; view.outcomes = OUTCOMES.slice();
         syncControls(); filtersChanged(); $("f-ecu").focus();
       } else if (t.dataset.lognav) {
-        var nav = t.dataset.lognav;
-        moveWindow(nav);
-        var same = $("log-body").querySelector('[data-lognav="' + nav + '"]');
-        (same || $("logwrap")).focus({ preventScroll: true });
+        moveWindow(t.dataset.lognav);
+        $("logwrap").focus({ preventScroll: true });     // never an off-screen button (WCAG 2.4.11)
       } else if (t.dataset.expand) {
         var key = t.dataset.expand;
         view.expanded[key] = !view.expanded[key];
