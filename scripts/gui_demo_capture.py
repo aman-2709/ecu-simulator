@@ -18,6 +18,9 @@ real simulator and the fault-injection test server (scripts/gui_fault_server.py,
 with a WebSocket wrapper added before the page's scripts, and the cost measurement of
 §11.3; --m3b-long is the bounded-history case on its own. Each case's pass rule, observed
 values and verdict go to m3b-results.json (m3b-long-results.json); any failure exits 1.
+--m3b-perf is the main-thread investigation: equivalent 60 s traced runs (log running, paused,
+cleared; graphs hidden; no traffic) at 1440 x 900 and 390 x 844, broken down by
+scripts/gui_trace_breakdown.py into m3b-perf-results.json.
 """
 
 from __future__ import annotations
@@ -320,7 +323,7 @@ async def page_target(http: aiohttp.ClientSession) -> str:
 async def demo(run: Run, chrome: str, mode: str = "m3a") -> None:
     profile_dir = tempfile.mkdtemp(prefix="gui-demo-chrome-")
     sessions = {"m3a": session, "moving": moving_session, "m3b": m3b_session, "m3b-long": m3b_long_session,
-                "m3b-slots": m3b_slots_session}
+                "m3b-slots": m3b_slots_session, "m3b-perf": m3b_perf_session}
     try:
         await sessions[mode](run, chrome, profile_dir)
     finally:
@@ -1007,7 +1010,7 @@ async def m3b_start(run: Run, profile: Path, logname: str, faults: list[str] | N
 
 
 async def m3b_cdp(run: Run, http: aiohttp.ClientSession, ws: aiohttp.ClientWebSocketResponse,
-                  problems: list[str]) -> DevTools:
+                  problems: list[str], wrapper: bool = True) -> DevTools:
     cdp = DevTools(ws)
     cdp.handlers["Runtime.exceptionThrown"] = lambda p: problems.append(
         "exception: " + str(p.get("exceptionDetails", {}).get("text")))
@@ -1018,7 +1021,8 @@ async def m3b_cdp(run: Run, http: aiohttp.ClientSession, ws: aiohttp.ClientWebSo
     await cdp.send("Page.enable")
     await cdp.send("Runtime.enable")
     await cdp.send("Log.enable")
-    await cdp.send("Page.addScriptToEvaluateOnNewDocument", source=WS_WRAPPER)
+    if wrapper:
+        await cdp.send("Page.addScriptToEvaluateOnNewDocument", source=WS_WRAPPER)
     return cdp
 
 
@@ -2217,6 +2221,215 @@ async def m3b_long_session(run: Run, chrome: str, profile_dir: str) -> None:
     run.log("done")
 
 
+# ---- --m3b-perf: the main-thread investigation (Task 39) ----
+# Equivalent 60 s runs on the stepped demo with the traffic script at 4/s, with the log held at
+# its cap (MAX_ROWS = 2000 exchanges in app.js) from start to end, so every run has the same
+# retained rows. No WebSocket wrapper and no MutationObserver: the page runs alone, and the
+# capture evaluates in the page only at each run's start and end.
+PERF_ROWS = 2000                 # app.js MAX_ROWS
+PERF_PREFILL_RATE = "50"         # the traffic script's maximum, only to reach the cap sooner
+PERF_SECONDS = 60.0
+PERF_CATEGORIES = ["toplevel", "devtools.timeline", "v8"]
+# In this order at each viewport. "log-cleared" uses the page's own Clear view: the 2000
+# exchanges stay retained, and only those arriving after the clear are rendered. The
+# reduced-motion runs emulate prefers-reduced-motion, which app.css answers by turning every
+# animation off (the live lamp's endless beat and the signal table's change flash).
+PERF_CONDITIONS = ("baseline-a", "log-paused", "graphs-hidden", "no-traffic", "no-traffic-reduced-motion",
+                   "baseline-b", "log-cleared", "log-cleared-reduced-motion")
+PAUSED = "document.getElementById('btn-pause').getAttribute('aria-pressed') === 'true'"
+GRAPHS_HIDDEN = "document.getElementById('graphs').hidden"
+# The log as the page holds it: retained exchanges (the ECU filter's "All ECUs (N)", which is
+# the page's S.exCount), the table's rows, the exchange rows among them, and the last seq.
+PERF_LOG = """(() => {
+  const all = document.getElementById('f-ecu').options[0].textContent;
+  const m = /last seq (\\d+)/.exec(document.getElementById('log-count').textContent);
+  return {retained: Number((/\\((\\d+)\\)/.exec(all) || [0, -1])[1]),
+          dom_rows: document.querySelectorAll('#log-body > tr').length,
+          exchange_rows: document.querySelectorAll('#log-body > tr.ex').length,
+          last_seq: m ? Number(m[1]) : null, health: document.body.dataset.health,
+          graphs_hidden: document.getElementById('graphs').hidden,
+          log_paused: document.getElementById('btn-pause').getAttribute('aria-pressed') === 'true',
+          log_count: document.getElementById('log-count').textContent};
+})()"""
+
+
+def traffic_sent(run: Run) -> int:
+    """The traffic script's own request counter, from the last numbered line of its log."""
+    path = run.outdir / "traffic.log"
+    if not path.exists():
+        return 0
+    for line in reversed(path.read_text(errors="replace").splitlines()):
+        head = line.split(maxsplit=1)
+        if head and head[0].isdigit():
+            return int(head[0])
+    return 0
+
+
+async def perf_click(cdp: DevTools, selector: str, check: str, want: bool) -> None:
+    """A real click on a view control, brought into view first (at 390 px the log's controls are
+    below the fold), then a check that the page took it."""
+    await cdp.js(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block: 'center'}})")
+    await asyncio.sleep(0.3)
+    await cdp.click(selector)
+    await cdp.wait_for(f"({check}) === {json.dumps(want)}", 10)
+
+
+async def reduced_motion(cdp: DevTools, on: bool) -> None:
+    features = [{"name": "prefers-reduced-motion", "value": "reduce"}] if on else []
+    await cdp.send("Emulation.setEmulatedMedia", features=features)
+    await cdp.wait_for(f"matchMedia('(prefers-reduced-motion: reduce)').matches === {json.dumps(on)}", 5)
+
+
+async def perf_trace(run: Run, cdp: DevTools, label: str, condition: str, size: tuple[int, int],
+                     traffic_on: bool) -> dict[str, Any]:
+    import hashlib
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import gui_trace_breakdown
+
+    async def metrics() -> dict[str, float]:
+        res = await cdp.send("Performance.getMetrics")
+        return {x["name"]: x["value"] for x in res["metrics"]}
+
+    complete: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+
+    def traced(params: dict[str, Any]) -> None:
+        if not complete.done():
+            complete.set_result(params)
+
+    cdp.handlers["Tracing.tracingComplete"] = traced
+    await cdp.send("Performance.enable")
+    start = await cdp.js(PERF_LOG)
+    sent0 = traffic_sent(run)
+    await cdp.send("Tracing.start", transferMode="ReturnAsStream", streamCompression="gzip",
+                   traceConfig={"includedCategories": PERF_CATEGORIES})
+    m0 = await metrics()
+    t0 = time.monotonic()
+    await asyncio.sleep(PERF_SECONDS)
+    m1 = await metrics()
+    elapsed = time.monotonic() - t0
+    await cdp.send("Tracing.end")
+    sent1 = traffic_sent(run)
+    end = await cdp.js(PERF_LOG)
+    done = await asyncio.wait_for(complete, 120)
+    trace_path = run.outdir / f"perf-{label}.json.gz"
+    with trace_path.open("wb") as fh:
+        while True:
+            chunk = await cdp.send("IO.read", handle=done["stream"], size=1 << 20)
+            raw = chunk.get("data", "")
+            fh.write(base64.b64decode(raw) if chunk.get("base64Encoded") else raw.encode())
+            if chunk.get("eof"):
+                break
+    await cdp.send("IO.close", handle=done["stream"])
+    await cdp.send("Performance.disable")
+    cdp.handlers.pop("Tracing.tracingComplete", None)
+    seqs = (start["last_seq"], end["last_seq"])
+    result = {
+        "label": label, "viewport": list(size), "condition": condition, "seconds": round(elapsed, 2),
+        "traffic": {"on": traffic_on, "sent_start": sent0, "sent_end": sent1,
+                    "requests_per_s": round((sent1 - sent0) / elapsed, 2) if traffic_on else 0.0},
+        "exchanges_per_s": round((seqs[1] - seqs[0]) / elapsed, 2) if None not in seqs else None,
+        "log_start": start, "log_end": end,
+        "metrics_s": {k: round(m1[k] - m0[k], 3) for k in ("TaskDuration", "ScriptDuration", "LayoutDuration",
+                                                           "RecalcStyleDuration")},
+        "trace_file": trace_path.name, "trace_bytes": trace_path.stat().st_size,
+        "trace_sha256": hashlib.sha256(trace_path.read_bytes()).hexdigest(),
+        "breakdown": gui_trace_breakdown.summarise(trace_path, gui_trace_breakdown.app_lines(None), elapsed),
+    }
+    b = result["breakdown"]
+    run.log(f"perf {label}: busy {b['busy_percent']} % ({b['busy_ms']} ms), split {b['split_ms']}, renderLog "
+            f"{b['callbacks']['renderLog']['count']} / {b['callbacks']['renderLog']['sum_ms']} ms, rows "
+            f"{start['retained']}->{end['retained']}, {result['traffic']['requests_per_s']} req/s, "
+            f"{result['exchanges_per_s']} exchanges/s")
+    return result
+
+
+async def m3b_perf_session(run: Run, chrome: str, profile_dir: str) -> None:
+    """The comparison runs of Task 39: per viewport, the log running (twice), paused, cleared,
+    the graphs hidden, and no traffic; each 60 s with a trace, at the log's row cap."""
+    await launch_chrome(run, chrome, profile_dir)
+    problems: list[str] = []
+    runs: list[dict[str, Any]] = []
+    async with aiohttp.ClientSession() as http:
+        ws_url = await page_target(http)
+        version = await chrome_version(http)
+        run.log(f"Chrome: {version}")
+        async with http.ws_connect(ws_url, max_msg_size=0) as ws:
+            cdp = await m3b_cdp(run, http, ws, problems, wrapper=False)
+            m = M3b(run, cdp, http, Cases(run))
+            sim = await m3b_start(run, MOVING_PROFILE, "perf-simulator.log")
+            traffic = None
+            try:
+                await m.open_page()
+                await m.click_window(120)
+                run.log(f"prefill: start traffic at {PERF_PREFILL_RATE}/s until the log holds {PERF_ROWS} exchanges")
+                traffic = run.spawn([sys.executable, str(ROOT / "scripts" / "gui_demo_traffic.py"), "--interface",
+                                     IFACE, "--rate", PERF_PREFILL_RATE], "prefill-traffic.log")
+                deadline = time.monotonic() + 300
+                while (await cdp.js(PERF_LOG))["retained"] < PERF_ROWS:
+                    if time.monotonic() > deadline:
+                        raise RuntimeError("the log did not reach its cap")
+                    await asyncio.sleep(2.0)
+                run.stop(traffic)
+                traffic = start_traffic(run)
+                await asyncio.sleep(5.0)
+                run.log(f"prefilled: {await cdp.js(PERF_LOG)}")
+                for vlabel, size in (("1440x900", WIDE), ("390x844", NARROW)):
+                    await cdp.viewport(*size)
+                    await asyncio.sleep(1.5)
+                    for condition in PERF_CONDITIONS:
+                        quiet = condition.startswith("no-traffic")
+                        if quiet:
+                            run.log("stop traffic")
+                            run.stop(traffic)
+                            traffic = None
+                        if condition.endswith("reduced-motion"):
+                            await reduced_motion(cdp, True)
+                        if condition == "log-paused":
+                            await perf_click(cdp, "#btn-pause", PAUSED, True)
+                        elif condition == "graphs-hidden":
+                            await perf_click(cdp, "#btn-graphs-toggle", GRAPHS_HIDDEN, True)
+                        elif condition.startswith("log-cleared"):
+                            await perf_click(cdp, "#btn-clear", "document.querySelectorAll('#log-body > tr.ex')"
+                                             ".length < 50", True)
+                        # As in measure_cost: at 390 px the graphs at the top of the viewport.
+                        await cdp.js("document.getElementById('graphs-panel').scrollIntoView({block: 'start'})"
+                                     if size == NARROW else "window.scrollTo(0, 0)")
+                        await asyncio.sleep(3.0)
+                        runs.append(await perf_trace(run, cdp, f"{vlabel}-{condition}", condition, size,
+                                                     traffic is not None))
+                        if condition == "log-paused":
+                            await perf_click(cdp, "#btn-pause", PAUSED, False)
+                        elif condition == "graphs-hidden":
+                            await perf_click(cdp, "#btn-graphs-toggle", GRAPHS_HIDDEN, False)
+                        elif condition.startswith("log-cleared"):
+                            # Undo the clear: with no traffic, a second clear empties the view and the
+                            # page offers "Show cleared rows", which sets it back to everything.
+                            run.stop(traffic)
+                            traffic = None
+                            await asyncio.sleep(1.0)
+                            await perf_click(cdp, "#btn-clear", "!!document.getElementById('btn-restore')", True)
+                            await perf_click(cdp, "#btn-restore", f"document.querySelectorAll('#log-body > tr.ex')"
+                                             f".length === {PERF_ROWS}", True)
+                        if condition.endswith("reduced-motion"):
+                            await reduced_motion(cdp, False)
+                        if traffic is None:
+                            traffic = start_traffic(run)
+                            await asyncio.sleep(5.0)
+            finally:
+                run.stop(traffic)
+                run.stop(sim)
+                out = {"chrome": version, "categories": PERF_CATEGORIES, "seconds": PERF_SECONDS,
+                       "rows_cap": PERF_ROWS, "traffic_rate": TRAFFIC_RATE,
+                       "profile": str(MOVING_PROFILE.relative_to(ROOT)), "runs": runs, "problems": problems}
+                (run.outdir / "m3b-perf-results.json").write_text(json.dumps(out, indent=1, default=str))
+                run.log(f"perf runs: {len(runs)}; console messages, exceptions and log entries: {len(problems)}")
+                for problem in problems:
+                    run.log(f"  {problem}")
+                cdp.reader.cancel()
+    run.log("done")
+
+
 def find_chrome() -> str:
     for name in (os.environ.get("CHROME", ""), "google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
         if name and (path := shutil.which(name)):
@@ -2248,9 +2461,11 @@ def main(argv: list[str] | None = None) -> int:
                        help="the M3b bounded-history case: about 11 min on ice_scenario.yaml")
     modes.add_argument("--m3b-slots", action="store_true",
                        help="the M3b four-client variants A, B and C alone (about 1.5 min)")
+    modes.add_argument("--m3b-perf", action="store_true",
+                       help="the main-thread comparison runs with traces (Task 39, about 22 min)")
     args = parser.parse_args(argv)
     mode = ("moving" if args.moving else "m3b" if args.m3b else "m3b-long" if args.m3b_long
-            else "m3b-slots" if args.m3b_slots else "m3a")
+            else "m3b-slots" if args.m3b_slots else "m3b-perf" if args.m3b_perf else "m3a")
     args.outdir.mkdir(parents=True, exist_ok=True)
     run = Run(args.outdir.resolve())
     run.log(f"gui demo capture, {datetime.datetime.now(datetime.UTC).isoformat(timespec='seconds')}")

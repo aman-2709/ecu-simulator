@@ -12,6 +12,7 @@
 #                                                with the fault-injection server (scripts/gui_fault_server.py)
 #   scripts/run_gui_demo.sh --m3b-long <outdir>  the M3b bounded-history case, about 11 min
 #   scripts/run_gui_demo.sh --m3b-slots <outdir> the M3b four-client variants A, B and C alone
+#   scripts/run_gui_demo.sh --m3b-perf <outdir>  the main-thread comparison runs with traces, about 22 min
 #
 # Every process is stopped on every path: the capture script stops what it started by
 # exact PID, and the trap below then signals the capture script's whole process group
@@ -19,12 +20,12 @@
 # also covers the capture script itself being killed with SIGKILL.
 set -euo pipefail
 MODE=""
-if [[ $# -eq 2 && ( "$1" == "--moving" || "$1" == "--m3b" || "$1" == "--m3b-long" || "$1" == "--m3b-slots" ) ]]; then
+if [[ $# -eq 2 && ( "$1" == "--moving" || "$1" == "--m3b" || "$1" == "--m3b-long" || "$1" == "--m3b-slots" || "$1" == "--m3b-perf" ) ]]; then
     MODE="$1"
     shift
 fi
 if [[ $# -ne 1 ]]; then
-    echo "usage: $0 [--moving | --m3b | --m3b-long | --m3b-slots] <outdir>" >&2
+    echo "usage: $0 [--moving | --m3b | --m3b-long | --m3b-slots | --m3b-perf] <outdir>" >&2
     exit 2
 fi
 cd "$(dirname "$0")/.."
