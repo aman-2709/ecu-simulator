@@ -13,7 +13,9 @@ below are browser measurements in headless Chrome. **The page's main-thread load
 finding** (its own section below). Case 21 (the restart note and a gap note together) now
 keeps 5 full log rows at 1440 × 900, after two owner-authorized layout changes (Task 37, run
 12; "Task 37: the shared notice line and two small layout changes" below). The full list of
-what M3b still needs is under "Remaining acceptance items".
+what M3b still needs is under "Remaining acceptance items". **Task 41** (run 13) fixed an
+owner finding: a `state` message missing `vehicle` or `dtcs` was ignored and the page stayed
+Live; it is now a data fault (its own section below).
 
 **Still open, and not touched by this record:**
 - **the M2 early-check latency `STOP`** ([gui-m2-early-check.md](gui-m2-early-check.md)).
@@ -41,6 +43,15 @@ Where the numbers come from:
   [run12/capture.log](gui-m3b-live-demo/run12/capture.log),
   [run12/overflow-check.txt](gui-m3b-live-demo/run12/overflow-check.txt). Every other case
   passed in run 12 too; its numbers below stay run 9's, which run 12 repeated;
+- **run 13** (Task 41, at `6fca990`: an incomplete `state` is a data fault) is the record
+  **for the three cases Task 41 added** (24, 25 and 26) and for the tally. Its files:
+  [run13/m3b-results.json](gui-m3b-live-demo/run13/m3b-results.json),
+  [run13/capture.log](gui-m3b-live-demo/run13/capture.log),
+  [run13/overflow-check.txt](gui-m3b-live-demo/run13/overflow-check.txt), and the
+  reproduction logs before and after the fix,
+  [run13/task41-repro-before.log](gui-m3b-live-demo/run13/task41-repro-before.log) and
+  [run13/task41-repro-after.log](gui-m3b-live-demo/run13/task41-repro-after.log). Every
+  other case passed in run 13 too; their rows keep the numbers of the run they cite;
 - **run 8** (the code after the final-review fix wave, page and scripts at `0c564c9`/`e7af7ca`)
   and **run 7** (the page at `391a335`) stay in [run8/](gui-m3b-live-demo/run8/) and
   [run7/](gui-m3b-live-demo/run7/) unchanged, and the earlier long run `m3b-long1` (the page at
@@ -57,8 +68,9 @@ Where the numbers come from:
 |---|---|
 | Branch, commit | Run 9, `m3b-long3`, `m3a-40` and `moving-40`: **`gui` at `f8a8e5f`**. The page is the final-review fix wave's, unchanged since `0c564c9` (`5bdbf4b`, a resync breaks the graphs, the restart note clears, no dead toggle in the fallback; `0c564c9`, the graphs start from the first `state`, not the REST snapshot). `scripts/gui_demo_capture.py` at `f8a8e5f` adds case 21 to run 8's script (`fbadbd5`, `f9fe468`, `f8a8e5f`); nothing else in it changed. Run 8 used `0c564c9` with the scripts at `e7af7ca`; run 7 the page at `391a335` and the scripts at `e479769` |
 | Run 12 | **`gui` at `5cd62fe`** (Task 37): the page at `5cd62fe` (`de9972c` the restart note on the shared notice line; `9dca361` the owner's wording; `5cd62fe` no notice bottom margin, plot cap 4.5rem) and `scripts/gui_demo_capture.py` at `45701a5` (the restart checks read the shared line in the new wording; the forced-wrap case). Beside it, at the same commit: the M3a set `m3a-t37b` and the moving set `moving-t37b`, both rc 0 with every overflow line ok |
+| Run 13 | **`gui` at `6fca990`** (Task 41): the page at `135f006` (an incomplete `state` is a data fault) and `scripts/gui_demo_capture.py` at `6fca990` (the wrapper's `T.send`, `T.lastState` and `T.incompleteFirst`; cases 24, 25 and 26 in part A). Beside it, at the same commit: the M3a set `m3a-41` and the moving set `moving-41`, both rc 0 with every overflow line ok |
 | The long run | `m3b-long3`, on the same commit as run 9. (`m3b-long1`, the earlier record, ran on the page at `b577afa`; it also passed.) Not rerun for Task 37: its case reads only the graphs' `data-*` attributes, with no restart and no notice line, and neither the wording nor the plot height changes them |
-| Date | Run 12: capture start 2026-10-01T09:04:33Z, 532 s. Run 9: capture start 2026-10-01T05:51:19Z, 520 s. `m3b-long3`: 2026-10-01T05:59:59Z, 694 s. M3a set (`m3a-40`): 06:11:34Z. Moving set (`moving-40`): 06:13:24Z. Run 8: 2026-10-01T04:28:19Z. Run 7: 2026-10-01T03:34:31Z. The hidden shot: about 03:52 UTC the same day |
+| Date | Run 13: capture start 2026-10-01T09:27:28Z, 543 s. Run 12: capture start 2026-10-01T09:04:33Z, 532 s. Run 9: capture start 2026-10-01T05:51:19Z, 520 s. `m3b-long3`: 2026-10-01T05:59:59Z, 694 s. M3a set (`m3a-40`): 06:11:34Z. Moving set (`moving-40`): 06:13:24Z. Run 8: 2026-10-01T04:28:19Z. Run 7: 2026-10-01T03:34:31Z. The hidden shot: about 03:52 UTC the same day |
 | Host | Intel Core i7-8700, 12 threads ([gui-m3b-overhead.md](gui-m3b-overhead.md), same host); kernel 6.8.0-138-generic; CPU governor `powersave` (not pinned; not a timing run) |
 | Python | 3.12.12 (worktree `.venv`) |
 | Browser | **Google Chrome 151.0.7922.173**, `--headless=new`, `--disable-gpu`, dpr 1, driven over the DevTools protocol. The M3b modes add `--enable-precise-memory-info`. **Chrome only**; Firefox was not run |
@@ -85,6 +97,14 @@ scripts/run_gui_demo.sh            <scratchpad>/m3a-t37b     # rc=0 (at 5cd62fe)
 scripts/run_gui_demo.sh --moving   <scratchpad>/moving-t37b  # rc=0 (at 5cd62fe)
 ```
 
+Run 13 (Task 41), each into a fresh directory:
+
+```
+scripts/run_gui_demo.sh --m3b      <scratchpad>/m3b-run13    # rc=0: 26 of 26 passed (at 6fca990)
+scripts/run_gui_demo.sh            <scratchpad>/m3a-41       # rc=0 (at 6fca990)
+scripts/run_gui_demo.sh --moving   <scratchpad>/moving-41    # rc=0 (at 6fca990)
+```
+
 The parts of the `--m3b` run (Task 34 report, "Layout of the `--m3b` run"):
 - **A:** real simulator, `ice_default.yaml` (no scenario), no traffic;
 - **B:** real simulator, the stepped demo `docs/examples/ice_drive_cycle_stepped.yaml`, with
@@ -98,22 +118,23 @@ The parts of the `--m3b` run (Task 34 report, "Layout of the `--m3b` run"):
 The fault server's seams are public only (controller ruling, below). Nothing under `src/`
 changed for it, and no profile file holds a non-finite value.
 
-## Result: 24 of 24 cases passed (run 12, plus the long run)
+## Result: 27 of 27 cases passed (run 13, plus the long run)
 
-23 cases in run 12 (`run12/m3b-results.json` `tally`: `{"passed": 23, "total": 23}`), plus the
-bounded-history case of `m3b-long3`. Case 21, which failed in run 9 (4 rows), passes in run 12
+26 cases in run 13 (`run13/m3b-results.json` `tally`: `{"passed": 26, "total": 26}`), plus the
+bounded-history case of `m3b-long3`. Run 13 adds Task 41's three cases (24, 25 and 26 below)
+to run 12's 23, all in part A. Run 12 had 23 of 23. Case 21, which failed in run 9 (4 rows), passes in run 12
 after Task 37's changes, and the new case 22 (a notice line that wraps to two lines) passes
 too. Runs 7 and 8 (20 of 20 each) had neither; run 9 had 20 of 21.
 
-Rows 11, 17, 18, 19, 21 and 22 below give run 12's numbers. Every other row gives run 9's;
-run 12 passed each of those cases too.
+Rows 24, 25 and 26 below give run 13's numbers. Rows 11, 17, 18, 19, 21 and 22 give run 12's.
+Every other row gives run 9's. Runs 12 and 13 passed each of those cases too.
 
 Every check reads only what §12.2 allows: visible text, the tags, the banner, the
 read-only `data-*` attributes, the test-only WebSocket and `fetch` wrapper's records, and
 `GET /status`. The wrapper is added with `Page.addScriptToEvaluateOnNewDocument`; the
 shipped page contains no test code.
 
-| # | Case (§12.2) | Part | Result | Observed in run 9, or **run 12** where marked (or `m3b-long3`) |
+| # | Case (§12.2) | Part | Result | Observed in run 9, or **run 12** / **run 13** where marked (or `m3b-long3`) |
 |---|---|---|---|---|
 | 1 | No false invalidation | A | PASS | 14 samples over 65.08 s, every one "Live", `live`/`current`/`live`, no tag, no banner, malformed 0, episode `none`. `data-polls` rose by **32** (the rule: about 30). **1** `state` received in the whole period, on 1 socket |
 | 2 | Malformed state, then unchanged data | A | PASS | Immediately: `live`/`last-known`/`malformed`/`active`, the "Last known" tags, malformed 1. **Live after 1.021 s**, on a new socket with its `hello` and `state`; episode `none`, attempts 0, tag gone; "Resynchronised after an unreadable message."; `started_at` equal; no restart marker. Seq continuity is vacuous: no traffic, no exchanges |
@@ -138,8 +159,13 @@ shipped page contains no test code.
 | 21 | Log rows at 1440 × 900, the restart note and a gap note together (measured, Task 36) | B | PASS | **Run 12.** **5** full rows, all exchanges, in all four readings (three 1 s apart and one after the shot). Rows region **287 px**, 5 rows need 262–263 px: clearance **+24 to +25 px**. Graphs section 188 px; the shared notice line is **one line, 16 px**, both notices complete: "Simulator restarted at 09:10:38 UTC; previous graph history cleared. · No data from t = 3.1 to t = 9.1 s (disconnected)" (a SIGSTOP/SIGCONT of the new run at t ≈ 3, traffic running). Status bar 99 px. Screenshot: [restart-and-gap-1440.png](gui-m3b-live-demo/restart-and-gap-1440.png). (Run 9, before Task 37: 4 rows, rows region 255 px, section 219 px, the restart note on its own line) |
 | 22 | Log rows at 1440 × 900, a notice line that wraps (measured, Task 37) | B | PASS | **Run 12.** The restart note, the gap and an open invalid run on the shared line, which **wraps to two lines (31 px)**, every notice complete: "Simulator restarted at 09:10:38 UTC; previous graph history cleared. · No data from t = 3.1 to t = 9.1 s (disconnected) · Throttle: invalid value from t = 12.4 to t = 15.4 s (still invalid)" (as the screenshot shows; the case's reading was taken at t = 13.1). **5** full rows, all exchanges, in all four readings. Rows region **271 px**; clearance **+6, +8, +8, +7 px** (5 rows need 263–265 px, as rows are 52 or 53 px). **The worst case is +6 px**, with all five rows at 53 px. Graphs section 203 px, status bar 99 px. The invalid run comes from the test-only WebSocket wrapper rewriting each state (throttle sent as `null` and listed in `nonfinite`, as the API sends a non-finite value), so the simulator stays finite and the traffic can run; the fault server's `--nonfinite` cannot run beside the traffic script (DEV-26). Screenshot: [restart-gap-invalid-wrap-1440.png](gui-m3b-live-demo/restart-gap-invalid-wrap-1440.png) |
 | 23 | Bounded history (`--m3b-long`) | `ice_scenario.yaml`, traffic | PASS | `m3b-long3`. 70 samples to as-of 690.6, the 10 min window on all graphs. Every sample: points ≤ cap 4096 (largest: engine_load 2330), points-before-window ≤ 1. 9 samples at as-of ≥ 610: before-window 1 and left-value set on every graph. Coolant, constant from t = 60 in this profile: oldest-t 60.25, older than the window in all 9, with 1 point and before-window 1. No page console entry |
+| 24 | Incomplete state, then unchanged data (Task 41) | A | PASS | **Run 13.** A healthy page was given its latest real `state` without `dtcs`, then one without `vehicle`. Each time, immediately: `live`/`last-known`/`malformed`/`active`, malformed-total +1 (2, then 3), the "Last known" tags, and a banner beginning "Last known data. The simulator sent an incomplete state message (2 malformed so far) …". **Live after 1.015 s** both times, on 1 new socket. The first `health=live` change has the same page millisecond as the new socket's first `state` (the rule is "not before"; the clock resolves 1 ms). Then episode `none`, attempts 0, no tag. The log has "Resynchronised after an incomplete state message." twice; no restart marker; `started_at` equal |
+| 25 | Unknown message type ignored (Task 41) | A | PASS | **Run 13.** `{"type":"future"}` on a healthy page: immediately and 2.5 s later "Live", `live`, episode `none`, malformed-total 3 (unchanged), 4 sockets (unchanged), no banner. No change to `data-health` or `data-episode` was recorded |
+| 26 | Incomplete state during an attempt (Task 41) | A | PASS | **Run 13.** An unreadable frame started an episode. The wrapper removed `dtcs` from the first attempt's `state`, which ended that attempt; the second attempt started **2.003 s** later, and its valid `state` recovered. `data-attempts` 1, 2, then 0; Live 3.045 s after the fault. The resync line read "Resynchronised after an unreadable message and an incomplete state message." |
 
-Page console, run 12: 4 entries, the 503 handshakes of variant B (3) and variant C (1, Task 38), which the cases expect. Run 9: 3 entries, variant B's;
+Page console, run 13: 4 entries, the same 503 handshakes (variant B 3, variant C 1); the
+M3a set `m3a-41` has 2 `ERR_CONNECTION_REFUSED` entries while its simulator is stopped, and
+`moving-41` none. Page console, run 12: 4 entries, the 503 handshakes of variant B (3) and variant C (1, Task 38), which the cases expect. Run 9: 3 entries, variant B's;
 no page exception. The console log holds no Content-Security-Policy entry, which is **not**
 the owner's CSP check (§13). `m3b-long3`: no entries. The M3a set (`m3a-40`) has 3 `ERR_CONNECTION_REFUSED` entries, all while its simulator is stopped (earlier M3a runs had 2: how many reconnect attempts fall in the stopped interval varies); `moving-40` has none. Every overflow line of both is ok.
 
@@ -155,6 +181,43 @@ scrollWidth/clientWidth; status bar height from the `header` element):
 
 The 1200 px status bar was read in steady state only (Task 34, fix round 3). Task 33
 measured it at 1200 with long values and both health readouts: 92 px throughout.
+
+## Task 41: an incomplete `state` message is a data fault
+
+**The finding (owner, 2026-10-01, on the pushed `0a3f14f`).** `onState()` returned without
+a word when a `state` message's `vehicle` or `dtcs` was not an object, unless a recovery
+attempt was in flight. A healthy page stayed "Live" and kept showing its previous data. This
+was Task 32's interpretation 3, accepted then; the owner overrides it.
+
+**Reproduced first, through the capture's own WebSocket wrapper** (`T.send`, added for this
+task). A throwaway driver, `<scratchpad>/repro41.py` (not committed), reused
+`gui_demo_capture.py`'s helpers in the usual namespace: the real simulator on
+`ice_default.yaml`, no traffic, headless Chrome. On a healthy page it sent the latest real
+`state` frame with `dtcs` removed, then with `vehicle` removed, then `{"type":"future"}`. In
+the page before the fix (`df64091`), every reading, immediately and 3 s later, was the
+healthy one: `conn` live, `data` current, `reason` empty, `health` live, `episode` none,
+`attempts` 0, `malformed-total` 0, "Live", no tag, no banner, 1 socket, and no log marker
+([run13/task41-repro-before.log](gui-m3b-live-demo/run13/task41-repro-before.log)).
+
+**The fix (`135f006`).** A recognised `state` that cannot be applied takes the malformed path.
+By the controller's ruling it uses the same requirement kind and episode as an unreadable
+frame (ruling 9 below):
+- it is counted in `data-malformed-total`, and the data is last known at once (reason
+  `malformed`);
+- it starts a resync, with the same budget and "Retry now" on exhaustion;
+- during a recovery attempt it ends that attempt, as before;
+- the banner, the log's resync line and the graphs' break note say "an incomplete state
+  message", where an unreadable frame gives "an unreadable message";
+- unknown message types are still ignored, for compatibility.
+
+The malformed readout's tooltip now names both kinds. The same driver after the fix
+([run13/task41-repro-after.log](gui-m3b-live-demo/run13/task41-repro-after.log)):
+- each incomplete frame gave `last-known`/`malformed`/`active` at once, with malformed-total 1,
+  then 2;
+- each was "Live" again within 3 s on a new socket, with episode `none` and attempts 0;
+- `{"type":"future"}` changed nothing.
+
+**The regression cases (`6fca990`), run 13:** cases 24, 25 and 26 above, all PASS.
 
 ## Task 37: the shared notice line and two small layout changes
 
@@ -336,6 +399,12 @@ Each of these was decided by the controller during checkpoint 2, not by the owne
      variant C produces a 503 deterministically and checks the automatic recovery after it.
 8. **Local environment only:** for §12.4's wheel check, Task 31 bootstrapped `pip` into the
    worktree `.venv` with `ensurepip` (it had none). No project file changed.
+9. **An incomplete `state` is a malformed message (Task 41).** The owner required that a
+   recognised `state` which cannot be applied be a data fault through the existing bounded
+   recovery. The controller ruled that it uses the same requirement kind and episode as an
+   unreadable frame: reason `malformed`, one count, one budget. The wording ("an incomplete
+   state message" against "an unreadable message") tells them apart. This overrides Task 32's
+   interpretation 3.
 
 ## Stated plainly (final review)
 
@@ -469,6 +538,9 @@ Findings and untested paths:
       wording on the shared notice line, no notice bottom margin, and a 4.5rem plot cap. Run 12
       has 5 rows in case 21 (+24 to +25 px), and 5 rows with a wrapped two-line notice line in
       case 22, with +6 px in the worst reading.
+- Resolved, not an acceptance item (Task 41): **an incomplete `state` was ignored** and a
+      healthy page stayed Live with its old data. It was reproduced in the browser, fixed in
+      `135f006`, and checked by cases 24 to 26 in run 13.
 - Resolved, not an acceptance item (Task 38): "the 503 path of variant A has never been met".
       Variant A's rule does not need a 503. **Variant C** produces one deterministically, and shows automatic
       recovery without "Retry now", the budget reset, and a fresh episode at attempt 1. It
