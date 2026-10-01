@@ -2948,7 +2948,7 @@ LOG_PROBE = r"""(() => {
   const key = r => r.querySelector('.c-seq').textContent + '|' + r.querySelector('.c-time').title;
   const nav = side => { const tr = document.getElementById('lognav-' + side);
     return tr && !tr.hidden ? tr.querySelector('.lognav__text').textContent : null; };
-  const ex = [], marks = [], hidden = [], breaks = [];
+  const ex = [], marks = [], hidden = [], breaks = [], other = [];
   let prev = null, why = [], pending = [];
   rows.forEach(r => {
     if (isEx(r)) {
@@ -2958,8 +2958,9 @@ LOG_PROBE = r"""(() => {
       pending.forEach(m => { m.next = s; });
       ex.push(r); prev = s; why = []; pending = [];
     } else if (r.classList.contains('hiddenrow')) { hidden.push(r.textContent); why.push('hidden'); }
+    else if (!r.classList.contains('mark')) other.push(r.className + ': ' + r.textContent.slice(0, 60));
     else {
-      const m = {text: r.textContent, prev: prev, next: null};
+      const m = {text: r.textContent, cls: r.className, prev: prev, next: null};
       marks.push(m); pending.push(m); why.push(r.textContent);
     }
   });
@@ -2972,7 +2973,7 @@ LOG_PROBE = r"""(() => {
   const a = document.activeElement;
   return {count: document.getElementById('log-count').textContent, ex: ex.length, rows: rows.length,
     keys: ex.map(key), seqs: ex.map(seq), req: ex.map(r => (r.querySelector('.c-req code') || {}).textContent || ''),
-    marks: marks, hidden: hidden, breaks: breaks, vis: vis,
+    marks: marks, hidden: hidden, other: other, breaks: breaks, vis: vis,
     newestVisible: !!last && last.top >= wr.top - 0.5 && last.bottom <= wr.bottom + 0.5,
     boxOnScreen: wr.bottom > 0 && wr.top < window.innerHeight,
     trimmed: tr && !tr.hidden ? tr.textContent : null, older: nav('older'), newer: nav('newer'),
@@ -3001,6 +3002,20 @@ def n_of(text: str) -> int:
 
 def fmt_n(n: int) -> str:
     return f"{n:,}"
+
+
+# The marker rows the page draws (app.js markRow): a gap, or a connection / resync / restart note
+# (kind "link"), or the history note (kind "note"), each with its class and its title.
+MARK_KINDS = {"mark mark--gap": ("Gap: seq ",),
+              "mark mark--link": (W_RESTART, W_CONN, "Resynchronised after "),
+              "mark mark--note": ("History starts at seq ",)}
+
+
+def marks_as_drawn(p: dict[str, Any]) -> bool:
+    """Every row in #log-body is an exchange, a hidden run or a marker the page draws, and each
+    marker's class matches its title."""
+    return not p["other"] and all(any(m["text"].startswith(t) for t in MARK_KINDS.get(m["cls"], ()))
+                                  for m in p["marks"])
 
 
 def last_seq(p: dict[str, Any]) -> int | None:
@@ -3233,7 +3248,12 @@ class LogRun:
         off0 = dict(a["vis"]).get(anchor) if anchor else None
         off1 = after.get(anchor) if anchor else None
         moved = a["keys"] != b["keys"]
-        clamp = b["scrollTop"] == 0 or b["atBottom"]
+        diff = round(off1 - off0, 1) if off0 is not None and off1 is not None else None
+        # A clamp: the box ended at the scroll limit the press drives toward, and the anchor drifted
+        # that way (Older: the bottom limit, the anchor moved down; Newer: the top, moved up).
+        clamp = diff is not None and (b["atBottom"] and diff > 0 if kind == "older"
+                                      else b["scrollTop"] == 0 and diff < 0)
+        scroll_delta = b["scrollTop"] - a["scrollTop"]
         loaded = None
         if moved and a["keys"] and b["keys"]:
             if kind == "older" and a["keys"][0] in b["keys"]:
@@ -3242,16 +3262,18 @@ class LogRun:
                 loaded = a["keys"].index(b["keys"][0])
         step = {"kind": kind, "how": how, "before": window_of(a), "after": window_of(b), "moved": moved,
                 "loaded": loaded, "scroll": [a["scrollTop"], b["scrollTop"]],
-                "to_end": b["scrollTop"] == 0 if kind == "older" else b["atBottom"],
-                "anchor": anchor, "offset": [off0, off1],
-                "diff": round(off1 - off0, 1) if off0 is not None and off1 is not None else None,
+                "scroll_delta": scroll_delta,
+                # A step of 0 counts only if the box really moved to the window's other end.
+                "to_end": scroll_delta != 0 and (b["scrollTop"] == 0 if kind == "older" else b["atBottom"]),
+                "anchor": anchor, "offset": [off0, off1], "diff": diff,
                 "clamp": clamp, "following": b["follow"]["disabled"], "focus": b["active"],
                 "overlap": bool(set(a["keys"]) & set(b["keys"])), "breaks": b["breaks"], "ex": b["ex"],
                 "older": b["older"], "newer": b["newer"]}
         # The rule for one press: it moves the window, or (a step of 0) scrolls the box to the
         # window's other end; focus to the log box; rows contiguous; a moved window overlaps the
-        # last one; the anchor keeps its offset within 1 px unless the box is at a scroll limit,
-        # or the press reached the newest (following shows the newest at the bottom).
+        # last one; the anchor keeps its offset within 1 px unless the box ended at the scroll limit
+        # the press drives toward with the anchor drifted that way (a clamp), or the press reached
+        # the newest (following shows the newest at the bottom).
         step["ok"] = ((moved or step["to_end"]) and b["active"] == "logwrap" and not b["breaks"]
                       and (not moved or step["overlap"] or b["follow"]["disabled"])
                       and (not moved or b["follow"]["disabled"] or clamp
@@ -3295,7 +3317,8 @@ async def case_log_following(lg: LogRun) -> None:
     lg.record(
         1, "Live following",
         "Full buffer (2,000 retained). Following at the standard rate for 10 s: the window slides (its newest seq "
-        "rises); at every sample <= 200 exchange rows and the body holds only them plus marker / hidden rows; the "
+        "rises); at every sample <= 200 exchange rows and the body holds only them, hidden runs and marker rows "
+        "whose class matches their title (gap / link / note); the "
         "newest exchange is drawn in the log box and is the count line's last seq; one row in and one out per "
         "arrival (row-list adds = removes = arrivals, no other row mutation). No new matching exchange: 5 s "
         "with the traffic stopped, zero mutations of any kind; 8 s of arrivals under a filter none of them match "
@@ -3304,8 +3327,8 @@ async def case_log_following(lg: LogRun) -> None:
          "following throughout (the jump control off)": all(s["follow"]["disabled"] for s in samples),
          "the window slides": bool(p0["seqs"]) and bool(p1["seqs"]) and p1["seqs"][-1] > p0["seqs"][-1],
          "<= 200 exchange rows at every sample, 200 at the cap": all(s["ex"] == LOG_WINDOW for s in samples),
-         "the body holds only exchange, marker and hidden rows": all(
-             s["rows"] == s["ex"] + len(s["marks"]) + len(s["hidden"]) for s in samples),
+         "the body holds only exchange rows, hidden runs and markers drawn as the page draws them": all(
+             marks_as_drawn(s) and s["rows"] == s["ex"] + len(s["marks"]) + len(s["hidden"]) for s in samples),
          "the newest exchange drawn, in the log box, at every sample": all(
              s["newestVisible"] and s["boxOnScreen"] and s["seqs"][-1] == last_seq(s) for s in samples),
          "one in / one out per arrival": arrived >= 20 and d["add"] == arrived and d["rem"] == arrived
@@ -3317,6 +3340,8 @@ async def case_log_following(lg: LogRun) -> None:
         {"retained": p0["retained"], "windows": [window_of(s) for s in samples],
          "last_seq": [last_seq(s) for s in samples], "arrived": arrived, "mutations": d,
          "count": p1["count"], "older_row": p1["older"], "rows_body": p1["rows"],
+         "marks_seen": sorted({(m["cls"], m["text"][:30]) for s in samples for m in s["marks"]}),
+         "other_rows": [o for s in samples for o in s["other"]],
          "quiet_mutations": dq, "filtered": {"arrived": f_arrived, "mutations": df, "count": f1["count"],
                                              "hidden_rows": f1["hidden"], "window": window_of(f1)},
          "accounting": acc})
@@ -3529,8 +3554,9 @@ def walk_summary(steps: list[dict[str, Any]], start: list[str]) -> dict[str, Any
         union |= set(s["keys"])
     return {"presses": len(steps), "moved": sum(1 for s in steps if s["moved"]),
             "zero_steps_scrolled": sum(1 for s in steps if not s["moved"] and s["to_end"]),
-            "clamps": sum(1 for s in steps if s["moved"] and s["clamp"]
-                          and (s["diff"] is None or abs(s["diff"]) > 1.0)),
+            "clamps": sum(1 for s in steps if s["moved"] and s["clamp"] and abs(s["diff"]) > 1.0),
+            "clamp_drifts": [s["diff"] for s in steps if s["moved"] and s["clamp"] and abs(s["diff"]) > 1.0],
+            "zero_step_scroll_deltas": [s["scroll_delta"] for s in steps if not s["moved"]],
             "silent": sum(1 for s in steps if not s["moved"] and not s["to_end"]),
             "bad": [{k: v for k, v in s.items() if k != "keys"} for s in steps if not s["ok"]],
             "loaded": [s["loaded"] for s in steps], "max_anchor_diff_unclamped": max(
@@ -3628,9 +3654,11 @@ async def case_log_navigation(lg: LogRun) -> None:
          "jump": {"before": j0["follow"]["text"], "after": [window_of(j1), j1["atBottom"]], "later": window_of(j2)},
          "walk_back": sb, "walk_forward": sf, "oldest_window": window_of(oldest),
          "oldest_count": oldest["count"], "back_steps": [{k: s[k] for k in ("before", "after", "loaded", "scroll",
-                                                                                "diff", "clamp", "focus")}
+                                                                                "diff", "clamp", "scroll_delta",
+                                                                                "focus")}
                                                          for s in back],
-         "forward_steps": [{k: s[k] for k in ("before", "after", "loaded", "scroll", "diff", "clamp", "following")}
+         "forward_steps": [{k: s[k] for k in ("before", "after", "loaded", "scroll", "diff", "clamp", "scroll_delta",
+                                              "following")}
                            for s in fwd]})
 
 
@@ -3727,6 +3755,7 @@ async def case_log_eviction(lg: LogRun) -> None:
          "pinned: contiguous at every sample": all(not s["breaks"] for s in pinned),
          "pinned: still pinned at every sample": all(not s["follow"]["disabled"] for s in pinned + [z]),
          "pinned: every row of the reader's window left": z["seqs"][0] > pin_last,
+         "pinned: the final window holds 200 exchanges": z["ex"] == LOG_WINDOW,
          "pinned: at the oldest kept, the Newer row offered": z["older"] is None and z["newerButton"]
          and edge_count(z["newer"], "newer") > 0,
          "pinned: the note adds the re-pin sentence": W_REPIN in (z["trimmed"] or ""),
@@ -3750,11 +3779,40 @@ def mark_with(p: dict[str, Any], prefix: str) -> dict[str, Any] | None:
 MARKS_RE = r"([\d,]+) gap markers? and ([\d,]+) connection notes? in {side} rows"
 
 
+def marker_pair(text: str) -> list[int]:
+    """[gap markers, connection notes] named in one marker clause ("1 gap marker and 2 connection notes")."""
+    g = re.search(r"([\d,]+) gap markers?\b", text)
+    n = re.search(r"([\d,]+) connection notes?\b", text)
+    return [n_of(g.group(1)) if g else 0, n_of(n.group(1)) if n else 0]
+
+
+def marker_census(p: dict[str, Any]) -> dict[str, list[int]]:
+    """Every marker the page accounts for, by where it is: left the cap (the trimmed note's title),
+    older than the window (the Older row), drawn in the window, newer (the Newer row). A marker
+    drawn and also counted outside would show in the total twice."""
+    def clause(text: str | None, side: str) -> list[int]:
+        m = re.search(rf"([^;]*) in {side} rows", text or "")
+        return marker_pair(m.group(1)) if m else [0, 0]
+
+    trimmed = re.match(r"(.*?) left this view\.", p["trimmed"] or "")
+    drawn = [sum(1 for m in p["marks"] if m["cls"] == "mark mark--gap"),
+             sum(1 for m in p["marks"] if m["cls"] != "mark mark--gap")]
+    out = {"left": marker_pair(trimmed.group(1)) if trimmed else [0, 0], "older": clause(p["older"], "older"),
+           "drawn": drawn, "newer": clause(p["newer"], "newer")}
+    out["total"] = [sum(v[i] for v in out.values()) for i in (0, 1)]
+    return out
+
+
+def plus(a: list[int], b: list[int]) -> list[int]:
+    return [a[0] + b[0], a[1] + b[1]]
+
+
 async def case_log_markers(lg: LogRun) -> None:
     lg.steady()
     await lg.jump()
     await asyncio.sleep(1.5)
     m0 = await lg.probe()
+    c0 = marker_census(m0)
     conds: dict[str, bool] = {"full buffer at the start": m0["retained"] == PERF_ROWS}
     # A sequence gap: the harness's wrapper keeps 3 exchange events from the page.
     await lg.cdp.js("window.__lg.dropped = []; window.__lg.drop = 3")
@@ -3769,6 +3827,9 @@ async def case_log_markers(lg: LogRun) -> None:
     conds["the gap marker drawn where it falls, in the following window"] = (
         gap is not None and gap["prev"] == dropped[0] - 1 and gap["next"] == dropped[2] + 1
         and g["follow"]["disabled"])
+    cg = marker_census(g)
+    conds["the gap adds exactly 1 gap marker, drawn and not also counted outside"] = (
+        cg["total"] == plus(c0["total"], [1, 0]) and cg["drawn"][0] >= 1)
     # A connection note: SIGSTOP / SIGCONT of the simulator.
     os.kill(lg.sim.pid, signal.SIGSTOP)
     lg.run.log(f"SIGSTOP the simulator (pid {lg.sim.pid})")
@@ -3785,21 +3846,32 @@ async def case_log_markers(lg: LogRun) -> None:
     after = re.search(r"after seq (\d+)\.", conn["text"]) if conn else None
     conds["the connection note drawn where it falls (after the exchange it names)"] = (
         conn is not None and after is not None and conn["prev"] == int(after.group(1)) and c["follow"]["disabled"])
+    cc = marker_census(c)
+    # Inside the window the note is drawn, not counted in the Older row: the total rose by exactly 1.
+    conds["the stop adds exactly 1 connection note, drawn and not counted in the Older row"] = (
+        cc["total"] == plus(c0["total"], [1, 1]) and cc["drawn"][1] == c0["drawn"][1] + 1
+        and cc["older"][1] + cc["left"][1] == c0["older"][1] + c0["left"][1])
+    own_gap = gap["text"][:40] if gap else "Gap: seq ?"
+    own_conn = f"after seq {after.group(1)}." if after else "after seq ?"
+
+    def own_drawn(p: dict[str, Any]) -> list[bool]:
+        return [any(m["text"].startswith(own_gap) for m in p["marks"]),
+                any(m["text"].startswith(W_CONN) and own_conn in m["text"] for m in p["marks"])]
     # Both outside a pinned window: counted beside Jump to newest.
     await lg.wheel_up()
     pressed = []
     for _ in range(8):
         q = await lg.probe()
-        if mark_with(q, "Gap: seq") is None and mark_with(q, W_CONN) is None and q["newer"] \
-                and re.search(MARKS_RE.format(side="newer"), q["newer"]):
+        if own_drawn(q) == [False, False] and marker_census(q)["newer"] == [1, 1]:
             break
         pressed.append(await lg.nav("older", "enter"))
     n = await lg.probe()
     newer_m = re.search(MARKS_RE.format(side="newer"), n["newer"] or "")
     lg.note("gap", n["newer"])
-    conds["outside the window (newer): not drawn, counted in the Newer row beside Jump to newest"] = (
-        newer_m is not None and n_of(newer_m.group(1)) >= 1 and n_of(newer_m.group(2)) >= 1
-        and mark_with(n, "Gap: seq") is None and mark_with(n, W_CONN) is None
+    cn = marker_census(n)
+    conds["outside the window (newer): neither drawn, the Newer row counts exactly 1 and 1, beside Jump to newest"] = (
+        newer_m is not None and cn["newer"] == [1, 1] and own_drawn(n) == [False, False]
+        and cn["total"] == plus(c0["total"], [1, 1])
         and await lg.cdp.js("!!document.querySelector('#lognav-newer:not([hidden]) [data-lognav=\"newest\"]')"))
     acc_n = lg.account("markers newer than a pinned window", n)
     jumped = await lg.nav("newest", "click")
@@ -3810,9 +3882,14 @@ async def case_log_markers(lg: LogRun) -> None:
     await asyncio.sleep(1.0)
     o = await lg.probe()
     older_m = re.search(MARKS_RE.format(side="older"), o["older"] or "")
-    conds["outside the window (older): not drawn, counted in the Older row"] = (
-        older_m is not None and n_of(older_m.group(1)) >= 1 and n_of(older_m.group(2)) >= 1
-        and mark_with(o, f"Gap: seq {dropped[0]}") is None and o["follow"]["disabled"])
+    co = marker_census(o)
+    # Moved from newer to older: the markers older than the window (with any that left the cap since)
+    # rose by exactly this case's 1 gap marker and 1 connection note; none drawn in either window.
+    conds["outside the window (older): neither drawn, the Older side rose by exactly 1 and 1"] = (
+        older_m is not None and own_drawn(o) == [False, False] and co["newer"] == [0, 0]
+        and cn["drawn"] == [0, 0] and co["drawn"] == [0, 0]
+        and plus(co["older"], co["left"]) == plus(plus(cn["older"], cn["left"]), [1, 1])
+        and co["total"] == plus(c0["total"], [1, 1]) and o["follow"]["disabled"])
     acc_o = lg.account("markers older than the following window", o)
     conds["counts add up"] = acc_n["adds_up"] and acc_o["adds_up"]
     # Across a restart: SIGTERM, a new simulator; the restart marker, and the count line says so.
@@ -3840,24 +3917,28 @@ async def case_log_markers(lg: LogRun) -> None:
         across is not None and n_of(across.group(1)) == r["seqs"][0] and n_of(across.group(2)) == r["seqs"][-1])
     lg.record(
         6, "Reconnect and gap markers",
-        "Full buffer, following, standard traffic. 3 exchange events kept from the page: 'Gap: seq a–b not received "
-        "(3).' drawn between seq a-1 and b+1. SIGSTOP / SIGCONT: 'Connection lost, then resumed.' drawn after the "
-        "exchange it names ('after seq N'). Pinned and moved older (Older by Enter) until both are newer than the "
-        "window: neither is drawn and the Newer row, beside its Jump to newest, reads 'N gap marker(s) and N "
-        "connection note(s) in newer rows'; the in-row Jump to newest follows. A burst of 260 makes them older "
-        "than the following window: not drawn, the Older row reads '… in older rows'. Counts add up. SIGTERM and a "
-        "new simulator: 'Simulator restarted.' drawn between the old run's rows and the new run's (seq goes back), "
-        "and the count line reads 'seq A … B across a restart' with A and B the window's first and last seq",
+        "Full buffer, following, standard traffic. Every marker the page accounts for (left the cap + older + drawn +"
+        " newer, read from the trimmed note, the Older / Newer rows and the rows) is counted before the faults; this "
+        "case's own add exactly 1 gap marker and 1 connection note to that total at every step. 3 exchange events "
+        "kept from the page: 'Gap: seq a–b not received (3).' drawn between seq a-1 and b+1. SIGSTOP / SIGCONT: "
+        "'Connection lost, then resumed.' drawn after the exchange it names ('after seq N'). Pinned and moved older "
+        "(Older by Enter) until both are newer than the window: neither is drawn and the Newer row, beside its Jump "
+        "to newest, reads exactly '1 gap marker and 1 connection note in newer rows'; the in-row Jump to newest "
+        "follows. A burst of 260 makes them older than the following window: not drawn, no marker drawn in either "
+        "window, and the older side (Older row plus left the cap) rose by exactly 1 and 1. Counts add up. SIGTERM and"
+        " a new simulator: 'Simulator restarted.' drawn between the old run's rows and the new run's (seq goes back),"
+        " and the count line reads 'seq A … B across a restart' with A and B the window's first and last seq",
         conds,
         {"retained": m0["retained"], "dropped": dropped, "gap": gap, "connection_note": conn,
          "older_presses": [s["after"] for s in pressed], "newer_row": n["newer"], "newer_window": window_of(n),
          "older_row": o["older"], "older_window": window_of(o), "jump": {k: jumped[k] for k in ("after", "following")},
+         "census": {"before": c0, "gap": cg, "note": cc, "newer": cn, "older": co},
          "restart": restart, "count_after_restart": r["count"], "window_after_restart": window_of(r),
          "accounting": [acc_n, acc_o]})
 
 
 # The four kinds of absent rows: each kind's own phrase, and the phrases that belong to the others.
-ABSENT_KINDS = {"outside": W_MATCH, "hidden": W_HIDDEN, "gap": W_GAP, "left": W_LEFT}
+ABSENT_KINDS = {"outside": "older exchanges match your filters", "hidden": W_HIDDEN, "gap": W_GAP, "left": W_LEFT}
 
 
 def case_log_wording(lg: LogRun) -> None:
@@ -3866,7 +3947,7 @@ def case_log_wording(lg: LogRun) -> None:
     for kind, phrase in ABSENT_KINDS.items():
         texts = lg.seen.get(kind, [])
         # Each kind's own row: the first text seen in its situation that carries its phrase.
-        own = next((t for t in texts if phrase in t or (kind == "outside" and W_BEYOND in t)), None)
+        own = next((t for t in texts if phrase in t), None)
         conds[f"{kind}: seen, in its own wording"] = own is not None
         if own is not None:
             first[kind] = own
@@ -3881,12 +3962,11 @@ def case_log_wording(lg: LogRun) -> None:
         others = [p for k, p in ABSENT_KINDS.items() if k != kind]
         conds[f"{kind}: its own row carries no other kind's phrase"] = text is not None and not any(
             p in text for p in others) and (kind != "outside" or "hidden" not in text)
-    conds["the four phrases differ"] = len(set(ABSENT_KINDS.values())) == 4
     bad = [a for a in lg.accounts if not a["adds_up"]]
     conds["counts add up in every state read (matching = older + shown + newer)"] = bool(lg.accounts) and not bad
     lg.record(
         8, "The four absent-row wordings",
-        "Over this width's cases: outside this window ('… match your filters', 'beyond this window'), hidden by "
+        "Over this width's cases: outside this window ('… older exchanges match your filters'), hidden by "
         "filters ('… hidden by filters (not a gap)'), a sequence gap ('Gap: seq … not received'), and the rows "
         "that left the 2,000 cap ('… left this view.') each appear in their own situation, and each kind's own row "
         "carries none of the others' phrases. In every state read, the count line's matching = the Older row's "
