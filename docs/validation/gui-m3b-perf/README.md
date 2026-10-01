@@ -66,3 +66,42 @@ The runs were taken in the order listed, all of 1440 × 900 first.
 They also open in Perfetto (https://ui.perfetto.dev, "Open trace file", gzip is read directly)
 or, unzipped, in DevTools' Performance panel. In the trace, M3a's log render is the `TimerFire` whose
 `FunctionCall` is `app.js` line 1434 (`scheduleRender`'s timer); the graphs' redraw is line 857.
+
+## After the log fix (Task 46b): one trace per width
+
+Two more files in `traces/`, the first of two 60 s runs per width of
+`scripts/run_gui_demo.sh --m3b-perf-log` on the shipped page after the log fix (Tasks 42-45).
+
+**Code.** Taken on `gui` with the harness at **`9c7afd2`**. The page (`src/ecu_simulator/api/static/`)
+is unchanged since **`3593be7`**: the served `app.js` SHA-256 was
+`4c2419cae4709f962a59d3968fbfacc3e7b9e2a864a759ee498816f7d8959c9e` and the served `app.css`
+`ecbea9ec609fc9f8aa2ee90914bf0fd492ff8c683dba6c2cc854b91157056917`, both equal to the files at `3593be7`.
+
+**Capture.** The run started at 2026-10-01T23:21:25Z.
+- Headless Chrome 151.0.7922.173, dpr 1, `--disable-gpu` (GPU compositing `disabled_software`, from
+  `SystemInfo.getInfo`), inside a private network namespace. No WebSocket wrapper and no
+  MutationObserver; the only harness code in the page is an Event Timing `PerformanceObserver`.
+- Data and traffic as above: the stepped demo, the log filled to its 2,000-exchange cap at 50/s, then
+  the traffic script at `--rate 4` (3.80 requests/s measured in both runs here).
+- The log follows, and during each run the harness makes ten real clicks (Pause, Resume, the
+  "no response" filter chip off and on, twice each; Older after a wheel scroll up; Jump to newest).
+- Same trace categories and the same main-thread-only copy (`--extract-main`); each copy's summary
+  equals the raw trace's (checked: no field differs).
+
+| File | Size here | SHA-256 here | Raw size | Raw SHA-256 |
+|---|---|---|---|---|
+| `perf-1440x900-following-1.json.gz` | 1,044,010 B | `d50feef6caa4e87ef91e145fd0905989d7a60c90b720802181dedc21af55971c` | 4,916,275 B | `cd54e52db97455df01a7163e47cfdfb3c9b11508fec7a8a23b5d6b356547ebc2` |
+| `perf-390x844-following-1.json.gz` | 792,492 B | `f775807eb92754ab740cccbb68cef61b11da63db9c386981675295603f857b91` | 2,952,017 B | `97897f83ccedf160400e3b0e2a7a637abfa5f4e68395d3dbc1f721ecb43748d2` |
+
+Their summaries: busy 10.0 % and 6.4 %; `renderLog` 228 calls, 0.74 s and 0.37 s; no task over 50 ms.
+In these traces the log render is the `TimerFire` whose `FunctionCall` is `app.js` line 1633, so read
+them with `--rev 3593be7`:
+
+```
+.venv/bin/python scripts/gui_trace_breakdown.py --rev 3593be7 \
+    docs/validation/gui-m3b-perf/traces/perf-1440x900-following-1.json.gz \
+    docs/validation/gui-m3b-perf/traces/perf-390x844-following-1.json.gz
+```
+
+As for the files above, the raw traces were kept only in a session scratchpad; the second runs, the
+traced paused / pinned / graphs-hidden runs and the visible-browser runs are recorded as numbers only.
