@@ -356,29 +356,37 @@
   function healthBreak(cause) { breakListeners.forEach(function (fn) { fn(cause); }); }
 
   // A fault replaces a pending connect requirement; malformed and encoding can both be pending,
-  // and then both rules must be met.
-  function fault(kind) {
+  // and then both rules must be met. `cause` names the break for the graphs (default: the kind).
+  function fault(kind, cause) {
     var entering = !hasFault();
-    if (entering) S.req = { malformed: false, encoding: false, faultSock: 0, okSock: null };
+    if (entering) S.req = { malformed: false, encoding: false, faultSock: 0, okSock: null, unreadable: false, incomplete: false };
     S.req[kind] = true;
     if (kind === "malformed") S.req.faultSock = S.sock ? S.sock.id : S.sockSeq;
     else S.req.okSock = null;
-    if (entering) healthBreak(kind);
+    if (entering) healthBreak(cause || kind);
   }
 
-  // A frame that fails JSON.parse or is not an object: counted, never swallowed.
-  function onMalformed(sock) {
+  // A malformed message: a frame that fails JSON.parse or is not an object ("unreadable"), or a
+  // recognised state whose vehicle or dtcs is not an object ("incomplete", Task 41). Both are one
+  // requirement kind, malformed, with one count and one episode; the wording tells them apart.
+  // Counted, never swallowed.
+  function onMalformed(sock, what) {
     S.malformed += 1; S.malformedAt = Date.now();
     var encodingOnly = hasFault() && S.req.encoding && !S.req.malformed;
+    var cause = what === "incomplete" ? "incomplete" : "malformed";
     sock.spoiled = true;                // a state on this socket never clears a requirement now
-    fault("malformed");
+    fault("malformed", cause);
+    S.req[what] = true;
     if (S.ep) {
-      if (episodeActive() && S.ep.inFlight) episodeAttemptEnded("the simulator sent a message this page could not read", true);
+      if (episodeActive() && S.ep.inFlight) {
+        episodeAttemptEnded(what === "incomplete" ? "the simulator sent an incomplete state message" :
+          "the simulator sent a message this page could not read", true);
+      }
     } else if (!encodingOnly) {
       startEpisode();
     } else {
       // The socket stays open until the encoding resync; its data is no longer trusted from here.
-      healthBreak("malformed");
+      healthBreak(cause);
     }
     // With an encoding requirement pending, the resync waits for a poll that reads ok true;
     // that socket is after this fault too, so it meets both rules.
@@ -388,11 +396,10 @@
   // Valid: type state, vehicle and dtcs objects, on the current socket, in the current run.
   function onState(m, sock) {
     if (sock.gen !== S.gen || sock.run !== S.runStartedAt) return;
-    if (!isObject(m.vehicle) || !isObject(m.dtcs)) {
-      // Not applied; an attempt that receives it has ended without its state.
-      if (episodeActive() && S.ep.inFlight) { episodeAttemptEnded("the state it received was incomplete", true); renderLink(); }
-      return;
-    }
+    // A recognised state that cannot be applied is a data fault, never ignored (Task 41): the
+    // page goes last known at once and resyncs, as for an unreadable frame. An attempt that
+    // receives it has ended without its state.
+    if (!isObject(m.vehicle) || !isObject(m.dtcs)) { onMalformed(sock, "incomplete"); return; }
     applyState(m.vehicle, m.dtcs);
     S.dataAt = Date.now();
     var r = S.req;
@@ -403,7 +410,7 @@
       if (qualifies) {
         S.req = null;
         if (r.malformed || r.encoding) {
-          addMark("link", r.malformed ? "Resynchronised after an unreadable message." : "Resynchronised after the simulator's state recovered.",
+          addMark("link", r.malformed ? "Resynchronised after " + malformedWhat(r) + "." : "Resynchronised after the simulator's state recovered.",
             "A complete state arrived on a new connection at " + utc(S.dataAt) + "; the views are current again." +
             (S.ep ? " Recovery took " + S.ep.attempts + (S.ep.attempts === 1 ? " attempt." : " attempts.") : ""));
         }
@@ -439,8 +446,8 @@
 
   function onMessage(text, sock) {
     var m;
-    try { m = JSON.parse(text); } catch (e) { onMalformed(sock); return; }
-    if (!isObject(m)) { onMalformed(sock); return; }
+    try { m = JSON.parse(text); } catch (e) { onMalformed(sock, "unreadable"); return; }
+    if (!isObject(m)) { onMalformed(sock, "unreadable"); return; }
     S.lastLive = Date.now();
     if (m.type === "hello") onHello(m, sock);
     else if (m.type === "state") onState(m, sock);
@@ -564,7 +571,7 @@
   var HORIZON_S = 600;               // scenario seconds kept, plus the one older point that holds into it
   var WINDOWS = [30, 120, 600];
   var WINDOW_KEY = "ecu-simulator.graphs.window";
-  var BREAK_WHY = { down: "disconnected", malformed: "an unreadable message", encoding: "the simulator could not encode its state",
+  var BREAK_WHY = { down: "disconnected", malformed: "an unreadable message", incomplete: "an incomplete state message", encoding: "the simulator could not encode its state",
     resync: "reconnecting to resynchronise" };
   var G = {
     ok: typeof uPlot === "function",
@@ -1163,13 +1170,21 @@
     button.textContent = S.connecting ? "Retrying" : "Retry now";
   }
 
+  // What made a malformed requirement: an unreadable message, an incomplete state message, or both.
+  function malformedWhat(r) {
+    return r.incomplete && r.unreadable ? "an unreadable message and an incomplete state message" :
+      r.incomplete ? "an incomplete state message" : "an unreadable message";
+  }
+
   // The banner names the cause of a malformed or encoding requirement; null for none.
   function faultSentence(exhausted) {
     var r = S.req;
     if (!hasFault()) return null;
     var parts = [];
     if (r.malformed) {
-      parts.push("the simulator sent a message this page could not read (" + S.malformed + " so far)" +
+      parts.push("the simulator sent " + (r.incomplete && !r.unreadable ? "an incomplete state message" :
+        r.incomplete ? "a message this page could not read and an incomplete state message" : "a message this page could not read") +
+        " (" + S.malformed + " malformed so far)" +
         (exhausted ? "." : ", so the page reconnects to get a complete state."));
     }
     if (r.encoding) {
