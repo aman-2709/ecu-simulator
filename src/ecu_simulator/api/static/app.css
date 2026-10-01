@@ -354,6 +354,11 @@ td.c-ecu { white-space: nowrap; }
 .mark--note td { color: var(--ink-2); background: var(--panel); border-bottom: 1px solid var(--rule); }
 .mark__title { margin-right: 0.429rem; font-weight: 700; }
 .hiddenrow td { padding: 0.143rem 0.429rem; font-size: 0.786rem; color: var(--ink-2); background: var(--panel-2); border-bottom: 1px solid var(--rule); }
+/* Older / Newer: the window's edges. What lies beyond is in words; the buttons bring it in. */
+.lognav td { padding: 0.357rem 0.571rem; font-size: 0.857rem; background: var(--panel-2); border-top: 1px solid var(--rule-2); border-bottom: 1px solid var(--rule-2); }
+.lognav__in { display: flex; flex-wrap: wrap; align-items: center; gap: 0.286rem 0.857rem; }
+.lognav__text { flex: 1 1 18rem; min-width: 0; color: var(--ink); }
+.lognav__buttons { display: flex; flex-wrap: wrap; gap: 0.286rem; }
 
 .logfoot { padding: 0.571rem 0.857rem 0.714rem; border-top: 1px solid var(--rule); font-size: 0.857rem; color: var(--ink-2); display: grid; gap: 0.143rem; }
 
@@ -480,7 +485,8 @@ button.compact { min-height: 0; padding: 0.143rem 0.571rem; font-size: 0.857rem;
   .log .c-us { grid-area: us; text-align: right; font-size: 0.857rem; color: var(--ink-2); white-space: nowrap; }
   .log td.c-us::before { content: "disp. "; font-family: var(--sans); }
   .log td.c-us::after { content: " µs"; font-family: var(--sans); }
-  .log tr.mark, .log tr.hiddenrow, .log tr.mark td, .log tr.hiddenrow td { display: block; }
+  .log tr.mark, .log tr.hiddenrow, .log tr.lognav, .log tr.mark td, .log tr.hiddenrow td, .log tr.lognav td { display: block; }
+  .lognav__buttons button.compact { min-height: 2.286rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
