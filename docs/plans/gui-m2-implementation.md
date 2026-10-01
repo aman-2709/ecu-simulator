@@ -3253,3 +3253,68 @@ desktop layout the owner approved.
 - The record: the browser main-thread load (mostly M3a's log rebuild) is an **open
   finding**, not "recorded, not judged"; a section "Remaining acceptance items" lists
   explicitly what is still needed for M3b acceptance; M3b is not marked accepted.
+
+## M3b follow-ups after the owner's review of checkpoint 2 (owner, 2026-10-01)
+
+Each task is a separately reviewable local commit set; nothing is pushed after `0a3f14f`
+until the owner asks. No sliders or other features. M3b acceptance, the manual Chrome and
+Firefox CSP checks, and every existing gate stay open.
+
+### Task 37: one shared notice line for the restart note and the gap notes
+
+**Files:** `app.js`, `app.css`; `scripts/gui_demo_capture.py` (cases that read the notes).
+- The restart / "scenario time went back" note joins the shared gap line, joined by " · ",
+  instead of taking its own line. Every notice keeps its complete text; nothing is
+  truncated or hidden. At 1440 the common case (restart note plus one gap note) should fit
+  one line; where it wraps, it wraps (never ellipsis, never clipped).
+- Verify, with both complete notices actually rendered, at 1440 × 900: at least 5 full log
+  rows, and report the clearance (rows region minus what 5 rows need). If 5 rows are not
+  reached because the line wraps, the next lever is a few px of plot height — report before
+  taking it. Rerun the affected desktop and narrow checks: the log-rows cases (steady,
+  disconnect, encoding, restart + gap), overflow at 1200, 1440, 2000 and 390, and every case
+  that reads the notes.
+
+### Task 38: deterministic 503 followed by automatic recovery
+
+**Files:** `scripts/gui_demo_capture.py`; the record.
+- Map each four-client case (variant A, variant B) to the behaviours it proves, in the record.
+- A new case, variant C, with no race: the script holds the fourth slot as soon as the page's
+  old socket closes; it waits until the server's `refused_clients` rises (a real 503 to the
+  page's attempt); it then releases the slot. Pass: the page's next scheduled attempt (within
+  the episode's waits) succeeds **without** "Retry now" being pressed; health returns to
+  `live`; `data-episode` = `none` and `data-attempts` = 0 (the budget reset); `data-timers`
+  never above 1; no two attempts less than 0.9 s apart; `refused_clients` rose by exactly the
+  refused attempts. Then a second malformed frame starts a fresh episode at attempt 1 (the
+  budget really reset).
+
+### Task 39: the browser main-thread investigation (no product change)
+
+**Files:** a script or capture mode for the comparison runs; `docs/validation/` record of
+the investigation, with its traces committed beside it.
+- Equivalent runs (same profile, same traffic rate, same retained exchange-row count
+  recorded at start and end, 60 s, 1440 × 900 and 390 × 844): log running vs log paused
+  ("Pause view"); graphs shown vs hidden.
+- Reconcile the arithmetic from the traces: actual rebuild counts and summed durations of the
+  log render; JavaScript time separated from style/layout/paint/composite and other work;
+  nested trace events not double-counted (self time or top-level task time only); totals
+  that add up to the reported busy time, with the remainder named.
+- A proposal: the smallest justified fix, with its expected effect from the numbers. It is
+  **not** implemented in this task. The M2 latency STOP is separate and unaffected.
+
+### Task 40: an isolated interactive launcher for the owner's fault checks
+
+**Files:** `scripts/gui_fault_session.sh` (or similar); instructions in the record.
+- Starts a private user+network namespace with its own lo and vcan0, the fault server with
+  the chosen fault (`--nonfinite …` or `--state-fault …`) and profile, and a **visible**
+  Chrome on the page, on the owner's X display. The host simulator, its port and the host
+  vcan0 are never touched.
+- Chrome uses a fresh, separate, launcher-created profile directory. The browser sandbox is
+  kept (no `--no-sandbox`); X access control is kept (no `xhost +`; the owner's
+  `XAUTHORITY` is passed through). The launcher verifies and prints that the browser runs in
+  the namespace (its network namespace differs from the host's, and the page is served from
+  the namespace's own loopback).
+- On exit it removes only the processes and files it created (by exact PID and its own
+  directories). If desktop access fails from the namespace, it reports the blocker and
+  stops; it never weakens the sandbox or X access to work around it.
+- The record explains how the owner completes the two fault checks with it; screenshots do
+  not complete a behavioural check; the manual CSP checks stay outstanding.
