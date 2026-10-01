@@ -312,6 +312,9 @@
     closeSocket(1000);
     S.wsOpenedAt = null;
     clearTimeout(S.pollTimer); S.pollTimer = null;
+    // Nothing arrives until the next socket's state: the graphs break here too (a break already
+    // pending is kept, so a resync right after a fault adds none).
+    healthBreak("resync");
   }
   function startEpisode() {
     S.ep = { state: "active", attempts: 0, inFlight: false, last: null };
@@ -346,7 +349,9 @@
 
   // ---------- health (M3b §8.4) ----------
   // The graphs' rings register here: called with "malformed", "encoding" or "down" when S.data
-  // enters last-known for a fault or S.conn goes down, so each ring sets a pending break (§6.7).
+  // enters last-known for a fault or S.conn goes down, with "malformed" for a malformed frame
+  // while an encoding fault is pending, and with "resync" when a resync closes the socket, so each
+  // ring sets a pending break (§6.7).
   var breakListeners = [];
   function healthBreak(cause) { breakListeners.forEach(function (fn) { fn(cause); }); }
 
@@ -371,6 +376,9 @@
       if (episodeActive() && S.ep.inFlight) episodeAttemptEnded("the simulator sent a message this page could not read", true);
     } else if (!encodingOnly) {
       startEpisode();
+    } else {
+      // The socket stays open until the encoding resync; its data is no longer trusted from here.
+      healthBreak("malformed");
     }
     // With an encoding requirement pending, the resync waits for a poll that reads ok true;
     // that socket is after this fault too, so it meets both rules.
@@ -553,7 +561,8 @@
   var HORIZON_S = 600;               // scenario seconds kept, plus the one older point that holds into it
   var WINDOWS = [30, 120, 600];
   var WINDOW_KEY = "ecu-simulator.graphs.window";
-  var BREAK_WHY = { down: "disconnected", malformed: "an unreadable message", encoding: "the simulator could not encode its state" };
+  var BREAK_WHY = { down: "disconnected", malformed: "an unreadable message", encoding: "the simulator could not encode its state",
+    resync: "reconnecting to resynchronise" };
   var G = {
     ok: typeof uPlot === "function",
     open: true,                      // the section is open on every load; not saved
@@ -641,6 +650,7 @@
     if (!G.ok) {
       $("graphs-controls").hidden = true;
       $("graphs-meta").hidden = true;
+      $("btn-graphs-toggle").hidden = true;    // nothing to hide: the section is only this sentence
       var note = $("graphs-note");
       note.hidden = false;
       note.textContent = "Graphs unavailable: the chart library did not load. The rest of the page works without it.";
@@ -759,6 +769,8 @@
   // The section's own lines: a restart note, signals not on this vehicle, and the missing time.
   function renderGraphsNote() {
     var lines = [];
+    // The restart note stays while the window still reaches back to the new run's start.
+    if (G.note && G.firstT != null && G.asOf != null && G.asOf - G.firstT >= G.win) G.note = null;
     if (G.note) lines.push(G.note);
     var absent = G.list.filter(function (g) { return g.state === "absent"; }).map(function (g) { return g.def.path; });
     if (absent.length) lines.push("Not on this vehicle" + (S.vehicle && S.vehicle.kind ? " (" + S.vehicle.kind + ")" : "") + ": " + absent.join(", ") + ".");
