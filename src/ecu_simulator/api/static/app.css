@@ -84,6 +84,30 @@ abbr[title] { text-decoration: underline dotted; text-underline-offset: 2px; cur
 .pair b { font-weight: 600; }
 .pair--warn b { color: var(--er); }
 
+/* Wide: a status bar of stable height. Long values (days of uptime, seq in the millions) and the
+   health counts would otherwise wrap the one row of stacked readouts and push the views down. So
+   the polled readouts become one-line "label value" items that wrap inside a block reserved for
+   three compact rows, and the page's malformed count sits under Connection as one line. Nothing
+   is hidden; at 1100 px and below the stacked layout is unchanged. */
+@media (min-width: 1101px) {
+  .statusbar { padding-top: 0.429rem; padding-bottom: 0.429rem; }
+  .statusbar__data { flex-wrap: nowrap; }
+  #status { flex: none; flex-direction: column; flex-wrap: nowrap; }
+  .readout--malformed { display: flex; align-items: baseline; gap: 0.357rem; padding-top: 0; }
+  .readout--malformed dt { font-size: 0.786rem; }
+  .readout--malformed dd { font-size: 0.857rem; }
+  .polled { flex: 1 1 auto; min-width: 0; }
+  #status-polled {
+    align-content: flex-start; row-gap: 0.071rem;
+    /* Three rows of one-line readouts, reserved whether or not the values need them. */
+    min-height: calc(3 * (0.929rem * 1.25 + 0.143rem) + 2 * 0.071rem);
+  }
+  #status-polled .readout { display: flex; align-items: baseline; gap: 0.357rem; padding-top: 0.071rem; padding-bottom: 0.071rem; line-height: 1.25; }
+  #status-polled .readout dt { font-size: 0.786rem; }
+  #status-polled .readout dd { font-size: 0.929rem; }
+  #status-polled .readout dd.pairs { gap: 0.571rem; }
+}
+
 /* The connection lamp: the one thing on the page that moves on its own. */
 .conn { display: inline-flex; align-items: center; gap: 0.5rem; }
 .conn__lamp {
