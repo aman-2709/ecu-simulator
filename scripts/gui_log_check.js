@@ -30,7 +30,7 @@ var block = text.slice(a, b + END.length);
 var ctx = vm.createContext({});
 vm.runInContext('"use strict";\n' + block, ctx, { filename: "app.js#log-selection" });
 var L = ctx;
-["selectLog", "logOlderEnd", "logNewerEnd", "logAnchorEnd"].forEach(function (f) {
+["selectLog", "logOlderEnd", "logNewerEnd", "logAnchorEnd", "logFullEnd"].forEach(function (f) {
   if (typeof L[f] !== "function") fail("the block does not define " + f);
 });
 
@@ -479,6 +479,103 @@ check("randomized: matches the brute-force reference, and the invariants hold (s
   }
   ok(stalePins > 100, "too few stale pins exercised: " + stalePins);
   ok(roundTrips > 500, "too few Older / Newer round trips exercised: " + roundTrips);
+});
+
+// ---- Task 43 fix round 1 ----
+// The window's exchanges as ids, oldest first (markers and hidden runs left out).
+function exIdsOf(s) { return s.items.filter(function (it) { return it.kind === "entry" && it.entry.kind === "ex"; }).map(function (it) { return it.entry.id; }); }
+
+check("a stale or shrunk pin re-pins to a full window (logFullEnd), honouring the anchor", function () {
+  // Evicted: every pinned row left the cap. The re-pin is the oldest full window, not one row.
+  var list = build("h x x x x x", 10);
+  var e = L.logFullEnd(list, shows, opts({ size: 3, endId: 4 }));
+  eq(e, 13, "the size-th oldest matching");
+  var s = L.selectLog(list, shows, opts({ size: 3, endId: e }));
+  eq(str(s), "x11 x12 x13", "a full window");
+  eq(L.logFullEnd(build("x x"), shows, opts({ size: 3, endId: 0 })), 2, "fewer than size match: the newest");
+  // The anchor (nearest at or before the pin) is kept when the window there is already full...
+  list = build("x x x x x x x x x x");
+  eq(L.logFullEnd(list, shows, opts({ size: 3, endId: 8 })), 8, "a full window at the anchor: unchanged");
+  // ...and extended forward from it when it is not.
+  eq(L.logFullEnd(list, shows, opts({ size: 3, endId: 2 })), 3, "extended forward from the anchor");
+  var odd = function (en) { return !en.ok; };
+  list = build("x h h x h h x");
+  eq(L.logFullEnd(list, odd, opts({ size: 2, endId: 1 })), 3, "none before the pin: from the nearest after, extended");
+  eq(L.logFullEnd(list, function () { return false; }, opts({ size: 2, endId: 4 })), null, "nothing matches: following");
+  eq(L.logFullEnd(list, odd, opts({ size: 2, endId: null })), null, "following stays following");
+  // Randomized: the re-pinned window is full (or holds every matching exchange) and contains
+  // the logAnchorEnd anchor.
+  var r = rng(0x43), n = 0;
+  for (var c = 0; c < 2000; c += 1) {
+    var lst = [], id = 1 + Math.floor(r() * 5);
+    for (var i = Math.floor(r() * 40); i > 0; i -= 1) {
+      var x = r();
+      lst.push(x < 0.1 ? { kind: "gap", id: id } : x < 0.15 ? { kind: "note", id: id } : { kind: "ex", e: { ok: r() < 0.7 }, id: id });
+      id += 1;
+    }
+    var o = opts({ size: 1 + Math.floor(r() * 6), endId: Math.floor(r() * (id + 2)), clearedAfter: r() < 0.2 ? Math.floor(r() * id) : 0 });
+    var end = L.logFullEnd(lst, shows, o), anchor = L.logAnchorEnd(lst, shows, o);
+    var all = L.selectLog(lst, shows, opts({ size: 1e9, clearedAfter: o.clearedAfter }));
+    if (end == null) { eq(all.counts.matching, 0, "case " + c + ": null only when nothing matches"); continue; }
+    var w = L.selectLog(lst, shows, opts({ size: o.size, endId: end, clearedAfter: o.clearedAfter }));
+    eq(w.counts.shown, Math.min(o.size, all.counts.matching), "case " + c + ": a full window");
+    ok(exIdsOf(w).indexOf(anchor) >= 0, "case " + c + ": the window holds the anchor " + anchor);
+    n += 1;
+  }
+  ok(n > 1000, "too few re-pins exercised: " + n);
+});
+
+check("Older / Newer keep the rows in view in the window (the step shrinks)", function () {
+  var list = build("x x x x x x x x x x");
+  // Window 7..10 (size 4); the reader sees 7 and 8. Older by 3 would drop 8: it moves 2.
+  var o = opts({ size: 4, endId: 10 });
+  eq(L.logOlderEnd(list, shows, o, 3), 7, "without keep: 3 back");
+  eq(L.logOlderEnd(list, shows, o, 3, { firstId: 7, lastId: 8 }), 8, "with keep: 2 back");
+  // Twice with no scroll: the second press may not pass the rows in view.
+  eq(L.logOlderEnd(list, shows, opts({ size: 4, endId: 8 }), 3, { firstId: 7, lastId: 8 }), 8, "second press: no move");
+  // Newer: window 3..6; the reader sees 3 and 4, so the window must still start at or before 3.
+  o = opts({ size: 4, endId: 6 });
+  eq(L.logNewerEnd(list, shows, o, 3), 9, "without keep: 3 on");
+  eq(L.logNewerEnd(list, shows, o, 3, { firstId: 3, lastId: 4 }), 6, "with keep at the window's top: no move");
+  eq(L.logNewerEnd(list, shows, o, 3, { firstId: 5, lastId: 6 }), 8, "with keep lower down: 2 on");
+  eq(L.logNewerEnd(list, shows, opts({ size: 4, endId: 8 }), 3, { firstId: 8, lastId: 8 }), null, "reaching the newest follows");
+  // Randomized: after Older or Newer from any pinned window with any visible run inside it,
+  // every visible exchange is still in the window, the windows overlap (no exchange between
+  // them is skipped), and the move is the largest allowed one (a brute-force reference).
+  var r = rng(0x44), moved = 0;
+  for (var c = 0; c < 3000; c += 1) {
+    var lst = [], id = 1;
+    for (var i = 5 + Math.floor(r() * 50); i > 0; i -= 1) {
+      var x = r();
+      lst.push(x < 0.1 ? { kind: "gap", id: id } : { kind: "ex", e: { ok: r() < 0.75 }, id: id });
+      id += 1;
+    }
+    var M = lst.filter(function (en) { return en.kind === "ex" && en.e.ok; }).map(function (en) { return en.id; });
+    if (!M.length) continue;
+    var size = 1 + Math.floor(r() * 8), step = 1 + Math.floor(r() * 8);
+    var k = Math.floor(r() * M.length), oo = opts({ size: size, endId: M[k] });
+    var w0 = exIdsOf(L.selectLog(lst, shows, oo));
+    var a0 = Math.floor(r() * w0.length), a1 = a0 + Math.floor(r() * (w0.length - a0));
+    var keep = { firstId: w0[a0], lastId: w0[a1] }, tag = "case " + c + " k=" + k + " size=" + size + " step=" + step + " keep=" + JSON.stringify(keep);
+    ["older", "newer"].forEach(function (dir) {
+      var end = dir === "older" ? L.logOlderEnd(lst, shows, oo, step, keep) : L.logNewerEnd(lst, shows, oo, step, keep);
+      var w1 = exIdsOf(L.selectLog(lst, shows, opts({ size: size, endId: end })));
+      for (var j = a0; j <= a1; j += 1) ok(w1.indexOf(w0[j]) >= 0, tag + " " + dir + ": the row in view " + w0[j] + " left the window");
+      ok(w1[w1.length - 1] >= w0[0] && w1[0] <= w0[w0.length - 1], tag + " " + dir + ": the windows do not overlap");
+      // Reference: the end index the step would reach, limited by the rows in view.
+      var lo = M.indexOf(w0[a1]), hi = M.indexOf(w0[a0]) + size - 1, want;
+      if (dir === "older") {
+        var t = Math.max(k - step, Math.min(size, M.length) - 1, lo);
+        want = k - size + 1 <= 0 ? M[k] : t < k ? M[t] : M[k];
+      } else {
+        var u = Math.min(k + step, Math.max(k, hi));
+        want = u >= M.length - 1 ? null : M[u];
+      }
+      eq(end, want, tag + " " + dir + ": the largest allowed move");
+      if (end !== M[k]) moved += 1;
+    });
+  }
+  ok(moved > 1000, "too few moves exercised: " + moved);
 });
 
 console.log("LOGCHECK PASS (" + passed + " checks)");

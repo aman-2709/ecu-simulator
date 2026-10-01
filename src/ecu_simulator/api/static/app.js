@@ -87,7 +87,9 @@
     // The log draws a window of LOG_WINDOW matching exchanges. endId null: following, the window
     // ends at the newest one. An id: pinned there, so rows never move under a reader; newer
     // exchanges are counted, not drawn. lastId and counts are the latest render's.
-    endId: null, lastId: null, counts: null
+    endId: null, lastId: null, counts: null,
+    pinFirst: null,                  // a pinned window's oldest drawn exchange at the last render
+    leftCap: false                   // the rows a pinned reader was viewing left the page's cap
   };
   var rowCache = new Map();
   var renderTimer = null, lastRender = 0;
@@ -1470,20 +1472,38 @@
     };
   }
 
+  // Positions in m (matching exchanges, as entry indices): the last whose id is at or before
+  // `id` (-1 if none), and the first whose id is at or after it (m.length if none).
+  function logAtOrBefore(entries, m, id) {
+    var lo = 0, hi = m.length;
+    while (lo < hi) { var mid = (lo + hi) >> 1; if (entries[m[mid]].id <= id) lo = mid + 1; else hi = mid; }
+    return lo - 1;
+  }
+  function logAtOrAfter(entries, m, id) {
+    var lo = 0, hi = m.length;
+    while (lo < hi) { var mid = (lo + hi) >> 1; if (entries[m[mid]].id < id) lo = mid + 1; else hi = mid; }
+    return lo;
+  }
+
   // The window end after "Older": `step` matching exchanges back, but never past the oldest
   // full window. Returns opts.endId unchanged (null stays following) when nothing older matches.
-  function logOlderEnd(entries, matches, opts, step) {
+  // keep (optional) { firstId, lastId }: the exchanges the reader has in view; the step shrinks
+  // so that they all stay in the window (its end never moves before keep.lastId).
+  function logOlderEnd(entries, matches, opts, step, keep) {
     var p = logPlace(entries, matches, opts), k = p.end - 1;
     if (p.end - opts.size <= 0) return opts.endId;
     var to = Math.max(k - step, Math.min(opts.size, p.m.length) - 1);
+    if (keep && keep.lastId != null) to = Math.max(to, logAtOrBefore(entries, p.m, keep.lastId));
     return to < k ? entries[p.m[to]].id : opts.endId;
   }
 
   // The window end after "Newer": `step` matching exchanges on; null (following again) when
-  // that reaches or passes the newest matching exchange, or when already following.
-  function logNewerEnd(entries, matches, opts, step) {
+  // that reaches or passes the newest matching exchange, or when already following. With keep,
+  // the step shrinks so that the window still starts at or before keep.firstId.
+  function logNewerEnd(entries, matches, opts, step, keep) {
     if (opts.endId == null) return null;
     var p = logPlace(entries, matches, opts), to = p.end - 1 + step;
+    if (keep && keep.firstId != null) to = Math.min(to, Math.max(p.end - 1, logAtOrAfter(entries, p.m, keep.firstId) + opts.size - 1));
     return to >= p.m.length - 1 ? null : entries[p.m[to]].id;
   }
 
@@ -1495,6 +1515,17 @@
     var p = logPlace(entries, matches, opts);
     if (!p.m.length) return null;
     return entries[p.m[Math.max(0, p.end - 1)]].id;
+  }
+
+  // A re-pin that leaves a full window: the logAnchorEnd anchor (nearest matching exchange at
+  // or before the pin, else the oldest after it), extended forward until the window holds
+  // `size` exchanges, or all of them if fewer match. Used when the pin went stale (its rows
+  // left the page's cap) and after a filter change; null when following or nothing matches.
+  function logFullEnd(entries, matches, opts) {
+    if (opts.endId == null) return null;
+    var p = logPlace(entries, matches, opts);
+    if (!p.m.length) return null;
+    return entries[p.m[Math.max(p.end - 1, Math.min(opts.size, p.m.length) - 1)]].id;
   }
   // ---- end log selection ----
 
@@ -1611,20 +1642,25 @@
 
   // The log draws a window of at most LOG_WINDOW exchanges the filters show (the selection
   // block above), following the newest or pinned at view.endId. A pinned window keeps the
-  // reader's rows where they are on screen; a stale pin (its rows left the page's cap, or a
-  // filter's matches all lie after it) moves to the nearest matching exchange.
+  // reader's rows where they are on screen. When rows of a pinned window leave the page's cap
+  // (its oldest rows, or all of them: a stale pin), the window re-pins to the oldest full
+  // window kept (logFullEnd), so it never shrinks to a few rows.
   function renderLog() {
     lastRender = Date.now();
     var wrap = $("logwrap"), body = $("log-body");
     var topBefore = wrap.scrollTop;
     var anchors = view.follow ? [] : visibleAnchors(wrap);
     var focus = logFocus();
-    var sel = selectLog(S.entries, passes, logOpts());
-    if (sel.pinBeforeView) {
-      view.endId = logAnchorEnd(S.entries, passes, logOpts());
+    var sel = selectLog(S.entries, passes, logOpts()), c = sel.counts;
+    var shrunk = view.endId != null && view.pinFirst != null && sel.firstId != null && sel.firstId > view.pinFirst &&
+      c.olderMatching === 0 && c.shown < LOG_WINDOW && c.newerMatching > 0;
+    if (sel.pinBeforeView || shrunk) {
+      view.endId = logFullEnd(S.entries, passes, logOpts());
+      view.leftCap = true;
       sel = selectLog(S.entries, passes, logOpts());
+      c = sel.counts;
     }
-    var c = sel.counts;
+    view.pinFirst = view.endId != null ? sel.firstId : null;
     view.lastId = sel.lastId;
     view.counts = c;
     var frag = document.createDocumentFragment(), rows = [], ids = [];
@@ -1633,7 +1669,8 @@
       if (S.trimmedGaps) left.push(plural(S.trimmedGaps, "gap marker", "gap markers"));
       if (S.trimmedNotes) left.push(plural(S.trimmedNotes, "connection note", "connection notes"));
       frag.appendChild(markRow({ kind: "note", title: andList(left) + " left this view.",
-        text: "The page keeps the newest " + fmtN(MAX_ROWS) + " exchanges it received. The rows were received, so their removal is not a gap." }));
+        text: "The page keeps the newest " + fmtN(MAX_ROWS) + " exchanges it received. The rows were received, so their removal is not a gap." +
+          (view.leftCap && view.endId != null ? " Rows this view was showing left too, so it moved to the oldest exchanges kept." : "") }));
     }
     if (c.olderMatching) frag.appendChild(navRow("older", c));
     else if (c.hiddenOutside.older && c.shown) frag.appendChild(hiddenRow(c.hiddenOutside.older));
@@ -1765,6 +1802,7 @@
     if (view.follow !== on) {
       view.follow = on;
       view.endId = on ? null : view.lastId;
+      view.pinFirst = null; view.leftCap = false;
       if (on) { toBottom(); scheduleRender(); }
     }
     renderFollow();
@@ -1779,14 +1817,19 @@
   }
   // Older / Newer move a pinned window by LOG_STEP matching exchanges (Older first pins a
   // following window where it is); Newer reaching the newest, and Jump to newest, follow again.
+  // The exchange rows in the log box stay in the window: the step shrinks if it would drop them.
   function moveWindow(kind) {
     var opts = logOpts(view.endId != null ? view.endId : view.lastId);
+    var seen = visibleAnchors($("logwrap"));
+    var keep = seen.length ? { firstId: seen[0].id, lastId: seen[seen.length - 1].id } : null;
+    var end;
+    view.pinFirst = null; view.leftCap = false;
     if (kind === "older") {
       if (opts.endId == null) return;
-      view.endId = logOlderEnd(S.entries, passes, opts, LOG_STEP);
+      view.endId = logOlderEnd(S.entries, passes, opts, LOG_STEP, keep);
       view.follow = false;
-    } else if (kind === "newer" && opts.endId != null && logNewerEnd(S.entries, passes, opts, LOG_STEP) != null) {
-      view.endId = logNewerEnd(S.entries, passes, opts, LOG_STEP);
+    } else if (kind === "newer" && opts.endId != null && (end = logNewerEnd(S.entries, passes, opts, LOG_STEP, keep)) != null) {
+      view.endId = end;
       view.follow = false;
     } else {
       view.endId = null;
@@ -1795,11 +1838,12 @@
     renderLog();
   }
   // A filter change keeps following if following; a pinned window moves to the nearest
-  // exchange the new filters show at or before its pin (or after it, if none is), and
-  // follows again when nothing matches.
+  // exchange the new filters show at or before its pin (or after it, if none is), extended
+  // forward to a full window, and follows again when nothing matches.
   function filtersChanged() {
+    view.pinFirst = null; view.leftCap = false;
     if (view.endId != null) {
-      view.endId = logAnchorEnd(S.entries, passes, logOpts());
+      view.endId = logFullEnd(S.entries, passes, logOpts());
       if (view.endId == null) view.follow = true;
     }
     renderLog();
@@ -1915,7 +1959,7 @@
     // Clear view leaves no row to stay pinned at, so the log follows again.
     $("btn-clear").addEventListener("click", function () {
       view.clearedAfter = S.nextId - 1; view.pauseAfter = view.clearedAfter;
-      view.endId = null; view.follow = true;
+      view.endId = null; view.follow = true; view.pinFirst = null; view.leftCap = false;
       renderLog();
     });
     $("log-panel").addEventListener("click", function (ev) {
