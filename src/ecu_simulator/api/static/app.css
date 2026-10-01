@@ -374,7 +374,7 @@ body.is-stale .graphs__fine, body.is-known .graphs__fine { display: none; }
 button.compact { min-height: 0; padding: 0.143rem 0.571rem; font-size: 0.857rem; line-height: 1.3; }
 .graphs { padding-top: 0.429rem; padding-bottom: 0.571rem; }
 /* The latest gap in the window, shared by all cards, so each card keeps its height. Words, not colour. */
-.graphs__breaks { font-size: 0.786rem; line-height: 1.3; margin-bottom: 0.286rem; padding-left: 0.429rem; border-left: 3px dashed var(--rule-2); }
+.graphs__breaks { font-size: 0.786rem; line-height: 1.3; padding-left: 0.429rem; border-left: 3px dashed var(--rule-2); }
 .graphs__note { color: var(--ink-2); font-size: 0.857rem; margin-bottom: 0.286rem; }
 .graphs__note:last-child { margin-bottom: 0; }
 .graphs__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.571rem; }
@@ -383,7 +383,8 @@ button.compact { min-height: 0; padding: 0.143rem 0.571rem; font-size: 0.857rem;
 .graph__name { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
 .graph__value { margin-left: auto; font-weight: 700; font-size: 0.929rem; color: var(--ink); }
 .graph__value--na { font-weight: 400; color: var(--ink-2); font-style: italic; }
-.graph__plot { height: clamp(3rem, 9vh, 4.75rem); overflow: hidden; }
+/* The cap was 4.75rem; 4.5rem (Task 37, owner-authorized) keeps 5 log rows at 1440 x 900 with a wrapped notice line. */
+.graph__plot { height: clamp(3rem, 9vh, 4.5rem); overflow: hidden; }
 .graph__line2 { font-size: 0.786rem; line-height: 1.3; color: var(--ink-2); overflow-wrap: anywhere; }
 .graph--na .graph__plot { display: none; }
 .graph--na .graph__line2 { font-style: italic; }
