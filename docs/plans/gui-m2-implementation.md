@@ -3335,3 +3335,132 @@ the investigation, with its traces committed beside it.
 - Regression case: a healthy session receives an incomplete `state`, then the resync's
   socket delivers unchanged valid data; pass when the page went last known at once and
   returned to Live only after the valid `state` on the new socket, with the budget reset.
+
+## M3b main-thread fix: a bounded, navigable exchange log (owner, 2026-10-01)
+
+Authority: the investigation `docs/validation/gui-m3b-main-thread.md` (its proposal, the
+numbers, and what it could not establish), and the owner's instruction of 2026-10-01. Browser
+only: no API rate, diagnostic-path or M2 latency-criteria change; the page keeps its
+2,000-exchange retention. Separately reviewable commits; stop before pushing; no slider
+controls; the manual checklist and every existing gate stay open; M3b is not accepted.
+
+**Central design rule.** The log renders a **window** of at most `LOG_WINDOW` (200) *matching*
+exchanges, chosen after the filters are applied to all retained exchanges. The window is
+**following** (its end is the newest matching exchange, and it slides as exchanges arrive)
+**or pinned** (its end is a fixed exchange id). Leaving "follow" by the reader's own input,
+or using "Older", pins the window at the newest exchange shown at that moment, so rows never
+vanish from under a reader who is inspecting history; exchanges that arrive meanwhile are
+counted, not drawn, and "Jump to newest" (which also resumes following) brings them in.
+"Newer" and "Older" move a pinned window by `LOG_STEP` (100) matching exchanges; reaching the
+newest resumes following. The reader's anchor row (by exchange id) keeps its on-screen offset
+when the window shifts.
+
+**Four kinds of absent rows, each worded differently and never confused:**
+1. *outside this window*: matching, retained, reachable with Older / Newer / Jump to newest;
+2. *hidden by filters*: the existing "N exchanges hidden by filters (not a gap)" lines, plus
+   a count for any outside the window;
+3. *sequence gap* markers (and connection / restart notes): shown where they fall inside the
+   window; those outside it are counted ("2 gap markers and 1 connection note in older
+   rows") beside the Older control;
+4. *left the page's 2,000-row cap*: the existing trimmed note; unchanged meaning.
+Payload expansion (`view.expanded`, by entry id) is kept for rows that leave and re-enter the
+window. Held rows (pause) and "Clear view" keep their present meaning.
+
+**Measurement protocol (all later tasks).** Full retained buffer = 2,000 exchanges, filled by
+a short burst from the harness traffic script, then measured at the standard rate
+(about 3.8 requests/s, stepped demo, 60 s) at 1440 × 900 and 390 × 844. Report: busy %, the
+`renderLog` count and summed duration (and p95/max per call), long-task count and maximum,
+Event Timing (input delay + processing + presentation) for scripted clicks and scrolls
+(Pause, Jump to newest, Older, a filter change), rows rendered and rows retained at start
+and end, the actual request rate. Intermediate runs: numbers only, no trace committed. The
+committed baseline traces stay as they are; the final after-fix runs commit one trace per
+width. One uncommitted baseline run on the current head confirms the committed baselines
+are still comparable. The shipped CSS and JS are what is measured; nothing is disabled
+only for the benchmark. A diagnostic run (labelled so) may disable one thing to attribute
+cost, and is not the reported comparison.
+
+### Task 42: the pure selection logic, with a committed check
+
+**Files:** `app.js` (one marked block, DOM-free), `scripts/gui_log_check.js`,
+`tests/unit/api/test_log_selection_js.py`.
+- A block between `// ---- log selection (pure, no DOM) ----` and `// ---- end log selection ----`
+  in `app.js`, with no DOM or page-state access (everything passed in), implementing: given
+  the entry list (exchanges and markers, in id order), a filter predicate, `clearedAfter`,
+  `pauseAfter` (or none), a window end (id or "newest") and a size, return the items to
+  render (entries and "N hidden by filters" runs inside the window), the first / last shown
+  exchange ids, and the counts: matching, older matching, newer matching, hidden by filters
+  (total, and outside the window), gap / note markers outside the window (older and newer),
+  held, in view. Plus the movement helpers: the end id for Older / Newer by a step, and the
+  anchor for a filter change (nearest matching exchange at or before the previous pin).
+- `scripts/gui_log_check.js` extracts that block from `app.js` text, evaluates it in a
+  `vm` context, and checks: window size and order; filters applied to all retained rows
+  before windowing; hidden runs only between shown rows; markers inside the window kept in
+  position and markers outside only counted; clear / pause boundaries; a pinned window not
+  moving as entries are appended; following sliding; Older / Newer stepping and resuming
+  following at the newest; the filter-change anchor; empty and tiny lists; all-hidden; the
+  2,000-entry case; the counts adding up (matching = older + shown + newer).
+- `test_log_selection_js.py` runs the check with `node` (skipped, with the reason
+  "node is not installed", when missing; hosted runners have node).
+- No page behaviour changes in this task.
+
+### Task 43: the windowed log: render, navigation, markers, position
+
+**Files:** `app.js`, `app.css`, `index.html`.
+- `renderLog` uses the selection block. Controls inside the log table (real buttons,
+  keyboard-reachable): an Older row at the top ("N older exchanges match your filters;
+  show 100 older", with the marker counts beside it) when there are older matching
+  exchanges; a Newer row at the bottom when pinned with newer ones; "Jump to newest" (the
+  existing control) resumes following and scrolls to the newest. The follow / pin rule and
+  the anchor-row offset of the central design rule. The log's count line reads, for
+  example, "200 of 1,873 matching shown (2,000 retained)", and the existing wording for
+  hidden-by-filter, gap, trimmed and held stays distinct.
+- The existing jump control's "new rows below" count includes newer exchanges outside the
+  window, stated as such ("+ M beyond this window"); no information is lost.
+- Smoke (throwaway, namespace, a full buffer at 1440 and 390): live following; scroll away
+  pins; Older / Newer / Jump; filters; pause / resume; expansion kept; markers; no
+  horizontal overflow; the M3a and `--m3b` captures still pass (cases reading log rows
+  adapt only where the window changes their meaning, and say so).
+
+### Task 44: render only what changed; paused logs stay frozen
+
+**Files:** `app.js`.
+- A render signature (window start / end ids, shown count, filter key, cleared / pause
+  boundary, the expansion set, trimmed counters, marker counts). The row list is rebuilt
+  only when it changes; a following window with no new matching exchange, a pinned window
+  receiving arrivals, and a paused log receiving traffic update only counters (held count,
+  newer-beyond-window count, filter counts, count line) and only when their text changes.
+  No `replaceChildren` of unchanged rows; no repeated rebuild of the frozen log while paused.
+- Measure (numbers only, protocol above) with Tasks 43 + 44 in place. Report whether
+  `renderLog` is still a major share of busy time under live following. If it is, report
+  and propose an incremental append / trim of the live tail; do not build it.
+
+### Task 45: the continuous animation (conditional on a diagnostic)
+
+**Files:** `app.css` (possibly `app.js`).
+- A labelled diagnostic: lamp animation off only, vs on, otherwise identical, at full
+  buffer. If the lamp's `beat` (box-shadow, `app.css:119`) is a measurable share, make the
+  smallest change that keeps a clear connection status and the signal-change flash: for
+  example the same 2 s rhythm on a compositor-only property (opacity / transform of a
+  ring element), or a pulse only on change. If it is not a measurable share, change
+  nothing and report. `prefers-reduced-motion` behaviour is unchanged.
+
+### Task 46: the browser cases, measurements and the record
+
+**Files:** `scripts/gui_demo_capture.py`, `docs/validation/gui-m3b-main-thread.md`,
+`docs/validation/gui-m3b-live-demo.md`, one trace pair under `docs/validation/gui-m3b-perf/`.
+- `--m3b` cases at both widths with a full retained buffer: live following (the window
+  slides, the DOM row count stays ≤ the window, newest visible); pause / resume (paused:
+  no rebuild, held counter rises; resume jumps in); filtering across all retained rows
+  (a filter matching only old exchanges still finds them); older-history navigation (Older,
+  Newer, position kept, Jump to newest, no row disappears under a pinned reader);
+  eviction (past 2,000, the trimmed note and counters, window consistency); reconnect
+  markers (a disconnect and a resumed stream produce the markers where they fall, and the
+  outside-window counts); payload expansion kept; the four absent-row wordings present.
+- The protocol's measurements: an uncommitted baseline on the head before the fix, then
+  after-fix runs; intermediate numbers in the record; one after-fix trace per width committed.
+  A visible-browser measurement through the launcher mechanism (GPU on) on the owner's
+  desktop, short runs, if it works; the owner's own Chrome is the alternative.
+- The record: before / after table (busy %, `renderLog` count and sum, p95 / max, long
+  tasks, Event Timing, rows rendered / retained, request rate), what was and was not
+  measured, the 40 % estimate stated as an earlier estimate and not a target, the open
+  items; M3b stays "implemented, not accepted".
