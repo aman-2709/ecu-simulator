@@ -695,17 +695,17 @@
   }
 
   // A new run, or an as_of that went back: the graphs are cleared, never joined across runs.
-  // `back` is [from, to] when scenario time went back without a new started_at.
+  // `back` is [from, to] when scenario time went back without a new started_at (the note gives
+  // only the time it happened, in the owner's short wording).
   function graphsRestart(startedAt, back) {
     if (!G.built) return;
     G.list.forEach(function (g) { g.ring = newRing(); g.drawnTo = null; g.left = null; });
     G.asOf = null; G.firstT = null; G.pending = null; G.restarted = true;
     G.pausedAt = null;                  // while paused, the first as_of of the new run freezes the view
     G.run = startedAt;
-    G.note = back ? "Scenario time went back from t = " + tText(back[0]) + " to t = " + tText(back[1]) + " s at " + utc(Date.now()) +
-      ". Treated as a new run: graphs start again, and the earlier graphs were cleared." :
-      "Simulator restarted at " + utc((startedAt != null ? startedAt * 1000 : Date.now())) +
-      ". Graphs start again from scenario t = 0; the previous run's graphs were cleared.";
+    // The owner's wording (Task 37): short, so it shares one line with a gap note at 1440.
+    G.note = back ? "Scenario time went back at " + utc(Date.now()) + "; previous graph history cleared." :
+      "Simulator restarted at " + utc((startedAt != null ? startedAt * 1000 : Date.now())) + "; previous graph history cleared.";
     renderGraphsNote();
     scheduleDraw(true);
   }
