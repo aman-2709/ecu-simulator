@@ -197,7 +197,7 @@
             S.lastLive = Date.now();
             if (isStale()) S.downAt = S.lastLive;
             S.ecus = initial[2];
-            applyState(initial[0], initial[1], null);
+            applyState(initial[0], initial[1]);
             renderAll();
           }
           openSocket(status.api.refused_clients, gen);
@@ -385,7 +385,7 @@
       if (episodeActive() && S.ep.inFlight) { episodeAttemptEnded("the state it received was incomplete", true); renderLink(); }
       return;
     }
-    applyState(m.vehicle, m.dtcs, sock.id);
+    applyState(m.vehicle, m.dtcs);
     S.dataAt = Date.now();
     var r = S.req;
     if (r) {
@@ -476,11 +476,10 @@
   }
 
   // ---------- data ----------
-  // `sockId` is the socket the state came on, or null for the first REST snapshot of a run.
-  function applyState(vehicle, dtcs, sockId) {
+  function applyState(vehicle, dtcs) {
     S.vehicle = vehicle; S.dtcs = dtcs;
     renderVehicle(); renderDtcs();
-    graphsApply(vehicle, sockId);
+    graphsApply(vehicle);
     document.body.classList.remove("is-loading");
   }
 
@@ -564,8 +563,9 @@
     firstT: null,                    // as_of of the first point this page stored in this run
     run: null,                       // started_at of the run the rings belong to
     note: null,                      // the restart note
-    // A pending break (§6.7): set on a fault or a drop, taken by the first state of a later socket.
-    pending: null,                   // { why, sock } or null
+    restarted: false,                // the rings start at a restart, not at this page's connect
+    // A pending break (§6.7): set on a fault or a drop, taken by the next state with a later as_of.
+    pending: null,                   // { why } or null
     frame: 0, resizeFrame: 0, built: false, rem: null,
     list: []                         // per graph: { def, ring, fig, value, line2, plot, u, state, ... }
   };
@@ -586,6 +586,13 @@
   function newRing() { return { t: new Float64Array(RING_CAP), v: new Float64Array(RING_CAP), start: 0, count: 0, lastValidT: null, breaks: [], trimmedPaused: false }; }
   function rt(r, i) { return r.t[(r.start + i) % RING_CAP]; }
   function rv(r, i) { return r.v[(r.start + i) % RING_CAP]; }
+  // The first logical index whose t is at or after `start`: the count of points before it.
+  function firstAtOrAfter(r, start) {
+    var lo = 0, hi = r.count;
+    while (lo < hi) { var mid = (lo + hi) >> 1; if (rt(r, mid) < start) lo = mid + 1; else hi = mid; }
+    return lo;
+  }
+  function setText(node, text) { if (node.textContent !== text) node.textContent = text; }
   function same(a, b) { return a === b || (a !== a && b !== b); }   // NaN equals NaN here
   function dropOldest(r) {
     r.start = (r.start + 1) % RING_CAP; r.count -= 1;
@@ -661,28 +668,34 @@
       G.list.forEach(function (g) { ro.observe(g.plot); });
     }
     breakListeners.push(function (cause) {
-      // Taken by the first state of a socket opened after this one. With no data yet, nothing breaks.
-      if (!G.pending && G.asOf != null) G.pending = { why: BREAK_WHY[cause] || cause, sock: S.sockSeq };
+      // Taken by the next state with a later as_of, on whichever socket: a drop changes S.gen and a
+      // malformed frame closes the socket at once, so no old-socket state follows those; during an
+      // encoding fault the first good state can come on the same socket (§8.3), and it must take the
+      // break. With no data yet, nothing breaks.
+      if (!G.pending && G.asOf != null) G.pending = { why: BREAK_WHY[cause] || cause };
     });
     syncGraphControls();
   }
 
   // A new run, or an as_of that went back: the graphs are cleared, never joined across runs.
-  function graphsRestart(startedAt) {
+  // `back` is [from, to] when scenario time went back without a new started_at.
+  function graphsRestart(startedAt, back) {
     if (!G.built) return;
-    G.list.forEach(function (g) { g.ring = newRing(); g.drawnTo = null; });
-    G.asOf = null; G.firstT = null; G.pending = null;
-    G.pausedAt = null;
+    G.list.forEach(function (g) { g.ring = newRing(); g.drawnTo = null; g.left = null; });
+    G.asOf = null; G.firstT = null; G.pending = null; G.restarted = true;
+    G.pausedAt = null;                  // while paused, the first as_of of the new run freezes the view
     G.run = startedAt;
-    G.note = "Simulator restarted at " + utc((startedAt != null ? startedAt * 1000 : Date.now())) +
+    G.note = back ? "Scenario time went back from t = " + tText(back[0]) + " to t = " + tText(back[1]) + " s at " + utc(Date.now()) +
+      ". Treated as a new run: graphs start again, and the earlier graphs were cleared." :
+      "Simulator restarted at " + utc((startedAt != null ? startedAt * 1000 : Date.now())) +
       ". Graphs start again from scenario t = 0; the previous run's graphs were cleared.";
     renderGraphsNote();
     scheduleDraw(true);
   }
 
-  // Every applied vehicle snapshot reaches here. `sockId` is the socket it came on (null for the
-  // first REST snapshot). Values become numbers or NaN; the text matches the signal table.
-  function graphsApply(v, sockId) {
+  // Every applied vehicle snapshot reaches here. Values become numbers or NaN; the text matches
+  // the signal table.
+  function graphsApply(v) {
     if (!G.built) return;
     var nonfinite = Array.isArray(v.nonfinite) ? v.nonfinite : [];
     var missing = Array.isArray(v.unavailable) ? v.unavailable : [];
@@ -690,9 +703,9 @@
     var t = typeof v.as_of === "number" && isFinite(v.as_of) ? v.as_of : null;
     var sc = S.status && S.status.scenario;
     if (G.run == null) G.run = S.runStartedAt;
-    if (t != null && G.asOf != null && t < G.asOf) graphsRestart(S.runStartedAt);   // cannot happen within a run
+    if (t != null && G.asOf != null && t < G.asOf) graphsRestart(S.runStartedAt, [G.asOf, t]);   // cannot happen within a run
     var brk = null;
-    if (t != null && G.pending && (sockId == null || sockId > G.pending.sock) && G.asOf != null && t > G.asOf) {
+    if (t != null && G.pending && G.asOf != null && t > G.asOf) {
       brk = G.pending.why; G.pending = null;
     }
     G.list.forEach(function (g) {
@@ -705,13 +718,18 @@
         ringApply(g.ring, t, g.state === "ok" ? raw : NaN, brk);
       }
       if (t != null) ringTrim(g.ring, t);
-      if (!G.paused) g.shown = signalText(p, v);
     });
-    if (t != null) { G.asOf = t; if (G.firstT == null) G.firstT = t; }
+    var freeze = false;
+    if (t != null) {
+      G.asOf = t;
+      if (G.firstT == null) G.firstT = t;
+      // Paused before any data, or across a restart: the first as_of is where the view freezes.
+      if (G.paused && G.pausedAt == null) { G.pausedAt = t; freeze = true; }
+    }
     renderGraphsNote();
-    if (!G.paused) G.list.forEach(renderLine1);
+    if (!G.paused || freeze) G.list.forEach(function (g) { g.shown = signalText(g.def.path, v); renderLine1(g); });
     G.list.forEach(writeGraphAttrs);
-    scheduleDraw(false);
+    scheduleDraw(freeze);
   }
 
   // The words of the signal table's value cell, for the table and the graph's line 1 alike (§8.4).
@@ -730,7 +748,8 @@
   function renderLine1(g) {
     var text = g.shown == null ? "" : g.shown;
     if (g.value.textContent !== text) g.value.textContent = text;
-    g.value.className = "graph__value" + (g.state === "invalid" || g.state === "unavailable" ? " graph__value--na" : "");
+    var cls = "graph__value" + (g.state === "invalid" || g.state === "unavailable" ? " graph__value--na" : "");
+    if (g.value.className !== cls) g.value.className = cls;
   }
 
   // The section's own lines: a restart note, signals not on this vehicle, and the missing time.
@@ -744,13 +763,14 @@
       states.indexOf("waiting") >= 0 && S.vehicle ? "Waiting for the first scenario tick." : null;
     if (noTime) lines.push(noTime);
     var note = $("graphs-note");
-    note.hidden = !lines.length;
-    note.textContent = lines.join(" ");
+    if (note.hidden !== !lines.length) note.hidden = !lines.length;
+    setText(note, lines.join(" "));
     G.list.forEach(function (g) {
       var hide = g.state === "absent" || g.state === "waiting" || g.state === "no-scenario";
       if (g.fig.hidden !== hide) { g.fig.hidden = hide; scheduleResize(); }
-      g.fig.classList.toggle("graph--na", g.state === "unavailable");
-      if (g.state === "unavailable") g.line2.textContent = "unavailable, no source";
+      var na = g.state === "unavailable";
+      if (g.fig.classList.contains("graph--na") !== na) g.fig.classList.toggle("graph--na", na);
+      if (na) setText(g.line2, "unavailable, no source");
     });
     renderGraphsMeta();
   }
@@ -759,11 +779,14 @@
     if (!G.ok) return;
     var text = "";
     if (G.paused) text = "Paused at t = " + (G.pausedAt != null ? tText(G.pausedAt) : "—") + " s";
-    else if (G.firstT != null && G.asOf != null && G.asOf - G.firstT < G.win) text = "history starts at t = " + tText(G.firstT) + " s (when this page connected)";
-    $("graphs-status").textContent = text;
-    $("graphs-fine").textContent = (text ? " · " : "") + "x: scenario t, s · newest " + HORIZON_S / 60 + " min kept";
-    $("graphs-meta").title = "The horizontal axis is scenario time (as_of), in seconds. The page keeps the newest " + HORIZON_S / 60 +
-      " min of each signal; older history is discarded.";
+    else if (G.firstT != null && G.asOf != null && G.asOf - G.firstT < G.win) {
+      text = "history starts at t = " + tText(G.firstT) + " s (" + (G.restarted ? "when this run started" : "when this page connected") + ")";
+    }
+    setText($("graphs-status"), text);
+    setText($("graphs-fine"), (text ? " · " : "") + "x: scenario t, s · newest " + HORIZON_S / 60 + " min kept");
+    var meta = $("graphs-meta"), title = "The horizontal axis is scenario time (as_of), in seconds. The page keeps the newest " +
+      HORIZON_S / 60 + " min of each signal; older history is discarded.";
+    if (meta.title !== title) meta.title = title;
   }
 
   function setWindow(w) {
@@ -853,8 +876,7 @@
     var r = g.ring, xs = [], ys = [];
     var W = G.win;
     if (end != null && r.count) {
-      var start = end - W, lo = 0, hi = r.count;
-      while (lo < hi) { var mid = (lo + hi) >> 1; if (rt(r, mid) < start) lo = mid + 1; else hi = mid; }
+      var start = end - W, lo = firstAtOrAfter(r, start);
       var atStart = lo < r.count && rt(r, lo) === start;
       g.left = atStart ? rv(r, lo) : lo > 0 ? rv(r, lo - 1) : null;
       if (lo > 0 && !atStart) { xs.push(start); ys.push(g.left === g.left ? g.left : null); }
@@ -877,12 +899,13 @@
       if (y < min) min = y;
       if (y > max) max = y;
     }
+    // Fewer than two points draw nothing: the counts say what is drawn.
+    if (xs.length < 2) { xs = []; ys = []; segs = 0; gaps = 0; }
     g.segments = segs; g.gaps = gaps; g.drawnTo = end;
     g.xr = end != null ? [end - W, end] : [0, W];
     g.yr = yRange(g.def, min, max);
-    if (xs.length < 2) { xs = []; ys = []; }
     if (!g.u) makePlot(g, [xs, ys]); else g.u.setData([xs, ys]);
-    g.line2.textContent = line2Text(g, min, max, end);
+    setText(g.line2, line2Text(g, min, max, end));
   }
 
   function line2Text(g, min, max, end) {
@@ -945,25 +968,25 @@
 
   // Read-only diagnostics for the browser checks (M3b §12.2): written after each ring update and
   // draw, never read by the page.
+  // Each attribute is written only when its value changes.
   function writeGraphAttrs(g) {
     var d = g.fig.dataset, r = g.ring, n = r.count;
-    d.path = g.def.path;
-    d.state = g.state;
-    d.points = String(n);
-    d.cap = String(RING_CAP);
-    d.oldestT = n ? String(rt(r, 0)) : "";
-    d.newestT = n ? String(rt(r, n - 1)) : "";
-    d.asOf = G.asOf != null ? String(G.asOf) : "";
-    d.drawnTo = g.drawnTo != null ? String(g.drawnTo) : "";
-    d.windowS = String(G.win);
-    d.leftValue = g.left != null && g.left === g.left ? String(g.left) : "";
-    var before = 0;
-    if (G.asOf != null) { var start = G.asOf - G.win; while (before < n && rt(r, before) < start) before += 1; }
-    d.pointsBeforeWindow = String(before);
-    d.segments = String(g.segments);
-    d.gaps = String(g.gaps);
-    d.run = G.run != null ? String(G.run) : "";
-    d.paused = String(G.paused);
+    function put(k, v) { if (d[k] !== v) d[k] = v; }
+    put("path", g.def.path);
+    put("state", g.state);
+    put("points", String(n));
+    put("cap", String(RING_CAP));
+    put("oldestT", n ? String(rt(r, 0)) : "");
+    put("newestT", n ? String(rt(r, n - 1)) : "");
+    put("asOf", G.asOf != null ? String(G.asOf) : "");
+    put("drawnTo", g.drawnTo != null ? String(g.drawnTo) : "");
+    put("windowS", String(G.win));
+    put("leftValue", g.left != null && g.left === g.left ? String(g.left) : "");
+    put("pointsBeforeWindow", String(G.asOf != null ? firstAtOrAfter(r, G.asOf - G.win) : 0));
+    put("segments", String(g.segments));
+    put("gaps", String(g.gaps));
+    put("run", G.run != null ? String(G.run) : "");
+    put("paused", String(G.paused));
   }
 
   // ---------- rendering: status and link ----------
