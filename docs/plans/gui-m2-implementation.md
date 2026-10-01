@@ -3318,3 +3318,20 @@ the investigation, with its traces committed beside it.
   stops; it never weakens the sandbox or X access to work around it.
 - The record explains how the owner completes the two fault checks with it; screenshots do
   not complete a behavioural check; the manual CSP checks stay outstanding.
+
+### Task 41: an incomplete `state` is a data fault (owner, 2026-10-01)
+
+**Files:** `app.js`; `scripts/gui_demo_capture.py`; the record.
+- Finding (pushed `0a3f14f`, `app.js:391-394`): `onState()` returns silently when `vehicle` or
+  `dtcs` is not an object, unless a recovery attempt is in flight. In a healthy session the
+  page stays Live with its previous data.
+- First reproduce it through the browser harness (the WebSocket wrapper dispatches a
+  `{"type":"state","vehicle":…}` frame missing `dtcs`, and one missing `vehicle`, on a
+  healthy page) and record the observed attributes.
+- Fix: a recognised `state` message that cannot be applied is a data fault through the
+  existing bounded recovery mechanism (the same requirement and episode as an unreadable
+  frame: last known at once, resync, budget, Retry now on exhaustion). Unknown message
+  types stay ignored, for compatibility.
+- Regression case: a healthy session receives an incomplete `state`, then the resync's
+  socket delivers unchanged valid data; pass when the page went last known at once and
+  returned to Live only after the valid `state` on the new socket, with the budget reset.
