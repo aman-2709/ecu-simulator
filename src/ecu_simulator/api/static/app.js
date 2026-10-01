@@ -769,12 +769,12 @@
     if (g.value.className !== cls) g.value.className = cls;
   }
 
-  // The section's own lines: a restart note, signals not on this vehicle, and the missing time.
+  // The section's own lines: signals not on this vehicle, and the missing time. The restart note
+  // is on the shared notice line (breaksText), beside any gap.
   function renderGraphsNote() {
     var lines = [];
     // The restart note stays while the window still reaches back to the new run's start.
     if (G.note && G.firstT != null && G.asOf != null && G.asOf - G.firstT >= G.win) G.note = null;
-    if (G.note) lines.push(G.note);
     var absent = G.list.filter(function (g) { return g.state === "absent"; }).map(function (g) { return g.def.path; });
     if (absent.length) lines.push("Not on this vehicle" + (S.vehicle && S.vehicle.kind ? " (" + S.vehicle.kind + ")" : "") + ": " + absent.join(", ") + ".");
     var states = G.list.map(function (g) { return g.state; });
@@ -892,11 +892,14 @@
     if (line.hidden !== !text) line.hidden = !text;
   }
 
-  // One shared line under the head (not in each card, so every card keeps its height): the latest
-  // ended gap inside the drawn window, then every invalid run still open. A drop or fault is the
-  // same for every graph; an invalid value names its signal. Empty, and hidden, when there is none.
+  // One shared notice line under the head (not in each card, so every card keeps its height): the
+  // restart note while it applies, then the latest ended gap inside the drawn window, then every
+  // invalid run still open. A drop or fault is the same for every graph; an invalid value names its
+  // signal. Each notice is complete; the line wraps rather than cut one. Empty, and hidden, when
+  // there is none.
   function breaksText(end) {
-    if (end == null) return "";
+    var notices = G.note ? [G.note] : [];
+    if (end == null) return notices.join(" · ");
     var start = end - G.win, best = null, who = null, open = [], trimmed = false;
     G.list.forEach(function (g) {
       if (g.fig.hidden || g.state === "unavailable") return;
@@ -916,7 +919,7 @@
       parts.push(g.def.name + ": invalid value from t = " + tText(g.ring.invalidFrom) + " to t = " + tText(end) + " s (still invalid)");
     });
     if (trimmed) parts.push("history trimmed while paused");
-    return parts.join(" · ");
+    return notices.concat(parts).join(" · ");
   }
 
   // The drawn window [end − W, end]: the value held at its left edge, the points inside it, and
