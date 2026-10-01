@@ -67,8 +67,10 @@ def parse_window(text: str, what: str) -> tuple[Window, str]:
         start, end = float(parts[0]), float(parts[1])
     except (IndexError, ValueError):
         raise argparse.ArgumentTypeError(f"{what} expects START:END, got {text!r}") from None
-    if not 0 <= start < end:
-        raise argparse.ArgumentTypeError(f"{what} needs 0 <= START < END, got {text!r}")
+    # START > 0: the server encodes its initial state at startup, and a window open at t = 0 would
+    # fail that encode and refuse to start (§8.3) instead of injecting a fault into a running server.
+    if not 0 < start < end:
+        raise argparse.ArgumentTypeError(f"{what} needs 0 < START < END, got {text!r}")
     return Window(start, end), ":".join(parts[2:])
 
 
@@ -204,11 +206,6 @@ async def serve(harness: Harness, config: app.RuntimeConfig, api: Any) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    host = os.environ.get("GUI_DEMO_HOST_NETNS")
-    here = os.readlink("/proc/self/ns/net")
-    if not host or host == here:
-        raise SystemExit("gui_fault_server.py runs only inside scripts/run_gui_demo.sh's private network "
-                         f"namespace (host {host or 'unknown'}, here {here}); refusing")
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--interface", default="vcan0")
@@ -219,6 +216,19 @@ def main(argv: list[str] | None = None) -> int:
                         metavar="START:END[:vehicle|dtcs]")
     parser.add_argument("--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
     args = parser.parse_args(argv)
+    by_path: dict[str, list[Window]] = {}
+    for path, window in args.nonfinite:
+        for other in by_path.get(path, []):
+            if window.start < other.end and other.start < window.end:
+                parser.error(f"--nonfinite windows on {path} overlap: [{other.start:g}, {other.end:g}) and "
+                             f"[{window.start:g}, {window.end:g})")
+        by_path.setdefault(path, []).append(window)
+    # After parsing, so --help and usage errors work anywhere; nothing is started before this.
+    host = os.environ.get("GUI_DEMO_HOST_NETNS")
+    here = os.readlink("/proc/self/ns/net")
+    if not host or host == here:
+        raise SystemExit("gui_fault_server.py runs only inside scripts/run_gui_demo.sh's private network "
+                         f"namespace (host {host or 'unknown'}, here {here}); refusing")
     logger_app.configure(getattr(logging, args.log_level))
     try:
         profile = load_profile(args.profile)

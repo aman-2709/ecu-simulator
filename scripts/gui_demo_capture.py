@@ -55,6 +55,7 @@ DEVTOOLS_PORT = 9222
 WIDE = (1440, 900)
 OWNER_WIDE = (2000, 1100)
 NARROW = (390, 844)
+MID = (1200, 900)          # M3b: the overflow check and the status-bar height only (not the log-rows check)
 TRAFFIC_RATE = "4"
 
 
@@ -864,6 +865,11 @@ class M3b:
         result: dict[str, Any] = await self.cdp.js(WRAPPER_READ)
         return result
 
+    async def settled(self) -> None:
+        """Two animation frames: the layout and draws queued by the last change have run."""
+        await self.cdp.send("Runtime.evaluate", awaitPromise=True,
+                            expression="new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
+
     async def attrs(self, since_ms: float) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = await self.cdp.js(ATTRS_SINCE % since_ms)
         return result
@@ -1064,8 +1070,11 @@ async def case_malformed_once(m: M3b) -> None:
          "log has the resync line": "Resynchronised after an unreadable message" in lg["text"],
          "no restart marker": "Simulator restarted" not in lg["text"],
          "started_at unchanged": before["started_at"] == after["started_at"],
-         "seq continuity": seq_continuous(lg["seqs"]) and "duplicate" not in lg["count"]},
-        {"immediately": slim(imm), "live_after_s": (t_live - t_bad) / 1000, "end": slim(end),
+         # No traffic in part A, so there is no exchange row: continuity holds vacuously, and says so.
+         ("seq continuity" if lg["seqs"] else "seq continuity (vacuous: no exchanges, no traffic)"):
+         seq_continuous(lg["seqs"]) and "duplicate" not in lg["count"]},
+        {"seq_continuity": "checked" if lg["seqs"] else "vacuous: no exchanges (no traffic)",
+         "immediately": slim(imm), "live_after_s": (t_live - t_bad) / 1000, "end": slim(end),
          "transitions": [slim(s) for s in samples if s is samples[0] or s is samples[-1]],
          "new_sockets": new_socks, "log_marks": lg["marks"], "seqs": lg["seqs"][-20:],
          "started_at": [before["started_at"], after["started_at"]]})
@@ -1250,6 +1259,8 @@ async def overflow_at(m: M3b, label: str, size: tuple[int, int]) -> None:
     await check_overflow(m.run, m.cdp, f"M3b {label}")
     measured = await m.cdp.js(OVERFLOW)
     m.cases.extra.setdefault("overflow", {})[label] = measured
+    m.cases.extra.setdefault("status_bar_px", {})[label] = await m.cdp.js(
+        "Math.round(document.querySelector('header').getBoundingClientRect().height)")
     await m.shot(f"m3b-b-graphs-{label}.png")
     if size == NARROW:
         await m.cdp.js("window.scrollTo(0, 0)")
@@ -1260,7 +1271,8 @@ async def case_window_persists(m: M3b) -> None:
     stored = await m.cdp.js("localStorage.getItem('ecu-simulator.graphs.window')")
     await m.cdp.send("Page.reload")
     await m.cdp.wait_for("document.body && document.body.dataset.health === 'live'", timeout=20)
-    await asyncio.sleep(1.0)
+    # The cards exist and have written their window (whatever it is): then it is read.
+    await m.cdp.wait_for("document.querySelectorAll('#graphs-grid figure.graph[data-window-s]').length === 5", 10)
     s = await m.state()
     pressed = await m.cdp.js("[...document.querySelectorAll('#graphs-panel [data-window]')]"
                              ".map(b => [b.dataset.window, b.getAttribute('aria-pressed')])")
@@ -1313,7 +1325,8 @@ async def case_pause(m: M3b) -> None:
         "Pause graphs for 10 s, then resume. While paused: data-paused = true; data-drawn-to and line 1 unchanged; "
         "data-as-of rising; data-points not falling except by the caps. After: data-drawn-to = data-as-of. The log "
         "kept running",
-        {"paused true throughout": all(s["graphs"][p]["paused"] == "true" for s in samples for p in paths),
+        {"graphs shown": bool(paths),
+         "paused true throughout": all(s["graphs"][p]["paused"] == "true" for s in samples for p in paths),
          "drawn-to unchanged": all(len(set(seq("drawnTo", p))) == 1 for p in paths),
          "line 1 unchanged": all(len(set(seq("line1", p))) == 1 for p in paths),
          "as-of rising": all(float(seq("asOf", p)[-1]) > float(seq("asOf", p)[0]) for p in paths),
@@ -1355,11 +1368,17 @@ async def case_sigstop(m: M3b, sim: subprocess.Popen[bytes]) -> None:
     t1 = time.time() * 1000
     samples, live = await m.until(lambda s: s["health"] == "live", timeout=20.0, period=0.2)
     t_live = samples[-1]["now"]
-    await asyncio.sleep(1.5)
+    paths = [p for p, g in before["graphs"].items() if not g["hidden"]]
+    # Wait for the break to be taken (the first state with a later as_of on the new socket), then
+    # for the log's own marker (it re-renders at most every 200 ms); the rules are checked after.
+    taken, _ = await m.until(lambda s: bool(s["breaks"]) and all(
+        int(s["graphs"][p]["gaps"]) > int(before["graphs"][p]["gaps"]) for p in paths), timeout=6.0)
+    with contextlib.suppress(RuntimeError):
+        await m.cdp.wait_for("document.getElementById('log-body').innerText.indexOf("
+                             "'Connection lost, then resumed.') >= 0", timeout=3.0)
     after = await m.state()
     st2 = await m.status()
     lg = await m.log()
-    paths = [p for p, g in before["graphs"].items() if not g["hidden"]]
     note = re.search(GAP_NOTE, after["breaks"])          # the shared gap line under the graphs head
     await m.shot("m3b-b-sigcont-break.png")
     # The extra log-rows case again, with a disconnect break showing and no encode-failed readout.
@@ -1379,6 +1398,7 @@ async def case_sigstop(m: M3b, sim: subprocess.Popen[bytes]) -> None:
          "started_at equal": st["started_at"] == st2["started_at"],
          "no restart marker": "Simulator restarted" not in lg["text"],
          "Connection lost, then resumed.": "Connection lost, then resumed." in lg["text"],
+         "graphs shown": bool(paths),
          "data-run unchanged": all(after["graphs"][p]["run"] == before["graphs"][p]["run"] for p in paths),
          "gaps +1 and segments +1": all(int(after["graphs"][p]["gaps"]) == int(before["graphs"][p]["gaps"]) + 1
                                         and int(after["graphs"][p]["segments"]) ==
@@ -1417,7 +1437,7 @@ async def case_restart(m: M3b, run: Run, sim: subprocess.Popen[bytes], logname: 
         "Restart reset",
         "SIGTERM, then a new simulator: data-run changed; data-oldest-t >= 0 and data-points counts only the new run; "
         "the restart note and marker are visible; data-segments = 1 after the first new point",
-        {"live again": live, "the first new point drawn": got,
+        {"graphs shown": bool(paths), "live again": live, "the first new point drawn": got,
          "data-run changed": all(s["graphs"][p]["run"] != before["graphs"][p]["run"] for p in paths),
          "oldest-t >= 0 and only this run's points": all(
              0 <= float(s["graphs"][p]["oldestT"]) <= float(s["graphs"][p]["asOf"])
@@ -1569,6 +1589,7 @@ async def part_b(run: Run, m: M3b) -> None:
                        {"graphs open": (await m.cdp.js("!document.getElementById('graphs').hidden")) is True,
                         "log filled (more rows than fit)": (await m.log())["seqs"].__len__() > rows["full"],
                         "at least 5 full log rows": rows["full"] >= 5}, rows)
+        await overflow_at(m, "1200", MID)
         await overflow_at(m, "390", NARROW)
         await overflow_at(m, "2000", OWNER_WIDE)
         await m.cdp.viewport(*WIDE)
@@ -1580,10 +1601,10 @@ async def part_b(run: Run, m: M3b) -> None:
             return (all(sw <= cw for _, sw, cw in measured) and "#graphs" in names
                     and sum(n.startswith(".uplot") for n in names) == 5)
 
-        m.cases.record("Overflow", "#graphs and each .uplot in OVERFLOW, at 1440, 390 and 2000: no scrollWidth above "
-                       "its clientWidth",
+        m.cases.record("Overflow", "#graphs and each .uplot in OVERFLOW, at 1440, 390 and 2000 (and 1200): no "
+                       "scrollWidth above its clientWidth",
                        {f"{label}: none over, #graphs and 5 .uplot measured": fits(v) for label, v in over.items()},
-                       over)
+                       {"measured": over, "status_bar_px": m.cases.extra["status_bar_px"]})
         await case_held_left(m)
         await case_pause(m)
         await m.click_window(120)
@@ -1685,7 +1706,10 @@ async def part_d_encoding(run: Run, m: M3b) -> None:
             if s["now"] - samples[0]["now"] > 25000 or (s["health"] == "live" and s["now"] - samples[0]["now"] > 8000):
                 break
             await asyncio.sleep(0.1)
-        await asyncio.sleep(1.0)
+        paths = [p for p, g in before["graphs"].items() if not g["hidden"]]
+        # The break is taken by the first state with a later as_of: wait for it (it is checked below).
+        await m.until(lambda s: all(int(s["graphs"][p]["gaps"]) > int(before["graphs"][p]["gaps"]) for p in paths),
+                      timeout=5.0)
         after = await m.state()
         w = await m.wrapper()
         fault = [s for s in samples if s["reason"] == "encoding"]
@@ -1696,15 +1720,22 @@ async def part_d_encoding(run: Run, m: M3b) -> None:
                            and s["health"] == "live"), None)
         statuses = w["status"]
         false_reads = [r for r in statuses if r["ok"] is False]
-        recovered_sock = None
+        # The rule itself, from the wrapper's logs: t_live is the first health -> live change after
+        # the last fault sample; no health -> live change may come between the fault's start and it.
+        health = [x for x in await m.attrs(samples[0]["now"]) if x["a"] == "health"]
+        t_fault = next((x["t"] for x in health if x["v"] != "live"), None)
+        t_live = next((x["t"] for x in health if fault and x["v"] == "live" and x["t"] > fault[-1]["now"]), None)
+        early_live = [x for x in health if x["v"] == "live" and t_fault is not None and t_live is not None
+                      and t_fault < x["t"] < t_live]
+        # The socket whose state made it live: the newest socket opened before t_live.
+        idx = max((i for i, x in enumerate(w["socks"]) if i >= n0 and t_live is not None and x["created"] <= t_live),
+                  default=None)
+        recovered_sock = w["socks"][idx] if idx is not None else None
+        first_state = next((x["t"] for x in w["states"] if x["sock"] == idx), None) if idx is not None else None
         qualifying_ok = None
-        if live_again:
-            opened_before = [x for x in w["socks"][n0:] if x["created"] <= live_again["now"]]
-            recovered_sock = opened_before[-1] if opened_before else None
-            if recovered_sock and false_reads:
-                qualifying_ok = next((r for r in reversed(statuses) if r["ok"] is True and r["end"] is not None
-                                      and false_reads[-1]["end"] < r["end"] <= recovered_sock["created"]), None)
-        paths = [p for p, g in before["graphs"].items() if not g["hidden"]]
+        if recovered_sock and false_reads:
+            qualifying_ok = next((r for r in reversed(statuses) if r["ok"] is True and r["end"] is not None
+                                  and false_reads[-1]["end"] < r["end"] <= recovered_sock["created"]), None)
         await m.shot("m3b-d-encoding-recovered.png")
         fault_polls = [s["polls"] for s in fault]
         m.cases.record(
@@ -1721,19 +1752,31 @@ async def part_d_encoding(run: Run, m: M3b) -> None:
              "data-polls keeps rising": len(set(fault_polls)) >= 2 and fault_polls == sorted(fault_polls),
              "the graphs get a break": all(int(after["graphs"][p]["gaps"]) == int(before["graphs"][p]["gaps"]) + 1
                                            for p in paths),
-             "live again after the fault": live_again is not None,
-             "recovered on a new socket opened after a /status ok:true read": recovered_sock is not None
-             and len(w["socks"]) > n0 and qualifying_ok is not None and recovered_sock["states"] >= 1},
+             "graphs shown": bool(paths),
+             "live again after the fault": live_again is not None and t_live is not None,
+             "no health -> live change between the fault and t_live": t_fault is not None and not early_live,
+             "the recovering socket was opened after an ok:true /status that followed the last ok:false":
+             recovered_sock is not None and qualifying_ok is not None,
+             "its first state arrived no later than t_live": first_state is not None and t_live is not None
+             and first_state <= t_live},
             {"first_fault_after_s": (first_fault["now"] - t_open) / 1000 if first_fault else None,
              "fault_samples": len(fault), "fault_polls": [fault_polls[:1], fault_polls[-1:]],
              "banner": fault[0]["banner"] if fault else None,
              "live_again_after_s": (live_again["now"] - t_open) / 1000 if live_again else None,
+             "t_fault_ms": t_fault, "t_live_ms": t_live, "first_state_ms": first_state,
+             "ok_true_end_ms": qualifying_ok["end"] if qualifying_ok else None,
+             "last_ok_false_end_ms": false_reads[-1]["end"] if false_reads else None,
+             "recovering_socket": {"index": idx, **(recovered_sock or {})}, "early_live": early_live,
+             "health_changes": health,
              "sockets": w["socks"][n0 - 1:], "false_reads": false_reads, "qualifying_ok_read": qualifying_ok,
              "breaks_line": after["breaks"], "line2": {p: after["graphs"][p]["line2"] for p in paths}})
         # The extra measured case (review finding): log rows with a break note in line 2.
         await m.cdp.viewport(*WIDE)
         await m.cdp.js("window.scrollTo(0, 0)")
-        await asyncio.sleep(3.0)
+        # The shared line shows the break, the log has more rows than fit, and two frames have laid it out.
+        await m.cdp.wait_for("!document.getElementById('graphs-breaks').hidden && "
+                             "document.querySelectorAll('#log-body > tr').length > 10", timeout=10)
+        await m.settled()
         rows = await m.cdp.js(LOG_ROWS)
         await m.shot("m3b-d-log-rows-with-break-note.png")
         noted = re.search(GAP_NOTE, rows["breaks"])
@@ -1799,6 +1842,13 @@ async def part_e_same_value(run: Run, m: M3b) -> None:
             await asyncio.sleep(0.1)
         await m.shot("m3b-e-loaded-during-fault.png")
         rec, ok = await m.until(lambda s: s["health"] == "live", timeout=10.0)
+        # The new document's own attribute log: no health -> live change before the fault ended.
+        t55 = time.time() * 1000 - (await uptime() - 55.0) * 1000
+        health = [x for x in await m.attrs(0) if x["a"] == "health"]
+        early = [x for x in health if x["v"] == "live" and x["t"] < t55]
+        conds["... and its attribute log has no change to live before the fault ended"] = bool(health) and not early
+        observed["loaded_health_changes"] = health
+        observed["fault_end_ms"] = t55
         conds["a page loaded during the fault: last known, not Live"] = bool(loaded) and all(
             s["health"] == "last-known" and s["reason"] == "encoding" and s["text"] != "Live" for s in loaded)
         conds["... although it received a state after hello"] = all(s["states"] >= 1 for s in loaded)
