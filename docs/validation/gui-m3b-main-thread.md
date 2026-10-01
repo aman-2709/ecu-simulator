@@ -15,14 +15,15 @@ the bus. Nothing here measures it, and nothing proposed here touches it.
 - **M3a's log render (`renderLog`) costs 0.32–0.40 s a call at 2,000 rows.** It runs 119–144 times
   a minute and takes 45–49 s of each 60 s. Its cost follows the **number of rows it renders**, not
   the number of new rows. "Pause view" does not reduce it, and neither does "Hide graphs".
-- **A second cost multiplies the first.** Two CSS animations repaint on the main thread about 59
+- **A second cost multiplies the first.** Two CSS animations together repaint on the main thread about 59
   times a second: the live lamp's endless `beat` and the signal table's change flash. Each repaint
   costs about 13 ms when 2,000 rows are rendered. With no traffic at all, the page is still busy
   **83 % / 79 %**.
 - **The graphs cost 0.06–0.16 s a minute in every run where they are shown**, at most 1.2 % of the busy time (0.1–0.2 % in the saturated runs).
 - **Proposal, not implemented:** render at most the newest *N* log rows, and keep all 2,000 for the
-  counts and filters. The measured analogue, the page's own "Clear view" with about 210 rows
-  rendered, puts the busy time at **about 40 %** at both widths, against 100 % today.
+  counts and filters. Its expected effect comes from an analogue, a different condition, not
+  from the fix: the page's own "Clear view", with about 210 rows rendered, measured **about 40 %**
+  busy at both widths, against 100 % today (see "Proposal" for how the two differ).
 
 **Not judged here.** These are headless Chrome measurements, `--disable-gpu`, on a shared host.
 No target exists for the page's main-thread load, so this record judges nothing against M4 or
@@ -67,8 +68,11 @@ Each control was clicked for real, and the script checked that the page took the
 
 **Trace analysis.** The traces were analysed with `scripts/gui_trace_breakdown.py`, on the page's
 main thread (`CrRendererMain`):
-- **Busy total:** the summed duration of the top-level tasks (`ThreadControllerImpl::RunTask`;
-  the trace has the `toplevel` category for this), over the thread's own span.
+- **Busy total:** the union of the outermost complete events on `CrRendererMain`, over the
+  thread's own span. These are almost all scheduler tasks (`ThreadControllerImpl::RunTask`; the
+  trace has the `toplevel` category for this), but not only. In 1440 × 900 baseline-a, the
+  RunTask events sum to 59.70 s against a busy total of 59.99 s. The rest is events outside any
+  task, among them a 0.20 s `Layout`.
 - **Breakdown by self time:** every complete event is placed in one tree by containment. Each
   event is charged only the time its children do not cover, so nested events are never counted
   twice. The parts add up to the busy total exactly ("parts sum" below).
@@ -88,6 +92,11 @@ main thread (`CrRendererMain`):
 **Cross-check.** Chrome's own `Performance.getMetrics` `TaskDuration` agrees with the trace's busy
 total within 0.2 s in every run. For example, 60.06 s against 59.99 s, 7.24 against 7.17, and 19.29
 against 19.17.
+
+**For the owner: the traces kept are copies.** The committed traces are main-thread-only copies
+(22.2 MB). They reproduce every number in this document, but they drop the raster, compositor and
+GPU threads. The raw traces (61.5 MB) were kept only in a session scratchpad, which is not
+durable, so their recorded SHA-256 values cannot be re-checked later.
 
 **Evidence.** The evidence is in [gui-m3b-perf/](gui-m3b-perf/):
 - the sixteen traces, the page's main thread only, with the raw traces' SHA-256;
@@ -132,8 +141,9 @@ The layout is forced inside the call. After the rebuild, `toBottom()` reads `scr
 (`app.js` lines 1476, 1485).
 
 **The rest of the busy time at 2,000 rows:**
-- **The frames that paint the rebuilt table:** 186 frames, 11.06 s of paint, about 59 ms a
-  frame.
+- **The paint of the frames:** 186 frames, 11.06 s of paint. That is about 59 ms a frame, but
+  only as the total paint divided by all 186 frames. The frames that follow a rebuild are not
+  separated from the others.
 - **The WebSocket handler:** 0.35–0.97 s.
 - **The graphs' redraw:** 0.08–0.09 s. That figure includes uPlot's own commit callbacks (see
   "Reconciliation").
@@ -243,9 +253,13 @@ timer is line 1431):
    - Two CSS animations repaint on the main thread:
      - the live lamp's endless `beat`, a box-shadow animation (`app.css` lines 119 and 127);
      - the 1.2 s change flash on signal cells (`app.css` lines 212 and 216; `app.js` line 1277).
-   - **The lamp alone keeps about 59 frames a second.** In the no-traffic traces, the frames
-     outside every change flash come at 59 a second: 1,564 frames in 26.5 s at 1440, and 2,220 in
-     37.8 s at 390.
+   - **Together they keep about 59 frames a second** in the no-traffic runs: 3,518 and 3,527
+     frames in 60 s, where reduced motion leaves 389 and 387.
+   - **The lamp's own share is not established.** An ad-hoc reading of the no-traffic traces
+     found frames continuing at about the same rate outside every change flash. That reading is
+     not part of the committed script, so it is not reproducible from it, and no number from it is
+     relied on here. The reduced-motion runs turn both animations off together, so they cannot
+     separate the lamp from the flash either.
    - **Each frame costs about 13 ms with 2,000 rendered rows.** With no traffic at all, that makes
      83 % / 79 % busy.
    - **With reduced motion, 389 frames remain**, from data updates, still at about 13 ms each:
@@ -270,9 +284,18 @@ filters, gaps and clear/pause, as now.
 Nothing else changes: the follow logic, `rowsBelow()` and the counts read `view.shownRows`, which
 then holds at most *N*. It is about a dozen lines in one function.
 
-**Expected effect, from the numbers.** The log-cleared runs measure this condition directly: all
-2,000 exchanges retained and walked by the same loop at every call, with the newest rows rendered.
-At about 211 rendered rows, a choice of *N* = 200:
+**Expected effect, from an analogue.** No run measured the fix. The log-cleared runs are the
+nearest measured condition. In both, all 2,000 exchanges are retained and walked by the same loop
+at every call, and only the newest rows are rendered. But the cleared condition differs from the
+fix in four ways:
+- **Its rendered rows grow** from 12 to 239 over the run, rather than holding at *N*.
+- **It renders no note row.** The "older rows left this view" note is not rendered after a clear
+  (`app.js` line 1446); the fix would add one.
+- **No oldest row leaves the rendered set at each render,** as one would at a steady *N*.
+- **The ≈ 40 % below is one quarter of a run,** about 15 s at about 211 rendered rows, not a full
+  60 s run held at that count.
+
+With those differences, the analogue for a choice of *N* = 200 is:
 
 | | 1440 × 900 now | with *N* ≈ 200 | 390 × 844 now | with *N* ≈ 200 |
 |---|---|---|---|---|
@@ -285,8 +308,11 @@ A smaller *N* costs less: about 100 rows measured 32 % / 25 %. The value of *N*,
 reader may scroll back to, is the owner's decision.
 
 **Why this one, against the other candidates:**
-- **Render only when the log changed.** It already does, except while paused. The paused runs
-  cost the same as running (99.9 %), and pausing is not the normal state.
+- **Render only when the log changed.** It already does. Even while paused, the rendered set
+  still changes, because old rows are trimmed from the top (1,982 → 1,753 rendered in the paused
+  1440 run), though the new rows are held back. Skipping those renders would change what the
+  paused view shows. The paused runs cost the same as running (99.9 %), and pausing is not the
+  normal state.
 - **Coalesce to `requestAnimationFrame`.** The timer already coalesces to at most 5 a second, and
   exchanges arrive at 3.8 a second. An rAF runs more often, not less, so the count would not fall.
 - **A longer throttle, for example 1 s.**

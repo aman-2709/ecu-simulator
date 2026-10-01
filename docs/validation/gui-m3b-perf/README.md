@@ -23,7 +23,7 @@ Chrome process (61.5 MB for the sixteen; 22.2 MB here). The files here keep the 
 page and the metadata events (process and thread names), written by
 `scripts/gui_trace_breakdown.py --extract-main`. That thread is all the breakdown reads, and its
 summary of each file here equals the summary of the raw trace taken during the run (checked: no
-field differs). The raw files stay in the session scratchpad; their sizes and SHA-256 are below.
+field differs). The copies drop the raster, compositor and GPU threads. The raw files were kept only in a session scratchpad, which is not durable, so the sizes and SHA-256 below record them but cannot be re-checked later.
 
 | File | Size here | SHA-256 here | Raw size | Raw SHA-256 |
 |---|---|---|---|---|
