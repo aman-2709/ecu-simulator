@@ -1280,6 +1280,7 @@ async def case_incomplete_in_attempt(m: M3b) -> None:
     await asyncio.sleep(1.0)
     w0 = await m.wrapper()
     n0 = len(w0["socks"])
+    marks0 = len((await m.log())["marks"])     # this case's marks are the ones after these
     await m.cdp.js("window.__m3b.incompleteFirst = 1")
     imm = await m.cdp.js("(() => { window.__m3b.bad(); return " + PAGE_STATE + "; })()")
     samples, ok = await m.until(lambda s: s["health"] == "live", timeout=10.0)
@@ -1289,6 +1290,7 @@ async def case_incomplete_in_attempt(m: M3b) -> None:
     w = await m.wrapper()
     attempts = w["socks"][n0:]
     lg = await m.log()
+    own = [x for x in lg["marks"][marks0:] if x.startswith("Resynchronised after")]
     m.cases.record(
         "Incomplete state during an attempt",
         "An unreadable frame starts an episode; the first attempt's socket delivers an incomplete state (the wrapper "
@@ -1303,9 +1305,11 @@ async def case_incomplete_in_attempt(m: M3b) -> None:
          "data-attempts went 1, 2, then 0": [int(x["v"]) for x in changes if x["a"] == "attempts"] == [1, 2, 0],
          "recovered: live, episode none, attempts 0": ok and (end["health"], end["episode"], end["attempts"])
          == ("live", "none", 0),
-         "the resync line names the incomplete state": "an incomplete state message." in lg["text"]},
+         # The resync mark this case added (the last one after its fault) names both causes.
+         "this case's resync line names both causes": bool(own) and own[-1].startswith(
+             "Resynchronised after an unreadable message and an incomplete state message.")},
         {"immediately": slim(imm), "end": slim(end), "attempt_sockets": attempts, "attribute_changes": changes,
-         "live_after_s": (samples[-1]["now"] - imm["now"]) / 1000, "log_marks": lg["marks"][-3:]})
+         "live_after_s": (samples[-1]["now"] - imm["now"]) / 1000, "this_case_resync_marks": own})
 
 
 async def case_slots(m: M3b, clients: ScriptClients, variant: str) -> None:

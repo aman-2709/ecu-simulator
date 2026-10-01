@@ -348,10 +348,11 @@
   }
 
   // ---------- health (M3b §8.4) ----------
-  // The graphs' rings register here: called with "malformed", "encoding" or "down" when S.data
-  // enters last-known for a fault or S.conn goes down, with "malformed" for a malformed frame
-  // while an encoding fault is pending, and with "resync" when a resync closes the socket, so each
-  // ring sets a pending break (§6.7).
+  // The graphs' rings register here: called with "malformed" (an unreadable frame), "incomplete"
+  // (a state without vehicle or dtcs objects), "encoding" or "down" when S.data enters last-known
+  // for a fault or S.conn goes down, with "malformed" or "incomplete" for such a message while an
+  // encoding fault is pending, and with "resync" when a resync closes the socket, so each ring sets
+  // a pending break (§6.7).
   var breakListeners = [];
   function healthBreak(cause) { breakListeners.forEach(function (fn) { fn(cause); }); }
 
