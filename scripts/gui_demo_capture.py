@@ -2669,6 +2669,23 @@ EVENT_OBSERVER = """(() => {
 })()"""
 EVENT_TAKE = """(() => { const et = window.__et; if (!et) return [];
   et.keep(et.obs.takeRecords()); et.obs.disconnect(); window.__et = null; return et.entries; })()"""
+# Task 45's DIAGNOSTIC runs only (never the reported comparison): GUI_PERF_DIAG turns one
+# animation off by a stylesheet this harness adds before the page loads; the shipped CSS is
+# unchanged. A constructed sheet (adoptedStyleSheets), because the page's CSP has no inline
+# styles. GUI_PERF_IDLE=1 adds one 60 s run per viewport with the traffic stopped.
+PERF_DIAG_CSS = {
+    "lamp-off": ".conn__lamp, .conn__lamp::before, .conn__lamp::after { animation: none !important; }",
+    "flash-off": ".sig td.changed { animation: none !important; }",
+    "both-off": ".conn__lamp, .conn__lamp::before, .conn__lamp::after, .sig td.changed "
+                "{ animation: none !important; }",
+}
+PERF_DIAG_INJECT = """(() => { const add = () => { const s = new CSSStyleSheet(); s.replaceSync(%s);
+  document.adoptedStyleSheets = [...document.adoptedStyleSheets, s]; window.__perfDiag = %s; };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', add); else add(); })()"""
+PERF_DIAG_CHECK = """(() => { const lamp = document.querySelector('.conn__lamp');
+  return {diag: window.__perfDiag || null, sheets: document.adoptedStyleSheets.length,
+          conn: document.getElementById('conn').className,
+          lamp_animation: lamp ? getComputedStyle(lamp).animationName : null}; })()"""
 
 
 async def perf_home(cdp: DevTools, size: tuple[int, int]) -> None:
@@ -2748,16 +2765,26 @@ async def m3b_perf_log_session(run: Run, chrome: str, profile_dir: str) -> None:
     spec = importlib.util.find_spec("ecu_simulator")
     origin = spec.origin if spec else None
     run.log(f"ecu_simulator imports from {origin}")
+    diag = os.environ.get("GUI_PERF_DIAG") or None
+    if diag is not None and diag not in PERF_DIAG_CSS:
+        raise SystemExit(f"GUI_PERF_DIAG must be one of {sorted(PERF_DIAG_CSS)}, not {diag!r}")
+    idle = os.environ.get("GUI_PERF_IDLE") == "1"
+    if diag:
+        run.log(f"DIAGNOSTIC run: {diag}, by a harness stylesheet ({PERF_DIAG_CSS[diag]}); not the shipped page")
     await launch_chrome(run, chrome, profile_dir)
     problems: list[str] = []
     runs: list[dict[str, Any]] = []
     served: dict[str, Any] = {}
+    diag_check: dict[str, Any] | None = None
     async with aiohttp.ClientSession() as http:
         ws_url = await page_target(http)
         version = await chrome_version(http)
         run.log(f"Chrome: {version}")
         async with http.ws_connect(ws_url, max_msg_size=0) as ws:
             cdp = await m3b_cdp(run, http, ws, problems, wrapper=False)
+            if diag:
+                await cdp.send("Page.addScriptToEvaluateOnNewDocument", source=PERF_DIAG_INJECT % (
+                    json.dumps(PERF_DIAG_CSS[diag]), json.dumps(diag)))
             m = M3b(run, cdp, http, Cases(run))
             sim = await m3b_start(run, MOVING_PROFILE, "perf-simulator.log")
             traffic = None
@@ -2770,6 +2797,8 @@ async def m3b_perf_log_session(run: Run, chrome: str, profile_dir: str) -> None:
                           .hexdigest(), "app_js_lines": lines}
                 run.log(f"served app.js: {served}")
                 await m.open_page()
+                diag_check = await cdp.js(PERF_DIAG_CHECK)
+                run.log(f"animation check (live page): {diag_check}")
                 await m.click_window(120)
                 run.log(f"prefill: start traffic at {PERF_PREFILL_RATE}/s until the log holds {PERF_ROWS} exchanges")
                 traffic = run.spawn([sys.executable, str(ROOT / "scripts" / "gui_demo_traffic.py"), "--interface",
@@ -2786,6 +2815,15 @@ async def m3b_perf_log_session(run: Run, chrome: str, profile_dir: str) -> None:
                 for vlabel, size in (("1440x900", WIDE), ("390x844", NARROW)):
                     await cdp.viewport(*size)
                     await asyncio.sleep(1.5)
+                    if idle:
+                        run.log("stop traffic (idle run)")
+                        run.stop(traffic)
+                        traffic = None
+                        await perf_home(cdp, size)
+                        await asyncio.sleep(5.0)
+                        runs.append(await perf_trace(run, cdp, f"{vlabel}-idle", "no-traffic", size, False, lines))
+                        traffic = start_traffic(run)
+                        await asyncio.sleep(5.0)
                     for rep in range(1, PERF_LOG_REPEATS + 1):
                         await perf_home(cdp, size)
                         await asyncio.sleep(3.0)
@@ -2815,6 +2853,8 @@ async def m3b_perf_log_session(run: Run, chrome: str, profile_dir: str) -> None:
                 run.stop(sim)
                 out = {"chrome": version, "categories": PERF_CATEGORIES, "seconds": PERF_SECONDS,
                        "rows_cap": PERF_ROWS, "traffic_rate": TRAFFIC_RATE, "served": served,
+                       "diagnostic": {"off": diag, "css": PERF_DIAG_CSS[diag], "check": diag_check} if diag
+                       else None, "idle_runs": idle, "animation_check": diag_check,
                        "steps": [list(s[:2]) for s in PERF_LOG_STEPS],
                        "profile": str(MOVING_PROFILE.relative_to(ROOT)), "runs": runs, "problems": problems}
                 (run.outdir / "m3b-perf-log-results.json").write_text(json.dumps(out, indent=1, default=str))

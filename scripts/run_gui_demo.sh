@@ -14,7 +14,10 @@
 #   scripts/run_gui_demo.sh --m3b-slots <outdir> the M3b four-client variants A, B and C alone
 #   scripts/run_gui_demo.sh --m3b-perf <outdir>  the main-thread comparison runs with traces, about 22 min
 #   scripts/run_gui_demo.sh --m3b-perf-log <outdir>  the log fix's before / after runs, about 7 min
-#                                                (PYTHONPATH=<a tree>/src serves that tree's page)
+#                                                (PYTHONPATH=<a tree>/src serves that tree's page;
+#                                                GUI_PERF_DIAG=lamp-off|flash-off|both-off is a labelled
+#                                                diagnostic with that animation off by a harness stylesheet;
+#                                                GUI_PERF_IDLE=1 adds a no-traffic run per viewport)
 #
 # Every process is stopped on every path: the capture script stops what it started by
 # exact PID, and the trap below then signals the capture script's whole process group
