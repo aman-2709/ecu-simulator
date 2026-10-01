@@ -1,0 +1,1757 @@
+{
+ "chrome": "Chrome/151.0.7922.173",
+ "cases": [
+  {
+   "case": "Bounded history",
+   "rule": "--long on ice_scenario.yaml with traffic, the 10 min window selected. At every 10 s sample, for every graph: data-points <= data-cap and data-points-before-window <= 1. After 600 s: data-points-before-window = 1 and data-left-value set. Coolant (constant late in the run) shows data-points-before-window <= 1 while its data-oldest-t is older than the window",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "window 600 everywhere": true,
+    "points <= cap at every sample": true,
+    "points-before-window <= 1 at every sample": true,
+    "after 600 s: points-before-window = 1 and left-value set": true,
+    "coolant: <= 1 before the window while its oldest-t is older than the window": true
+   },
+   "observed": {
+    "samples": 70,
+    "first_t": 0.6302356799133122,
+    "last_as_of": 690.6011812689248,
+    "late_samples": 9,
+    "coolant_old_samples": 9,
+    "max_points": {
+     "vehicle.speed": 9,
+     "engine.rpm": 11,
+     "engine.throttle": 51,
+     "engine.engine_load": 2330,
+     "engine.coolant_temp": 233
+    },
+    "last": {
+     "vehicle.speed": {
+      "points": "4",
+      "cap": "4096",
+      "oldestT": "90.16027956386097",
+      "asOf": "690.6011812689248",
+      "pointsBeforeWindow": "1",
+      "leftValue": "0"
+     },
+     "engine.rpm": {
+      "points": "4",
+      "cap": "4096",
+      "oldestT": "90.16027956386097",
+      "asOf": "690.6011812689248",
+      "pointsBeforeWindow": "1",
+      "leftValue": "800"
+     },
+     "engine.throttle": {
+      "points": "51",
+      "cap": "4096",
+      "oldestT": "84.15938641596586",
+      "asOf": "690.6011812689248",
+      "pointsBeforeWindow": "1",
+      "leftValue": "24"
+     },
+     "engine.engine_load": {
+      "points": "2330",
+      "cap": "4096",
+      "oldestT": "90.41034247702919",
+      "asOf": "690.6011812689248",
+      "pointsBeforeWindow": "1",
+      "leftValue": "24.36244302417805"
+     },
+     "engine.coolant_temp": {
+      "points": "1",
+      "cap": "4096",
+      "oldestT": "60.25177862984128",
+      "asOf": "690.6011812689248",
+      "pointsBeforeWindow": "1",
+      "leftValue": "92"
+     }
+    },
+    "series": [
+     {
+      "as_of": 0.6302356799133122,
+      "points": {
+       "vehicle.speed": "1",
+       "engine.rpm": "1",
+       "engine.throttle": "1",
+       "engine.engine_load": "1",
+       "engine.coolant_temp": "1"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 10.652641950873658,
+      "points": {
+       "vehicle.speed": "1",
+       "engine.rpm": "2",
+       "engine.throttle": "1",
+       "engine.engine_load": "40",
+       "engine.coolant_temp": "40"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 20.674463541945443,
+      "points": {
+       "vehicle.speed": "2",
+       "engine.rpm": "3",
+       "engine.throttle": "2",
+       "engine.engine_load": "79",
+       "engine.coolant_temp": "79"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 30.69264680100605,
+      "points": {
+       "vehicle.speed": "3",
+       "engine.rpm": "4",
+       "engine.throttle": "3",
+       "engine.engine_load": "118",
+       "engine.coolant_temp": "118"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 40.71318643982522,
+      "points": {
+       "vehicle.speed": "3",
+       "engine.rpm": "4",
+       "engine.throttle": "4",
+       "engine.engine_load": "157",
+       "engine.coolant_temp": "157"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 50.73298684996553,
+      "points": {
+       "vehicle.speed": "4",
+       "engine.rpm": "5",
+       "engine.throttle": "5",
+       "engine.engine_load": "196",
+       "engine.coolant_temp": "196"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 60.40601715887897,
+      "points": {
+       "vehicle.speed": "4",
+       "engine.rpm": "5",
+       "engine.throttle": "6",
+       "engine.engine_load": "234",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 70.65709862392396,
+      "points": {
+       "vehicle.speed": "4",
+       "engine.rpm": "6",
+       "engine.throttle": "6",
+       "engine.engine_load": "273",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 80.65931401285343,
+      "points": {
+       "vehicle.speed": "5",
+       "engine.rpm": "7",
+       "engine.throttle": "7",
+       "engine.engine_load": "312",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 90.66040549892932,
+      "points": {
+       "vehicle.speed": "6",
+       "engine.rpm": "8",
+       "engine.throttle": "8",
+       "engine.engine_load": "351",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 100.66342056798749,
+      "points": {
+       "vehicle.speed": "7",
+       "engine.rpm": "9",
+       "engine.throttle": "9",
+       "engine.engine_load": "390",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 110.66438722191378,
+      "points": {
+       "vehicle.speed": "7",
+       "engine.rpm": "9",
+       "engine.throttle": "10",
+       "engine.engine_load": "429",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 120.41540908091702,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "11",
+       "engine.engine_load": "467",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 130.42093182587996,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "11",
+       "engine.engine_load": "506",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 140.66737924190238,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "12",
+       "engine.engine_load": "546",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 150.6683091018349,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "13",
+       "engine.engine_load": "585",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 160.6693760799244,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "14",
+       "engine.engine_load": "624",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 170.50587442703545,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "15",
+       "engine.engine_load": "662",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 180.52572017489,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "16",
+       "engine.engine_load": "700",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 190.5460915430449,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "16",
+       "engine.engine_load": "739",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 200.6757449170109,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "17",
+       "engine.engine_load": "779",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 210.67704806290567,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "18",
+       "engine.engine_load": "818",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 220.67793445801362,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "19",
+       "engine.engine_load": "857",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 230.67908136802725,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "20",
+       "engine.engine_load": "896",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 240.43002408696339,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "21",
+       "engine.engine_load": "934",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 250.4330762140453,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "21",
+       "engine.engine_load": "973",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 260.690043034032,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "22",
+       "engine.engine_load": "1011",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 270.7093567310367,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "23",
+       "engine.engine_load": "1049",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 280.72883376292884,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "24",
+       "engine.engine_load": "1088",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 290.75171064492315,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "25",
+       "engine.engine_load": "1127",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 300.4410471119918,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "26",
+       "engine.engine_load": "1165",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 310.44204755686224,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "26",
+       "engine.engine_load": "1204",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 320.6929604760371,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "27",
+       "engine.engine_load": "1243",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 330.69388906587847,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "28",
+       "engine.engine_load": "1282",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 340.695126028033,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "29",
+       "engine.engine_load": "1321",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 350.6979497219436,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "30",
+       "engine.engine_load": "1360",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 360.44908578903414,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "31",
+       "engine.engine_load": "1398",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 370.4509820200037,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "31",
+       "engine.engine_load": "1436",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 380.4528692648746,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "32",
+       "engine.engine_load": "1475",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 390.70307937497273,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "33",
+       "engine.engine_load": "1515",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 400.49269077484496,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "34",
+       "engine.engine_load": "1553",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 410.7050378608983,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "35",
+       "engine.engine_load": "1593",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 420.20644072094,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "36",
+       "engine.engine_load": "1630",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 430.5553359289188,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "36",
+       "engine.engine_load": "1670",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 440.57457539299503,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "37",
+       "engine.engine_load": "1709",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 450.7093491239939,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "38",
+       "engine.engine_load": "1748",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 460.2103630369529,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "39",
+       "engine.engine_load": "1785",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 470.7120726238936,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "40",
+       "engine.engine_load": "1825",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 480.46307741990313,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "41",
+       "engine.engine_load": "1863",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 490.46490465896204,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "41",
+       "engine.engine_load": "1902",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 500.46478151599877,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "42",
+       "engine.engine_load": "1941",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 510.4659530899953,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "43",
+       "engine.engine_load": "1979",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 520.7458675839007,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "44",
+       "engine.engine_load": "2019",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 530.7624975228682,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "45",
+       "engine.engine_load": "2058",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 540.2811802530196,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "46",
+       "engine.engine_load": "2095",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 550.4703969538677,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "46",
+       "engine.engine_load": "2135",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 560.3198975909036,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "47",
+       "engine.engine_load": "2173",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 570.4729762489442,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "48",
+       "engine.engine_load": "2212",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 580.4741022998933,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "49",
+       "engine.engine_load": "2251",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 590.2247634408996,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "50",
+       "engine.engine_load": "2289",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 600.4760286728851,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "11",
+       "engine.throttle": "51",
+       "engine.engine_load": "2329",
+       "engine.coolant_temp": "233"
+      },
+      "before": {
+       "vehicle.speed": "0",
+       "engine.rpm": "0",
+       "engine.throttle": "0",
+       "engine.engine_load": "0",
+       "engine.coolant_temp": "0"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "0.6302356799133122",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "0.6302356799133122",
+       "engine.coolant_temp": "0.6302356799133122"
+      }
+     },
+     {
+      "as_of": 610.2270986358635,
+      "points": {
+       "vehicle.speed": "9",
+       "engine.rpm": "10",
+       "engine.throttle": "51",
+       "engine.engine_load": "2330",
+       "engine.coolant_temp": "196"
+      },
+      "before": {
+       "vehicle.speed": "1",
+       "engine.rpm": "1",
+       "engine.throttle": "1",
+       "engine.engine_load": "1",
+       "engine.coolant_temp": "1"
+      },
+      "oldest": {
+       "vehicle.speed": "0.6302356799133122",
+       "engine.rpm": "10.151667319005355",
+       "engine.throttle": "0.6302356799133122",
+       "engine.engine_load": "10.151667319005355",
+       "engine.coolant_temp": "10.151667319005355"
+      }
+     },
+     {
+      "as_of": 620.4779739170335,
+      "points": {
+       "vehicle.speed": "8",
+       "engine.rpm": "9",
+       "engine.throttle": "51",
+       "engine.engine_load": "2330",
+       "engine.coolant_temp": "156"
+      },
+      "before": {
+       "vehicle.speed": "1",
+       "engine.rpm": "1",
+       "engine.throttle": "1",
+       "engine.engine_load": "1",
+       "engine.coolant_temp": "1"
+      },
+      "oldest": {
+       "vehicle.speed": "20.173440770013258",
+       "engine.rpm": "20.173440770013258",
+       "engine.throttle": "12.15571583295241",
+       "engine.engine_load": "20.398807813879102",
+       "engine.coolant_temp": "20.398807813879102"
+      }
+     },
+     {
+      "as_of": 630.4795858080033,
+      "points": {
+       "vehicle.speed": "7",
+       "engine.rpm": "8",
+       "engine.throttle": "51",
+       "engine.engine_load": "2330",
+       "engine.coolant_temp": "117"
+      },
+      "before": {
+       "vehicle.speed": "1",
+       "engine.rpm": "1",
+       "engine.throttle": "1",
+       "engine.engine_load": "1",
+       "engine.coolant_temp": "1"
+      },
+      "oldest": {
+       "vehicle.speed": "30.19168538786471",
+       "engine.rpm": "30.19168538786471",
+       "engine.throttle": "24.1801873059012",
+       "engine.engine_load": "30.4000423529651",
+       "engine.coolant_temp": "30.4000423529651"
+      }
+     },
+     {
+      "as_of": 640.4995248969644,
+      "points": {
+       "vehicle.speed": "7",
+       "engine.rpm": "8",
+       "engine.throttle": "51",
+       "engine.engine_load": "2329",
+       "engine.coolant_temp": "78"
+      },
+      "before": {
+       "vehicle.speed": "1",
+       "engine.rpm": "1",
+       "engine.throttle": "1",
+       "engine.engine_load": "1",
+       "engine.coolant_temp": "1"
+      },
+      "oldest": {
+       "vehicle.speed": "30.19168538786471",
+       "engine.rpm": "30.19168538786471",
+       "engine.throttle": "36.20399240986444",
+       "engine.engine_load": "40.40140087692998",
+       "engine.coolant_temp": "40.40140087692998"
+      }
+     },
+     {
+      "as_of": 650.5181939709,
+      "points": {
+       "vehicle.speed": "6",
+       "engine.rpm": "7",
+       "engine.throttle": "51",
+       "engine.engine_load": "2329",
+       "engine.coolant_temp": "39"
+      },
+      "before": {
+       "vehicle.speed": "1",
+       "engine.rpm": "1",
+       "engine.throttle": "1",
+       "engine.engine_load": "1",
+       "engine.coolant_temp": "1"
+      },
+      "oldest": {
+       "vehicle.speed": "45.22170181502588",
+       "engine.rpm": "45.22170181502588",
+       "engine.throttle": "48.22794368700124",
+       "engine.engine_load": "50.40296158194542",
+       "engine.coolant_temp": "50.40296158194542"
+      }
+     },
+     {
+      "as_of": 660.5388158799615,
+      "points": {
+       "vehicle.speed": "6",
+       "engine.rpm": "7",
+       "engine.throttle": "51",
+       "engine.engine_load": "2329",
+       "engine.coolant_temp": "1"
+      },
+      "before": {
+       "vehicle.speed": "1",
+       "engine.rpm": "1",
+       "engine.throttle": "1",
+       "engine.engine_load": "1",
+       "engine.coolant_temp": "1"
+      },
+      "oldest": {
+       "vehicle.speed": "45.22170181502588",
+       "engine.rpm": "45.22170181502588",
+       "engine.throttle": "60.25177862984128",
+       "engine.engine_load": "60.40601715887897",
+       "engine.coolant_temp": "60.25177862984128"
+      }
+     },
+     {
+      "as_of": 670.2360746429767,
+      "points": {
+       "vehicle.speed": "6",
+       "engine.rpm": "7",
+       "engine.throttle": "51",
+       "engine.engine_load": "2330",
+       "engine.coolant_temp": "1"
+      },
+      "before": {
+       "vehicle.speed": "1",
+       "engine.rpm": "1",
+       "engine.throttle": "1",
+       "engine.engine_load": "1",
+       "engine.coolant_temp": "1"
+      },
+      "oldest": {
+       "vehicle.speed": "45.22170181502588",
+       "engine.rpm": "45.22170181502588",
+       "engine.throttle": "60.25177862984128",
+       "engine.engine_load": "69.90712157986127",
+       "engine.coolant_temp": "60.25177862984128"
+      }
+     },
+     {
+      "as_of": 680.5827456458937,
+      "points": {
+       "vehicle.speed": "5",
+       "engine.rpm": "5",
+       "engine.throttle": "51",
+       "engine.engine_load": "2330",
+       "engine.coolant_temp": "1"
+      },
+      "before": {
+       "vehicle.speed": "1",
+       "engine.rpm": "1",
+       "engine.throttle": "1",
+       "engine.engine_load": "1",
+       "engine.coolant_temp": "1"
+      },
+      "oldest": {
+       "vehicle.speed": "80.15913052484393",
+       "engine.rpm": "80.15913052484393",
+       "engine.throttle": "72.15738935093395",
+       "engine.engine_load": "80.29519600304775",
+       "engine.coolant_temp": "60.25177862984128"
+      }
+     },
+     {
+      "as_of": 690.6011812689248,
+      "points": {
+       "vehicle.speed": "4",
+       "engine.rpm": "4",
+       "engine.throttle": "51",
+       "engine.engine_load": "2330",
+       "engine.coolant_temp": "1"
+      },
+      "before": {
+       "vehicle.speed": "1",
+       "engine.rpm": "1",
+       "engine.throttle": "1",
+       "engine.engine_load": "1",
+       "engine.coolant_temp": "1"
+      },
+      "oldest": {
+       "vehicle.speed": "90.16027956386097",
+       "engine.rpm": "90.16027956386097",
+       "engine.throttle": "84.15938641596586",
+       "engine.engine_load": "90.41034247702919",
+       "engine.coolant_temp": "60.25177862984128"
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "problems": []
+}
