@@ -742,12 +742,13 @@ PAGE_STATE = """(() => {
     if (th && td && graphs[th.title]) cells[th.title] = td.textContent;
   });
   const b = document.getElementById('btn-retry'), note = document.getElementById('graphs-note');
+  const brk = document.getElementById('graphs-breaks');      // the one shared gap line under the head
   return {now: Date.now(), conn: d.conn, data: d.data, reason: d.reason, health: d.health, episode: d.episode,
     attempts: Number(d.attempts), timers: Number(d.timers), polls: Number(d.polls), malformed: Number(d.malformedTotal),
     text: document.getElementById('conn-text').textContent, banner: ls.hidden ? null : ls.innerText,
     retry: !ls.hidden && b && !b.hidden ? b.textContent : null, known: vis('.known-tag'), stale: vis('.stale-tag'),
     socks: T.socks.length, states: T.states.length, graphs: graphs, cells: cells,
-    note: note.hidden ? '' : note.textContent};
+    note: note.hidden ? '' : note.textContent, breaks: brk && !brk.hidden ? brk.textContent : ''};
 })()"""
 
 WRAPPER_READ = ("JSON.parse(JSON.stringify({socks: window.__m3b.socks, states: window.__m3b.states,"
@@ -766,7 +767,7 @@ AGREE = """(() => {
     res.push([f.dataset.path, f.querySelector('.graph__value').textContent, rows[f.dataset.path]]);
   });
   return {health: document.body.dataset.health, pairs: res,
-          paused: document.getElementById('btn-graphs-pause').getAttribute('aria-pressed') === 'true'};
+          paused: [...document.querySelectorAll('#graphs-grid figure.graph')].some(f => f.dataset.paused === 'true')};
 })()"""
 
 LOG_READ = """(() => {
@@ -797,7 +798,9 @@ LOG_ROWS = """(() => {
           plotH: plot ? plot.getBoundingClientRect().height : null,
           cardH: card ? card.getBoundingClientRect().height : null,
           banner: !document.getElementById('linkstate').hidden,
-          line2: [...document.querySelectorAll('figure.graph:not([hidden]) .graph__line2')].map(e => e.textContent)};
+          line2: [...document.querySelectorAll('figure.graph:not([hidden]) .graph__line2')].map(e => e.textContent),
+          breaks: (b => b && !b.hidden ? b.textContent : '')(document.getElementById('graphs-breaks')),
+          statusH: Math.round(document.querySelector('header').getBoundingClientRect().height)};
 })()"""
 
 CANVASES = """(() => ({dpr: window.devicePixelRatio,
@@ -833,14 +836,13 @@ class Cases:
 
     def write(self, chrome_version: str) -> None:
         live = [a for a in self.agreement if a["checked"]]
-        self.record("Agreement", "Every live screenshot: each line-1 value equals the signal table's cell, read in one "
-                    "evaluation", {"every live screenshot with graphs agrees": all(a["agree"] for a in live),
-                                   "at least one live screenshot had graphs": bool(live)},
+        self.record("Agreement", "Every live screenshot with the graphs not paused (data-paused false): each line-1 "
+                    "value equals the signal table's cell, read in one evaluation",
+                    {"every live screenshot with graphs agrees": all(a["agree"] for a in live),
+                     "at least one live screenshot had graphs": bool(live)},
                     {"checked": len(live), "skipped": [a["shot"] for a in self.agreement if not a["checked"]],
-                     "disagreeing": [a for a in live if not a["agree"]],
-                     "contradiction": "a disagreeing shot taken while the graphs are paused is the Pause rule "
-                                      "(line 1 unchanged) against this rule, not a page fault"
-                     if any(a["paused"] and not a["agree"] for a in live) else None})
+                     "paused_not_checked": [a["shot"] for a in self.agreement if a["paused"]],
+                     "disagreeing": [a for a in live if not a["agree"]]})
         passed = sum(1 for c in self.items if c["pass"])
         out = {"chrome": chrome_version, "cases": self.items, "agreement": self.agreement, "cost": self.cost,
                "extra": self.extra, "tally": {"passed": passed, "total": len(self.items)}}
@@ -904,11 +906,11 @@ class M3b:
         """A screenshot, then the agreement check in one evaluation (for every live shot)."""
         await self.cdp.shot(self.run, name)
         a = await self.cdp.js(AGREE)
-        checked = a["health"] == "live" and bool(a["pairs"])
+        # Agreement covers live shots taken with the graphs not paused (data-paused false; controller
+        # ruling). While paused, line 1 is frozen at data-drawn-to and the table keeps updating (§6.9),
+        # so a paused shot is the Pause case's business, not this one's; it is listed, not checked.
+        checked = a["health"] == "live" and bool(a["pairs"]) and not a["paused"]
         agree = all(p[1] == p[2] for p in a["pairs"])
-        # §12.2's Pause case requires line 1 unchanged while paused; the table keeps updating. A live
-        # shot taken while paused therefore cannot meet the Agreement rule as written: it is still
-        # checked and reported, with the paused state named, never skipped.
         self.cases.agreement.append({"shot": name, "health": a["health"], "checked": checked, "agree": agree,
                                      "paused": a["paused"], "pairs": a["pairs"]})
         if checked:
@@ -1358,8 +1360,16 @@ async def case_sigstop(m: M3b, sim: subprocess.Popen[bytes]) -> None:
     st2 = await m.status()
     lg = await m.log()
     paths = [p for p, g in before["graphs"].items() if not g["hidden"]]
-    notes = {p: re.search(GAP_NOTE, after["graphs"][p]["line2"]) for p in paths}
+    note = re.search(GAP_NOTE, after["breaks"])          # the shared gap line under the graphs head
     await m.shot("m3b-b-sigcont-break.png")
+    # The extra log-rows case again, with a disconnect break showing and no encode-failed readout.
+    await m.cdp.js("window.scrollTo(0, 0)")
+    rows = await m.cdp.js(LOG_ROWS)
+    m.cases.record(
+        "Log rows at 1440 x 900, graphs open, a break note showing (extra, disconnect break)",
+        "At least 5 full log rows inside #logwrap at 1440 x 900 with the graphs open and a break note showing",
+        {"a break note is shown": re.search(GAP_NOTE, rows["breaks"]) is not None,
+         "at least 5 full log rows": rows["full"] >= 5}, rows)
     m.cases.record(
         "... then SIGCONT",
         "SIGCONT, Live within the backoff (<= 16 s): GET /status started_at equals the value read before; no "
@@ -1373,12 +1383,15 @@ async def case_sigstop(m: M3b, sim: subprocess.Popen[bytes]) -> None:
          "gaps +1 and segments +1": all(int(after["graphs"][p]["gaps"]) == int(before["graphs"][p]["gaps"]) + 1
                                         and int(after["graphs"][p]["segments"]) ==
                                         int(before["graphs"][p]["segments"]) + 1 for p in paths),
-         "line 2 names the gap (disconnected)": all(n is not None and n.group(1) == "disconnected"
-                                                    for n in notes.values()),
+         "the shared gap line names the gap's scenario times (disconnected)": note is not None
+         and note.group(1) == "disconnected",
+         "line 2 is min and max only": all(re.fullmatch(r"(min .* · max .*|no valid value) in .*",
+                                                        after["graphs"][p]["line2"]) for p in paths),
          "seq continuity": seq_continuous(lg["seqs"]) and lg["gaps"] == 0 and "duplicate" not in lg["count"]},
         {"live_after_s": (t_live - t1) / 1000, "started_at": [st["started_at"], st2["started_at"]],
          "before": {p: {k: before["graphs"][p][k] for k in ("gaps", "segments", "run")} for p in paths},
          "after": {p: {k: after["graphs"][p][k] for k in ("gaps", "segments", "run", "line2")} for p in paths},
+         "breaks_line": after["breaks"],
          "seqs": [len(lg["seqs"]), lg["seqs"][:3], lg["seqs"][-3:]], "log_count": lg["count"]})
 
 
@@ -1645,6 +1658,8 @@ async def part_c_nonfinite(run: Run, m: M3b) -> None:
              if invalid else None,
              "invalid_newest_t": sorted(inv_newest), "invalid_points": sorted(inv_points),
              "first_valid_after": first_valid, "last": last,
+             "breaks_line_while_invalid": invalid[-1]["breaks"] if invalid else None,
+             "breaks_line_after": samples[-1]["breaks"],
              "invalid_example": slim(invalid[0], (path,)) | {"cell": invalid[0]["cell"]} if invalid else None})
     finally:
         run.stop(sim)
@@ -1714,19 +1729,19 @@ async def part_d_encoding(run: Run, m: M3b) -> None:
              "banner": fault[0]["banner"] if fault else None,
              "live_again_after_s": (live_again["now"] - t_open) / 1000 if live_again else None,
              "sockets": w["socks"][n0 - 1:], "false_reads": false_reads, "qualifying_ok_read": qualifying_ok,
-             "line2": {p: after["graphs"][p]["line2"] for p in paths}})
+             "breaks_line": after["breaks"], "line2": {p: after["graphs"][p]["line2"] for p in paths}})
         # The extra measured case (review finding): log rows with a break note in line 2.
         await m.cdp.viewport(*WIDE)
         await m.cdp.js("window.scrollTo(0, 0)")
         await asyncio.sleep(3.0)
         rows = await m.cdp.js(LOG_ROWS)
         await m.shot("m3b-d-log-rows-with-break-note.png")
-        noted = [x for x in rows["line2"] if re.search(GAP_NOTE, x)]
+        noted = re.search(GAP_NOTE, rows["breaks"])
         m.cases.record(
-            "Log rows at 1440 x 900, graphs open, a break note in line 2 (extra, measured)",
-            "Measured: full log rows inside #logwrap while line 2 carries No data from t = A to t = B s (...); "
-            "below 5 is a finding for the page (reduce the plot height first)",
-            {"a break note is shown in line 2": bool(noted), "at least 5 full log rows": rows["full"] >= 5},
+            "Log rows at 1440 x 900, graphs open, a break note showing (extra, encoding break)",
+            "At least 5 full log rows inside #logwrap at 1440 x 900 with the graphs open and a break note showing "
+            "(the shared line under the graphs head: No data from t = A to t = B s (...))",
+            {"a break note is shown": noted is not None, "at least 5 full log rows": rows["full"] >= 5},
             rows)
         run.log("stop traffic")
         run.stop(traffic)
