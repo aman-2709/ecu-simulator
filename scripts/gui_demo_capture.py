@@ -785,17 +785,21 @@ LOG_ROWS = """(() => {
   const w = document.getElementById('logwrap'), wr = w.getBoundingClientRect();
   const th = w.querySelector('thead th');
   const top = th && th.getBoundingClientRect().height ? Math.max(wr.top, th.getBoundingClientRect().bottom) : wr.top;
-  let full = 0;
+  let full = 0, fullExchange = 0;
   const heights = [];
   document.querySelectorAll('#log-body > tr').forEach(r => {
     const b = r.getBoundingClientRect();
     if (b.height === 0) return;
-    if (b.top >= top - 0.5 && b.bottom <= wr.bottom + 0.5) { full++; heights.push(Math.round(b.height)); }
+    if (b.top >= top - 0.5 && b.bottom <= wr.bottom + 0.5) {
+      full++; heights.push(Math.round(b.height));
+      if (r.querySelector('td.c-seq')) fullExchange++;        // an exchange row, not a marker row
+    }
   });
   const gp = document.getElementById('graphs-panel').getBoundingClientRect();
   const plot = document.querySelector('.graph__plot');
   const card = document.querySelector('figure.graph:not([hidden])');
-  return {full: full, heights: heights, rowsRegion: Math.round(wr.bottom - top), graphsH: Math.round(gp.height),
+  return {full: full, fullExchange: fullExchange, heights: heights,
+          rowsRegion: Math.round(wr.bottom - top), graphsH: Math.round(gp.height),
           plotH: plot ? plot.getBoundingClientRect().height : null,
           cardH: card ? card.getBoundingClientRect().height : null,
           banner: !document.getElementById('linkstate').hidden,
@@ -1419,7 +1423,17 @@ async def case_sigstop(m: M3b, sim: subprocess.Popen[bytes]) -> None:
 async def case_restart_and_gap(m: M3b, sim: subprocess.Popen[bytes]) -> None:
     """Measured (Task 36): at 1440 x 900, the restart note and a gap note shown together, count the
     full log rows. Just after the restart (the note shows while the window reaches the new run's
-    start), a SIGSTOP/SIGCONT of the new simulator adds a disconnect gap inside the window."""
+    start), a SIGSTOP/SIGCONT of the new simulator adds a disconnect gap inside the window. Traffic
+    runs, and the count is taken once the newest rows are exchanges, not the short marker rows
+    (restart, connection lost) that would otherwise fill the bottom of the log."""
+    traffic = start_traffic(m.run)
+    try:
+        await _restart_and_gap(m, sim)
+    finally:
+        m.run.stop(traffic)
+
+
+async def _restart_and_gap(m: M3b, sim: subprocess.Popen[bytes]) -> None:
     await m.cdp.viewport(*WIDE)
     await m.until_as_of(3.0)
     os.kill(sim.pid, signal.SIGSTOP)
@@ -1429,6 +1443,8 @@ async def case_restart_and_gap(m: M3b, sim: subprocess.Popen[bytes]) -> None:
     m.run.log("SIGCONT the restarted simulator")
     await m.until(lambda s: s["health"] == "live", timeout=20.0, period=0.2)
     await m.until(lambda s: re.search(GAP_NOTE, s["breaks"]) is not None, timeout=6.0)
+    await m.cdp.wait_for("[...document.querySelectorAll('#log-body > tr')].slice(-6)"
+                         ".every(r => r.querySelector('td.c-seq'))", timeout=15)
     await m.cdp.js("window.scrollTo(0, 0)")
     await m.settled()
     rows = await m.cdp.js(LOG_ROWS)
@@ -1439,6 +1455,7 @@ async def case_restart_and_gap(m: M3b, sim: subprocess.Popen[bytes]) -> None:
         "log rows inside #logwrap",
         {"the restart note is shown": rows["note"].startswith("Simulator restarted at"),
          "a gap note is shown": re.search(GAP_NOTE, rows["breaks"]) is not None,
+         "the newest rows are exchange rows": rows["fullExchange"] == rows["full"],
          "the log is filled (more rows than fit)": len((await m.log())["seqs"]) > rows["full"],
          "at least 5 full log rows": rows["full"] >= 5}, rows)
 
