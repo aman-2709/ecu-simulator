@@ -239,6 +239,27 @@ async def test_a_residual_vehicle_encode_failure_is_500_and_counted(session, mon
         await s.stop()
 
 
+def _raising_parse_constant(token):
+    raise ValueError(f"unexpected constant: {token}")
+
+
+@pytest.mark.asyncio
+async def test_status_is_valid_json_while_the_state_task_fails_on_a_nonfinite_as_of(session):  # M3b §8.2/§8.3
+    s = build(profile="ice_scenario.yaml")
+    await s.start()
+    try:
+        s.runtime.runner._last_applied = float("inf")       # test-only, as Task 26/27 tests already do
+        assert await wait_until(lambda: s.publisher.state_encode_failed >= 1)
+        async with session.get(url(s, "/api/v1/status")) as r:
+            assert r.status == 200
+            body = await r.text()                            # raw text: r.json() accepts NaN, too lenient here
+        parsed = json.loads(body, parse_constant=_raising_parse_constant)
+        assert parsed["scenario"]["t_last_applied"] is None
+        assert parsed["api"]["state_encoding"]["ok"] is False
+    finally:
+        await s.stop()
+
+
 def test_a_nonfinite_value_at_startup_starts_sanitised_and_ok():  # M3b §8.3
     s = build(prepare=lambda runtime: runtime.vehicle.set("engine.coolant_temp", float("inf")))
     conn, _, _ = s.publisher.connect()

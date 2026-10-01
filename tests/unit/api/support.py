@@ -1,18 +1,22 @@
 import asyncio
 
 
-def build(*, prepare=None, **kw):
+def build(*, prepare=None, profile=None, **kw):
     from ecu_simulator import app
     from ecu_simulator.api.options import ApiOptions
     from ecu_simulator.api.server import ApiServer
     from ecu_simulator.cli import default_profile_path
     from ecu_simulator.config import load_profile
 
-    config = app.RuntimeConfig.build(load_profile(default_profile_path()), "vcan0")
+    # profile=None keeps the shipped default (ice_default.yaml); a name picks a sibling shipped
+    # profile, e.g. "ice_scenario.yaml" for a runner, by the same packaged-vs-checkout path.
+    path = default_profile_path() if profile is None else default_profile_path().parent / profile
+    config = app.RuntimeConfig.build(load_profile(path), "vcan0")
     runtime = app.build_runtime(config)
     if prepare is not None:
         prepare(runtime)                    # before ApiServer: what it sees at construction
-    options = ApiOptions("127.0.0.1", 0, profile="profiles/ice_default.yaml", version="test")
+    reported = "profiles/ice_default.yaml" if profile is None else f"profiles/{profile}"
+    options = ApiOptions("127.0.0.1", 0, profile=reported, version="test")
     return ApiServer(runtime, app.build_endpoints(config), options, **kw)
 
 
