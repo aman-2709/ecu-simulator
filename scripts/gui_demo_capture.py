@@ -20,7 +20,10 @@ with a WebSocket wrapper added before the page's scripts, and the cost measureme
 values and verdict go to m3b-results.json (m3b-long-results.json); any failure exits 1.
 --m3b-perf is the main-thread investigation: equivalent 60 s traced runs (log running, paused,
 cleared; graphs hidden; no traffic) at 1440 x 900 and 390 x 844, broken down by
-scripts/gui_trace_breakdown.py into m3b-perf-results.json.
+scripts/gui_trace_breakdown.py into m3b-perf-results.json. --m3b-perf-log is the log fix's
+before / after measurement: the same set-up, the log following, with real clicks (Pause,
+Resume, a filter, Older, Jump to newest) during each traced run and their Event Timing, into
+m3b-perf-log-results.json.
 """
 
 from __future__ import annotations
@@ -328,7 +331,8 @@ async def page_target(http: aiohttp.ClientSession) -> str:
 async def demo(run: Run, chrome: str, mode: str = "m3a") -> None:
     profile_dir = tempfile.mkdtemp(prefix="gui-demo-chrome-")
     sessions = {"m3a": session, "moving": moving_session, "m3b": m3b_session, "m3b-long": m3b_long_session,
-                "m3b-slots": m3b_slots_session, "m3b-perf": m3b_perf_session}
+                "m3b-slots": m3b_slots_session, "m3b-perf": m3b_perf_session,
+                "m3b-perf-log": m3b_perf_log_session}
     try:
         await sessions[mode](run, chrome, profile_dir)
     finally:
@@ -2467,7 +2471,11 @@ async def reduced_motion(cdp: DevTools, on: bool) -> None:
 
 
 async def perf_trace(run: Run, cdp: DevTools, label: str, condition: str, size: tuple[int, int],
-                     traffic_on: bool) -> dict[str, Any]:
+                     traffic_on: bool, lines: dict[str, int] | None = None,
+                     during: Callable[[], Any] | None = None) -> dict[str, Any]:
+    """One 60 s traced run. ``lines``: the app.js callback lines of the page served (default:
+    the working tree's). ``during``: a coroutine function run alongside the 60 s (the
+    log-fix mode's interactions); its result is recorded as ``interactions``."""
     import hashlib
 
     sys.path.insert(0, str(ROOT / "scripts"))
@@ -2491,7 +2499,11 @@ async def perf_trace(run: Run, cdp: DevTools, label: str, condition: str, size: 
                    traceConfig={"includedCategories": PERF_CATEGORIES})
     m0 = await metrics()
     t0 = time.monotonic()
-    await asyncio.sleep(PERF_SECONDS)
+    interactions = None
+    if during is None:
+        await asyncio.sleep(PERF_SECONDS)
+    else:
+        interactions = (await asyncio.gather(asyncio.sleep(PERF_SECONDS), during()))[1]
     m1 = await metrics()
     elapsed = time.monotonic() - t0
     await cdp.send("Tracing.end")
@@ -2520,11 +2532,15 @@ async def perf_trace(run: Run, cdp: DevTools, label: str, condition: str, size: 
                                                            "RecalcStyleDuration")},
         "trace_file": trace_path.name, "trace_bytes": trace_path.stat().st_size,
         "trace_sha256": hashlib.sha256(trace_path.read_bytes()).hexdigest(),
-        "breakdown": gui_trace_breakdown.summarise(trace_path, gui_trace_breakdown.app_lines(None), elapsed),
+        "breakdown": gui_trace_breakdown.summarise(trace_path, lines or gui_trace_breakdown.app_lines(None), elapsed),
     }
+    if interactions is not None:
+        result["interactions"] = interactions
     b = result["breakdown"]
     run.log(f"perf {label}: busy {b['busy_percent']} % ({b['busy_ms']} ms), split {b['split_ms']}, renderLog "
-            f"{b['callbacks']['renderLog']['count']} / {b['callbacks']['renderLog']['sum_ms']} ms, rows "
+            f"{b['callbacks']['renderLog']['count']} / {b['callbacks']['renderLog']['sum_ms']} ms (p95 "
+            f"{b['callbacks']['renderLog']['p95_ms']}), long tasks {b['long_tasks']['count']} (max "
+            f"{b['long_tasks']['max_ms']} ms), rows "
             f"{start['retained']}->{end['retained']}, {result['traffic']['requests_per_s']} req/s, "
             f"{result['exchanges_per_s']} exchanges/s")
     return result
@@ -2616,6 +2632,199 @@ async def m3b_perf_session(run: Run, chrome: str, profile_dir: str) -> None:
     run.log("done")
 
 
+# ---- --m3b-perf-log: the log fix's before / after runs (Task 44) ----
+# The --m3b-perf set-up (stepped demo, the log filled to its cap by a burst, then the traffic
+# script at 4/s), with the log following and, during each 60 s traced run, real clicks on the
+# page's own controls at fixed offsets. Run the same mode against each tree to compare (the
+# page served is recorded by its SHA-256 and the path ecu_simulator imports from).
+PERF_LOG_REPEATS = 2
+FILTER_CHIP = 'label[for="o-no_response"]'
+NO_RESPONSE_SHOWN = "document.getElementById('o-no_response').checked"
+# (offset s, name, selector, the check that the page took it, value). Pause, Resume and the
+# filter chip exist on both pages; Older and Jump to newest exist only on the windowed log
+# (Task 43), so they are skipped, and said so, where #lognav-older is absent. Older needs a
+# pinned window: a real wheel scroll up first, as a reader would.
+PERF_LOG_STEPS = (
+    (6.0, "pause", "#btn-pause", PAUSED, True), (10.0, "resume", "#btn-pause", PAUSED, False),
+    (16.0, "filter-off", FILTER_CHIP, NO_RESPONSE_SHOWN, False),
+    (20.0, "filter-on", FILTER_CHIP, NO_RESPONSE_SHOWN, True),
+    (30.0, "pause", "#btn-pause", PAUSED, True), (34.0, "resume", "#btn-pause", PAUSED, False),
+    (40.0, "filter-off", FILTER_CHIP, NO_RESPONSE_SHOWN, False),
+    (44.0, "filter-on", FILTER_CHIP, NO_RESPONSE_SHOWN, True),
+    (49.0, "older", '[data-lognav="older"]', "!document.getElementById('lognav-newer').hidden", True),
+    (54.0, "jump", "#btn-follow", "document.getElementById('btn-follow').disabled", True),
+)
+AFTER_ONLY = {"older", "jump"}
+# Event Timing, observed by this harness only (the shipped page has no observer): every 'event'
+# entry at Chrome's minimum threshold, 16 ms. An interaction with no entry took under 16 ms.
+EVENT_OBSERVER = """(() => {
+  if (window.__et) window.__et.obs.disconnect();
+  const et = window.__et = {entries: [], obs: null};
+  const keep = list => { for (const e of list) et.entries.push({name: e.name, start: e.startTime, duration: e.duration,
+    ps: e.processingStart, pe: e.processingEnd, id: e.interactionId || 0}); };
+  et.obs = new PerformanceObserver(l => keep(l.getEntries()));
+  et.obs.observe({type: 'event', durationThreshold: 16});
+  et.keep = keep;
+  return PerformanceObserver.supportedEntryTypes.includes('event');
+})()"""
+EVENT_TAKE = """(() => { const et = window.__et; if (!et) return [];
+  et.keep(et.obs.takeRecords()); et.obs.disconnect(); window.__et = null; return et.entries; })()"""
+
+
+async def perf_home(cdp: DevTools, size: tuple[int, int]) -> None:
+    """The view every run is measured in: as in --m3b-perf, at 390 px the graphs at the top."""
+    await cdp.js("document.getElementById('graphs-panel').scrollIntoView({block: 'start'})"
+                 if size == NARROW else "window.scrollTo(0, 0)")
+
+
+async def perf_log_steps(cdp: DevTools, size: tuple[int, int]) -> list[dict[str, Any]]:
+    """The scripted clicks of one run, each at its offset, each a real click, each with the
+    page's performance.now() just before it (the Event Timing entries are matched to it)."""
+    t0 = time.monotonic()
+    windowed = await cdp.js("!!document.getElementById('lognav-older')")
+    out: list[dict[str, Any]] = []
+    for at, name, selector, check, want in PERF_LOG_STEPS:
+        if name in AFTER_ONLY and not windowed:
+            out.append({"name": name, "skipped": "this page has no windowed log (Older / Jump to newest)"})
+            continue
+        if name == "older":
+            # The wheel goes where the log box is on screen (at 390 px it is below the fold).
+            await asyncio.sleep(max(0.0, t0 + at - 1.8 - time.monotonic()))
+            await cdp.js("document.getElementById('logwrap').scrollIntoView({block: 'center'})")
+            await asyncio.sleep(0.2)
+            await cdp.wheel("#logwrap", -600)
+        await asyncio.sleep(max(0.0, t0 + at - time.monotonic()))
+        await cdp.js(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block: 'center'}})")
+        await asyncio.sleep(0.3)
+        mark = await cdp.js("performance.now()")
+        at_s = round(time.monotonic() - t0, 2)
+        await cdp.click(selector)
+        try:
+            await cdp.wait_for(f"({check}) === {json.dumps(want)}", 10)
+            took = True
+        except RuntimeError:
+            took = False
+        out.append({"name": name, "selector": selector, "at_s": at_s, "mark_ms": mark, "took": took})
+        await perf_home(cdp, size)
+    return out
+
+
+def event_timing(steps: list[dict[str, Any]], entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each click's Event Timing: of the entries from its mark to the next click's, those of
+    one interaction (interactionId), the longest of them, as INP takes it (of equally long
+    ones, which Event Timing rounds to 8 ms, the one with the most processing). Its input delay
+    (processingStart - startTime), processing (processingEnd - processingStart) and
+    presentation (the rest of its duration, to the next paint)."""
+    marks = [s["mark_ms"] for s in steps if "mark_ms" in s]
+    for s in steps:
+        if "mark_ms" not in s:
+            continue
+        nxt = min((m for m in marks if m > s["mark_ms"]), default=float("inf"))
+        mine = [e for e in entries if s["mark_ms"] - 1 <= e["start"] < nxt and e["id"]]
+        if not mine:
+            s["event_timing"] = None
+            s["note"] = "no Event Timing entry: under the 16 ms threshold"
+            continue
+        first = min(mine, key=lambda e: e["start"])["id"]
+        e = max((x for x in mine if x["id"] == first), key=lambda x: (x["duration"], x["pe"] - x["ps"]))
+        s["event_timing"] = {"entry": e["name"], "duration_ms": e["duration"],
+                             "input_delay_ms": round(e["ps"] - e["start"], 1),
+                             "processing_ms": round(e["pe"] - e["ps"], 1),
+                             "presentation_ms": round(e["start"] + e["duration"] - e["pe"], 1),
+                             "entries": sorted({x["name"] for x in mine if x["id"] == first})}
+    return steps
+
+
+async def m3b_perf_log_session(run: Run, chrome: str, profile_dir: str) -> None:
+    """Task 44's runs: per viewport, PERF_LOG_REPEATS traced 60 s runs of the log following at
+    its cap, with Pause / Resume, a filter change and (on the windowed log) Older / Jump to
+    newest clicked during each; busy %, the renderLog timer, long tasks and Event Timing."""
+    import hashlib
+    import importlib.util
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import gui_trace_breakdown
+
+    spec = importlib.util.find_spec("ecu_simulator")
+    origin = spec.origin if spec else None
+    run.log(f"ecu_simulator imports from {origin}")
+    await launch_chrome(run, chrome, profile_dir)
+    problems: list[str] = []
+    runs: list[dict[str, Any]] = []
+    served: dict[str, Any] = {}
+    async with aiohttp.ClientSession() as http:
+        ws_url = await page_target(http)
+        version = await chrome_version(http)
+        run.log(f"Chrome: {version}")
+        async with http.ws_connect(ws_url, max_msg_size=0) as ws:
+            cdp = await m3b_cdp(run, http, ws, problems, wrapper=False)
+            m = M3b(run, cdp, http, Cases(run))
+            sim = await m3b_start(run, MOVING_PROFILE, "perf-simulator.log")
+            traffic = None
+            try:
+                async with http.get(f"http://{API}/app.js") as resp:
+                    text = await resp.text()
+                lines = gui_trace_breakdown.lines_in(text)
+                served = {"ecu_simulator_origin": origin, "app_js_sha256": hashlib.sha256(text.encode()).hexdigest(),
+                          "worktree_app_js_sha256": hashlib.sha256((ROOT / gui_trace_breakdown.APP_JS).read_bytes())
+                          .hexdigest(), "app_js_lines": lines}
+                run.log(f"served app.js: {served}")
+                await m.open_page()
+                await m.click_window(120)
+                run.log(f"prefill: start traffic at {PERF_PREFILL_RATE}/s until the log holds {PERF_ROWS} exchanges")
+                traffic = run.spawn([sys.executable, str(ROOT / "scripts" / "gui_demo_traffic.py"), "--interface",
+                                     IFACE, "--rate", PERF_PREFILL_RATE], "prefill-traffic.log")
+                deadline = time.monotonic() + 300
+                while (await cdp.js(PERF_LOG))["retained"] < PERF_ROWS:
+                    if time.monotonic() > deadline:
+                        raise RuntimeError("the log did not reach its cap")
+                    await asyncio.sleep(2.0)
+                run.stop(traffic)
+                traffic = start_traffic(run)
+                await asyncio.sleep(5.0)
+                run.log(f"prefilled: {await cdp.js(PERF_LOG)}")
+                for vlabel, size in (("1440x900", WIDE), ("390x844", NARROW)):
+                    await cdp.viewport(*size)
+                    await asyncio.sleep(1.5)
+                    for rep in range(1, PERF_LOG_REPEATS + 1):
+                        await perf_home(cdp, size)
+                        await asyncio.sleep(3.0)
+                        observed = await cdp.js(EVENT_OBSERVER)
+                        result = await perf_trace(run, cdp, f"{vlabel}-following-{rep}", "following-with-clicks", size,
+                                                  True, lines, lambda size=size: perf_log_steps(cdp, size))
+                        entries = await cdp.js(EVENT_TAKE)
+                        result["event_timing_supported"] = observed
+                        result["event_entries"] = len(entries)
+                        result["interactions"] = event_timing(result["interactions"], entries)
+                        for s in result["interactions"]:
+                            et = s.get("event_timing")
+                            run.log(f"  {s['name']}: " + (s.get("skipped") or s.get("note") or
+                                                          f"{et['duration_ms']} ms ({et['input_delay_ms']} / "
+                                                          f"{et['processing_ms']} / {et['presentation_ms']})")
+                                    + ("" if s.get("took", True) else " (NOT TAKEN)"))
+                        runs.append(result)
+                        # Each run starts as the first did: following, not paused, every filter on.
+                        if await cdp.js(PAUSED):
+                            await perf_click(cdp, "#btn-pause", PAUSED, False)
+                        if not await cdp.js(NO_RESPONSE_SHOWN):
+                            await perf_click(cdp, FILTER_CHIP, NO_RESPONSE_SHOWN, True)
+                        if not await cdp.js("document.getElementById('btn-follow').disabled"):
+                            await perf_click(cdp, "#btn-follow", "document.getElementById('btn-follow').disabled", True)
+            finally:
+                run.stop(traffic)
+                run.stop(sim)
+                out = {"chrome": version, "categories": PERF_CATEGORIES, "seconds": PERF_SECONDS,
+                       "rows_cap": PERF_ROWS, "traffic_rate": TRAFFIC_RATE, "served": served,
+                       "steps": [list(s[:2]) for s in PERF_LOG_STEPS],
+                       "profile": str(MOVING_PROFILE.relative_to(ROOT)), "runs": runs, "problems": problems}
+                (run.outdir / "m3b-perf-log-results.json").write_text(json.dumps(out, indent=1, default=str))
+                run.log(f"perf runs: {len(runs)}; console messages, exceptions and log entries: {len(problems)}")
+                for problem in problems:
+                    run.log(f"  {problem}")
+                cdp.reader.cancel()
+    run.log("done")
+
+
 def find_chrome() -> str:
     for name in (os.environ.get("CHROME", ""), "google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
         if name and (path := shutil.which(name)):
@@ -2649,9 +2858,12 @@ def main(argv: list[str] | None = None) -> int:
                        help="the M3b four-client variants A, B and C alone (about 1.5 min)")
     modes.add_argument("--m3b-perf", action="store_true",
                        help="the main-thread comparison runs with traces (Task 39, about 22 min)")
+    modes.add_argument("--m3b-perf-log", action="store_true",
+                       help="the log fix's before / after runs with clicks and Event Timing (Task 44, about 7 min)")
     args = parser.parse_args(argv)
     mode = ("moving" if args.moving else "m3b" if args.m3b else "m3b-long" if args.m3b_long
-            else "m3b-slots" if args.m3b_slots else "m3b-perf" if args.m3b_perf else "m3a")
+            else "m3b-slots" if args.m3b_slots else "m3b-perf" if args.m3b_perf
+            else "m3b-perf-log" if args.m3b_perf_log else "m3a")
     args.outdir.mkdir(parents=True, exist_ok=True)
     run = Run(args.outdir.resolve())
     run.log(f"gui demo capture, {datetime.datetime.now(datetime.UTC).isoformat(timespec='seconds')}")

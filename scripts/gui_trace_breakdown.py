@@ -16,8 +16,11 @@ It reads a trace written by scripts/gui_demo_capture.py (``Tracing.start`` with
   IPC and work no timeline event describes);
 - the page's own callbacks, found by their ``app.js`` line: M3a's log render (the
   ``renderLog`` timer), the graphs' redraw, the WebSocket handler and the follow-control
-  frame. For the log render: its count, the summed inclusive time of each timer task, and that
-  time split into the same buckets (the forced style and layout inside the call included).
+  frame. For the log render: its count, the summed inclusive time of each timer task (with
+  its p95 and maximum), and that time split into the same buckets (the forced style and
+  layout inside the call included). A render called directly by a click handler is part of
+  that click's task, not of this count;
+- the long tasks: top-level events over 50 ms, their count, maximum and sum.
 
 The ``app.js`` lines are read from the working tree, or with ``--rev`` from a commit (the
 traces of run 9 were taken at f8a8e5f, where the log timer was line 1431).
@@ -84,8 +87,22 @@ def app_lines(rev: str | None) -> dict[str, int]:
                               text=True).stdout
     else:
         text = (ROOT / APP_JS).read_text()
+    return lines_in(text)
+
+
+def lines_in(text: str) -> dict[str, int]:
+    """The callback lines in one app.js text, for example the one the page was served."""
     lines = text.splitlines()
     return {key: next(i + 1 for i, line in enumerate(lines) if needle in line) for key, needle in CALLBACKS.items()}
+
+
+def p95(values: list[float]) -> float:
+    """The nearest-rank 95th percentile."""
+    ordered = sorted(values)
+    return ordered[max(0, -(-95 * len(ordered) // 100) - 1)]
+
+
+LONG_TASK_US = 50_000
 
 
 class Node:
@@ -207,8 +224,10 @@ def summarise(path: Path, lines: dict[str, int], seconds: float | None = None) -
             "mean_ms": round(statistics.fmean(durs) / 1000, 2) if durs else None,
             "median_ms": round(statistics.median(durs) / 1000, 2) if durs else None,
             "max_ms": round(max(durs) / 1000, 2) if durs else None,
+            "p95_ms": round(p95(durs) / 1000, 2) if durs else None,
             "split_ms": {k: ms(v) for k, v in split([n for t in tops for n in walk(t)]).items()},
         }
+    long_tasks = [r.dur for r in roots if r.dur > LONG_TASK_US]
     frames = sum(1 for e in mine if e.get("name") == "AnimationFrame" and e.get("ph") == "b")
     paints = sum(1 for n in nodes if n.name == "Paint")
     result: dict[str, Any] = {
@@ -222,6 +241,9 @@ def summarise(path: Path, lines: dict[str, int], seconds: float | None = None) -
         "other_top_names_ms": {k: ms(v) for k, v in other_names.most_common(6)},
         "top_level_names_ms": {k: ms(v) for k, v in root_names.most_common(4)},
         "frames": frames, "paint_events": paints, "callbacks": callbacks,
+        "long_tasks": {"threshold_ms": LONG_TASK_US / 1000, "count": len(long_tasks),
+                       "max_ms": round(max(long_tasks) / 1000, 1) if long_tasks else 0.0,
+                       "sum_ms": ms(sum(long_tasks))},
     }
     return result
 
