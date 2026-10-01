@@ -62,7 +62,7 @@
     dataAt: null,            // ms: when the page last applied a valid state
     ep: null,                // a recovery episode: { state: active | exhausted, attempts, inFlight, last }
     sock: null, sockSeq: 0,  // the current socket's record { id, gen, run, spoiled }; sockets opened so far
-    malformed: 0, malformedAt: null, polls: 0,
+    malformed: 0, malformedAt: null, polls: 0, pollGen: null,
     reason: null,            // why the latest attempt failed
     cause: null,             // why the page stopped being live
     lastLive: null,          // ms: when data last arrived from a live connection
@@ -212,7 +212,10 @@
   function readEncoding(status) {
     var enc = status.api && status.api.state_encoding;
     if (enc && enc.ok === false) {
-      if (!S.req || !S.req.encoding) fault("encoding");   // already pending: nothing changes
+      // Not yet pending: the fault starts it. Already pending: the requirement is neither started
+      // nor restarted, but an earlier ok true no longer counts, so no socket qualifies until the next.
+      if (!S.req || !S.req.encoding) fault("encoding");
+      else S.req.okSock = null;
       return false;
     }
     // ok true: only sockets opened after this read can carry the state that clears encoding.
@@ -321,7 +324,12 @@
     S.ep.inFlight = false;
     S.connecting = false;               // the attempt is over, even if its socket stays open
     S.ep.last = reason;
-    if (S.ep.attempts >= EPISODE_ATTEMPTS) { S.ep.state = "exhausted"; clearRetry(); return; }
+    if (S.ep.attempts >= EPISODE_ATTEMPTS) {
+      S.ep.state = "exhausted"; clearRetry();
+      // A socket left open keeps the page live: keep polling it, even if its hello never came.
+      if (S.ws && isLive() && S.pollGen !== S.gen) poll(0, S.gen);
+      return;
+    }
     if (open) resyncClose();
     armRetry(EPISODE_FIRST_MS * Math.pow(2, S.ep.attempts));
   }
@@ -370,7 +378,12 @@
 
   // Valid: type state, vehicle and dtcs objects, on the current socket, in the current run.
   function onState(m, sock) {
-    if (!isObject(m.vehicle) || !isObject(m.dtcs) || sock.gen !== S.gen || sock.run !== S.runStartedAt) return;
+    if (sock.gen !== S.gen || sock.run !== S.runStartedAt) return;
+    if (!isObject(m.vehicle) || !isObject(m.dtcs)) {
+      // Not applied; an attempt that receives it has ended without its state.
+      if (episodeActive() && S.ep.inFlight) { episodeAttemptEnded("the state it received was incomplete", true); renderLink(); }
+      return;
+    }
     applyState(m.vehicle, m.dtcs);
     S.dataAt = Date.now();
     var r = S.req;
@@ -396,6 +409,7 @@
   // One status loop per live connection, tied to the generation it started in.
   function poll(delay, gen) {
     clearTimeout(S.pollTimer);
+    S.pollGen = gen;                    // the generation whose loop is running
     S.pollTimer = setTimeout(function () {
       if (gen !== S.gen) return;
       getJSON("/status").then(function (status) {
@@ -643,7 +657,8 @@
       p.replaceChildren(el("b", { text: "Last known data." }), " " + faultText + episode);
     }
     // The button is M3a's "Retry now" while stale, and the only way on after exhaustion.
-    button.hidden = !stale && !exhausted;
+    // While an episode is active its own timer starts the next attempt: no early attempt by hand.
+    button.hidden = (!stale && !exhausted) || episodeActive();
     button.disabled = S.connecting;
     button.textContent = S.connecting ? "Retrying" : "Retry now";
   }
@@ -684,7 +699,7 @@
     d.health = S.conn !== "live" ? "stale" : S.req ? "last-known" : "live";
     d.episode = S.ep ? S.ep.state : "none";
     d.attempts = String(S.ep ? S.ep.attempts : 0);
-    d.timers = String(S.retryTimer != null ? 1 : 0);
+    d.timers = String(S.retryTimer != null ? 1 : 0);   // the single S.retryTimer slot; only armRetry() schedules it
     d.polls = String(S.polls);
     d.malformedTotal = String(S.malformed);
   }
@@ -1131,7 +1146,7 @@
     $("linkstate").addEventListener("click", function (ev) {
       if (!(ev.target instanceof HTMLElement) || ev.target.id !== "btn-retry") return;
       if (S.ep && S.ep.state === "exhausted") retryNow();
-      else if (isStale()) connect();
+      else if (isStale() && !episodeActive()) connect();
     });
     $("foot-limits").textContent = "Filters, pause and clear change this view only; the page sends nothing to the simulator. " +
       "Status refreshes every " + STATUS_POLL_MS / 1000 + " s; signals, trouble codes and exchanges arrive on the live stream. " +
