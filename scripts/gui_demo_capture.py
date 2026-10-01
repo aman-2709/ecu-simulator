@@ -743,7 +743,8 @@ PAGE_STATE = """(() => {
     if (th && td && graphs[th.title]) cells[th.title] = td.textContent;
   });
   const b = document.getElementById('btn-retry'), note = document.getElementById('graphs-note');
-  const brk = document.getElementById('graphs-breaks');      // the one shared gap line under the head
+  // The one shared notice line under the head: the restart note (Task 37) and the gap notes.
+  const brk = document.getElementById('graphs-breaks');
   return {now: Date.now(), conn: d.conn, data: d.data, reason: d.reason, health: d.health, episode: d.episode,
     attempts: Number(d.attempts), timers: Number(d.timers), polls: Number(d.polls), malformed: Number(d.malformedTotal),
     text: document.getElementById('conn-text').textContent, banner: ls.hidden ? null : ls.innerText,
@@ -798,7 +799,13 @@ LOG_ROWS = """(() => {
   const gp = document.getElementById('graphs-panel').getBoundingClientRect();
   const plot = document.querySelector('.graph__plot');
   const card = document.querySelector('figure.graph:not([hidden])');
+  // Clearance: the rows region minus what the 5 newest full rows take (negative: 5 do not fit).
+  const five = heights.slice(-5), need5 = five.length === 5 ? five.reduce((a, h) => a + h, 0) : null;
+  const bl = document.getElementById('graphs-breaks'), blH = bl.getBoundingClientRect().height;
+  const blLine = parseFloat(getComputedStyle(bl).lineHeight);
   return {full: full, fullExchange: fullExchange, heights: heights,
+          need5: need5, clearance5: need5 === null ? null : Math.round(wr.bottom - top) - need5,
+          breaksLines: blH && blLine ? Math.round(blH / blLine) : 0,
           rowsRegion: Math.round(wr.bottom - top), graphsH: Math.round(gp.height),
           plotH: plot ? plot.getBoundingClientRect().height : null,
           cardH: card ? card.getBoundingClientRect().height : null,
@@ -1470,7 +1477,9 @@ async def _restart_and_gap(m: M3b, sim: subprocess.Popen[bytes]) -> None:
         "Log rows at 1440 x 900, restart note and a gap note together (measured)",
         "At 1440 x 900 with the graphs open, the restart note and a gap note visible together: at least 5 full "
         "log rows inside #logwrap",
-        {"the restart note is shown": rows["note"].startswith("Simulator restarted at"),
+        # Since Task 37 the restart note is on the shared notice line, first, " · "-joined with the gap.
+        {"the restart note is shown, complete": rows["breaks"].startswith("Simulator restarted at")
+         and "the previous run's graphs were cleared." in rows["breaks"],
          "a gap note is shown": re.search(GAP_NOTE, rows["breaks"]) is not None,
          "the newest rows are exchange rows": rows["fullExchange"] == rows["full"],
          "the log is filled (more rows than fit)": len((await m.log())["seqs"]) > rows["full"],
@@ -1504,13 +1513,14 @@ async def case_restart(m: M3b, run: Run, sim: subprocess.Popen[bytes], logname: 
          "oldest-t >= 0 and only this run's points": all(
              0 <= float(s["graphs"][p]["oldestT"]) <= float(s["graphs"][p]["asOf"])
              and int(s["graphs"][p]["points"]) <= 4 * float(s["graphs"][p]["asOf"]) + 4 for p in paths),
-         "restart note visible": s["note"].startswith("Simulator restarted at"),
+         # Since Task 37 the restart note is on the shared notice line, not in #graphs-note.
+         "restart note visible": s["breaks"].startswith("Simulator restarted at"),
          "restart marker in the log": "Simulator restarted." in lg["text"],
          "segments 1 after the first new point": all(s["graphs"][p]["segments"] == "1" for p in paths)},
         {"before": {p: {k: before["graphs"][p][k] for k in ("run", "points", "oldestT", "asOf")} for p in paths},
          "after": {p: {k: s["graphs"][p][k] for k in ("run", "points", "oldestT", "newestT", "asOf", "drawnTo",
                                                      "segments")}
-                   for p in paths}, "note": s["note"]})
+                   for p in paths}, "notice_line": s["breaks"]})
     return sim
 
 
