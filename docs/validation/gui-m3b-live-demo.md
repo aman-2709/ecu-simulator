@@ -102,7 +102,7 @@ shipped page contains no test code.
 | 1 | No false invalidation | A | PASS | 14 samples over 65.08 s, every one "Live", `live`/`current`/`live`, no tag, no banner, malformed 0, episode `none`. `data-polls` rose by **32** (the rule: about 30). **1** `state` received in the whole period, on 1 socket |
 | 2 | Malformed state, then unchanged data | A | PASS | Immediately: `live`/`last-known`/`malformed`/`active`, the "Last known" tags, malformed 1. **Live after 1.021 s**, on a new socket with its `hello` and `state`; episode `none`, attempts 0, tag gone; "Resynchronised after an unreadable message."; `started_at` equal; no restart marker. Seq continuity is vacuous: no traffic, no exchanges |
 | 3 | Malformed, bounded | A | PASS | **3 attempts, waits 1.003 / 2.003 / 4.003 s** (± 0.3 s allowed). Then `exhausted`, "Could not recover: …" with "Retry now". Sockets 5 at exhaustion and 5 after 30 s. `data-timers` ≤ 1 at all 367 samples and every change, which holds by construction (the page has one retry-timer slot); **the evidence for timer discipline is the measured attempt spacing**. Never live meanwhile. "Retry now" with the fault removed: attempts 1, then live with attempts 0 (a fresh budget) |
-| 4 | All four client slots, variant A | A | PASS | 1 attempt; its socket opened, so no 503. `data-attempts` 0→1→0. `refused_clients` 0→0. Live after 1.016 s, the budget reset. **Variant A has never met a 503** (runs 3 to 9): the page's own close frees its slot before the 1 s first wait |
+| 4 | All four client slots, variant A | A | PASS | 1 attempt; its socket opened, so no 503. `data-attempts` 0→1→0. `refused_clients` 0→0. Live after 1.016 s, the budget reset. Variant A may or may not meet a 503, and its rule does not need one (see "The four-client cases"); the deterministic 503 followed by automatic recovery is variant C |
 | 5 | All four client slots, variant B | A | PASS | The script's 4th client took the freed slot 0.001 s after the page's socket left (clients 4, no page socket open). **3 attempts, all refused**, starts 2.006 s and 4.006 s apart. Attempts 0→1→2→3. `refused_clients` 0→**3**, equal to the 3 attempts not opened, and unchanged over the next 30 s. Exhausted with "Retry now"; slot released, "Retry now" recovered |
 | 6 | Window persists | B | PASS | `localStorage` "30". After the reload, `data-window-s` 30 on all 5 graphs; "30 s" `aria-pressed` true, 2 min and 10 min false |
 | 7 | Held value at the left edge | B | PASS | 30 s window at as-of 55.01: `data-left-value` 80, line 2 "min 80 · max 80 in 30 s", segments 1, oldest-t 0.59 < 55.01 − 30 |
@@ -138,6 +138,39 @@ scrollWidth/clientWidth; status bar height from the `header` element):
 
 The 1200 px status bar was read in steady state only (Task 34, fix round 3). Task 33
 measured it at 1200 with long values and both health readouts: 92 px throughout.
+
+## The four-client cases: what each variant proves
+
+The capture script holds three WebSocket clients, so the page is the fourth. Then it sends the
+page a malformed frame, and the page closes its own socket to resync. The three variants differ
+only in what happens to the slot that close frees.
+
+| Variant | What the script does with the freed slot | What it proves | Evidence |
+|---|---|---|---|
+| **A** | Leaves it free | <ul><li>A resync under full load recovers inside its budget, and the budget then resets.</li><li>`data-timers` stays at 1 or below, attempts are at least 0.9 s apart, and `data-attempts` rises by one per attempt.</li><li>**A 503 is possible but not required.** The page's own close usually frees its slot before the 1 s first wait, so A has met no 503 in runs 3 to 10. Its rule does not need one: "any 503 is counted … and matches one attempt" holds just as well when there are none.</li></ul> | Case 4, run 9 |
+| **B** | Takes it at once and keeps it | <ul><li>Every attempt is refused, so 3 attempts get a 503.</li><li>The episode then ends "exhausted" with "Retry now", and no further upgrade request is made for 30 s, so `refused_clients` stops rising.</li><li>Releasing the slot and pressing "Retry now" recovers. This is the manual path.</li></ul> | Case 5, run 9 |
+| **C** (Task 38) | Takes it at once, waits until the server's `refused_clients` rises (the page's first attempt got a 503), then releases it | <ul><li>**The refusal is deterministic, not raced:** the slot is held before the attempt, and released only once the refusal has been observed.</li><li>**The page recovers automatically inside the same episode, without "Retry now":** its next scheduled attempt, 2 s after the refused one ended, succeeds.</li><li>The budget then resets (`data-episode` `none`, `data-attempts` 0). A second malformed frame starts a fresh episode at attempt 1.</li><li>Timers, spacing and the refusal count are checked as in A and B.</li></ul> | `--m3b-slots`, three runs at `f2b4ef9`, and inside `--m3b` run 10 (below) |
+
+**Variant C's evidence.** The commit is `f2b4ef9`, with the page unchanged since `de9972c`. The
+results are in [variant-c/](gui-m3b-live-demo/variant-c/): `slots-1`, `slots-2` and `slots-3`,
+each `scripts/run_gui_demo.sh --m3b-slots`, all 3 of 3 passed. It also passed inside a full
+`--m3b`, run 10. Every run gave the same picture:
+
+| Run | `refused_clients` | Attempt starts after the fault | Refused / recovered | Wait after the refusal | Live after the fault | Afterwards | Second fault |
+|---|---|---|---|---|---|---|---|
+| slots-1 | 3 → 4 (seen at +1.023 s; slot released at +1.024 s) | +1.000 s, +3.007 s | attempt 1 refused (1006) / **attempt 2 recovered** | 2.005 s | 3.056 s | live, episode `none`, attempts 0 | episode `active`, attempts 1, then `none`/0; live after 1.020 s |
+| slots-2 | 3 → 4 (+1.025 / +1.026 s) | +1.002 s, +3.008 s | 1 refused / **2 recovered** | 2.005 s | 3.059 s | the same | the same; live after 1.020 s |
+| slots-3 | 3 → 4 (+1.026 / +1.027 s) | +1.001 s, +3.007 s | 1 refused / **2 recovered** | 2.005 s | 3.061 s | the same | the same; live after 1.022 s |
+| run 10 (`--m3b`) | 3 → 4 (+1.036 / +1.036 s) | +1.000 s, +3.006 s | 1 refused / **2 recovered** | 2.005 s | 3.074 s | the same | the same; live after 1.025 s |
+
+Across all four runs:
+- the script took the slot 0.002 s after the page's socket left, with 4 clients and no page socket open;
+- `data-attempts` went 0 → 1 → 2 → 0;
+- `data-timers` was never above 1;
+- the refusal shows in the page console as one 503 handshake entry.
+
+Run 10 is not the run of record. Everything else in this record stays at run 9. Run 10's other
+cases repeated run 9's results: 21 of 22 passed, with the same case 21 failing at 4 rows.
 
 ## Cost in the browser (§11.3): measured next to §11's estimates
 
@@ -236,7 +269,8 @@ Each of these was decided by the controller during checkpoint 2, not by the owne
      note showing, against about 263 px for 5 rows; and **with the restart note and a gap note
      together it is 255 px, 4 rows (case 21, a finding)**;
    - the main-thread load is now an **open finding** in its own section above (Task 36);
-   - the 503 path of variant A was never met (runs 3 to 9); only variant B exercises it.
+   - variant A has met no 503 (runs 3 to 10), and its rule does not need one. Since Task 38,
+     variant C produces a 503 deterministically and checks the automatic recovery after it.
 8. **Local environment only:** for §12.4's wheel check, Task 31 bootstrapped `pip` into the
    worktree `.venv` with `ensurepip` (it had none). No project file changed.
 
@@ -360,8 +394,10 @@ Findings and untested paths:
 - [ ] **Case 21:** 4 full log rows, not 5, while the restart note and a gap note show together
       at 1440 × 900, for up to one window length after a restart. The owner keeps the desktop
       layout, so this needs an owner decision: accept it, or ask for a change.
-- [ ] **The 503 path of variant A** (§12.2, all four client slots occupied) has never been met.
-      Only variant B exercises a 503.
+- Resolved, not an acceptance item (Task 38): "the 503 path of variant A has never been met".
+      Variant A's rule does not need a 503. **Variant C** produces one deterministically, and shows automatic
+      recovery without "Retry now", the budget reset, and a fresh episode at attempt 1. It
+      passed in 3 `--m3b-slots` runs and inside `--m3b` run 10 (see "The four-client cases").
 
 Gates that stay open whatever happens to M3b:
 - [ ] **The M2 early-check median-latency `STOP`** ([gui-m2-early-check.md](gui-m2-early-check.md)).
@@ -462,4 +498,5 @@ before these two items are ticked:**
   exercised in the browser only in the encoding case (13); the "Retry now" cases run without
   a scenario, so no graphs.
 - **dpr 2 and dpr 3** canvas sizes: every measurement is at dpr 1.
-- **Variant A's 503 path** (case 4): never met.
+- **Variant A's 503 path** (case 4): never met, and not needed by its rule. The 503 followed by
+  automatic recovery is exercised deterministically by variant C (Task 38).
