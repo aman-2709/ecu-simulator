@@ -319,7 +319,8 @@ async def page_target(http: aiohttp.ClientSession) -> str:
 
 async def demo(run: Run, chrome: str, mode: str = "m3a") -> None:
     profile_dir = tempfile.mkdtemp(prefix="gui-demo-chrome-")
-    sessions = {"m3a": session, "moving": moving_session, "m3b": m3b_session, "m3b-long": m3b_long_session}
+    sessions = {"m3a": session, "moving": moving_session, "m3b": m3b_session, "m3b-long": m3b_long_session,
+                "m3b-slots": m3b_slots_session}
     try:
         await sessions[mode](run, chrome, profile_dir)
     finally:
@@ -1245,24 +1246,128 @@ async def case_slots(m: M3b, clients: ScriptClients, variant: str) -> None:
         "the slot and pressing Retry now recovers", conds, observed)
 
 
+async def case_slots_c(m: M3b, clients: ScriptClients) -> None:
+    """Variant C (Task 38): a deterministic 503, then automatic recovery inside the same episode.
+
+    The script holds the fourth slot as soon as the page's old socket has left the server, so the
+    page's first attempt is refused for certain; it releases the slot only once the server's
+    refused_clients has risen (that refusal observed, not assumed). The page's next scheduled
+    attempt must then recover on its own: "Retry now" is never pressed. A second malformed frame
+    afterwards must start a fresh episode at attempt 1, which shows the budget was reset.
+    """
+    refused0 = (await m.status())["api"]["refused_clients"]
+    n0 = len((await m.wrapper())["socks"])
+    imm = await m.cdp.js("(() => { window.__m3b.bad(); return " + PAGE_STATE + "; })()")
+    # 1. Take the slot the moment the page's old socket is gone from the server.
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < 3.0 and (await m.status())["api"]["clients"] > 3:
+        await asyncio.sleep(0.02)
+    await clients.open()
+    held = await m.status()
+    setup = {"slot_taken_after_s": round(time.monotonic() - t0, 3), "clients_now": held["api"]["clients"],
+             "page_sockets_open": sum(1 for x in (await m.wrapper())["socks"][n0:] if x["opened"])}
+    # 2. Wait for the refusal itself: refused_clients rises (the page's first attempt got 503).
+    refused_series = [refused0]
+    t1 = time.monotonic()
+    while time.monotonic() - t1 < 8.0:
+        r = (await m.status())["api"]["refused_clients"]
+        if r != refused_series[-1]:
+            refused_series.append(r)
+        if r > refused0:
+            break
+        await asyncio.sleep(0.05)
+    t_refused = time.time() * 1000
+    # 3. Release the slot, and confirm the server has freed it.
+    await clients.close_last()
+    while (await m.status())["api"]["clients"] > 3 and time.monotonic() - t1 < 10.0:
+        await asyncio.sleep(0.02)
+    t_released = time.time() * 1000
+    # 4. No click: the episode's own next attempt must recover.
+    samples, recovered = await m.until(lambda s: s["health"] == "live", timeout=10.0)
+    await asyncio.sleep(0.3)                    # let the reset attributes land before reading them
+    end = await m.state()
+    w = await m.wrapper()
+    attempts = w["socks"][n0:]
+    starts = [a["created"] for a in attempts]
+    gaps = [round((b - a) / 1000, 3) for a, b in itertools.pairwise(starts)]
+    refused_now = (await m.status())["api"]["refused_clients"]
+    not_opened = [i + 1 for i, a in enumerate(attempts) if a["opened"] is None]
+    recovering = next((i + 1 for i, a in enumerate(attempts) if a["opened"] is not None), None)
+    changes = await m.attrs(imm["now"])
+    seen = [imm["attempts"]] + [int(x["v"]) for x in changes if x["a"] == "attempts"]
+    steps = [b - a for a, b in itertools.pairwise(seen)]
+    # The refused attempt ended when its socket closed; the next started one episode wait later (2 s).
+    wait_after_refusal = (round((attempts[1]["created"] - attempts[0]["closed"]) / 1000, 3)
+                          if len(attempts) >= 2 and attempts[0]["closed"] else None)
+    await m.shot("m3b-a6-slots-c-recovered.png")
+    # 5. A fresh fault: a new episode whose first attempt is number 1.
+    t_second = (await m.state())["now"]
+    await m.cdp.js("window.__m3b.bad()")
+    second, recovered2 = await m.until(lambda s: s["health"] == "live", timeout=10.0)
+    second_changes = await m.attrs(t_second)
+    second_attempts = [int(x["v"]) for x in second_changes if x["a"] == "attempts"]
+    second_episode = [x["v"] for x in second_changes if x["a"] == "episode"]
+    allsamples = samples + second
+    m.cases.record(
+        "Recovery with all four client slots occupied, variant C (deterministic 503, automatic recovery)",
+        "The script holds the freed slot, waits until refused_clients rises (a real 503 to the page's attempt), then "
+        "releases it. The page's next scheduled attempt recovers without Retry now; health live; data-episode none "
+        "and data-attempts 0 (the budget reset); data-timers never above 1; no two attempts less than 0.9 s apart; "
+        "refused_clients rose by exactly the refused attempts. A second malformed frame then starts a fresh episode "
+        "at attempt 1",
+        {"setup: the script held the slot before the page's first attempt": setup["clients_now"] == 4
+         and setup["page_sockets_open"] == 0,
+         "the refusal was observed (refused_clients rose) before the release": refused_series[-1] > refused0,
+         "the first attempt was refused, a later one recovered": bool(not_opened) and not_opened[0] == 1
+         and recovering is not None and recovering > 1,
+         "recovered without Retry now, within the episode's waits": recovered and recovering is not None
+         and recovering <= 3 and wait_after_refusal is not None and abs(wait_after_refusal - 2.0) <= 0.3,
+         "after: live, data-episode none, data-attempts 0": (end["health"], end["episode"], end["attempts"])
+         == ("live", "none", 0),
+         "data-timers never above 1": all(s["timers"] <= 1 for s in allsamples)
+         and all(int(x["v"]) <= 1 for x in changes + second_changes if x["a"] == "timers"),
+         "no two attempts less than 0.9 s apart": all(g >= 0.9 for g in gaps),
+         "each attempt raises data-attempts by exactly 1": all(x == 1 for x in steps if x > 0)
+         and sum(1 for x in steps if x > 0) == len(attempts),
+         "refused_clients rose by exactly the refused attempts": refused_now - refused0 == len(not_opened),
+         "a second fault starts a fresh episode at attempt 1, and recovers": recovered2
+         and next((v for v in second_attempts if v), None) == 1 and "active" in second_episode
+         and second[-1]["episode"] == "none" and second[-1]["attempts"] == 0},
+        {"setup": setup, "refused_series": refused_series, "refused_before": refused0, "refused_after": refused_now,
+         "t_bad_ms": imm["now"], "t_refusal_seen_ms": t_refused, "t_released_ms": t_released,
+         "attempt_starts_ms": starts, "start_gaps_s": gaps, "refused_attempts": not_opened,
+         "recovering_attempt": recovering, "wait_after_refusal_s": wait_after_refusal,
+         "live_after_bad_s": (samples[-1]["now"] - imm["now"]) / 1000, "attempts_seen": seen,
+         "end": slim(end), "attempt_sockets": attempts, "attribute_changes": changes,
+         "second_fault": {"attempts_seen": second_attempts, "episode_seen": second_episode,
+                          "live_after_s": (second[-1]["now"] - t_second) / 1000, "end": slim(second[-1])}})
+
+
+async def run_slot_cases(run: Run, m: M3b) -> None:
+    """The three four-client variants, with the capture script holding the other three slots."""
+    clients = ScriptClients(m.http)
+    try:
+        for _ in range(3):
+            await clients.open()
+        await asyncio.sleep(0.5)
+        run.log(f"script clients held: {len(clients.held)}; /status clients "
+                f"{(await m.status())['api']['clients']}")
+        await case_slots(m, clients, "A")
+        await asyncio.sleep(3.0)
+        await case_slots(m, clients, "B")
+        await asyncio.sleep(3.0)
+        await case_slots_c(m, clients)
+    finally:
+        await clients.close_all()
+
+
 async def part_a(run: Run, m: M3b) -> None:
     sim = await m3b_start(run, DEFAULT_PROFILE, "a-simulator.log")
     try:
         await case_no_false_invalidation(m)
         await case_malformed_once(m)
         await case_malformed_bounded(m)
-        clients = ScriptClients(m.http)
-        try:
-            for _ in range(3):
-                await clients.open()
-            await asyncio.sleep(0.5)
-            run.log(f"script clients held: {len(clients.held)}; /status clients "
-                    f"{(await m.status())['api']['clients']}")
-            await case_slots(m, clients, "A")
-            await asyncio.sleep(3.0)
-            await case_slots(m, clients, "B")
-        finally:
-            await clients.close_all()
+        await run_slot_cases(run, m)
     finally:
         run.stop(sim)
 
@@ -2010,6 +2115,33 @@ async def m3b_session(run: Run, chrome: str, profile_dir: str) -> None:
     run.log("done")
 
 
+async def m3b_slots_session(run: Run, chrome: str, profile_dir: str) -> None:
+    """The four-client variants A, B and C alone (part A's simulator and page), to repeat them."""
+    await launch_chrome(run, chrome, profile_dir)
+    cases = Cases(run)
+    problems: list[str] = []
+    async with aiohttp.ClientSession() as http:
+        ws_url = await page_target(http)
+        version = await chrome_version(http)
+        run.log(f"Chrome: {version}")
+        async with http.ws_connect(ws_url, max_msg_size=0) as ws:
+            cdp = await m3b_cdp(run, http, ws, problems)
+            m = M3b(run, cdp, http, cases)
+            sim = await m3b_start(run, DEFAULT_PROFILE, "slots-simulator.log")
+            try:
+                await m.open_page()
+                await run_slot_cases(run, m)
+            finally:
+                run.stop(sim)
+                passed = sum(1 for c in cases.items if c["pass"])
+                out = {"chrome": version, "cases": cases.items, "problems": problems,
+                       "tally": {"passed": passed, "total": len(cases.items)}}
+                (run.outdir / "m3b-slots-results.json").write_text(json.dumps(out, indent=1, default=str))
+                run.log(f"slot cases: {passed} of {len(cases.items)} passed")
+                cdp.reader.cancel()
+    run.log("done")
+
+
 async def m3b_long_session(run: Run, chrome: str, profile_dir: str) -> None:
     """Bounded history: about 11 min on ice_scenario.yaml with traffic, the 10 min window selected."""
     await launch_chrome(run, chrome, profile_dir)
@@ -2114,8 +2246,11 @@ def main(argv: list[str] | None = None) -> int:
                        help="the M3b browser checks (design §12.2) and the cost measurement (§11.3)")
     modes.add_argument("--m3b-long", action="store_true",
                        help="the M3b bounded-history case: about 11 min on ice_scenario.yaml")
+    modes.add_argument("--m3b-slots", action="store_true",
+                       help="the M3b four-client variants A, B and C alone (about 1.5 min)")
     args = parser.parse_args(argv)
-    mode = "moving" if args.moving else "m3b" if args.m3b else "m3b-long" if args.m3b_long else "m3a"
+    mode = ("moving" if args.moving else "m3b" if args.m3b else "m3b-long" if args.m3b_long
+            else "m3b-slots" if args.m3b_slots else "m3a")
     args.outdir.mkdir(parents=True, exist_ok=True)
     run = Run(args.outdir.resolve())
     run.log(f"gui demo capture, {datetime.datetime.now(datetime.UTC).isoformat(timespec='seconds')}")
