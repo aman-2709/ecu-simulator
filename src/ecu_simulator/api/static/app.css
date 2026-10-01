@@ -187,6 +187,7 @@ table { border-collapse: collapse; width: 100%; }
 .sig__unit { color: var(--ink-2); width: 4.5em; font-size: 0.929rem; white-space: nowrap; }
 .sig td.changed { animation: changed 1.2s ease-out; }
 .sig td.sig__na-value { font-weight: 400; color: var(--ink-2); }
+.sig td.sig__invalid { font-weight: 400; font-style: italic; color: var(--ink-2); }
 .sig__na { display: block; color: var(--ink-2); font: italic 400 0.857rem var(--sans); }
 @keyframes changed { from { background: #d7ecdf; } to { background: transparent; } }
 
@@ -332,6 +333,35 @@ td.c-ecu { white-space: nowrap; }
 
 .logfoot { padding: 0.571rem 0.857rem 0.714rem; border-top: 1px solid var(--rule); font-size: 0.857rem; color: var(--ink-2); display: grid; gap: 0.143rem; }
 
+/* ---------- signal graphs (M3b §5.2, §7, §9) ----------
+   The main column holds the graphs above the log. Five cards in one row where they fit; the
+   plot's height is capped so the log keeps at least five rows at 1440 x 900. */
+.maincol { display: grid; gap: 0.857rem; min-width: 0; align-content: start; }
+.graphs__head { gap: 0.286rem 0.571rem; padding-top: 0.357rem; padding-bottom: 0.357rem; }
+.graphs__closed { font-weight: 400; color: var(--ink-2); }
+/* The meta text takes the head's spare width and wraps inside it, so the head stays one row. */
+.graphs__meta { flex: 1 1 12rem; min-width: 0; text-align: right; font-size: 0.786rem; line-height: 1.25; }
+.graphs__controls, .graphs__window { display: flex; gap: 0.286rem; align-items: center; }
+.graphs__window { gap: 0; }
+/* While a tag sits in the head, the standing fine print gives way, so the head does not grow. */
+body.is-stale .graphs__fine, body.is-known .graphs__fine { display: none; }
+.graphs__window button + button { border-left-width: 0; }
+/* The compact button style of the log's "Jump to newest" control, so the head is one short row. */
+button.compact { min-height: 0; padding: 0.143rem 0.571rem; font-size: 0.857rem; line-height: 1.3; }
+.graphs { padding-top: 0.429rem; padding-bottom: 0.571rem; }
+.graphs__note { color: var(--ink-2); font-size: 0.857rem; margin-bottom: 0.286rem; }
+.graphs__note:last-child { margin-bottom: 0; }
+.graphs__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.571rem; }
+.graph { margin: 0; min-width: 0; padding: 0.214rem 0.286rem 0.143rem; border: 1px solid var(--panel-2); background: var(--panel); }
+.graph__line1 { display: flex; align-items: baseline; gap: 0.429rem; font-size: 0.857rem; line-height: 1.35; white-space: nowrap; }
+.graph__name { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
+.graph__value { margin-left: auto; font-weight: 700; font-size: 0.929rem; color: var(--ink); }
+.graph__value--na { font-weight: 400; color: var(--ink-2); font-style: italic; }
+.graph__plot { height: clamp(3rem, 9vh, 4.75rem); overflow: hidden; }
+.graph__line2 { font-size: 0.786rem; line-height: 1.3; color: var(--ink-2); overflow-wrap: anywhere; }
+.graph--na .graph__plot { display: none; }
+.graph--na .graph__line2 { font-style: italic; }
+
 /* ---------- wide: fixed-height shell, panels scroll inside ---------- */
 @media (min-width: 1101px) and (min-height: 640px) {
   body { height: 100vh; display: grid; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; }
@@ -342,7 +372,10 @@ td.c-ecu { white-space: nowrap; }
   .side > #dtc-panel { flex: 0 0 auto; }
   .side > #vehicle-panel { flex: 1 1 auto; min-height: 17.143rem; display: flex; flex-direction: column; }
   .panel__scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
-  .panel--log { min-height: 0; }
+  /* The graphs keep their natural height; the log takes the rest and scrolls inside. */
+  .maincol { min-height: 0; display: flex; flex-direction: column; gap: 0.857rem; }
+  .maincol > .panel--graphs { flex: none; }
+  .maincol > .panel--log { flex: 1 1 auto; min-height: 0; }
   .logarea { flex: 1 1 auto; }
   .logwrap { flex: 1 1 auto; min-height: 0; }
 }
@@ -372,6 +405,16 @@ td.c-ecu { white-space: nowrap; }
   .dtc thead th { font-size: 0.786rem; }
   .dtc th, .dtc td { padding: 0.357rem 0.214rem; }
   .logbar__actions { margin-left: 0; width: 100%; }
+  /* Graphs head: the title and Hide on the first row, the window and Pause on the second. */
+  .graphs__head h2 { flex: 1 1 auto; }
+  .graphs__toggle { order: 1; }
+  .graphs__controls { order: 2; width: 100%; }
+  .graphs__controls > *, .graphs__window button { flex: 1 1 auto; white-space: nowrap; }
+  .graphs__meta { order: 3; flex-basis: 100%; margin-left: 0; text-align: left; }
+  .graphs__fine { display: none; }
+  .graphs__meta:has(#graphs-status:empty) { display: none; }
+  .graphs__head button.compact { min-height: 2.286rem; }
+  .graphs__grid { grid-template-columns: minmax(0, 1fr); }
   .logbar__actions button { flex: 1; }
 
   .log thead { position: absolute; width: 0.071rem; height: 0.071rem; overflow: hidden; clip: rect(0 0 0 0); }

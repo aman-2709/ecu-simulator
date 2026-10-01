@@ -6,7 +6,9 @@
 <title>ECU simulator observer</title>
 <meta name="description" content="Read-only view of a running ecu-simulator: status, vehicle signals, trouble codes and diagnostic exchanges.">
 <link rel="icon" href="data:,">
+<link rel="stylesheet" href="uPlot.min.css">
 <link rel="stylesheet" href="app.css">
+<script src="uPlot.iife.min.js" defer></script>
 <script src="app.js" defer></script>
 </head>
 <body class="is-loading">
@@ -62,6 +64,29 @@
     </section>
   </div>
 
+  <div class="maincol">
+  <section class="panel panel--data panel--graphs" id="graphs-panel" aria-labelledby="graphs-h">
+    <div class="panel__head graphs__head">
+      <h2 id="graphs-h">Signal graphs<span class="graphs__closed" id="graphs-closed" hidden> — hidden, still recording</span></h2>
+      <span class="stale-tag" hidden></span>
+      <span class="known-tag" hidden></span>
+      <span class="panel__meta graphs__meta" id="graphs-meta"><span id="graphs-status"></span><span class="graphs__fine" id="graphs-fine"></span></span>
+      <div class="graphs__controls" id="graphs-controls" role="group" aria-label="Graph controls (the graphs only)">
+        <div class="graphs__window" role="group" aria-label="Time window">
+          <button type="button" class="compact" data-window="30" aria-pressed="false">30 s</button>
+          <button type="button" class="compact" data-window="120" aria-pressed="true">2 min</button>
+          <button type="button" class="compact" data-window="600" aria-pressed="false">10 min</button>
+        </div>
+        <button type="button" class="compact" id="btn-graphs-pause" aria-pressed="false">Pause graphs</button>
+      </div>
+      <button type="button" class="compact graphs__toggle" id="btn-graphs-toggle" aria-expanded="true" aria-controls="graphs">Hide graphs</button>
+    </div>
+    <div class="panel__body graphs" id="graphs">
+      <p class="graphs__note" id="graphs-note" hidden></p>
+      <div class="graphs__grid" id="graphs-grid"></div>
+    </div>
+  </section>
+
   <section class="panel panel--log" id="log-panel" aria-labelledby="log-h">
     <div class="panel__head">
       <h2 id="log-h">Exchange log</h2>
@@ -113,9 +138,11 @@
 
     <footer class="logfoot">
       <p><strong>Dispatch µs</strong> is dispatcher time only: how long the dispatcher call took. It is not wire latency; wire timing belongs to candump.</p>
-      <p id="foot-limits">Filters, pause and clear change this view only. The page sends nothing to the simulator.</p>
+      <p><span id="foot-limits">Filters, pause and clear change this view only. The page sends nothing to the simulator.</span>
+        Graphs: uPlot 1.6.32, <a href="uPlot-LICENSE.txt">MIT licence</a>.</p>
     </footer>
   </section>
+  </div>
 </main>
 
 </body>

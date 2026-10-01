@@ -45,7 +45,7 @@
     "vehicle.obd_standard": "code", "engine.coolant_temp": "°C", "engine.intake_temp": "°C",
     "engine.engine_load": "%", "engine.throttle": "%", "engine.maf": "g/s", "engine.map": "kPa",
     "engine.timing_advance": "° BTDC", "engine.short_fuel_trim": "%", "engine.long_fuel_trim": "%",
-    "engine.runtime": "s", "engine.fuel_level": "%", "engine.fuel_type": "code"
+    "engine.runtime": "s", "engine.fuel_level": "%", "engine.fuel_type": "code", "engine.rpm": "rpm"
   };
 
   // ---------- state ----------
@@ -180,6 +180,7 @@
         S.ep = null; S.req = { connect: true, sock: null };
       }
       S.runStartedAt = status.started_at;
+      if (restarted) graphsRestart(status.started_at);
       if (!readEncoding(status)) {
         // An encoding episode's attempt ends when /status still says the state cannot be built.
         if (episodeActive()) { fail("the simulator still reports that its full state cannot be encoded (state_encoding.ok false)", false); return null; }
@@ -196,7 +197,7 @@
             S.lastLive = Date.now();
             if (isStale()) S.downAt = S.lastLive;
             S.ecus = initial[2];
-            applyState(initial[0], initial[1]);
+            applyState(initial[0], initial[1], null);
             renderAll();
           }
           openSocket(status.api.refused_clients, gen);
@@ -384,7 +385,7 @@
       if (episodeActive() && S.ep.inFlight) { episodeAttemptEnded("the state it received was incomplete", true); renderLink(); }
       return;
     }
-    applyState(m.vehicle, m.dtcs);
+    applyState(m.vehicle, m.dtcs, sock.id);
     S.dataAt = Date.now();
     var r = S.req;
     if (r) {
@@ -475,9 +476,11 @@
   }
 
   // ---------- data ----------
-  function applyState(vehicle, dtcs) {
+  // `sockId` is the socket the state came on, or null for the first REST snapshot of a run.
+  function applyState(vehicle, dtcs, sockId) {
     S.vehicle = vehicle; S.dtcs = dtcs;
     renderVehicle(); renderDtcs();
+    graphsApply(vehicle, sockId);
     document.body.classList.remove("is-loading");
   }
 
@@ -534,6 +537,433 @@
       client: d.client_dropped,
       forced: d.forced_disconnects != null ? d.forced_disconnects : a.forced_disconnects
     };
+  }
+
+  // ---------- signal graphs (M3b §5.3, §6, §7, §8.4, §9) ----------
+  // One ring per graphed signal, in scenario time (as_of). A point is stored only when the value
+  // changes, or around a gap; a gap is a NaN point, drawn as a break. Drawing is coalesced into
+  // one animation frame and only reads the rings; uPlot is told only the drawn window.
+  var GRAPHS = [
+    { path: "vehicle.speed", name: "Speed", y: "max", floor: 20 },
+    { path: "engine.rpm", name: "Engine speed", y: "max", floor: 1000 },
+    { path: "engine.throttle", name: "Throttle", y: "pct" },
+    { path: "engine.engine_load", name: "Engine load", y: "pct" },
+    { path: "engine.coolant_temp", name: "Coolant", y: "temp" }
+  ];
+  var RING_CAP = 4096;               // points per signal; 10 min at 4 Hz is 2,400
+  var HORIZON_S = 600;               // scenario seconds kept, plus the one older point that holds into it
+  var WINDOWS = [30, 120, 600];
+  var WINDOW_KEY = "ecu-simulator.graphs.window";
+  var BREAK_WHY = { down: "disconnected", malformed: "an unreadable message", encoding: "the simulator could not encode its state" };
+  var G = {
+    ok: typeof uPlot === "function",
+    open: true,                      // the section is open on every load; not saved
+    paused: false, pausedAt: null,   // the frozen right edge while paused
+    win: 120,
+    asOf: null,                      // the latest as_of received in this run
+    firstT: null,                    // as_of of the first point this page stored in this run
+    run: null,                       // started_at of the run the rings belong to
+    note: null,                      // the restart note
+    // A pending break (§6.7): set on a fault or a drop, taken by the first state of a later socket.
+    pending: null,                   // { why, sock } or null
+    frame: 0, resizeFrame: 0, built: false, rem: null,
+    list: []                         // per graph: { def, ring, fig, value, line2, plot, u, state, ... }
+  };
+
+  function readWindow() {
+    try {
+      var v = Number(window.localStorage.getItem(WINDOW_KEY));
+      return WINDOWS.indexOf(v) >= 0 ? v : 120;
+    } catch (e) { return 120; }
+  }
+  function saveWindow(v) {
+    try { window.localStorage.setItem(WINDOW_KEY, String(v)); } catch (e) { /* not saved; the choice still applies */ }
+  }
+  function windowLabel(s) { return s < 60 ? s + " s" : s / 60 + " min"; }
+  function round1(x) { return String(Math.round(x * 10) / 10); }
+  function tText(t) { return (Math.round(t * 10) / 10).toFixed(1); }
+
+  function newRing() { return { t: new Float64Array(RING_CAP), v: new Float64Array(RING_CAP), start: 0, count: 0, lastValidT: null, breaks: [], trimmedPaused: false }; }
+  function rt(r, i) { return r.t[(r.start + i) % RING_CAP]; }
+  function rv(r, i) { return r.v[(r.start + i) % RING_CAP]; }
+  function same(a, b) { return a === b || (a !== a && b !== b); }   // NaN equals NaN here
+  function dropOldest(r) {
+    r.start = (r.start + 1) % RING_CAP; r.count -= 1;
+    if (G.paused) r.trimmedPaused = true;
+  }
+  // Equal t replaces the last point, so x stays unique.
+  function ringPush(r, t, v) {
+    if (r.count && rt(r, r.count - 1) === t) { r.v[(r.start + r.count - 1) % RING_CAP] = v; return; }
+    if (r.count === RING_CAP) dropOldest(r);
+    var i = (r.start + r.count) % RING_CAP;
+    r.t[i] = t; r.v[i] = v; r.count += 1;
+  }
+  // Older than the horizon: dropped, except the newest of them, which holds into the window.
+  function ringTrim(r, asOf) {
+    var horizon = asOf - HORIZON_S;
+    while (r.count >= 2 && rt(r, 1) < horizon) dropOldest(r);
+    while (r.breaks.length && r.breaks[0].b < horizon) r.breaks.shift();
+  }
+  // One message for one ring. `v` is the value, or NaN when it is invalid.
+  function ringApply(r, t, v, brk) {
+    var n = r.count, lastT = n ? rt(r, n - 1) : null, lastV = n ? rv(r, n - 1) : null;
+    if (brk && n && t > G.asOf) {
+      // The hold stops where knowledge stops: the last value at the last as_of known, a gap, then the new value.
+      if (lastV === lastV) ringPush(r, G.asOf, lastV);
+      ringPush(r, (G.asOf + t) / 2, NaN);
+      r.breaks.push({ a: G.asOf, b: t, why: brk });
+      lastV = NaN;
+    }
+    if (v !== v) {
+      // Invalid: keep the last valid value up to the last as_of it was known valid, then the gap.
+      if (lastV !== null && lastV === lastV && r.lastValidT != null && r.lastValidT > lastT) ringPush(r, r.lastValidT, lastV);
+      if (lastV === null || !same(lastV, v)) ringPush(r, t, NaN);
+    } else {
+      if (lastV === null || !same(lastV, v)) ringPush(r, t, v);
+      r.lastValidT = t;
+    }
+  }
+
+  function graphsBuild() {
+    var grid = $("graphs-grid");
+    G.win = readWindow();
+    if (!G.ok) {
+      $("graphs-controls").hidden = true;
+      $("graphs-meta").hidden = true;
+      var note = $("graphs-note");
+      note.hidden = false;
+      note.textContent = "Graphs unavailable: the chart library did not load. The rest of the page works without it.";
+      return;
+    }
+    GRAPHS.forEach(function (def) {
+      var value = el("b", { cls: "graph__value" }), line2 = el("p", { cls: "graph__line2" });
+      var plot = el("div", { cls: "graph__plot", "aria-hidden": "true" });
+      var unit = UNITS[def.path];
+      var fig = el("figure", { cls: "graph", "data-path": def.path, "data-cap": String(RING_CAP), hidden: true }, [
+        el("figcaption", { cls: "graph__line1", title: def.path }, [el("span", { cls: "graph__name", text: def.name + (unit ? " · " + unit : "") }), value]),
+        plot, line2
+      ]);
+      grid.appendChild(fig);
+      G.list.push({ def: def, ring: newRing(), fig: fig, value: value, line2: line2, plot: plot, u: null,
+        state: "waiting", xr: [0, 1], yr: [0, 1], drawnTo: null, left: null, segments: 0, gaps: 0, shown: null });
+    });
+    G.built = true;
+    $("graphs-panel").addEventListener("click", function (ev) {
+      var t = ev.target;
+      if (!(t instanceof HTMLElement)) return;
+      if (t.dataset.window) setWindow(Number(t.dataset.window));
+      else if (t.id === "btn-graphs-pause") setGraphsPaused(!G.paused);
+      else if (t.id === "btn-graphs-toggle") setGraphsOpen(!G.open);
+    });
+    if (window.ResizeObserver) {
+      var ro = new ResizeObserver(scheduleResize);
+      ro.observe(grid);
+      G.list.forEach(function (g) { ro.observe(g.plot); });
+    }
+    breakListeners.push(function (cause) {
+      // Taken by the first state of a socket opened after this one. With no data yet, nothing breaks.
+      if (!G.pending && G.asOf != null) G.pending = { why: BREAK_WHY[cause] || cause, sock: S.sockSeq };
+    });
+    syncGraphControls();
+  }
+
+  // A new run, or an as_of that went back: the graphs are cleared, never joined across runs.
+  function graphsRestart(startedAt) {
+    if (!G.built) return;
+    G.list.forEach(function (g) { g.ring = newRing(); g.drawnTo = null; });
+    G.asOf = null; G.firstT = null; G.pending = null;
+    G.pausedAt = null;
+    G.run = startedAt;
+    G.note = "Simulator restarted at " + utc((startedAt != null ? startedAt * 1000 : Date.now())) +
+      ". Graphs start again from scenario t = 0; the previous run's graphs were cleared.";
+    renderGraphsNote();
+    scheduleDraw(true);
+  }
+
+  // Every applied vehicle snapshot reaches here. `sockId` is the socket it came on (null for the
+  // first REST snapshot). Values become numbers or NaN; the text matches the signal table.
+  function graphsApply(v, sockId) {
+    if (!G.built) return;
+    var nonfinite = Array.isArray(v.nonfinite) ? v.nonfinite : [];
+    var missing = Array.isArray(v.unavailable) ? v.unavailable : [];
+    var signals = isObject(v.signals) ? v.signals : {};
+    var t = typeof v.as_of === "number" && isFinite(v.as_of) ? v.as_of : null;
+    var sc = S.status && S.status.scenario;
+    if (G.run == null) G.run = S.runStartedAt;
+    if (t != null && G.asOf != null && t < G.asOf) graphsRestart(S.runStartedAt);   // cannot happen within a run
+    var brk = null;
+    if (t != null && G.pending && (sockId == null || sockId > G.pending.sock) && G.asOf != null && t > G.asOf) {
+      brk = G.pending.why; G.pending = null;
+    }
+    G.list.forEach(function (g) {
+      var p = g.def.path, raw = signals[p];
+      if (missing.indexOf(p) >= 0) g.state = "unavailable";
+      else if (!(p in signals)) g.state = "absent";
+      else if (t == null) g.state = sc && sc.enabled ? "waiting" : sc ? "no-scenario" : "waiting";
+      else g.state = nonfinite.indexOf(p) >= 0 || !(typeof raw === "number" && isFinite(raw)) ? "invalid" : "ok";
+      if (t != null && (g.state === "ok" || g.state === "invalid")) {
+        ringApply(g.ring, t, g.state === "ok" ? raw : NaN, brk);
+      }
+      if (t != null) ringTrim(g.ring, t);
+      if (!G.paused) g.shown = signalText(p, v);
+    });
+    if (t != null) { G.asOf = t; if (G.firstT == null) G.firstT = t; }
+    renderGraphsNote();
+    if (!G.paused) G.list.forEach(renderLine1);
+    G.list.forEach(writeGraphAttrs);
+    scheduleDraw(false);
+  }
+
+  // The words of the signal table's value cell, for the table and the graph's line 1 alike (§8.4).
+  function signalText(p, v) {
+    if ((Array.isArray(v.unavailable) ? v.unavailable : []).indexOf(p) >= 0) return "—";
+    var raw = v.signals ? v.signals[p] : undefined;
+    if (raw === undefined) return "";
+    if (isInvalid(p, raw, v)) return "invalid value";
+    return fmtValue(raw);
+  }
+  function isInvalid(p, raw, v) {
+    var nonfinite = Array.isArray(v.nonfinite) ? v.nonfinite : [];
+    return nonfinite.indexOf(p) >= 0 || raw === null || (typeof raw === "number" && !isFinite(raw));
+  }
+
+  function renderLine1(g) {
+    var text = g.shown == null ? "" : g.shown;
+    if (g.value.textContent !== text) g.value.textContent = text;
+    g.value.className = "graph__value" + (g.state === "invalid" || g.state === "unavailable" ? " graph__value--na" : "");
+  }
+
+  // The section's own lines: a restart note, signals not on this vehicle, and the missing time.
+  function renderGraphsNote() {
+    var lines = [];
+    if (G.note) lines.push(G.note);
+    var absent = G.list.filter(function (g) { return g.state === "absent"; }).map(function (g) { return g.def.path; });
+    if (absent.length) lines.push("Not on this vehicle" + (S.vehicle && S.vehicle.kind ? " (" + S.vehicle.kind + ")" : "") + ": " + absent.join(", ") + ".");
+    var states = G.list.map(function (g) { return g.state; });
+    var noTime = states.indexOf("no-scenario") >= 0 ? "No scenario: the values are constant, as configured. Graphs follow scenario time." :
+      states.indexOf("waiting") >= 0 && S.vehicle ? "Waiting for the first scenario tick." : null;
+    if (noTime) lines.push(noTime);
+    var note = $("graphs-note");
+    note.hidden = !lines.length;
+    note.textContent = lines.join(" ");
+    G.list.forEach(function (g) {
+      var hide = g.state === "absent" || g.state === "waiting" || g.state === "no-scenario";
+      if (g.fig.hidden !== hide) { g.fig.hidden = hide; scheduleResize(); }
+      g.fig.classList.toggle("graph--na", g.state === "unavailable");
+      if (g.state === "unavailable") g.line2.textContent = "unavailable, no source";
+    });
+    renderGraphsMeta();
+  }
+
+  function renderGraphsMeta() {
+    if (!G.ok) return;
+    var text = "";
+    if (G.paused) text = "Paused at t = " + (G.pausedAt != null ? tText(G.pausedAt) : "—") + " s";
+    else if (G.firstT != null && G.asOf != null && G.asOf - G.firstT < G.win) text = "history starts at t = " + tText(G.firstT) + " s (when this page connected)";
+    $("graphs-status").textContent = text;
+    $("graphs-fine").textContent = (text ? " · " : "") + "x: scenario t, s · newest " + HORIZON_S / 60 + " min kept";
+    $("graphs-meta").title = "The horizontal axis is scenario time (as_of), in seconds. The page keeps the newest " + HORIZON_S / 60 +
+      " min of each signal; older history is discarded.";
+  }
+
+  function setWindow(w) {
+    if (WINDOWS.indexOf(w) < 0) return;
+    G.win = w; saveWindow(w);
+    syncGraphControls(); renderGraphsMeta();
+    scheduleDraw(true);
+  }
+  function setGraphsPaused(on) {
+    G.paused = on;
+    G.pausedAt = on ? G.asOf : null;
+    if (!on) {
+      // Resume jumps to the latest data, not where the pause began.
+      G.list.forEach(function (g) {
+        g.ring.trimmedPaused = false;
+        if (S.vehicle) g.shown = signalText(g.def.path, S.vehicle);
+        renderLine1(g);
+      });
+    }
+    syncGraphControls(); renderGraphsMeta();
+    G.list.forEach(writeGraphAttrs);
+    scheduleDraw(true);
+  }
+  function setGraphsOpen(on) {
+    G.open = on;
+    $("graphs").hidden = !on;
+    $("graphs-controls").hidden = !on;
+    $("graphs-meta").hidden = !on;
+    $("graphs-closed").hidden = on;
+    syncGraphControls();
+    if (on) scheduleDraw(true);
+  }
+  function syncGraphControls() {
+    Array.prototype.forEach.call(document.querySelectorAll("#graphs-panel [data-window]"), function (b) {
+      b.setAttribute("aria-pressed", String(Number(b.dataset.window) === G.win));
+    });
+    var pause = $("btn-graphs-pause");
+    pause.setAttribute("aria-pressed", String(G.paused));
+    pause.textContent = G.paused ? "Resume graphs" : "Pause graphs";
+    var toggle = $("btn-graphs-toggle");
+    toggle.setAttribute("aria-expanded", String(G.open));
+    toggle.textContent = G.open ? "Hide graphs" : "Show graphs";
+  }
+
+  // Drawing: at most once per animation frame. Hidden draws nothing; paused redraws only the frozen
+  // window (a resize, a window change), from the rings.
+  function scheduleDraw(force) {
+    if (!G.built || !G.open || (G.paused && !force) || G.frame) return;
+    G.frame = requestAnimationFrame(function () { G.frame = 0; drawAll(); });
+  }
+  function scheduleResize() {
+    if (!G.built || G.resizeFrame) return;
+    G.resizeFrame = requestAnimationFrame(function () { G.resizeFrame = 0; resizeAll(); });
+  }
+  function resizeAll() {
+    if (!G.open) return;
+    // The root size follows the viewport; the axes take their font and widths from it, so a new
+    // size rebuilds the plots (drawAll makes them again, measured).
+    var rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    if (G.rem != null && rem !== G.rem) {
+      G.list.forEach(function (g) { if (g.u) { g.u.destroy(); g.u = null; } });
+      G.rem = null;
+      drawAll();
+      return;
+    }
+    G.list.forEach(function (g) {
+      if (!g.u) return;
+      var r = g.plot.getBoundingClientRect(), w = Math.floor(r.width), h = Math.floor(r.height);
+      if (w > 0 && h > 0 && (w !== g.u.width || h !== g.u.height)) g.u.setSize({ width: w, height: h });
+    });
+    if (G.paused) drawAll();
+  }
+
+  function drawAll() {
+    if (!G.open) return;
+    var end = G.paused ? G.pausedAt : G.asOf;
+    G.list.forEach(function (g) {
+      if (g.fig.hidden || g.state === "unavailable") { writeGraphAttrs(g); return; }
+      drawGraph(g, end);
+      writeGraphAttrs(g);
+    });
+  }
+
+  // The drawn window [end − W, end]: the value held at its left edge, the points inside it, and
+  // the hold to the right edge. Neither added point is stored.
+  function drawGraph(g, end) {
+    var r = g.ring, xs = [], ys = [];
+    var W = G.win;
+    if (end != null && r.count) {
+      var start = end - W, lo = 0, hi = r.count;
+      while (lo < hi) { var mid = (lo + hi) >> 1; if (rt(r, mid) < start) lo = mid + 1; else hi = mid; }
+      var atStart = lo < r.count && rt(r, lo) === start;
+      g.left = atStart ? rv(r, lo) : lo > 0 ? rv(r, lo - 1) : null;
+      if (lo > 0 && !atStart) { xs.push(start); ys.push(g.left === g.left ? g.left : null); }
+      var last = g.left;
+      for (var i = lo; i < r.count; i++) {
+        var t = rt(r, i);
+        if (t > end) break;
+        last = rv(r, i);
+        xs.push(t); ys.push(last === last ? last : null);
+      }
+      if (last != null && xs.length && xs[xs.length - 1] < end) { xs.push(end); ys.push(last === last ? last : null); }
+    } else {
+      g.left = null;
+    }
+    var min = Infinity, max = -Infinity, segs = 0, gaps = 0;
+    for (var k = 0; k < ys.length; k++) {
+      var y = ys[k];
+      if (y === null) { if (k === 0 || ys[k - 1] !== null) gaps += 1; continue; }
+      if (k === 0 || ys[k - 1] === null) segs += 1;
+      if (y < min) min = y;
+      if (y > max) max = y;
+    }
+    g.segments = segs; g.gaps = gaps; g.drawnTo = end;
+    g.xr = end != null ? [end - W, end] : [0, W];
+    g.yr = yRange(g.def, min, max);
+    if (xs.length < 2) { xs = []; ys = []; }
+    if (!g.u) makePlot(g, [xs, ys]); else g.u.setData([xs, ys]);
+    g.line2.textContent = line2Text(g, min, max, end);
+  }
+
+  function line2Text(g, min, max, end) {
+    // Rounded to one decimal so the line fits a card; line 1 carries the value as the table shows it.
+    var parts = [isFinite(min) ? "min " + round1(min) + " · max " + round1(max) + " in " + windowLabel(G.win) : "no valid value in " + windowLabel(G.win)];
+    if (end != null) {
+      var b = g.ring.breaks.filter(function (x) { return x.b > end - G.win && x.a < end; }).pop();
+      if (b) parts.push("No data from t = " + tText(b.a) + " to t = " + tText(b.b) + " s (" + b.why + ")");
+    }
+    if (G.paused && g.ring.trimmedPaused) parts.push("history trimmed while paused");
+    return parts.join(" · ");
+  }
+
+  // §5.3: 0 to a value above the window's maximum (with a floor); a fixed 0–100; or the window's
+  // range padded by 2 °C, at least 10 °C wide.
+  function niceAbove(x) {
+    var p = Math.pow(10, Math.floor(Math.log10(x))), steps = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
+    for (var i = 0; i < steps.length; i++) if (steps[i] * p >= x) return steps[i] * p;
+    return 10 * p;
+  }
+  function yRange(def, min, max) {
+    if (def.y === "pct") return [0, 100];
+    if (def.y === "max") return [0, isFinite(max) && max * 1.1 > def.floor ? niceAbove(max * 1.1) : def.floor];
+    if (!isFinite(min)) return [0, 10];
+    var lo = min - 2, hi = max + 2;
+    if (hi - lo < 10) { var c = (lo + hi) / 2; lo = c - 5; hi = c + 5; }
+    return [Math.floor(lo), Math.ceil(hi)];
+  }
+
+  function makePlot(g, data) {
+    var root = getComputedStyle(document.documentElement), body = getComputedStyle(document.body);
+    var rem = parseFloat(root.fontSize) || 16;
+    G.rem = rem;
+    var font = Math.round(rem * 0.786 * 10) / 10 + "px " + body.fontFamily;
+    var ink = root.getPropertyValue("--ink").trim(), ink2 = root.getPropertyValue("--ink-2").trim(), rule = root.getPropertyValue("--rule").trim();
+    var box = g.plot.getBoundingClientRect();
+    var axis = { stroke: ink2, font: font, gap: 2, ticks: { size: 3, stroke: rule, width: 1 }, grid: { stroke: rule, width: 1 } };
+    g.u = new uPlot({
+      width: Math.max(1, Math.floor(box.width)), height: Math.max(1, Math.floor(box.height)),
+      padding: [Math.ceil(rem * 0.4), Math.ceil(rem * 0.6), 0, 0],
+      cursor: { show: false, drag: { x: false, y: false, setScale: false }, points: { show: false } },
+      legend: { show: false },
+      select: { show: false, left: 0, top: 0, width: 0, height: 0 },
+      scales: {
+        x: { time: false, range: function () { return g.xr; } },
+        y: { range: function () { return g.yr; } }
+      },
+      axes: [
+        Object.assign({ space: 50, size: Math.ceil(rem * 1.45) }, axis),
+        Object.assign({ space: Math.ceil(rem * 1.3), size: Math.floor(rem * 3) }, axis)
+      ],
+      series: [
+        {},
+        // Step-hold (§6.2); a null is a gap, clipped from the last valid point to the next one (§8.4).
+        { stroke: ink, width: 1.5, spanGaps: false, points: { show: false },
+          paths: uPlot.paths.stepped({ align: 1, alignGaps: 0 }) }
+      ]
+    }, data, g.plot);
+  }
+
+  // Read-only diagnostics for the browser checks (M3b §12.2): written after each ring update and
+  // draw, never read by the page.
+  function writeGraphAttrs(g) {
+    var d = g.fig.dataset, r = g.ring, n = r.count;
+    d.path = g.def.path;
+    d.state = g.state;
+    d.points = String(n);
+    d.cap = String(RING_CAP);
+    d.oldestT = n ? String(rt(r, 0)) : "";
+    d.newestT = n ? String(rt(r, n - 1)) : "";
+    d.asOf = G.asOf != null ? String(G.asOf) : "";
+    d.drawnTo = g.drawnTo != null ? String(g.drawnTo) : "";
+    d.windowS = String(G.win);
+    d.leftValue = g.left != null && g.left === g.left ? String(g.left) : "";
+    var before = 0;
+    if (G.asOf != null) { var start = G.asOf - G.win; while (before < n && rt(r, before) < start) before += 1; }
+    d.pointsBeforeWindow = String(before);
+    d.segments = String(g.segments);
+    d.gaps = String(g.gaps);
+    d.run = G.run != null ? String(G.run) : "";
+    d.paused = String(G.paused);
   }
 
   // ---------- rendering: status and link ----------
@@ -768,10 +1198,12 @@
       if (!cell.td || cell.raw === raw) return;
       var first = cell.raw === undefined;
       cell.raw = raw;
-      var shown = fmtValue(raw);
+      // Not a finite number (sent as null, listed in nonfinite): "invalid value", as in the graph (M3b §8.4).
+      var invalid = isInvalid(p, raw, v), shown = signalText(p, v);
       cell.td.textContent = shown;
-      cell.td.className = "num" + (typeof raw === "string" ? " mono" : "");
-      if (shown !== String(raw)) cell.td.title = "raw " + raw; else cell.td.removeAttribute("title");
+      cell.td.className = "num" + (typeof raw === "string" ? " mono" : "") + (invalid ? " sig__invalid" : "");
+      if (invalid) cell.td.title = "The simulator's value is not a finite number.";
+      else if (shown !== String(raw)) cell.td.title = "raw " + raw; else cell.td.removeAttribute("title");
       if (!first) { void cell.td.offsetWidth; cell.td.classList.add("changed"); }
     });
   }
@@ -1173,6 +1605,7 @@
   function renderAll() { renderLink(); renderPlaceholders(); renderStatus(); renderLog(); }
 
   buildControls();
+  graphsBuild();
   watchLogScroll();
   renderAll();
   setInterval(function () { if (isStale() || S.ep) renderLink(); }, 1000);
