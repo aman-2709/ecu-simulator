@@ -294,7 +294,9 @@ fieldset.outcomes legend { padding: 0; margin-bottom: 0.143rem; float: left; wid
 .log-state__line--paused { background: #fff7e0; border-left: 4px solid var(--nr); padding: 0.429rem 0.571rem; }
 
 .logarea { display: flex; flex-direction: column; min-height: 0; }
-.logwrap { overflow: auto; min-height: 14.286rem; }
+/* The page keeps the reader's rows in place itself (app.js keepAnchor), so the browser's own
+   scroll anchoring is off here: two adjustments for one window shift would move the rows. */
+.logwrap { overflow: auto; min-height: 14.286rem; overflow-anchor: none; }
 /* The jump control sits in the log header, not over the rows. It always keeps its space;
    while following it is invisible, so appearing never shifts anything. */
 .follow {

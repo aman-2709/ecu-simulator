@@ -1617,6 +1617,8 @@
     lastRender = Date.now();
     var wrap = $("logwrap"), body = $("log-body");
     var topBefore = wrap.scrollTop;
+    var anchors = view.follow ? [] : visibleAnchors(wrap);
+    var focus = logFocus();
     var sel = selectLog(S.entries, passes, logOpts());
     if (sel.pinBeforeView) {
       view.endId = logAnchorEnd(S.entries, passes, logOpts());
@@ -1653,7 +1655,11 @@
     // Last, after everything that can change the log's height: the state lines and the controls,
     // which re-wrap as the filter counts widen.
     if (view.follow) toBottom();
-    else noteLayoutScroll(topBefore);
+    else {
+      if (!keepAnchor(wrap, anchors)) showPin(wrap);
+      noteLayoutScroll(topBefore);
+    }
+    restoreFocus(focus);
     renderFollow();
     var h = S.hello, mine = c.matching === c.inView, of = mine ? c.inView : c.matching;
     var counted = c.shown === c.inView ? plural(c.inView, "exchange", "exchanges") :
@@ -1664,6 +1670,57 @@
   }
   function atBottom(wrap) { return wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 4; }
   function toBottom() { var wrap = $("logwrap"); wrap.scrollTop = wrap.scrollHeight; }
+  // The exchange rows in the log box now, oldest first, each with its offset from the box's
+  // top: the reader's anchors. Rows are in order, so a binary search finds the first one.
+  function visibleAnchors(wrap) {
+    var rows = view.shownRows, out = [];
+    if (!rows.length) return out;
+    var box = wrap.getBoundingClientRect(), lo = 0, hi = rows.length;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      if (rows[mid].getBoundingClientRect().bottom > box.top) hi = mid; else lo = mid + 1;
+    }
+    for (var i = lo; i < rows.length; i += 1) {
+      var top = rows[i].getBoundingClientRect().top;
+      if (top >= box.bottom) break;
+      out.push({ id: view.shownIds[i], offset: top - box.top });
+    }
+    return out;
+  }
+  // After a render of a pinned window, the first anchor still drawn goes back to its offset,
+  // so a window shift (Older, Newer, a filter, rows leaving the cap) never moves what the
+  // reader is looking at. False when none of them is drawn any more.
+  function keepAnchor(wrap, anchors) {
+    var box = wrap.getBoundingClientRect();
+    for (var i = 0; i < anchors.length; i += 1) {
+      var tr = rowCache.get(anchors[i].id);
+      if (!tr || !tr.isConnected) continue;
+      var d = tr.getBoundingClientRect().top - box.top - anchors[i].offset;
+      if (Math.abs(d) >= 1) wrap.scrollTop += d;
+      return true;
+    }
+    return false;
+  }
+  // No anchor left (a filter hid every row the reader saw): show the window's end, the
+  // exchange the window is pinned at, at the bottom of the box.
+  function showPin(wrap) {
+    var tr = view.endId != null ? rowCache.get(view.endId) : null;
+    if (!tr || !tr.isConnected) return;
+    var d = tr.getBoundingClientRect().bottom - wrap.getBoundingClientRect().bottom;
+    if (Math.abs(d) >= 1) wrap.scrollTop += d;
+  }
+  // A control inside the log keeps the keyboard focus across a render (the rows are rebuilt);
+  // when a window shift removed it, the focus moves to the log itself, not to the page's top.
+  function logFocus() {
+    var a = document.activeElement;
+    if (!(a instanceof HTMLElement) || !$("log-body").contains(a)) return null;
+    return a.dataset.expand ? '[data-expand="' + a.dataset.expand + '"]' : a.dataset.lognav ? '[data-lognav="' + a.dataset.lognav + '"]' : "";
+  }
+  function restoreFocus(selector) {
+    if (selector === null) return;
+    var t = selector ? $("log-body").querySelector(selector) : null;
+    (t || $("logwrap")).focus({ preventScroll: true });
+  }
   // Shown exchange rows wholly below the visible part of the log: those the current filters
   // show, however they got there. Rows are in order, so a binary search finds the first one.
   function rowsBelow() {
@@ -1775,7 +1832,11 @@
         scheduleFollow();
       }).observe(wrap);
     }
-    $("btn-follow").addEventListener("click", function () { moveWindow("newest"); });
+    $("btn-follow").addEventListener("click", function () {
+      var focused = document.activeElement === this;
+      moveWindow("newest");
+      if (focused) wrap.focus({ preventScroll: true });   // the control hides while following
+    });
   }
 
   function rowFor(entry) {
@@ -1865,7 +1926,10 @@
         view.ecu = "all"; view.service = "all"; view.outcomes = OUTCOMES.slice();
         syncControls(); filtersChanged(); $("f-ecu").focus();
       } else if (t.dataset.lognav) {
-        moveWindow(t.dataset.lognav);
+        var nav = t.dataset.lognav;
+        moveWindow(nav);
+        var same = $("log-body").querySelector('[data-lognav="' + nav + '"]');
+        (same || $("logwrap")).focus({ preventScroll: true });
       } else if (t.dataset.expand) {
         var key = t.dataset.expand;
         view.expanded[key] = !view.expanded[key];
