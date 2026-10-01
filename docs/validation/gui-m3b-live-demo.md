@@ -527,12 +527,11 @@ checklist" below:
 - [ ] Stop and start: stale, then the restart note, with no joined line.
 - [ ] `kill -STOP` / `kill -CONT`.
 - [ ] No scenario, left alone for a few minutes.
-- [ ] **The fault server with `--nonfinite`.** It cannot be run from a host browser as written:
-      the harness refuses to run outside the capture's private namespace, which a host browser
-      cannot reach. **The owner decides how** (for example, by accepting the screenshots, or by
-      allowing a host run on `vcan0`).
-- [ ] **The fault server with `--state-fault`.** Same as the `--nonfinite` item: it cannot be run
-      as written, and the owner decides how.
+- [ ] **The fault server with `--nonfinite`.** Run by the owner, watching, with
+      `scripts/gui_fault_session.sh nonfinite` (Task 40; see "Running the two fault checks
+      yourself"). The screenshots do not tick it.
+- [ ] **The fault server with `--state-fault`.** Run by the owner, watching, with
+      `scripts/gui_fault_session.sh state-fault` (the same section). The screenshots do not tick it.
 - [ ] 390 px.
 - [ ] 2000 px.
 - [ ] The uPlot licence link.
@@ -584,13 +583,71 @@ http://127.0.0.1:8080/
 For the no-scenario item, restart terminal 1 with
 `--profile src/ecu_simulator/profiles/ice_default.yaml`.
 
-**Finding: the two fault-server items cannot be run as written.**
-`scripts/gui_fault_server.py` refuses to run outside `scripts/run_gui_demo.sh`'s private
-network namespace (it compares its namespace with `GUI_DEMO_HOST_NETNS`), and a browser
-on the host cannot reach that namespace's loopback. So the `--nonfinite` and
-`--state-fault` items of §13 can be seen only in the screenshots above
-(`invalid-value-1440.png`, `last-known-encoding-1440.png`, `break-note-encoding-1440.png`).
-Running them in the owner's own browser needs a decision; nothing was changed here.
+**The two fault-server items are not run from these commands.**
+`scripts/gui_fault_server.py` refuses to run outside a private network namespace (it compares
+its namespace with `GUI_DEMO_HOST_NETNS`), and a browser on the host cannot reach that
+namespace's loopback. Task 40 added a launcher that puts a visible Chrome inside the
+namespace with the server: see the next section.
+
+## Running the two fault checks yourself
+
+`scripts/gui_fault_session.sh` starts, in a private user and network namespace with its own
+`lo` and its own `vcan0`: the fault-injection server with the chosen fault, and a **visible**
+Chrome on your desktop, opened on the page at `http://127.0.0.1:8080/` (the namespace's own
+loopback). The `state-fault` mode also starts the read-only traffic script there, so the
+exchange log keeps moving. The `nonfinite` mode sends no traffic: a `01 05` read while coolant
+is nan would reach the OBD encoder (DEV-26). Run it from a terminal in your desktop session
+(it needs `DISPLAY`), from the worktree:
+
+```
+cd /home/aman/dev/personal-projects/ecu-simulator/.claude/worktrees/gui
+
+scripts/gui_fault_session.sh nonfinite      # engine.coolant_temp is nan for scenario t in [40, 60)
+scripts/gui_fault_session.sh state-fault    # the full snapshot raises for scenario t in [40, 50)
+scripts/gui_fault_session.sh --help         # --window START:END (repeatable), --signal, --part vehicle|dtcs,
+                                            # --profile, --port, --no-traffic, --devtools-port, --duration, --keep-logs
+```
+
+Both use the stepped demo (`docs/examples/ice_drive_cycle_stepped.yaml`) unless `--profile`
+says otherwise. Before the window opens, the terminal prints the namespace check (the
+network namespace of Chrome and of the server against the host's, and the listening socket
+and Chrome's connections in the namespace), the sandbox check (no flag disables it; the
+renderers run seccomp-filtered in their own namespaces), and the wall-clock time each fault
+window opens and closes. The server's own fault lines ("set to nan", "opens", "closes") are
+printed as they happen. Time starts when the server starts, so the default windows leave
+about 35 s to see the page Live first. Use `--window` again for another window later in the
+same run (for example `--window 40:60 --window 150:170`).
+
+What to watch:
+- **`nonfinite`** (§13: "invalid value" in the table and the coolant graph, a gap, and the page
+  still "Live"): from the printed open time, the coolant row and the coolant graph's value line
+  read "invalid value" and the line stops; the header stays "Live". After the close time, the
+  coolant line resumes with a gap; nothing is drawn across the invalid stretch.
+- **`state-fault`** (§13: "Last known" on the vehicle, DTC and graphs panels, distinct from
+  "Stale", and the exchange log still running; after the fault, "Live" again): during the window
+  the three panels show "Last known, <time> UTC" (not "Stale") and the header reads "Connected,
+  last known data"; the exchange log keeps adding rows. After the close time, "Live" again and
+  the graphs show a gap.
+
+To stop: close the Chrome window, or press Ctrl-C in the terminal. Either way the launcher
+stops the processes it started (by their own process groups), the namespace and its `vcan0`
+go with them, and it removes its temp dir (Chrome's fresh profile, its `HOME` and `TMPDIR`, and
+the logs; `--keep-logs DIR` copies the logs out first).
+
+What it does not do:
+- It does not touch the host's network, its `vcan0` or `can0`, a simulator you have running on
+  the host, or your own Chrome and its profile. Chrome starts with a new profile in the
+  launcher's temp dir.
+- It does not weaken anything: Chrome keeps its sandbox (no `--no-sandbox`), X access control is
+  unchanged (no `xhost`; your `DISPLAY` and `XAUTHORITY` are passed through). Chrome runs in a
+  nested user namespace mapped back to your uid, because Chrome refuses to run as uid 0, which is
+  what `unshare -r` makes the launcher. If X or the sandbox fails in the namespace, it prints the
+  error and stops.
+- It does not tick anything. A screenshot does not complete a behavioural check; you do, by
+  watching. The DevTools port (`--devtools-port`, off by default) is only reachable inside the
+  namespace.
+- It is not the CSP check. The manual Chrome and Firefox CSP items above stay outstanding; this
+  Chrome is a fresh profile in a namespace, and Firefox is not run.
 
 ## The owner's manual checklist (§13, the M3b exit): every box unticked
 
@@ -630,11 +687,12 @@ before these two items are ticked:**
 - [ ] `ice_default.yaml` (no scenario), left alone for a few minutes: "No scenario: the
       values are constant, as configured", no plots, and the page stays "Live".
 - [ ] The fault-injection server with `--nonfinite`: "invalid value" in the table and the
-      coolant graph, a gap, and the page still "Live". (See the finding above: the harness
-      runs only inside the namespace.)
+      coolant graph, a gap, and the page still "Live". (Run with
+      `scripts/gui_fault_session.sh nonfinite`; see "Running the two fault checks yourself".)
 - [ ] The fault-injection server with `--state-fault`: "Last known" on the vehicle, DTC and
       graphs panels, distinct from "Stale", and the exchange log still running. After the
-      fault, "Live" again. (The same finding.)
+      fault, "Live" again. (Run with
+      `scripts/gui_fault_session.sh state-fault`; the same section.)
 - [ ] 390 px: one graph per row, the head on two rows, no horizontal scroll.
 - [ ] 2000 px: one row of five.
 - [ ] The footer's uPlot licence link opens the MIT text.
