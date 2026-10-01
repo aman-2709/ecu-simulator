@@ -89,7 +89,10 @@
     // exchanges are counted, not drawn. lastId and counts are the latest render's.
     endId: null, lastId: null, counts: null,
     pinFirst: null,                  // a pinned window's oldest drawn exchange at the last render
-    leftCap: false                   // the rows a pinned reader was viewing left the page's cap
+    leftCap: false,                  // the rows a pinned reader was viewing left the page's cap
+    // What the last render drew: the log body's row key (logRows; null forces a rebuild), whether
+    // it was following, and the "rows below" count it measured. A render changes only what differs.
+    rowKey: null, renderedFollow: null, below: 0
   };
   var rowCache = new Map();
   var renderTimer = null, lastRender = 0;
@@ -620,7 +623,8 @@
     while (lo < hi) { var mid = (lo + hi) >> 1; if (rt(r, mid) < start) lo = mid + 1; else hi = mid; }
     return lo;
   }
-  function setText(node, text) { if (node.textContent !== text) node.textContent = text; }
+  // Writes only a changed text, and says whether it wrote.
+  function setText(node, text) { if (node.textContent === text) return false; node.textContent = text; return true; }
   function same(a, b) { return a === b || (a !== a && b !== b); }   // NaN equals NaN here
   function dropOldest(r) {
     r.start = (r.start + 1) % RING_CAP; r.count -= 1;
@@ -1535,6 +1539,27 @@
     if (!p.m.length) return null;
     return entries[p.m[Math.max(p.end - 1, Math.min(opts.size, p.m.length) - 1)]].id;
   }
+
+  // The log body's rows for a selection, in order, and their key. rows: { kind: "entry", entry }
+  // and { kind: "hidden", n, pos }, with a leading hidden run when no Older row is drawn and a
+  // trailing one while following (both only when a row is shown); pos names a hidden row's place
+  // ("lead", "trail", or "after" + the id of the row before it). key is one string: two
+  // selections with the same key draw the same rows with the same counts, so the caller rebuilds
+  // nothing while it is unchanged (a pinned or paused window receiving arrivals, a following one
+  // with no new row). It holds no expansion state: the caller invalidates for that.
+  function logRows(sel, following) {
+    var c = sel.counts, rows = [], key = [], prev = null;
+    function hidden(n, pos) { rows.push({ kind: "hidden", n: n, pos: pos }); key.push(pos + ":" + n); }
+    if (!c.olderMatching && c.hiddenOutside.older && c.shown) hidden(c.hiddenOutside.older, "lead");
+    sel.items.forEach(function (it) {
+      if (it.kind === "hidden") { hidden(it.n, "after" + prev); return; }
+      rows.push({ kind: "entry", entry: it.entry });
+      key.push(it.entry.id);
+      prev = it.entry.id;
+    });
+    if (following && c.hiddenOutside.newer && c.shown) hidden(c.hiddenOutside.newer, "trail");
+    return { rows: rows, key: key.join(" ") };
+  }
   // ---- end log selection ----
 
   // ---------- rendering: exchange log ----------
@@ -1654,7 +1679,7 @@
     $("log-tail").append(edges.newer.tr);
     return edges;
   }
-  function showEdge(node, on) { if (node.hidden === on) node.hidden = !on; }
+  function showEdge(node, on) { if (node.hidden !== on) return false; node.hidden = !on; return true; }
   // What lies beyond the window on one side: the count of matching exchanges there, then the
   // gap / note / hidden counts.
   function edgeText(side, c) {
@@ -1663,33 +1688,59 @@
       : "No " + side + " exchange matches your filters";
     return [lead].concat(beyondParts(c, side)).join("; ") + ".";
   }
-  function renderEdges(c) {
-    var x = edgeNodes(), trimmed = S.trimmed > 0 && !view.clearedAfter;
-    showEdge(x.trimmed, trimmed);
-    if (trimmed) {
+  // The edges as they should read, worked out before anything is written, so a render can
+  // tell whether the rows above the window move (the trimmed note and the Older row) first.
+  function edgePlan(c) {
+    var p = { trimmed: S.trimmed > 0 && !view.clearedAfter, older: c.olderMatching > 0,
+      newer: view.endId != null && c.newerMatching + c.markersNewer.gaps + c.markersNewer.notes + c.hiddenOutside.newer > 0 };
+    if (p.trimmed) {
       var left = [plural(S.trimmed, "older row", "older rows")];
       if (S.trimmedGaps) left.push(plural(S.trimmedGaps, "gap marker", "gap markers"));
       if (S.trimmedNotes) left.push(plural(S.trimmedNotes, "connection note", "connection notes"));
-      setText(x.trimmedTitle, andList(left) + " left this view.");
-      setText(x.trimmedText, "The page keeps the newest " + fmtN(MAX_ROWS) + " exchanges it received. The rows were received, so their removal is not a gap." +
-        (view.leftCap && view.endId != null ? " Rows this view was showing left too, so it moved to the oldest exchanges kept." : ""));
+      p.trimmedTitle = andList(left) + " left this view.";
+      p.trimmedText = "The page keeps the newest " + fmtN(MAX_ROWS) + " exchanges it received. The rows were received, so their removal is not a gap." +
+        (view.leftCap && view.endId != null ? " Rows this view was showing left too, so it moved to the oldest exchanges kept." : "");
     }
-    showEdge(x.older.tr, c.olderMatching > 0);
-    if (c.olderMatching) setText(x.older.text, edgeText("older", c));
-    var newer = view.endId != null && c.newerMatching + c.markersNewer.gaps + c.markersNewer.notes + c.hiddenOutside.newer > 0;
-    showEdge(x.newer.tr, newer);
-    if (newer) { setText(x.newer.text, edgeText("newer", c)); showEdge(x.newerButton, c.newerMatching > 0); }
+    if (p.older) p.olderText = edgeText("older", c);
+    if (p.newer) { p.newerText = edgeText("newer", c); p.newerButton = c.newerMatching > 0; }
+    return p;
+  }
+  // Whether the edges above the window would change: shown or hidden, or their text.
+  function edgeTopDiffers(p) {
+    var x = edgeNodes();
+    return x.trimmed.hidden === p.trimmed || x.older.tr.hidden === p.older ||
+      (p.trimmed && (x.trimmedTitle.textContent !== p.trimmedTitle || x.trimmedText.textContent !== p.trimmedText)) ||
+      (p.older && x.older.text.textContent !== p.olderText);
+  }
+  // Writes the edges, each only where it differs; true when anything was written.
+  function renderEdges(p) {
+    var x = edgeNodes(), w = showEdge(x.trimmed, p.trimmed);
+    if (p.trimmed) w = setText(x.trimmedTitle, p.trimmedTitle) | setText(x.trimmedText, p.trimmedText) | w;
+    w = showEdge(x.older.tr, p.older) | w;
+    if (p.older) w = setText(x.older.text, p.olderText) | w;
+    w = showEdge(x.newer.tr, p.newer) | w;
+    if (p.newer) w = setText(x.newer.text, p.newerText) | showEdge(x.newerButton, p.newerButton) | w;
+    return !!w;
   }
   // Puts `nodes` in `parent` in order, touching only what differs: a row that stays is never
-  // removed and re-inserted, so it keeps the focus (and screen readers are not moved).
+  // removed and re-inserted, so it keeps the focus (and screen readers are not moved). True
+  // when it moved anything.
   function syncChildren(parent, nodes) {
-    var want = new Set(nodes), c = parent.firstChild, next;
-    while (c) { next = c.nextSibling; if (!want.has(c)) parent.removeChild(c); c = next; }
+    var want = new Set(nodes), c = parent.firstChild, next, moved = false;
+    while (c) { next = c.nextSibling; if (!want.has(c)) { parent.removeChild(c); moved = true; } c = next; }
     c = parent.firstChild;
-    nodes.forEach(function (n) { if (n === c) c = c.nextSibling; else parent.insertBefore(n, c); });
+    nodes.forEach(function (n) { if (n === c) c = c.nextSibling; else { parent.insertBefore(n, c); moved = true; } });
+    return moved;
   }
-  function hiddenRow(n) {
-    return el("tr", { cls: "hiddenrow" }, [el("td", { colspan: "9", text: plural(n, "exchange", "exchanges") + " hidden by filters (not a gap)" })]);
+  // A run the filters hide, as a row. The rows are kept by their place (logRows' pos), so a run
+  // that stays where it is keeps its node and only its count is rewritten when it changes.
+  var hiddenRows = new Map();
+  function hiddenRow(n, pos, kept) {
+    var h = hiddenRows.get(pos);
+    if (!h) { var td = el("td", { colspan: "9" }); h = { tr: el("tr", { cls: "hiddenrow" }, [td]), td: td }; }
+    setText(h.td, plural(n, "exchange", "exchanges") + " hidden by filters (not a gap)");
+    kept.set(pos, h);
+    return h.tr;
   }
 
   // The log draws a window of at most LOG_WINDOW exchanges the filters show (the selection
@@ -1697,12 +1748,15 @@
   // reader's rows where they are on screen. When rows of a pinned window leave the page's cap
   // (its oldest rows, or all of them: a stale pin), the window re-pins to the oldest full
   // window kept (logFullEnd), so it never shrinks to a few rows.
+  // A render changes only what differs. The rows are rebuilt only when logRows' key changes
+  // (and then only the rows that came or went are moved); a pinned or paused window receiving
+  // arrivals, and a following one with no new row, keep every row node and update only the
+  // counts (edges, state lines, filter counts, the count line, the jump control), each only
+  // when its text changes. The reader's position is measured and restored only when rows or
+  // the edges above them change.
   function renderLog() {
     lastRender = Date.now();
     var wrap = $("logwrap"), body = $("log-body");
-    var topBefore = wrap.scrollTop;
-    var anchors = view.follow ? [] : visibleAnchors(wrap);
-    var focused = logFocused();
     var sel = selectLog(S.entries, passes, logOpts()), c = sel.counts;
     var shrunk = view.endId != null && view.pinFirst != null && sel.firstId != null && sel.firstId > view.pinFirst &&
       c.olderMatching === 0 && c.shown < LOG_WINDOW && c.newerMatching > 0;
@@ -1715,43 +1769,56 @@
     view.pinFirst = view.endId != null ? sel.firstId : null;
     view.lastId = sel.lastId;
     view.counts = c;
-    var nodes = [], rows = [], ids = [];
-    renderEdges(c);
-    if (!c.olderMatching && c.hiddenOutside.older && c.shown) nodes.push(hiddenRow(c.hiddenOutside.older));
-    sel.items.forEach(function (item) {
-      if (item.kind === "hidden") { nodes.push(hiddenRow(item.n)); return; }
-      var tr = rowFor(item.entry);
-      nodes.push(tr);
-      if (item.entry.kind === "ex") { rows.push(tr); ids.push(item.entry.id); }
-    });
-    if (view.endId == null && c.hiddenOutside.newer && c.shown) nodes.push(hiddenRow(c.hiddenOutside.newer));
-    syncChildren(body, nodes);
+    var plan = logRows(sel, view.endId == null), edge = edgePlan(c);
+    var rowsChanged = plan.key !== view.rowKey, topChanged = edgeTopDiffers(edge);
+    var followChanged = view.follow !== view.renderedFollow;
+    // A pinned reader's rows can move only if rows, or the edges above them, change: measure
+    // where they are first, before anything is written.
+    var shift = !view.follow && (rowsChanged || topChanged);
+    var topBefore = shift ? wrap.scrollTop : 0;
+    var anchors = shift ? visibleAnchors(wrap) : [];
+    var focused = logFocused();
+    var edgesChanged = renderEdges(edge);
+    if (rowsChanged) {
+      var nodes = [], rows = [], ids = [], kept = new Map();
+      plan.rows.forEach(function (r) {
+        if (r.kind === "hidden") { nodes.push(hiddenRow(r.n, r.pos, kept)); return; }
+        var tr = rowFor(r.entry);
+        nodes.push(tr);
+        if (r.entry.kind === "ex") { rows.push(tr); ids.push(r.entry.id); }
+      });
+      hiddenRows = kept;
+      syncChildren(body, nodes);
+      view.shownRows = rows;
+      view.shownIds = ids;
+      view.rowKey = plan.key;
+    }
     wrap.classList.toggle("is-empty", c.shown === 0);
-    view.shownRows = rows;
-    view.shownIds = ids;
-    renderLogState(c.shown, c.inView, c.held);
+    var stateChanged = renderLogState(c.shown, c.inView, c.held);
     renderFilterCounts();
-    // Last, after everything that can change the log's height: the state lines and the controls,
-    // which re-wrap as the filter counts widen.
-    if (view.follow) toBottom();
-    else {
+    view.renderedFollow = view.follow;
+    // Last, after everything that can change the log's height. The filter counts re-wrapping the
+    // controls resize the log box, which its ResizeObserver answers in the same frame.
+    var moved = rowsChanged || topChanged || edgesChanged;
+    if (view.follow) { if (moved || stateChanged || followChanged) toBottom(); }
+    else if (shift) {
       if (!keepAnchor(wrap, anchors)) showPin(wrap);
       noteLayoutScroll(topBefore);
     }
-    keepFocus(focused);
-    renderFollow();
+    if (moved) keepFocus(focused);
+    renderFollow(moved || followChanged);
     var h = S.hello, mine = c.matching === c.inView, of = mine ? c.inView : c.matching, extra = [];
     var counted = c.shown === c.inView ? plural(c.inView, "exchange", "exchanges") :
       fmtN(c.shown) + " of " + fmtN(of) + (mine ? " shown" : " matching shown");
-    if (c.shown < c.inView && rows.length) {
+    if (c.shown < c.inView && view.shownRows.length) {
       var s0 = sel.items.filter(function (it) { return it.kind === "entry" && it.entry.kind === "ex"; });
       var a0 = s0[0].entry.e.seq, a1 = s0[s0.length - 1].entry.e.seq;
       extra.push(a0 <= a1 ? "seq " + fmtN(a0) + "–" + fmtN(a1) : "seq " + fmtN(a0) + " … " + fmtN(a1) + " across a restart");
     }
     if (S.exCount !== of) extra.push(fmtN(S.exCount) + " retained");
     if (extra.length) counted += " (" + extra.join("; ") + ")";
-    $("log-count").textContent = !h && S.lastSeq == null ? "" : counted +
-      (S.lastSeq != null ? ", last seq " + S.lastSeq + (isLive() ? " (live)" : "") : "") + (S.duplicates ? ", " + S.duplicates + " duplicates ignored" : "");
+    setText($("log-count"), !h && S.lastSeq == null ? "" : counted +
+      (S.lastSeq != null ? ", last seq " + S.lastSeq + (isLive() ? " (live)" : "") : "") + (S.duplicates ? ", " + S.duplicates + " duplicates ignored" : ""));
   }
   function atBottom(wrap) { return wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 4; }
   function toBottom() { var wrap = $("logwrap"); wrap.scrollTop = wrap.scrollHeight; }
@@ -1820,16 +1887,21 @@
   // The control lives in the log header and always keeps its place (visibility, not display),
   // so showing it never moves a row, and it never lies over one. Its count is the shown rows
   // below the visible part of the log, plus the matching exchanges beyond a pinned window.
-  function renderFollow() {
+  // The rows below are measured again only when `measure` says they may have moved (a scroll,
+  // a resize, rows or edges changed); otherwise the last count stands. Nothing is written
+  // that is already so.
+  function renderFollow(measure) {
     var b = $("btn-follow");
-    var n = view.follow ? 0 : rowsBelow();
+    if (view.follow) view.below = 0;
+    else if (measure !== false) view.below = rowsBelow();
+    var n = view.below;
     var beyond = !view.follow && view.counts ? view.counts.newerMatching : 0;
     b.classList.toggle("is-off", view.follow);
-    b.disabled = view.follow;
-    b.setAttribute("aria-hidden", String(view.follow));
+    if (b.disabled !== view.follow) b.disabled = view.follow;
+    if (b.getAttribute("aria-hidden") !== String(view.follow)) b.setAttribute("aria-hidden", String(view.follow));
     var parts = n > 0 ? plural(n, "row below", "rows below") + (beyond ? " + " + fmtN(beyond) + " beyond this window" : "") :
       beyond ? plural(beyond, "row", "rows") + " beyond this window" : "";
-    b.textContent = parts ? parts + ", jump to newest" : "Jump to newest";
+    setText(b, parts ? parts + ", jump to newest" : "Jump to newest");
   }
   // A shorter list or a smaller box makes the browser move the scroll position itself (it
   // clamps to the new end). That move is the layout's, not the reader's: remember where it
@@ -1947,34 +2019,51 @@
     return tr;
   }
 
+  // The state lines above the log: "View paused" with the held count, then at most one line on
+  // why no row is shown. Each line is built once per kind and kept; only its text is rewritten
+  // when it changes, so a focused "Reset filters" or "Show cleared rows" keeps the focus while
+  // the counts move. True when a line came, went or changed kind (a count rewritten in place
+  // is not: if it re-wraps, the log box's ResizeObserver answers it).
+  var logState = { paused: null, msg: null, kind: null };
+  function stateLine(cls, title, button) {
+    var t = document.createTextNode("");
+    var div = el("div", { cls: "log-state__line" + (cls ? " log-state__line--" + cls : "") }, [el("p", null, [el("b", { text: title }), t])]);
+    if (button) div.appendChild(button);
+    return { div: div, t: t };
+  }
+  function setData(t, text) { if (t.data === text) return false; t.data = text; return true; }
   function renderLogState(shown, inView, held) {
-    var box = $("log-state");
-    box.textContent = "";
-    function line(cls, parts, button) {
-      var p = el("div", { cls: "log-state__line" + (cls ? " log-state__line--" + cls : "") }, [el("p", null, parts)]);
-      if (button) p.appendChild(button);
-      box.appendChild(p);
-    }
+    var box = $("log-state"), lines = [], w = false, kind = null, text = "", button = null, title;
     if (view.paused) {
-      line("paused", [el("b", { text: "View paused." }), " " + held + (held === 1 ? " new exchange is" : " new exchanges are") + " held; they appear when you resume. The simulator keeps running."]);
+      if (!logState.paused) logState.paused = stateLine("paused", "View paused.");
+      setData(logState.paused.t, " " + held + (held === 1 ? " new exchange is" : " new exchanges are") + " held; they appear when you resume. The simulator keeps running.");
+      lines.push(logState.paused.div);
     }
     if (!S.hello && S.lastSeq == null) {
-      line(null, isStale() ? [el("b", { text: "No exchanges received." }), " The live stream has not connected; exchanges appear once it does."] :
-        [el("b", { text: "Loading the exchange history." })]);
+      if (isStale()) { kind = "stale"; title = "No exchanges received."; text = " The live stream has not connected; exchanges appear once it does."; }
+      else { kind = "loading"; title = "Loading the exchange history."; }
     } else if (shown === 0) {
       if (S.exCount === 0 && !view.clearedAfter) {
-        var w = S.hello ? S.hello.watermark : 0;
-        line(null, [el("b", { text: "No exchanges yet." }), w ? " The simulator has published " + w + " but none are in its history." :
-          " The simulator has not handled a diagnostic request since it started. Send one and it appears here."]);
+        var wm = S.hello ? S.hello.watermark : 0;
+        kind = "none"; title = "No exchanges yet.";
+        text = wm ? " The simulator has published " + wm + " but none are in its history." :
+          " The simulator has not handled a diagnostic request since it started. Send one and it appears here.";
       } else if (inView === 0 && view.clearedAfter) {
-        line(null, [el("b", { text: "No exchanges since you cleared the view." }), " The simulator's history is untouched; new exchanges appear here."],
-          el("button", { type: "button", id: "btn-restore", text: "Show cleared rows" }));
+        kind = "cleared"; title = "No exchanges since you cleared the view."; text = " The simulator's history is untouched; new exchanges appear here.";
+        button = function () { return el("button", { type: "button", id: "btn-restore", text: "Show cleared rows" }); };
       } else if (inView > 0) {
-        line(null, [el("b", { text: "No exchanges match these filters." }), " " + inView + " are hidden by the ECU, service or outcome filter."],
-          el("button", { type: "button", id: "btn-reset", text: "Reset filters" }));
+        kind = "nomatch"; title = "No exchanges match these filters."; text = " " + inView + " are hidden by the ECU, service or outcome filter.";
+        button = function () { return el("button", { type: "button", id: "btn-reset", text: "Reset filters" }); };
       }
     }
-    box.hidden = !box.firstChild;
+    if (kind) {
+      if (logState.kind !== kind) { logState.msg = stateLine(null, title, button && button()); logState.kind = kind; }
+      setData(logState.msg.t, text);
+      lines.push(logState.msg.div);
+    }
+    w = syncChildren(box, lines) || w;
+    if (box.hidden !== !lines.length) { box.hidden = !lines.length; w = true; }
+    return w;
   }
 
   // ---------- filters and view controls (view only; nothing is sent) ----------
@@ -1982,16 +2071,17 @@
     var have = {};
     Array.prototype.forEach.call(select.options, function (o) { have[o.value] = o; });
     var total = S.exCount;
-    have.all.textContent = select.id === "f-ecu" ? "All ECUs (" + total + ")" : "All services (" + total + ")";
+    setText(have.all, select.id === "f-ecu" ? "All ECUs (" + total + ")" : "All services (" + total + ")");
     Object.keys(counts).sort().forEach(function (k) {
       if (!have[k]) { have[k] = el("option", { value: k }); select.appendChild(have[k]); }
-      have[k].textContent = label(k) + " (" + counts[k] + ")";
+      setText(have[k], label(k) + " (" + counts[k] + ")");
     });
   }
+  // Only the counts that changed are written.
   function renderFilterCounts() {
     syncOptions($("f-ecu"), S.counts.ecu, function (k) { return k === "none" ? "no route" : k === "?" ? "not in event" : k; });
     syncOptions($("f-service"), S.counts.service, function (k) { return k === "?" ? "no request" : "0x" + k.toUpperCase(); });
-    OUTCOMES.forEach(function (o) { $("n-" + o).textContent = String(S.counts.outcome[o] || 0); });
+    OUTCOMES.forEach(function (o) { setText($("n-" + o), String(S.counts.outcome[o] || 0)); });
   }
 
   function buildControls() {
@@ -2034,6 +2124,7 @@
         var key = t.dataset.expand;
         view.expanded[key] = !view.expanded[key];
         rowCache.delete(Number(t.dataset.id));
+        view.rowKey = null;          // the row is drawn anew; logRows' key does not hold expansion
         renderLog();
         var again = document.querySelector('[data-expand="' + key + '"]');
         if (again) again.focus();

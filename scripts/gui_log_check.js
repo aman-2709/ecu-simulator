@@ -30,7 +30,7 @@ var block = text.slice(a, b + END.length);
 var ctx = vm.createContext({});
 vm.runInContext('"use strict";\n' + block, ctx, { filename: "app.js#log-selection" });
 var L = ctx;
-["selectLog", "logOlderEnd", "logNewerEnd", "logAnchorEnd", "logFullEnd"].forEach(function (f) {
+["selectLog", "logOlderEnd", "logNewerEnd", "logAnchorEnd", "logFullEnd", "logRows"].forEach(function (f) {
   if (typeof L[f] !== "function") fail("the block does not define " + f);
 });
 
@@ -586,6 +586,63 @@ check("Older / Newer keep the reader's anchor row in the window: full step, redu
     });
   }
   ok(moved > 500 && reduced > 100 && zero > 100, "too few full / reduced / zero moves: " + [moved, reduced, zero]);
+});
+
+// ---- Task 44: the row key (logRows) ----
+// The page rebuilds the log body only when logRows' key changes, so the key must change
+// whenever the drawn rows or their counts do (else a row would go stale), and must not change
+// when appended entries cannot reach the window (else a pinned or paused log would rebuild).
+function rowsOf(r) {
+  return r.rows.map(function (x) { return x.kind === "hidden" ? x.pos + "=" + x.n : "e" + x.entry.id; }).join(" ");
+}
+check("the row key: drawn rows and their counts, frozen for pinned and paused windows (logRows)", function () {
+  var f = function (spec, o, following) { return L.logRows(sel(spec, o), following); };
+  // Rows: a leading run with no Older row, runs between rows named by the row before them,
+  // a trailing run only while following.
+  var r = f("h x h h x h", { size: 5 }, true);
+  eq(rowsOf(r), "lead=1 e2 after2=2 e5 trail=1", "lead, between and trail");
+  eq(rowsOf(f("h x h h x h", { size: 5, endId: 5 }, false)), "lead=1 e2 after2=2 e5", "no trail when pinned");
+  eq(rowsOf(f("x h x x", { size: 2 }, true)), "e3 e4", "no lead with an Older row");
+  eq(rowsOf(f("h h", { size: 2 }, true)), "", "nothing shown: no hidden rows");
+  eq(rowsOf(f("x g x n", { size: 5 }, true)), "e1 e2 e3 e4", "markers drawn in place");
+  // Following: a new matching exchange, a new marker at the end, or a new hidden one (the
+  // trailing count) changes the key; the same list gives the same key.
+  var base = f("x x h x", { size: 3 }, true).key;
+  eq(f("x x h x", { size: 3 }, true).key, base, "same list, same key");
+  ok(f("x x h x x", { size: 3 }, true).key !== base, "a new matching exchange changes the key");
+  ok(f("x x h x g", { size: 3 }, true).key !== base, "a new marker at the end changes the key");
+  ok(f("x x h x h", { size: 3 }, true).key !== base, "a new hidden exchange changes the trailing count");
+  ok(f("x x h x", { size: 2 }, true).key !== base, "a different window changes the key");
+  ok(L.logRows(sel("x x h x", { size: 3 }, function (e) { return !e.ok; }), true).key !== base, "a filter change changes the key");
+  // Randomized (seeded): equal keys exactly when the drawn rows are equal; and appending any
+  // entries to a pinned or a paused window never changes its key.
+  var r2 = rng(0x4444), same = 0, diff = 0;
+  for (var c = 0; c < 4000; c += 1) {
+    var list = [], id = 1, n = 3 + Math.floor(r2() * 30);
+    for (var i = 0; i < n; i += 1, id += 1) {
+      var x = r2();
+      list.push(x < 0.08 ? { kind: "gap", id: id } : x < 0.12 ? { kind: "note", id: id } : { kind: "ex", e: { ok: r2() < 0.7 }, id: id });
+    }
+    var more = list.slice();
+    for (var j = Math.floor(r2() * 4); j > 0; j -= 1, id += 1) {
+      var y = r2();
+      more.push(y < 0.1 ? { kind: "gap", id: id } : { kind: "ex", e: { ok: r2() < 0.7 }, id: id });
+    }
+    var size = 1 + Math.floor(r2() * 8), tag = "case " + c;
+    var a = L.logRows(L.selectLog(list, shows, opts({ size: size })), true);
+    var b = L.logRows(L.selectLog(more, shows, opts({ size: size })), true);
+    eq(a.key === b.key, rowsOf(a) === rowsOf(b), tag + ": following: equal keys exactly when the rows are equal");
+    if (rowsOf(a) === rowsOf(b)) same += 1; else diff += 1;
+    var exs = list.filter(function (en) { return en.kind === "ex"; });
+    if (!exs.length) continue;
+    var pin = exs[Math.floor(r2() * exs.length)].id;
+    eq(L.logRows(L.selectLog(more, shows, opts({ size: size, endId: pin })), false).key,
+      L.logRows(L.selectLog(list, shows, opts({ size: size, endId: pin })), false).key, tag + ": pinned at " + pin + ": appended entries changed the key");
+    var pa = list[list.length - 1].id, fol = r2() < 0.5;
+    eq(L.logRows(L.selectLog(more, shows, opts({ size: size, pauseAfter: pa })), fol).key,
+      L.logRows(L.selectLog(list, shows, opts({ size: size, pauseAfter: pa })), fol).key, tag + ": paused: appended entries changed the key");
+  }
+  ok(same > 300 && diff > 1000, "too few equal / different row lists: " + [same, diff]);
 });
 
 console.log("LOGCHECK PASS (" + passed + " checks)");
