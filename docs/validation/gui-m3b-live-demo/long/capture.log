@@ -1,0 +1,22 @@
+[   0.00 s] gui demo capture, 2026-10-01T02:17:32+00:00
+[   0.00 s] start headless Chrome: /usr/bin/google-chrome
+[   0.22 s] Chrome: Chrome/151.0.7922.173
+[   0.23 s] start simulator: --profile src/ecu_simulator/profiles/ice_scenario.yaml --interface vcan0 --api 127.0.0.1:8765
+[   1.16 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[   1.16 s] long: as_of 0.6, points {"vehicle.speed": "1", "engine.rpm": "1", "engine.throttle": "1", "engine.engine_load": "1", "engine.coolant_temp": "1"}
+[  61.18 s] long: as_of 60.5, points {"vehicle.speed": "4", "engine.rpm": "5", "engine.throttle": "6", "engine.engine_load": "234", "engine.coolant_temp": "232"}
+[ 121.17 s] long: as_of 120.5, points {"vehicle.speed": "9", "engine.rpm": "11", "engine.throttle": "11", "engine.engine_load": "467", "engine.coolant_temp": "232"}
+[ 181.17 s] long: as_of 180.5, points {"vehicle.speed": "9", "engine.rpm": "11", "engine.throttle": "16", "engine.engine_load": "699", "engine.coolant_temp": "232"}
+[ 241.18 s] long: as_of 240.5, points {"vehicle.speed": "9", "engine.rpm": "11", "engine.throttle": "21", "engine.engine_load": "931", "engine.coolant_temp": "232"}
+[ 301.20 s] long: as_of 300.5, points {"vehicle.speed": "9", "engine.rpm": "11", "engine.throttle": "26", "engine.engine_load": "1165", "engine.coolant_temp": "232"}
+[ 361.18 s] long: as_of 360.4, points {"vehicle.speed": "9", "engine.rpm": "11", "engine.throttle": "31", "engine.engine_load": "1398", "engine.coolant_temp": "232"}
+[ 421.24 s] long: as_of 420.5, points {"vehicle.speed": "9", "engine.rpm": "11", "engine.throttle": "36", "engine.engine_load": "1629", "engine.coolant_temp": "232"}
+[ 481.34 s] long: as_of 480.3, points {"vehicle.speed": "9", "engine.rpm": "11", "engine.throttle": "41", "engine.engine_load": "1862", "engine.coolant_temp": "232"}
+[ 541.39 s] long: as_of 540.3, points {"vehicle.speed": "9", "engine.rpm": "11", "engine.throttle": "46", "engine.engine_load": "2096", "engine.coolant_temp": "232"}
+[ 601.44 s] long: as_of 600.4, points {"vehicle.speed": "9", "engine.rpm": "11", "engine.throttle": "51", "engine.engine_load": "2328", "engine.coolant_temp": "232"}
+[ 661.36 s] long: as_of 660.3, points {"vehicle.speed": "6", "engine.rpm": "7", "engine.throttle": "51", "engine.engine_load": "2329", "engine.coolant_temp": "1"}
+[ 692.57 s] screenshot m3b-long-10min.png: Live | 2000 exchanges, last seq 2619 (live)
+[ 692.90 s]   agreement ok: [['vehicle.speed', '0', '0'], ['engine.rpm', '800', '800'], ['engine.throttle', '24', '24'], ['engine.engine_load', '18.5', '18.5'], ['engine.coolant_temp', '92', '92']]
+[ 693.05 s] PASS Bounded history
+[ 693.05 s]   observed: {"samples": 70, "first_t": 0.5785130951553583, "last_as_of": 690.622733659111, "late_samples": 9, "coolant_old_samples": 9, "max_points": {"vehicle.speed": 9, "engine.rpm": 11, "engine.throttle": 51, "engine.engine_load": 2330, "engine.coolant_temp": 232}, "last": {"vehicle.speed": {"points": "4", "cap": "4096", "oldestT": "90.01044391002506", "asOf": "690.622733659111", "pointsBeforeWindow": "1", "leftValue": "0"}, "engine.rpm": {"points": "4", "cap": "4096", "oldestT": "90.01044391002506", "asOf": "690.622733659111", "pointsBeforeWindow": "1", "leftValue": "800"}, "engine.throttle": {"points": "51", "cap": "4096", "oldestT": "84.00958972517401", "asOf": "690.622733659111", "pointsBeforeWindow": "1", "leftValue": "24"}, "engine.engine_load": {"points": "2327", "cap": "4096", "oldestT": "90.510653502075", "asOf": "690.622733659111", "pointsBeforeWindow": "1", "leftValue": "23.86963506040829"}, "engine.coolant_temp": {"points": "1", "cap": "4096", "oldestT": "60.00677985115908", "asOf": "690.622733659111", "pointsBeforeWindow": "1", "leftValue": "92"}}, "series": [{"as_of": 0.5785130951553583, "points": {"vehicle.speed": "1", "engine.rpm": "1", "engine.throttle": "1", "engine.engine_load": "1", "engine.coolant_temp": "1"}, "before": {"vehicle.speed": "0", "engine.rpm": "0", "engine.throttle": "0", "engine.engine_load": "0", "engine.coolant_temp": "0"}, "oldest": {"vehicle.speed": "0.5785130951553583", "engine.rpm": "0.5785130951553583", "engine.throttle": "0.5785130951553583",
+[ 693.05 s] done

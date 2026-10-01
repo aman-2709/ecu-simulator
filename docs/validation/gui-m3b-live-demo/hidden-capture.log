@@ -1,0 +1,6 @@
+[   0.00 s] start simulator: --profile docs/examples/ice_drive_cycle_stepped.yaml --interface vcan0 --api 127.0.0.1:8765
+[   0.30 s] start headless Chrome: /usr/bin/google-chrome
+[   0.93 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[  33.03 s] hidden: [true, "false", "Signal graphs \u2014 hidden, still recording", "Show graphs", "32.64569276408292", "30.139887147117406", "live"] drawn-to at hide 30.139887147117406
+[  33.14 s] screenshot hidden-1440.png: Live | 122 exchanges, last seq 122 (live)
+[  33.14 s] page exceptions: []
