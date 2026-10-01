@@ -244,6 +244,22 @@ check("a pin older than every matching exchange: an empty window, then the ancho
   eq(str(L.selectLog(list, shows, opts({ size: 2, endId: e }))), "x11", "re-pinned window");
 });
 
+check("pinBeforeView: true only when the window is empty because its pin is stale", function () {
+  // Evicted: the pinned rows left the page's cap.
+  eq(L.selectLog(build("h x x x", 10), shows, opts({ endId: 4 })).pinBeforeView, true, "evicted");
+  // Clear view after a pin: the pin lies at or before the clear boundary.
+  eq(sel("x x x x", { endId: 2, clearedAfter: 2 }).pinBeforeView, true, "cleared after the pin");
+  // A filter whose matches all lie after the pin.
+  eq(sel("h h x x", { endId: 2 }).pinBeforeView, true, "matches all after the pin");
+  // False: an empty log, a filter excluding everything, a normal pinned window, following.
+  eq(L.selectLog([], shows, opts({ endId: 3 })).pinBeforeView, false, "empty log");
+  eq(sel("x x x", { endId: 2 }, function () { return false; }).pinBeforeView, false, "nothing matches");
+  eq(sel("x x x x", { endId: 3 }).pinBeforeView, false, "normal pinned window");
+  eq(sel("h h x x").pinBeforeView, false, "following");
+  eq(sel("x x x x", { endId: 2, clearedAfter: 4 }).pinBeforeView, false, "everything cleared");
+  eq(sel("x x x x", { endId: 3, pauseAfter: 2 }).pinBeforeView, false, "pin past the pause boundary");
+});
+
 check("empty and tiny lists", function () {
   var s = L.selectLog([], shows, opts());
   eq([str(s), s.firstId, s.lastId], ["", null, null], "empty");
@@ -341,6 +357,7 @@ function reference(entries, matches, o) {
     items: items,
     firstId: W.length ? W[0].id : null,
     lastId: W.length ? W[W.length - 1].id : null,
+    pinBeforeView: o.endId != null && M.length > 0 && M.every(function (en) { return en.id > o.endId; }),
     counts: {
       inView: vis.filter(isEx).length,
       matching: M.length,
@@ -385,11 +402,11 @@ function randomList(n, first) {
 }
 function normal(s) {             // a selection as plain data, for comparison
   return JSON.stringify({ items: s.items.map(function (it) { return it.kind === "hidden" ? { h: it.n } : { id: it.entry.id }; }),
-    firstId: s.firstId, lastId: s.lastId, counts: s.counts });
+    firstId: s.firstId, lastId: s.lastId, pinBeforeView: s.pinBeforeView, counts: s.counts });
 }
 
 check("randomized: matches the brute-force reference, and the invariants hold (seeded, 4,000 cases)", function () {
-  var roundTrips = 0;
+  var roundTrips = 0, stalePins = 0;
   for (var c = 0; c < 4000; c += 1) {
     var first = 1 + int(5), list = randomList(int(40), first);
     var lastId = first + list.length - 1;
@@ -412,6 +429,7 @@ check("randomized: matches the brute-force reference, and the invariants hold (s
     var s = L.selectLog(list, matches, o);
     eq(normal(s), normal(reference(list, matches, o)), tag + " vs reference");
     addUp(s);
+    if (s.pinBeforeView) stalePins += 1;
     // Item order is entry order; hidden runs never lead, trail or touch.
     var prev = -Infinity;
     s.items.forEach(function (it, i) {
@@ -459,6 +477,7 @@ check("randomized: matches the brute-force reference, and the invariants hold (s
       eq(L.logAnchorEnd(list, matches, o), want, tag + ": anchor");
     }
   }
+  ok(stalePins > 100, "too few stale pins exercised: " + stalePins);
   ok(roundTrips > 500, "too few Older / Newer round trips exercised: " + roundTrips);
 });
 

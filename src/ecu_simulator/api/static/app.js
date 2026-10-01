@@ -1410,7 +1410,7 @@
     return { m: m, end: end, upper: opts.endId == null ? Infinity : opts.endId };
   }
 
-  // The rows to draw and the counts beside them. Returns { items, firstId, lastId, counts }:
+  // The rows to draw and the counts beside them. Returns { items, firstId, lastId, pinBeforeView, counts }:
   // items, in entry order, are { kind: "entry", entry } and { kind: "hidden", n } (a run of
   // exchanges the filters hide, only ever between two drawn rows); firstId / lastId are the
   // oldest / newest drawn exchange (null when none). Markers between them are drawn in place;
@@ -1420,6 +1420,10 @@
   // appended later never change it. counts: inView (exchanges between the clear and pause
   // boundaries), matching, shown, olderMatching, newerMatching, hiddenTotal,
   // hiddenOutside { older, newer }, markersOlder / markersNewer { gaps, notes }, held.
+  // pinBeforeView is true when the window is empty only because its pin is stale: a pin is
+  // set, exchanges match, and none of them lies at or before it (its rows left the page's
+  // cap, Clear view came after it, or a filter's matches all lie after it). The caller then
+  // re-pins with logAnchorEnd; an empty window for any other reason leaves it false.
   function selectLog(entries, matches, opts) {
     var p = logPlace(entries, matches, opts), m = p.m;
     var start = Math.max(0, p.end - opts.size);
@@ -1457,6 +1461,7 @@
       items: items,
       firstId: c.shown ? entries[m[start]].id : null,
       lastId: c.shown ? entries[m[p.end - 1]].id : null,
+      pinBeforeView: opts.endId != null && p.end === 0 && m.length > 0,
       counts: c
     };
   }
