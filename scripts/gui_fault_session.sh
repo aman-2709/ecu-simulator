@@ -51,6 +51,7 @@ Stop it by closing the Chrome window or pressing Ctrl-C in this terminal.
 EOF
 }
 
+CALLER_PWD="$(pwd)"
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 SELF="$ROOT/scripts/gui_fault_session.sh"
@@ -66,6 +67,7 @@ if [[ "${1:-}" == "--inside" ]]; then
         exit 1
     fi
     WORK="$GFS_WORK"
+    echo "$here" > "$WORK/netns"     # the host side's proof that a listed group is still this launcher's
     groups=()                   # process group ids this launcher created, in start order
     chrome="" server=""
 
@@ -149,12 +151,18 @@ PYEOF
     then
         blocker "the fault server did not come up on $url" "$WORK/fault-server.log"
     fi
-    origin="$(sed -n 's/.*wall origin \([0-9.]*\).*/\1/p' "$WORK/fault-server.log" | head -n 1)"
-    echo "   up on $url (pid $server); scenario t = 0 at $(date -d "@${origin%.*}" +%T)"
-    for w in $GFS_WINDOWS; do
-        echo "   fault window [${w%%:*}, ${w#*:}) s: about $(date -d "@$(( ${origin%.*} + ${w%%:*} ))" +%T)" \
-             "to $(date -d "@$(( ${origin%.*} + ${w#*:} ))" +%T)"
-    done
+    origin="$(sed -n 's/.*wall origin \([0-9]*\)\.[0-9]*.*/\1/p' "$WORK/fault-server.log" | head -n 1)"
+    if [[ -n "$origin" ]]; then
+        echo "   up on $url (pid $server); scenario t = 0 at $(date -d "@$origin" +%T)"
+        for w in $GFS_WINDOWS; do
+            echo "   fault window [${w%%:*}, ${w#*:}) s: about $(date -d "@$(( origin + ${w%%:*} ))" +%T)" \
+                 "to $(date -d "@$(( origin + ${w#*:} ))" +%T)"
+        done
+    else
+        echo "   up on $url (pid $server). The server's \"wall origin\" line was not found in its log, so no"
+        echo "   wall-clock times: the fault windows ($GFS_WINDOWS) are scenario seconds from the server's start;"
+        echo "   watch for the [server] \"opens\" / \"set to nan\" lines below."
+    fi
 
     # The server's own fault lines ("... opens", "... set to nan ...") as they happen.
     # shellcheck disable=SC2016  # $1 is expanded by the inner bash
@@ -280,17 +288,20 @@ while [[ $# -gt 0 ]]; do
         -h|--help) usage; exit 0 ;;
         nonfinite|state-fault) [[ -z "$MODE" ]] || die "one mode only"; MODE="$1"; shift ;;
         --window) [[ $# -ge 2 ]] || die "--window needs START:END"; WINDOWS+=("$2"); shift 2 ;;
-        --signal) [[ $# -ge 2 ]] || die "--signal needs a PATH"; SIGNAL="$2"; shift 2 ;;
+        --signal) [[ $# -ge 2 && "$2" =~ ^[a-z0-9_]+(\.[a-z0-9_]+)+$ ]] || die "--signal needs a signal path like engine.coolant_temp"
+                  SIGNAL="$2"; shift 2 ;;
         --part) [[ $# -ge 2 && ( "$2" == vehicle || "$2" == dtcs ) ]] || die "--part takes vehicle or dtcs"
                 PART="$2"; shift 2 ;;
         --profile) [[ $# -ge 2 ]] || die "--profile needs a PATH"; PROFILE="$2"; shift 2 ;;
-        --port) [[ $# -ge 2 && "$2" =~ ^[0-9]+$ ]] || die "--port needs a number"; PORT="$2"; shift 2 ;;
+        --port) [[ $# -ge 2 && "$2" =~ ^[1-9][0-9]{0,4}$ && "$2" -le 65535 ]] || die "--port takes 1-65535"
+                PORT="$2"; shift 2 ;;
         --no-traffic) TRAFFIC=0; shift ;;
         --devtools-port) [[ $# -ge 2 && "$2" =~ ^[0-9]+$ ]] || die "--devtools-port needs a number"
                          DEVTOOLS="$2"; shift 2 ;;
         --duration) [[ $# -ge 2 && "$2" =~ ^[0-9]+$ ]] || die "--duration needs whole seconds"
                     DURATION="$2"; shift 2 ;;
-        --keep-logs) [[ $# -ge 2 ]] || die "--keep-logs needs a DIR"; KEEP="$2"; shift 2 ;;
+        --keep-logs) [[ $# -ge 2 && -n "$2" ]] || die "--keep-logs needs a DIR"
+                     KEEP="$2"; [[ "$KEEP" == /* ]] || KEEP="$CALLER_PWD/$KEEP"; shift 2 ;;
         *) usage >&2; exit 2 ;;
     esac
 done
@@ -314,7 +325,17 @@ for name in "${CHROME:-}" google-chrome google-chrome-stable chromium chromium-b
     CHROME_BIN=""
 done
 [[ -n "$CHROME_BIN" ]] || die "no Chrome or Chromium found; set CHROME=/path/to/chrome"
-for tool in unshare ip ss setsid; do
+if [[ "$MODE" == nonfinite ]] && ! "$PY" - "$PROFILE" "$SIGNAL" <<'PYEOF'
+import sys
+from ecu_simulator import app
+from ecu_simulator.config import load_profile
+signals = app.build_vehicle(app.RuntimeConfig.build(load_profile(sys.argv[1]), "vcan0")).signals
+sys.exit(0 if sys.argv[2] in signals else 1)
+PYEOF
+then
+    die "--signal $SIGNAL is not a signal of the vehicle in $PROFILE"
+fi
+for tool in unshare ip ss setsid env; do
     command -v "$tool" > /dev/null || die "$tool is needed"
 done
 
@@ -336,6 +357,11 @@ if init_net="$(readlink /proc/1/ns/net 2>/dev/null)"; then
     [[ "$init_net" == "$HOST_NETNS" ]] || die "this shell is not in PID 1's network namespace ($HOST_NETNS vs $init_net)"
 else
     HOST_SOURCE="read by this launcher on the host before unshare; /proc/1/ns/net is not readable by this user"
+    # Without PID 1 to compare with, at least refuse an already isolated shell: the host's user
+    # namespace has the identity map "0 0 4294967295"; a user namespace (unshare -r, a sandbox) does not.
+    uid_map="$(tr -s ' ' < /proc/self/uid_map | sed 's/^ //')"
+    [[ "$uid_map" == "0 0 4294967295" ]] || die "this shell is already inside a user namespace" \
+        "(/proc/self/uid_map is \"$uid_map\", not the host's \"0 0 4294967295\"); run it from a desktop terminal"
 fi
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/gui-fault-session.XXXXXX")"
@@ -343,11 +369,21 @@ host_cleanup() {
     local rc=$? pg
     trap - EXIT
     # A safety net for a namespace shell killed before its own cleanup: its groups are listed.
-    if [[ -f "$WORK/groups" ]]; then
+    # A listed group is signalled only while one of its members is still in the launcher's private
+    # network namespace. A group id reused by anything else meanwhile has no member there (a group
+    # id is not reused while any member of the old group lives), so it is left alone.
+    if [[ -f "$WORK/groups" && -f "$WORK/netns" ]]; then
+        private="$(cat "$WORK/netns")"
         while read -r pg; do
-            if kill -0 -- "-$pg" 2>/dev/null; then
-                echo "   group $pg outlived the namespace shell: SIGKILL"
+            ours=0
+            for pid in $(ps -e -o pid=,pgid= | awk -v g="$pg" '$2 == g {print $1}'); do
+                [[ "$(readlink "/proc/$pid/ns/net" 2>/dev/null)" == "$private" ]] && { ours=1; break; }
+            done
+            if (( ours )); then
+                echo "   group $pg outlived the namespace shell (still in $private): SIGKILL"
                 kill -KILL -- "-$pg" 2>/dev/null || true
+            elif kill -0 -- "-$pg" 2>/dev/null; then
+                echo "   group id $pg exists but has no member in $private: not this launcher's, left alone"
             fi
         done < "$WORK/groups"
     fi
@@ -365,16 +401,27 @@ host_cleanup() {
     exit "$rc"
 }
 trap host_cleanup EXIT
-# Ctrl-C reaches the namespace shell too, which stops its processes; this shell then cleans up.
-trap ':' INT TERM HUP
+inner=""
+# Ctrl-C and a closed terminal reach the namespace shell directly (same process group); a
+# `kill <this pid>` does not, so SIGTERM and SIGHUP are forwarded. Either way the namespace shell
+# stops its processes and exits, and this shell then cleans up.
+trap ':' INT
+trap '[[ -n "$inner" ]] && kill -TERM "$inner" 2>/dev/null || true' TERM HUP
 
 echo "== gui_fault_session.sh $MODE: temp dir $WORK"
 echo "   host netns $HOST_NETNS ($HOST_SOURCE)"
 set +e
+# In the background so the traps above run while it lives; env --default-signal undoes the
+# SIGINT/SIGQUIT ignore a background job gets, so Ctrl-C still reaches the namespace shell.
 GFS_HOST_NETNS="$HOST_NETNS" GFS_HOST_SOURCE="$HOST_SOURCE" GFS_WORK="$WORK" GFS_PROFILE="$PROFILE" \
 GFS_FAULT_ARGS="${FAULT_ARGS[*]}" GFS_WINDOWS="${WINDOWS[*]}" GFS_PORT="$PORT" GFS_TRAFFIC="$TRAFFIC" \
 GFS_DEVTOOLS="$DEVTOOLS" GFS_DURATION="$DURATION" GFS_CHROME="$CHROME_BIN" GFS_UID="$(id -u)" GFS_GID="$(id -g)" \
-    unshare -r -n -- "$SELF" --inside
-rc=$?
+    env --default-signal=INT,QUIT unshare -r -n -- "$SELF" --inside &
+inner=$!
+while :; do
+    wait "$inner"
+    rc=$?
+    kill -0 "$inner" 2>/dev/null || break      # wait was interrupted by a trap: wait again
+done
 set -e
 exit "$rc"
