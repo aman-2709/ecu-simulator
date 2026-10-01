@@ -23,8 +23,9 @@ cleared; graphs hidden; no traffic) at 1440 x 900 and 390 x 844, broken down by
 scripts/gui_trace_breakdown.py into m3b-perf-results.json. --m3b-perf-log is the log fix's
 before / after measurement: the same set-up, the log following, with real clicks (Pause,
 Resume, a filter, Older, Jump to newest) during each traced run and their Event Timing, into
-m3b-perf-log-results.json. --m3b-log runs the windowed exchange log's cases at 1440 x 900
-and 390 x 844, each from a full 2,000-exchange buffer, into m3b-log-results.json.
+m3b-perf-log-results.json. --m3b-log runs the windowed exchange log's cases (following, pause,
+filters, Older / Newer, eviction, markers, expansion, wording, layout) at 1440 x 900 and
+390 x 844, each from a full 2,000-exchange buffer, into m3b-log-results.json.
 """
 
 from __future__ import annotations
@@ -3321,6 +3322,579 @@ async def case_log_following(lg: LogRun) -> None:
          "accounting": acc})
 
 
+LOG_TEXT = "document.getElementById('log-body').innerText"
+
+
+async def case_log_pause(lg: LogRun) -> None:
+    lg.steady()
+    await lg.jump()
+    await asyncio.sleep(1.5)
+    p_start = await lg.probe()
+    await lg.click("#btn-pause")
+    await asyncio.sleep(0.5)
+    a = await lg.probe()
+    text_a = await lg.cdp.js(LOG_TEXT)
+    held = [held_count(a)]
+    for _ in range(4):
+        await asyncio.sleep(5.0)
+        held.append(held_count(await lg.probe()))
+    b = await lg.probe()
+    text_b = await lg.cdp.js(LOG_TEXT)
+    d = delta(a, b)
+    paused_last = a["seqs"][-1]
+    h = held_count(b) or 0
+    t = await lg.now_ms()
+    await lg.click("#btn-pause")
+    await asyncio.sleep(1.0)
+    c = await lg.probe()
+    batches = await lg.batches_since(t)
+    first = batches[0] if batches else {"add": 0, "rem": 0}
+    want = set(range(paused_last + 1, paused_last + h + 1))
+    lg.note("held", b["state"])
+    # Clear view keeps its meaning: rows up to now leave this view, the page keeps them (retained),
+    # new ones appear; paused and cleared, Show cleared rows brings the window back.
+    l0 = last_seq(c) or 0
+    await lg.click("#btn-clear")
+    k0 = await lg.probe()
+    await asyncio.sleep(3.0)
+    k1 = await lg.probe()
+    await lg.click("#btn-pause")
+    await lg.click("#btn-clear")
+    k2 = await lg.probe()
+    await lg.click("#btn-restore")
+    k3 = await lg.probe()
+    await lg.click("#btn-pause")
+    await asyncio.sleep(1.0)
+    k4 = await lg.probe()
+    lg.record(
+        2, "Pause / resume, Clear view",
+        "Full buffer, standard traffic. Pause view: aria-pressed true, the button reads Resume view. Paused 20 s: "
+        "zero row-list and in-row mutations, the same rows and the same log text, the held counter rising at every "
+        "5 s sample. Resume: the first row-list batch brings every held exchange at once (one rebuild: its adds >= "
+        "the held count), later batches are single arrivals; every held seq is drawn; following, newest drawn. "
+        "Clear view: no row up to the clear is drawn, the page still retains 2,000, new exchanges appear; paused "
+        "and cleared: No exchanges since you cleared the view. with Show cleared rows, which brings back the "
+        "200-row window; resume follows again",
+        {"full buffer at the start": p_start["retained"] == PERF_ROWS,
+         "paused: aria-pressed true, Resume view": a["paused"] and a["pauseText"] == "Resume view",
+         "paused 20 s: zero mutations": d["add"] == d["rem"] == d["nb"] == d["inRows"] == 0,
+         "paused: same rows and the log text frozen": a["keys"] == b["keys"] and text_a == text_b,
+         "paused: the held counter rises at every sample": None not in held
+         and all((y or 0) > (x or 0) for x, y in itertools.pairwise(held)) and h >= 40,
+         "paused: the held count is the arrivals since the pause": (last_seq(b) or 0) - paused_last == h,
+         "resume: one rebuild brings the held rows": first["add"] >= h and first["rem"] == first["add"]
+         and all(x["add"] <= 3 for x in batches[1:]),
+         "resume: every held seq drawn, following, newest drawn": want <= set(c["seqs"]) and not c["paused"]
+         and c["pauseText"] == "Pause view" and c["follow"]["disabled"] and c["newestVisible"] and c["ex"] == 200,
+         "Clear view: no row up to the clear drawn, 2,000 retained": all(s > l0 for s in k0["seqs"] + k1["seqs"])
+         and k0["retained"] == k1["retained"] == PERF_ROWS,
+         "Clear view: new exchanges appear, following": k1["ex"] > 0 and k1["follow"]["disabled"]
+         and "2,000 retained" in k1["count"],
+         "paused and cleared: the cleared line with Show cleared rows": k2["ex"] == 0
+         and (k2["state"] or "").find(W_CLEARED) >= 0 and "Show cleared rows" in (k2["state"] or ""),
+         "Show cleared rows: the 200-row window back": k3["ex"] == 200 and k3["paused"],
+         "resume after: following, 200 rows, newest drawn": k4["ex"] == 200 and k4["follow"]["disabled"]
+         and not k4["paused"] and k4["newestVisible"]},
+        {"retained": p_start["retained"], "paused_window": window_of(a), "held": held, "mutations_paused": d,
+         "state_paused": b["state"], "text_frozen": text_a == text_b, "resume_batches": batches[:6],
+         "resumed_window": window_of(c), "held_seqs": [min(want, default=None), max(want, default=None)],
+         "clear": {"last_seq_at_clear": l0, "just_after": [window_of(k0), k0["count"], k0["state"]],
+                   "3s_after": [window_of(k1), k1["count"]], "paused_cleared": [k2["ex"], k2["state"]],
+                   "restored": [window_of(k3), k3["count"]], "resumed": [window_of(k4), k4["count"]]}})
+
+
+async def case_log_filters(lg: LogRun) -> None:
+    lg.steady()
+    await lg.jump()
+    await asyncio.sleep(1.0)
+    lg.quiet()                                  # rebuild counts: the filter's own render only
+    await asyncio.sleep(1.5)
+    u = await lg.probe()
+    option = await lg.cdp.js("document.querySelector('#f-service option[value=\"0a\"]').textContent")
+    obs: dict[str, Any] = {"retained": u["retained"], "unfiltered_window": window_of(u), "option": option}
+    conds: dict[str, bool] = {"full buffer at the start": u["retained"] == PERF_ROWS,
+                              f"the 0x0A option counts {LOG_UNIQUE}": option == f"0x0A ({LOG_UNIQUE})"}
+    # A filter matching only exchanges older than the window.
+    await lg.select("f-service", "0a")
+    f = await lg.probe()
+    df = delta(u, f)
+    acc_f = lg.account("service 0x0A, following", f)
+    lg.note("outside", f["older"])
+    for x in f["hidden"]:
+        lg.note("hidden", x)
+    count_re = rf"{LOG_WINDOW} of {fmt_n(LOG_UNIQUE)} matching shown \(seq [\d,]+–[\d,]+; 2,000 retained\)"
+    conds.update({
+        "0x0A: one rebuild": df["nb"] == 1,
+        "0x0A: the count line": re.match(count_re, f["count"]) is not None,
+        "0x0A: every drawn row is a 0x0A request": f["ex"] == LOG_WINDOW
+        and all(r.upper().startswith("0A") for r in f["req"]),
+        "0x0A: all older than the unfiltered window": bool(f["seqs"]) and max(f["seqs"]) < u["seqs"][0],
+        "0x0A: the Older row counts the rest, and the hidden ones as not a gap": re.match(
+            rf"{LOG_UNIQUE - LOG_WINDOW} older exchanges match your filters; (?:[^;]+ in older rows; )?[\d,]+ "
+            rf"older exchanges {re.escape(W_HIDDEN)}\.$", f["older"] or "") is not None,
+        "0x0A: the trailing hidden run worded (not a gap)": len(f["hidden"]) == 1
+        and re.fullmatch(rf"[\d,]+ exchanges {re.escape(W_HIDDEN)}", f["hidden"][0]) is not None,
+        "0x0A: counts add up": acc_f["adds_up"]})
+    await lg.overflow("filtered, following")
+    # The Older route reaches the rest.
+    o = await lg.nav("older", "click")
+    p = await lg.probe()
+    acc_o = lg.account("service 0x0A, after Older", p)
+    reached = set(f["keys"]) | set(p["keys"])
+    lg.note("hidden", p["hidden"][0] if p["hidden"] else None)
+    conds.update({
+        "Older: one press, a correct step": o["ok"],
+        "Older: every 0x0A exchange reached": len(reached) == LOG_UNIQUE and p["older"] is None,
+        "Older: the Newer row counts the rest": edge_count(p["newer"], "newer") == LOG_UNIQUE - LOG_WINDOW,
+        "Older: the leading hidden run worded (not a gap)": bool(p["hidden"])
+        and re.fullmatch(rf"[\d,]+ exchanges {re.escape(W_HIDDEN)}", p["hidden"][0]) is not None,
+        "Older: counts add up": acc_o["adds_up"]})
+    obs.update({"filtered": {"count": f["count"], "window": window_of(f), "older": f["older"], "hidden": f["hidden"],
+                             "mutations": df, "accounting": acc_f},
+                "older_press": {k: v for k, v in o.items() if k != "keys"},
+                "after_older": {"count": p["count"], "window": window_of(p), "newer": p["newer"],
+                                "hidden": p["hidden"], "reached": len(reached), "accounting": acc_o}})
+    await lg.jump()
+    # Back to all services, then outcome chips off one by one until nothing matches.
+    s0 = await lg.probe()
+    await lg.select("f-service", "all")
+    s1 = await lg.probe()
+    changes = [{"filter": "service all", "rebuilds": delta(s0, s1)["nb"], "rows_changed": s0["keys"] != s1["keys"]}]
+    chips = [i for i, on in await lg.cdp.js("[...document.querySelectorAll('#f-outcome input')]"
+                                              ".map(i => [i.id, i.checked])") if on]
+    order = ["o-no_response"] + [c for c in chips if c != "o-no_response"]
+    between: dict[str, Any] = {}
+    last = s1
+    for chip in order:
+        await lg.click(f'label[for="{chip}"]')
+        q = await lg.probe()
+        changes.append({"filter": f"{chip} off", "rebuilds": delta(last, q)["nb"],
+                        "rows_changed": last["keys"] != q["keys"], "count": q["count"], "hidden": q["hidden"][:3]})
+        if chip == "o-no_response":
+            between = {"count": q["count"], "hidden": q["hidden"][:4], "older": q["older"],
+                       "accounting": lg.account("no response off", q)}
+            for x in q["hidden"][:2]:
+                lg.note("hidden", x)
+        last = q
+    nothing = last
+    await lg.overflow("nothing matches")
+    conds.update({
+        # A change that redraws no exchange row may still move a hidden-run row (one rebuild) or
+        # only rewrite its count (none): at most one, and exactly one when the exchange rows changed.
+        "every filter change: at most one rebuild, one when the exchange rows changed": all(
+            c["rebuilds"] <= 1 and (c["rebuilds"] == 1 or not c["rows_changed"]) for c in changes),
+        "no response off: hidden runs between rows, worded (not a gap)": bool(between.get("hidden"))
+        and all(re.fullmatch(rf"[\d,]+ exchanges? {re.escape(W_HIDDEN)}", x) for x in between["hidden"])
+        and between["accounting"]["adds_up"],
+        "nothing matches: no row, the no-match line with Reset filters": nothing["ex"] == 0
+        and (nothing["state"] or "").startswith(W_NOMATCH) and "Reset filters" in (nothing["state"] or "")})
+    # Reset filters keeps the focus while arrivals update the counts, then still works.
+    lg.steady()
+    await lg.focus("#btn-reset")
+    r0 = await lg.probe()
+    await asyncio.sleep(6.0)
+    r1 = await lg.probe()
+    await lg.click("#btn-reset")
+    await asyncio.sleep(0.5)
+    r2 = await lg.probe()
+    checked = await lg.cdp.js("[...document.querySelectorAll('#f-outcome input')].every(i => i.checked)")
+    conds.update({
+        "a focused Reset filters keeps the focus through 6 s of arrivals": r0["active"] == "btn-reset"
+        and r1["active"] == "btn-reset" and delta(r0, r1)["focusout"] == 0
+        and (last_seq(r1) or 0) > (last_seq(r0) or 0),
+        "Reset filters: every filter back, 200 rows, following, focus on the ECU filter": r2["ex"] == LOG_WINDOW
+        and checked and r2["follow"]["disabled"] and r2["active"] == "f-ecu"})
+    obs.update({"changes": changes, "no_response_off": between,
+                "nothing": {"count": nothing["count"], "state": nothing["state"]},
+                "reset": {"focus": [r0["active"], r1["active"]], "focusout": delta(r0, r1)["focusout"],
+                          "arrived": (last_seq(r1) or 0) - (last_seq(r0) or 0), "after": [r2["count"], r2["active"]]}})
+    lg.record(
+        3, "Filtering across all retained exchanges",
+        f"Full buffer; traffic stopped while filters change (so every rebuild is the filter's own). Service 0x0A, "
+        f"which only the harness's {LOG_UNIQUE} old requests match: one rebuild; the count line reads "
+        f"'{LOG_WINDOW} of {LOG_UNIQUE} matching shown (seq a–b; 2,000 retained)'; every drawn row is a 0x0A "
+        "request and older than the unfiltered window; the Older row counts the other 50 (then any older "
+        "markers) and the hidden older ones as not a gap; Older (a real click) reaches all of them, the leading "
+        "hidden run worded (not a gap). Then all services, and the outcome chips off one at a time (no response "
+        "first: hidden runs between rows worded (not a gap)) until nothing matches: No exchanges match these "
+        "filters. with Reset filters. Each change: at most one rebuild, and one whenever the drawn exchange rows "
+        "changed. A focused Reset filters keeps the focus through 6 s of arrivals; pressing it restores every "
+        "filter, 200 rows, following, focus on the ECU filter. Counts add up in every filtered state",
+        conds, obs)
+
+
+def walk_summary(steps: list[dict[str, Any]], start: list[str]) -> dict[str, Any]:
+    union = set(start)
+    for s in steps:
+        union |= set(s["keys"])
+    return {"presses": len(steps), "moved": sum(1 for s in steps if s["moved"]),
+            "zero_steps_scrolled": sum(1 for s in steps if not s["moved"] and s["to_end"]),
+            "clamps": sum(1 for s in steps if s["moved"] and s["clamp"]
+                          and (s["diff"] is None or abs(s["diff"]) > 1.0)),
+            "silent": sum(1 for s in steps if not s["moved"] and not s["to_end"]),
+            "bad": [{k: v for k, v in s.items() if k != "keys"} for s in steps if not s["ok"]],
+            "loaded": [s["loaded"] for s in steps], "max_anchor_diff_unclamped": max(
+                (abs(s["diff"]) for s in steps if s["moved"] and not s["clamp"] and s["diff"] is not None),
+                default=None), "union": len(union)}
+
+
+async def case_log_navigation(lg: LogRun) -> None:
+    lg.steady()
+    await lg.jump()
+    await asyncio.sleep(2.0)
+    s0 = await lg.probe()
+    # a. A reader's scroll up pins: the rows stay put while arrivals are counted beyond the window.
+    await lg.wheel_up()
+    p0 = await lg.probe()
+    beyond = [beyond_count(p0)]
+    for _ in range(4):
+        await asyncio.sleep(2.0)
+        beyond.append(beyond_count(await lg.probe()))
+    p1 = await lg.probe()
+    d = delta(p0, p1)
+    off1 = dict(p1["vis"])
+    still = bool(p0["vis"]) and all(k in off1 and abs(off1[k] - v) <= 1.0 for k, v in p0["vis"])
+    lg.note("outside", p1["newer"])
+    lg.note("outside", p1["follow"]["text"])
+    acc_p = lg.account("pinned by a scroll", p1)
+    await lg.overflow("pinned, Newer row shown")
+    # b-d. Older, Newer, Jump to newest: real clicks.
+    older = await lg.nav("older", "click")
+    newer = await lg.nav("newer", "click")
+    j0 = await lg.probe()
+    await lg.click("#btn-follow")
+    await asyncio.sleep(0.5)
+    j1 = await lg.probe()
+    await asyncio.sleep(2.5)
+    j2 = await lg.probe()
+    # e. The whole history: traffic stopped, pinned, Older by Enter (no scroll) until no older
+    # exchange is left, then Newer by Enter until following again.
+    lg.quiet()
+    await asyncio.sleep(1.5)
+    await lg.wheel_up(-300)
+    w0 = await lg.probe()
+    back: list[dict[str, Any]] = []
+    for _ in range(80):
+        if (await lg.probe())["older"] is None:
+            break
+        back.append(await lg.nav("older", "enter"))
+    oldest = await lg.probe()
+    fwd: list[dict[str, Any]] = []
+    for _ in range(80):
+        if (await lg.probe())["follow"]["disabled"]:
+            break
+        fwd.append(await lg.nav("newer", "enter"))
+    end = await lg.probe()
+    sb, sf = walk_summary(back, w0["keys"]), walk_summary(fwd, oldest["keys"])
+    lg.steady()
+    lg.record(
+        4, "Older-history navigation",
+        "Full buffer. A real wheel scroll up pins: for 8 s of arrivals the drawn rows are unchanged and every visible"
+        " row keeps its offset within 1 px, zero row-list mutations, the header's 'beyond this window' count rises "
+        "and equals the Newer row's count. Older and Newer (real clicks) each move the window by 100 with the anchor "
+        "row within 1 px and focus on the log box; Jump to newest (the header control, a real click) follows again: "
+        "newest drawn, at the bottom, the control off, the window sliding. With the traffic stopped, Older pressed by"
+        " Enter with no scroll until no older exchange matches, then Newer until following: every press moves the "
+        "window or (a step of 0) scrolls the box to the window's other end, never nothing; focus on the log box; rows"
+        " contiguous; each moved window overlaps the last; the anchor within 1 px except at a scroll limit (a clamp, "
+        "counted); the windows together hold every retained exchange (2,000), both ways",
+        {"full buffer at the start": s0["retained"] == PERF_ROWS,
+         "scroll up pins (the jump control on)": not p0["follow"]["disabled"] and not p1["follow"]["disabled"],
+         "pinned: the same rows, every visible row within 1 px of its offset": p0["keys"] == p1["keys"] and still,
+         "pinned: zero row-list mutations": d["add"] == d["rem"] == d["nb"] == 0,
+         "pinned: arrivals counted beyond this window, rising": all(y > x for x, y in itertools.pairwise(beyond))
+         and (last_seq(p1) or 0) > (last_seq(p0) or 0),
+         "pinned: the Newer row counts the same": edge_count(p1["newer"], "newer") == beyond_count(p1),
+         "pinned: counts add up": acc_p["adds_up"],
+         "Older (click): 100 back, anchor kept, focus on the log box": older["ok"] and older["loaded"] == LOG_STEP
+         and not older["clamp"],
+         "Newer (click): 100 on, anchor kept, focus on the log box": newer["ok"] and newer["loaded"] == LOG_STEP
+         and not newer["clamp"],
+         "Jump to newest: following, newest drawn, at the bottom": not j0["follow"]["disabled"]
+         and j1["follow"]["disabled"] and j1["atBottom"] and j1["newestVisible"] and j1["seqs"][-1] == last_seq(j1),
+         "Jump to newest: the window slides again": j2["seqs"][-1] > j1["seqs"][-1] and j2["ex"] == LOG_WINDOW,
+         "walk back: every press correct, none silent": bool(back) and not sb["bad"] and sb["silent"] == 0,
+         "walk back: reached the oldest (no Older row) and every retained exchange": oldest["older"] is None
+         and sb["union"] == oldest["retained"] == PERF_ROWS,
+         "walk back: at least one step of 0 that scrolled to the top": sb["zero_steps_scrolled"] >= 1,
+         "walk forward: every press correct, none silent": bool(fwd) and not sf["bad"] and sf["silent"] == 0,
+         "walk forward: following again, every retained exchange": end["follow"]["disabled"]
+         and sf["union"] == PERF_ROWS and end["newestVisible"]},
+        {"retained": s0["retained"], "pinned": {"window": window_of(p0), "beyond": beyond, "mutations": d,
+                                                "newer": p1["newer"], "follow": p1["follow"]["text"],
+                                                "anchor": p0["vis"][:1], "accounting": acc_p},
+         "older_click": {k: v for k, v in older.items() if k != "keys"},
+         "newer_click": {k: v for k, v in newer.items() if k != "keys"},
+         "jump": {"before": j0["follow"]["text"], "after": [window_of(j1), j1["atBottom"]], "later": window_of(j2)},
+         "walk_back": sb, "walk_forward": sf, "oldest_window": window_of(oldest),
+         "oldest_count": oldest["count"], "back_steps": [{k: s[k] for k in ("before", "after", "loaded", "scroll",
+                                                                                "diff", "clamp", "focus")}
+                                                         for s in back],
+         "forward_steps": [{k: s[k] for k in ("before", "after", "loaded", "scroll", "diff", "clamp", "following")}
+                           for s in fwd]})
+
+
+async def case_log_expansion(lg: LogRun) -> None:
+    lg.steady()
+    await lg.jump()
+    await asyncio.sleep(1.0)
+    await lg.wheel_up()
+    key = await lg.cdp.js("(() => { const bs = [...document.querySelectorAll('#log-body [data-expand]')];"
+                          " return bs.length >= 3 ? bs[bs.length - 3].dataset.expand : null; })()")
+    sel = f'[data-expand="{key}"]'
+    state = ("(() => { const b = document.querySelector(" + json.dumps(sel) + "); if (!b) return null;"
+             " const c = b.closest('td').querySelector('code');"
+             " return [b.getAttribute('aria-expanded'), c.className, c.textContent.split(' ').length]; })()")
+    opened = None
+    if key:
+        await lg.box_at(sel)
+        await lg.cdp.click(sel)
+        await lg.settle()
+        opened = await lg.cdp.js(state)
+    left = []
+    for _ in range(8):
+        if await lg.cdp.js(state) is None:
+            break
+        left.append(await lg.nav("older", "enter"))
+    gone = await lg.cdp.js(state) is None
+    came = []
+    for _ in range(10):
+        if await lg.cdp.js(state) is not None:
+            break
+        came.append(await lg.nav("newer", "enter"))
+    back = await lg.cdp.js(state)
+    await lg.jump()
+    lg.record(
+        7, "Payload expansion kept",
+        "Pinned, with traffic: a real click on a row's 'show all' opens it (aria-expanded true, hex--open, more than "
+        "6 bytes shown); Older moves the window until that row is no longer drawn; Newer brings it back, still "
+        "expanded (aria-expanded true, hex--open, the same bytes)",
+        {"a row to expand": key is not None,
+         "opened": opened is not None and opened[0] == "true" and "hex--open" in opened[1] and opened[2] > 6,
+         "the row left the window": gone and bool(left),
+         "the row came back still expanded": back is not None and opened is not None and back[0] == "true"
+         and "hex--open" in back[1] and back[2] == opened[2],
+         "every press correct": all(s["ok"] for s in left + came)},
+        {"key": key, "opened": opened, "older_presses": [s["after"] for s in left],
+         "newer_presses": [s["after"] for s in came], "back": back})
+
+
+async def case_log_eviction(lg: LogRun) -> None:
+    lg.steady()
+    await lg.jump()
+    await asyncio.sleep(1.5)
+    # Following: a burst past the cap. The trimmed note counts every exchange that left.
+    e0 = await lg.probe()
+    follow = await lg.burst(300)
+    e1 = await lg.probe()
+    left = (trimmed_count(e1) or 0) - (trimmed_count(e0) or 0)
+    arrived = (last_seq(e1) or 0) - (last_seq(e0) or 0)
+    lg.note("left", e1["trimmed"])
+    acc_f = lg.account("following past the cap", e1)
+    # Pinned: a burst until every row the reader had in the window has left the cap.
+    await lg.wheel_up()
+    a = await lg.probe()
+    pin_last = a["seqs"][-1]
+    pinned = await lg.burst(0, until=lambda p: bool(p["seqs"]) and p["seqs"][0] > pin_last
+                            and W_REPIN in (p["trimmed"] or ""))
+    z = await lg.probe()
+    acc_p = lg.account("pinned, re-pinned after eviction", z)
+    lg.note("left", z["trimmed"])
+    lg.steady()
+    await lg.jump()
+    await asyncio.sleep(1.0)
+    after_jump = await lg.probe()
+    lg.record(
+        5, "Eviction past the 2,000 cap",
+        "Following, a burst of 300 at 50/s: the trimmed note's count rises by exactly the exchanges that arrived "
+        "and reads '… left this view.' with 'The page keeps the newest 2,000 exchanges it received.'; 2,000 "
+        "retained; 200 rows, the count line '200 of 2,000 shown', the Older row '1,800 older exchanges match your "
+        "filters' (then any marker counts). Pinned by a real wheel scroll, a burst until every row of the "
+        "reader's window has left the cap: at every 1 s sample the window holds 200 exchanges (never fewer), "
+        "contiguous; it stays pinned; at the end it is at the oldest exchanges kept (no Older row) and the note "
+        "adds '" + W_REPIN + "'; counts add up. Jump to newest then follows and the sentence goes",
+        {"full buffer at the start": e0["retained"] == PERF_ROWS,
+         "following: the trimmed count rises by the arrivals": arrived >= 300 and left == arrived,
+         "following: the note's wording": (e1["trimmed"] or "").endswith(
+             "left this view.The page keeps the newest 2,000 exchanges it received. The rows were received, so their "
+             "removal is not a gap.") and re.match(r"[\d,]+ older rows", e1["trimmed"] or "") is not None,
+         "following: 2,000 retained, 200 rows, the count line and the Older row": all(
+             s["retained"] == PERF_ROWS and s["ex"] == LOG_WINDOW for s in follow + [e1])
+         and e1["count"].startswith("200 of 2,000 shown")
+         and re.match(r"1,800 older exchanges match your filters[.;]", e1["older"] or "") is not None,
+         "following: counts add up": acc_f["adds_up"],
+         "pinned: 200 rows at every sample, never fewer": bool(pinned) and min(s["ex"] for s in pinned) == LOG_WINDOW,
+         "pinned: contiguous at every sample": all(not s["breaks"] for s in pinned),
+         "pinned: still pinned at every sample": all(not s["follow"]["disabled"] for s in pinned + [z]),
+         "pinned: every row of the reader's window left": z["seqs"][0] > pin_last,
+         "pinned: at the oldest kept, the Newer row offered": z["older"] is None and z["newerButton"]
+         and edge_count(z["newer"], "newer") > 0,
+         "pinned: the note adds the re-pin sentence": W_REPIN in (z["trimmed"] or ""),
+         "pinned: counts add up": acc_p["adds_up"],
+         "Jump to newest: following, the sentence gone": after_jump["follow"]["disabled"]
+         and W_REPIN not in (after_jump["trimmed"] or "")},
+        {"retained": e0["retained"], "following": {"trimmed": [trimmed_count(e0), trimmed_count(e1)],
+                                                   "arrived": arrived, "note": e1["trimmed"], "count": e1["count"],
+                                                   "older": e1["older"], "accounting": acc_f},
+         "pinned": {"window_at_pin": window_of(a), "samples": len(pinned),
+                    "min_rows": min((s["ex"] for s in pinned), default=None),
+                    "windows": [window_of(s) for s in pinned][::3], "end": window_of(z), "note": z["trimmed"],
+                    "newer": z["newer"], "count": z["count"], "accounting": acc_p},
+         "after_jump": [after_jump["count"], after_jump["trimmed"]]})
+
+
+def mark_with(p: dict[str, Any], prefix: str) -> dict[str, Any] | None:
+    return next((x for x in reversed(p["marks"]) if x["text"].startswith(prefix)), None)
+
+
+MARKS_RE = r"([\d,]+) gap markers? and ([\d,]+) connection notes? in {side} rows"
+
+
+async def case_log_markers(lg: LogRun) -> None:
+    lg.steady()
+    await lg.jump()
+    await asyncio.sleep(1.5)
+    m0 = await lg.probe()
+    conds: dict[str, bool] = {"full buffer at the start": m0["retained"] == PERF_ROWS}
+    # A sequence gap: the harness's wrapper keeps 3 exchange events from the page.
+    await lg.cdp.js("window.__lg.dropped = []; window.__lg.drop = 3")
+    await lg.cdp.wait_for("[...document.querySelectorAll('#log-body tr.mark--gap')].some(r => "
+                          "window.__lg.dropped.length === 3 && r.textContent.indexOf('seq ' + window.__lg.dropped[0]"
+                          " + '–' + window.__lg.dropped[2] + ' ') >= 0)", timeout=20)
+    await lg.settle(0.5)
+    g = await lg.probe()
+    dropped = await lg.cdp.js("window.__lg.dropped")
+    gap = mark_with(g, f"Gap: seq {dropped[0]}–{dropped[2]} not received (3).")
+    lg.note("gap", gap["text"] if gap else None)
+    conds["the gap marker drawn where it falls, in the following window"] = (
+        gap is not None and gap["prev"] == dropped[0] - 1 and gap["next"] == dropped[2] + 1
+        and g["follow"]["disabled"])
+    # A connection note: SIGSTOP / SIGCONT of the simulator.
+    os.kill(lg.sim.pid, signal.SIGSTOP)
+    lg.run.log(f"SIGSTOP the simulator (pid {lg.sim.pid})")
+    try:
+        await lg.cdp.wait_for(f"{CONN} !== 'Live'", timeout=15)
+    finally:
+        os.kill(lg.sim.pid, signal.SIGCONT)
+        lg.run.log("SIGCONT the simulator")
+    await lg.cdp.wait_for("document.getElementById('log-body').textContent.indexOf("
+                          f"{json.dumps(W_CONN)}) >= 0", timeout=30)
+    await asyncio.sleep(2.0)
+    c = await lg.probe()
+    conn = mark_with(c, W_CONN)
+    after = re.search(r"after seq (\d+)\.", conn["text"]) if conn else None
+    conds["the connection note drawn where it falls (after the exchange it names)"] = (
+        conn is not None and after is not None and conn["prev"] == int(after.group(1)) and c["follow"]["disabled"])
+    # Both outside a pinned window: counted beside Jump to newest.
+    await lg.wheel_up()
+    pressed = []
+    for _ in range(8):
+        q = await lg.probe()
+        if mark_with(q, "Gap: seq") is None and mark_with(q, W_CONN) is None and q["newer"] \
+                and re.search(MARKS_RE.format(side="newer"), q["newer"]):
+            break
+        pressed.append(await lg.nav("older", "enter"))
+    n = await lg.probe()
+    newer_m = re.search(MARKS_RE.format(side="newer"), n["newer"] or "")
+    lg.note("gap", n["newer"])
+    conds["outside the window (newer): not drawn, counted in the Newer row beside Jump to newest"] = (
+        newer_m is not None and n_of(newer_m.group(1)) >= 1 and n_of(newer_m.group(2)) >= 1
+        and mark_with(n, "Gap: seq") is None and mark_with(n, W_CONN) is None
+        and await lg.cdp.js("!!document.querySelector('#lognav-newer:not([hidden]) [data-lognav=\"newest\"]')"))
+    acc_n = lg.account("markers newer than a pinned window", n)
+    jumped = await lg.nav("newest", "click")
+    conds["the in-row Jump to newest follows again"] = jumped["following"] and jumped["focus"] == "logwrap"
+    # Older than the following window, after a burst: counted beside Older.
+    await lg.burst(LOG_WINDOW + 60)
+    lg.steady()
+    await asyncio.sleep(1.0)
+    o = await lg.probe()
+    older_m = re.search(MARKS_RE.format(side="older"), o["older"] or "")
+    conds["outside the window (older): not drawn, counted in the Older row"] = (
+        older_m is not None and n_of(older_m.group(1)) >= 1 and n_of(older_m.group(2)) >= 1
+        and mark_with(o, f"Gap: seq {dropped[0]}") is None and o["follow"]["disabled"])
+    acc_o = lg.account("markers older than the following window", o)
+    conds["counts add up"] = acc_n["adds_up"] and acc_o["adds_up"]
+    # Across a restart: SIGTERM, a new simulator; the restart marker, and the count line says so.
+    lg.quiet()
+    lg.run.log("SIGTERM the simulator, then start a new one")
+    lg.run.stop(lg.sim)
+    await lg.cdp.wait_for(f"{CONN} !== 'Live'", timeout=15)
+    lg.sims += 1
+    lg.sim = await m3b_start(lg.run, MOVING_PROFILE, f"log-simulator-{lg.sims}.log")
+    await lg.cdp.wait_for("document.body.dataset.health === 'live'", timeout=30)
+    lg.steady()
+    await lg.cdp.wait_for("(() => { const rows = [...document.querySelectorAll('#log-body > tr')];"
+                          " const i = rows.findLastIndex(r => r.textContent.startsWith('Simulator restarted.'));"
+                          " return i >= 0 && rows.slice(i + 1).filter(r => r.classList.contains('ex')).length >= 5;"
+                          " })()",
+                          timeout=30)
+    await lg.settle(0.5)
+    r = await lg.probe()
+    restart = mark_with(r, W_RESTART)
+    across = re.search(rf"seq ([\d,]+) … ([\d,]+) {W_ACROSS}", r["count"])
+    conds["the restart marker drawn between the two runs' rows"] = (
+        restart is not None and restart["prev"] is not None and restart["next"] is not None
+        and restart["next"] < restart["prev"])
+    conds["across a restart the count line says so"] = (
+        across is not None and n_of(across.group(1)) == r["seqs"][0] and n_of(across.group(2)) == r["seqs"][-1])
+    lg.record(
+        6, "Reconnect and gap markers",
+        "Full buffer, following, standard traffic. 3 exchange events kept from the page: 'Gap: seq a–b not received "
+        "(3).' drawn between seq a-1 and b+1. SIGSTOP / SIGCONT: 'Connection lost, then resumed.' drawn after the "
+        "exchange it names ('after seq N'). Pinned and moved older (Older by Enter) until both are newer than the "
+        "window: neither is drawn and the Newer row, beside its Jump to newest, reads 'N gap marker(s) and N "
+        "connection note(s) in newer rows'; the in-row Jump to newest follows. A burst of 260 makes them older "
+        "than the following window: not drawn, the Older row reads '… in older rows'. Counts add up. SIGTERM and a "
+        "new simulator: 'Simulator restarted.' drawn between the old run's rows and the new run's (seq goes back), "
+        "and the count line reads 'seq A … B across a restart' with A and B the window's first and last seq",
+        conds,
+        {"retained": m0["retained"], "dropped": dropped, "gap": gap, "connection_note": conn,
+         "older_presses": [s["after"] for s in pressed], "newer_row": n["newer"], "newer_window": window_of(n),
+         "older_row": o["older"], "older_window": window_of(o), "jump": {k: jumped[k] for k in ("after", "following")},
+         "restart": restart, "count_after_restart": r["count"], "window_after_restart": window_of(r),
+         "accounting": [acc_n, acc_o]})
+
+
+# The four kinds of absent rows: each kind's own phrase, and the phrases that belong to the others.
+ABSENT_KINDS = {"outside": W_MATCH, "hidden": W_HIDDEN, "gap": W_GAP, "left": W_LEFT}
+
+
+def case_log_wording(lg: LogRun) -> None:
+    conds: dict[str, bool] = {}
+    first: dict[str, str] = {}
+    for kind, phrase in ABSENT_KINDS.items():
+        texts = lg.seen.get(kind, [])
+        # Each kind's own row: the first text seen in its situation that carries its phrase.
+        own = next((t for t in texts if phrase in t or (kind == "outside" and W_BEYOND in t)), None)
+        conds[f"{kind}: seen, in its own wording"] = own is not None
+        if own is not None:
+            first[kind] = own
+    # The outside kind's own row is an unfiltered Older row (it may also count markers there).
+    singles = {"outside": next((t for t in lg.seen.get("outside", []) if re.match(
+        r"[\d,]+ older exchanges match your filters[.;]", t) and "hidden" not in t), None),
+        "hidden": next((t for t in lg.seen.get("hidden", []) if re.fullmatch(
+            rf"[\d,]+ exchanges? {re.escape(W_HIDDEN)}", t)), None),
+        "gap": next((t for t in lg.seen.get("gap", []) if t.startswith("Gap: seq")), None),
+        "left": next((t for t in lg.seen.get("left", []) if re.match(r"[\d,]+ older rows", t)), None)}
+    for kind, text in singles.items():
+        others = [p for k, p in ABSENT_KINDS.items() if k != kind]
+        conds[f"{kind}: its own row carries no other kind's phrase"] = text is not None and not any(
+            p in text for p in others) and (kind != "outside" or "hidden" not in text)
+    conds["the four phrases differ"] = len(set(ABSENT_KINDS.values())) == 4
+    bad = [a for a in lg.accounts if not a["adds_up"]]
+    conds["counts add up in every state read (matching = older + shown + newer)"] = bool(lg.accounts) and not bad
+    lg.record(
+        8, "The four absent-row wordings",
+        "Over this width's cases: outside this window ('… match your filters', 'beyond this window'), hidden by "
+        "filters ('… hidden by filters (not a gap)'), a sequence gap ('Gap: seq … not received'), and the rows "
+        "that left the 2,000 cap ('… left this view.') each appear in their own situation, and each kind's own row "
+        "carries none of the others' phrases. In every state read, the count line's matching = the Older row's "
+        "count + the rows drawn + the Newer row's count, and the count line's shown = the exchange rows drawn",
+        conds, {"seen": {k: v[:4] for k, v in lg.seen.items()}, "own_rows": singles, "first": first,
+                "accounts": lg.accounts, "not_adding_up": bad})
+
+
 async def case_log_layout(lg: LogRun) -> None:
     conds = {f"no horizontal overflow ({o['state']})": not o["over"] for o in lg.overflows}
     observed: dict[str, Any] = {"overflow": lg.overflows}
@@ -3364,6 +3938,13 @@ async def log_width(lg: LogRun, label: str, size: tuple[int, int]) -> None:
     start = await lg.probe()
     lg.run.log(f"width start: {start['count']}; retained {start['retained']}")
     await case_log_following(lg)
+    await case_log_pause(lg)
+    await case_log_filters(lg)
+    await case_log_navigation(lg)
+    await case_log_expansion(lg)
+    await case_log_eviction(lg)
+    await case_log_markers(lg)
+    case_log_wording(lg)
     await case_log_layout(lg)
 
 
