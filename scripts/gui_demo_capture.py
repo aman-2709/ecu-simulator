@@ -1738,6 +1738,16 @@ async def part_d_encoding(run: Run, m: M3b) -> None:
                                   and false_reads[-1]["end"] < r["end"] <= recovered_sock["created"]), None)
         await m.shot("m3b-d-encoding-recovered.png")
         fault_polls = [s["polls"] for s in fault]
+        # The gaps, in the spec's meaning (§6.7, §8.4; final review): the fault breaks the graphs, and
+        # the resync that follows the ok:true poll breaks them again. Both fall into one gap when no
+        # state reached the page between them; when the simulator's first good state came on the
+        # fault-time socket (§8.3) before the resync closed it, that state ends the first gap and the
+        # resync's own gap follows: two gaps. So: +1, or +2 when a state arrived on that socket after
+        # the fault. (Before the final review this expected +1 always, and the resync was drawn held.)
+        fault_sock = n0 - 1
+        late_on_fault_sock = [x for x in w["states"] if x["sock"] == fault_sock and t_fault is not None
+                              and x["t"] > t_fault]
+        expected_gaps = 1 + (1 if late_on_fault_sock else 0)
         m.cases.record(
             "Encoding failure, then recovery to changed data",
             "Fault server, stepped scenario, the full snapshot raises for 5 s. Within one poll (<= 3 s): data-data "
@@ -1750,8 +1760,10 @@ async def part_d_encoding(run: Run, m: M3b) -> None:
                                                                          for s in fault),
              "data-conn stays live during the fault": bool(fault) and all(s["conn"] == "live" for s in fault),
              "data-polls keeps rising": len(set(fault_polls)) >= 2 and fault_polls == sorted(fault_polls),
-             "the graphs get a break": all(int(after["graphs"][p]["gaps"]) == int(before["graphs"][p]["gaps"]) + 1
-                                           for p in paths),
+             "the graphs get a break (and the resync its own, when the fault's gap had already ended)": all(
+                 int(after["graphs"][p]["gaps"]) == int(before["graphs"][p]["gaps"]) + expected_gaps
+                 and int(after["graphs"][p]["segments"]) == int(before["graphs"][p]["segments"]) + expected_gaps
+                 for p in paths),
              "graphs shown": bool(paths),
              "live again after the fault": live_again is not None and t_live is not None,
              "no health -> live change between the fault and t_live": t_fault is not None and not early_live,
@@ -1769,7 +1781,10 @@ async def part_d_encoding(run: Run, m: M3b) -> None:
              "recovering_socket": {"index": idx, **(recovered_sock or {})}, "early_live": early_live,
              "health_changes": health,
              "sockets": w["socks"][n0 - 1:], "false_reads": false_reads, "qualifying_ok_read": qualifying_ok,
-             "breaks_line": after["breaks"], "line2": {p: after["graphs"][p]["line2"] for p in paths}})
+             "breaks_line": after["breaks"], "line2": {p: after["graphs"][p]["line2"] for p in paths},
+             "expected_gaps": expected_gaps, "states_on_fault_socket_after_fault": len(late_on_fault_sock),
+             "gaps": {p: [before["graphs"][p]["gaps"], after["graphs"][p]["gaps"]] for p in paths},
+             "segments": {p: [before["graphs"][p]["segments"], after["graphs"][p]["segments"]] for p in paths}})
         # The extra measured case (review finding): log rows with a break note in line 2.
         await m.cdp.viewport(*WIDE)
         await m.cdp.js("window.scrollTo(0, 0)")
