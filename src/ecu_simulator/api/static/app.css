@@ -111,12 +111,22 @@ abbr[title] { text-decoration: underline dotted; text-underline-offset: 2px; cur
 /* The connection lamp: the one thing on the page that moves on its own. */
 .conn { display: inline-flex; align-items: center; gap: 0.5rem; }
 .conn__lamp {
+  position: relative;
   width: 0.786rem; height: 0.786rem; border-radius: 50%;
   border: 2px solid var(--rule-2); background: transparent;
 }
 .conn--loading { color: var(--ink-2); }
 .conn--live { color: var(--live); }
-.conn--live .conn__lamp { background: var(--live); border-color: var(--live); box-shadow: 0 0 0 3px var(--live-glow); animation: beat 2s ease-in-out infinite; }
+.conn--live .conn__lamp { background: var(--live); border-color: var(--live); }
+/* The live glow is a ring of its own; its beat moves only transform and opacity, which the
+   compositor animates without repainting the page each frame (an animated box-shadow did). */
+.conn--live .conn__lamp::after {
+  content: ""; position: absolute; inset: -2px; border-radius: 50%;
+  box-shadow: 0 0 0 3px var(--live-glow); pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .conn--live .conn__lamp::after { animation: beat 2s ease-in-out infinite; will-change: transform, opacity; }
+}
 .conn--down { color: var(--stale); }
 .conn--down .conn__lamp { border-color: var(--stale); background: var(--stale-bg); }
 .conn--refused { color: var(--er); }
@@ -124,7 +134,7 @@ abbr[title] { text-decoration: underline dotted; text-underline-offset: 2px; cur
 /* Connected, with last known data: an amber outline, no fill and no beat (M3b §8.4). */
 .conn--known { color: var(--stale); }
 .conn--known .conn__lamp { border-color: var(--stale-rule); background: transparent; }
-@keyframes beat { 50% { box-shadow: 0 0 0 5px transparent; } }
+@keyframes beat { 50% { transform: scale(1.2); opacity: 0; } }
 
 /* ---------- link state banner (disconnected, refused) ---------- */
 .linkstate {
