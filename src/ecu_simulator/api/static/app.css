@@ -349,6 +349,8 @@ body.is-stale .graphs__fine, body.is-known .graphs__fine { display: none; }
 /* The compact button style of the log's "Jump to newest" control, so the head is one short row. */
 button.compact { min-height: 0; padding: 0.143rem 0.571rem; font-size: 0.857rem; line-height: 1.3; }
 .graphs { padding-top: 0.429rem; padding-bottom: 0.571rem; }
+/* The latest gap in the window, shared by all cards, so each card keeps its height. Words, not colour. */
+.graphs__breaks { font-size: 0.786rem; line-height: 1.3; margin-bottom: 0.286rem; padding-left: 0.429rem; border-left: 3px dashed var(--rule-2); }
 .graphs__note { color: var(--ink-2); font-size: 0.857rem; margin-bottom: 0.286rem; }
 .graphs__note:last-child { margin-bottom: 0; }
 .graphs__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.571rem; }

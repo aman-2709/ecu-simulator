@@ -583,7 +583,9 @@
   function round1(x) { return String(Math.round(x * 10) / 10); }
   function tText(t) { return (Math.round(t * 10) / 10).toFixed(1); }
 
-  function newRing() { return { t: new Float64Array(RING_CAP), v: new Float64Array(RING_CAP), start: 0, count: 0, lastValidT: null, breaks: [], trimmedPaused: false }; }
+  // `breaks` holds the gaps still within the horizon: { a, b, why } for a drop or fault, { a, b, invalid }
+  // for an invalid value; `invalidFrom` is the start of an invalid run still going on.
+  function newRing() { return { t: new Float64Array(RING_CAP), v: new Float64Array(RING_CAP), start: 0, count: 0, lastValidT: null, breaks: [], invalidFrom: null, trimmedPaused: false }; }
   function rt(r, i) { return r.t[(r.start + i) % RING_CAP]; }
   function rv(r, i) { return r.v[(r.start + i) % RING_CAP]; }
   // The first logical index whose t is at or after `start`: the count of points before it.
@@ -625,8 +627,10 @@
       // Invalid: keep the last valid value up to the last as_of it was known valid, then the gap.
       if (lastV !== null && lastV === lastV && r.lastValidT != null && r.lastValidT > lastT) ringPush(r, r.lastValidT, lastV);
       if (lastV === null || !same(lastV, v)) ringPush(r, t, NaN);
+      if (r.invalidFrom == null) r.invalidFrom = r.lastValidT != null ? r.lastValidT : t;
     } else {
       if (lastV === null || !same(lastV, v)) ringPush(r, t, v);
+      if (r.invalidFrom != null) { r.breaks.push({ a: r.invalidFrom, b: t, invalid: true }); r.invalidFrom = null; }
       r.lastValidT = t;
     }
   }
@@ -868,6 +872,36 @@
       drawGraph(g, end);
       writeGraphAttrs(g);
     });
+    var text = breaksText(end), line = $("graphs-breaks");
+    setText(line, text);
+    if (line.hidden !== !text) line.hidden = !text;
+  }
+
+  // One shared line under the head (not in each card, so every card keeps its height): the latest
+  // gap inside the drawn window. A drop or fault is the same for every graph; an invalid value names
+  // its signal. Empty, and hidden, when the window has none.
+  function breaksText(end) {
+    if (end == null) return "";
+    var start = end - G.win, best = null, who = null, trimmed = false;
+    function consider(b, g) {
+      if (!(b.b > start && b.a < end)) return;
+      if (!best || b.b > best.b || (b.b === best.b && best.invalid && !b.invalid)) { best = b; who = g; }
+    }
+    G.list.forEach(function (g) {
+      if (g.fig.hidden || g.state === "unavailable") return;
+      var r = g.ring;
+      r.breaks.forEach(function (b) { consider(b, g); });
+      if (r.invalidFrom != null) consider({ a: r.invalidFrom, b: end, invalid: true, open: true }, g);
+      if (G.paused && r.trimmedPaused) trimmed = true;
+    });
+    var parts = [];
+    if (best && best.invalid) {
+      parts.push(who.def.name + ": invalid value from t = " + tText(best.a) + " to t = " + tText(best.b) + " s" + (best.open ? " (still invalid)" : ""));
+    } else if (best) {
+      parts.push("No data from t = " + tText(best.a) + " to t = " + tText(best.b) + " s (" + best.why + ")");
+    }
+    if (trimmed) parts.push("history trimmed while paused");
+    return parts.join(" · ");
   }
 
   // The drawn window [end − W, end]: the value held at its left edge, the points inside it, and
@@ -910,13 +944,8 @@
 
   function line2Text(g, min, max, end) {
     // Rounded to one decimal so the line fits a card; line 1 carries the value as the table shows it.
-    var parts = [isFinite(min) ? "min " + round1(min) + " · max " + round1(max) + " in " + windowLabel(G.win) : "no valid value in " + windowLabel(G.win)];
-    if (end != null) {
-      var b = g.ring.breaks.filter(function (x) { return x.b > end - G.win && x.a < end; }).pop();
-      if (b) parts.push("No data from t = " + tText(b.a) + " to t = " + tText(b.b) + " s (" + b.why + ")");
-    }
-    if (G.paused && g.ring.trimmedPaused) parts.push("history trimmed while paused");
-    return parts.join(" · ");
+    // Only min and max: gaps and trimming are told once, in the shared line (breaksText).
+    return isFinite(min) ? "min " + round1(min) + " · max " + round1(max) + " in " + windowLabel(G.win) : "no valid value in " + windowLabel(G.win);
   }
 
   // §5.3: 0 to a value above the window's maximum (with a floor); a fixed 0–100; or the window's
