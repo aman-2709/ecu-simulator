@@ -23,7 +23,8 @@ cleared; graphs hidden; no traffic) at 1440 x 900 and 390 x 844, broken down by
 scripts/gui_trace_breakdown.py into m3b-perf-results.json. --m3b-perf-log is the log fix's
 before / after measurement: the same set-up, the log following, with real clicks (Pause,
 Resume, a filter, Older, Jump to newest) during each traced run and their Event Timing, into
-m3b-perf-log-results.json.
+m3b-perf-log-results.json. --m3b-log runs the windowed exchange log's cases at 1440 x 900
+and 390 x 844, each from a full 2,000-exchange buffer, into m3b-log-results.json.
 """
 
 from __future__ import annotations
@@ -332,7 +333,7 @@ async def demo(run: Run, chrome: str, mode: str = "m3a") -> None:
     profile_dir = tempfile.mkdtemp(prefix="gui-demo-chrome-")
     sessions = {"m3a": session, "moving": moving_session, "m3b": m3b_session, "m3b-long": m3b_long_session,
                 "m3b-slots": m3b_slots_session, "m3b-perf": m3b_perf_session,
-                "m3b-perf-log": m3b_perf_log_session}
+                "m3b-perf-log": m3b_perf_log_session, "m3b-log": m3b_log_session}
     try:
         await sessions[mode](run, chrome, profile_dir)
     finally:
@@ -2865,6 +2866,564 @@ async def m3b_perf_log_session(run: Run, chrome: str, profile_dir: str) -> None:
     run.log("done")
 
 
+# ---- --m3b-log: the windowed exchange log at a full buffer (Task 46a) ----
+# The stepped demo with the log filled to its 2,000-exchange cap by a burst of the traffic
+# script, then the standard rate (TRAFFIC_RATE). Each width (1440 x 900, then 390 x 844) starts
+# from that full buffer: the harness first sends LOG_UNIQUE OBD mode 0x0A requests (a read
+# service the traffic cycle never uses, so a service filter matches only these old exchanges),
+# then LOG_AFTER_UNIQUE more by a burst, so they lie older than the 200-row window. The cases
+# read only the page's visible text (rows, the count line, the window's edge rows, the state
+# lines, the filter options), the data-* and aria-* attributes it writes, and geometry. The only
+# code in the page is LOG_INSTR, added by this harness before the page's scripts: it counts the
+# log body's mutations, and its WebSocket wrapper can drop N exchange events (a real seq gap).
+LOG_UNIQUE = 250
+LOG_AFTER_UNIQUE = 400
+LOG_BURST_RATE = "50"
+LOG_WINDOW = 200                 # app.js LOG_WINDOW
+LOG_STEP = 100                   # app.js LOG_STEP
+# The page's own wording (app.js), checked against the served app.js before any case.
+W_MATCH = " your filters"
+W_BEYOND = "beyond this window"
+W_HIDDEN = "hidden by filters (not a gap)"
+W_GAP = "not received"
+W_LEFT = "left this view."
+W_REPIN = "Rows this view was showing left too, so it moved to the oldest exchanges kept."
+W_NOMATCH = "No exchanges match these filters."
+W_CLEARED = "No exchanges since you cleared the view."
+W_CONN = "Connection lost, then resumed."
+W_RESTART = "Simulator restarted."
+W_ACROSS = "across a restart"
+LOG_WORDING = (W_MATCH, W_BEYOND, W_HIDDEN, W_GAP, W_LEFT, W_REPIN, W_NOMATCH, W_CLEARED, W_CONN, W_RESTART,
+               W_ACROSS)
+
+LOG_INSTR = r"""(function () {
+  var L = window.__lg = { drop: 0, dropped: [], add: 0, rem: 0, inRows: 0, nb: 0, focusout: 0, batches: [] };
+  var Native = window.WebSocket;
+  // Test only: while L.drop > 0, exchange events are kept from the page, which then sees a seq gap.
+  function W(url, protocols) {
+    var ws = protocols === undefined ? new Native(url) : new Native(url, protocols);
+    ws.addEventListener("message", function (e) {
+      if (L.drop <= 0) return;
+      try {
+        var m = JSON.parse(e.data);
+        if (m && m.type === "exchange") { L.drop -= 1; L.dropped.push(m.seq); e.stopImmediatePropagation(); }
+      } catch (x) { /* not ours to judge */ }
+    });
+    return ws;
+  }
+  W.prototype = Native.prototype;
+  W.CONNECTING = 0; W.OPEN = 1; W.CLOSING = 2; W.CLOSED = 3;
+  window.WebSocket = W;
+  document.addEventListener("focusout", function () { L.focusout += 1; }, true);
+  document.addEventListener("DOMContentLoaded", function () {
+    var body = document.getElementById("log-body");
+    // Row-list changes (rows added to or removed from #log-body), one batch per delivery, and any
+    // other mutation inside the rows (a hidden-run count rewritten, a row's text).
+    new MutationObserver(function (recs) {
+      var add = 0, rem = 0, list = false;
+      recs.forEach(function (r) {
+        if (r.target !== body || r.type !== "childList") { L.inRows += 1; return; }
+        add += r.addedNodes.length; rem += r.removedNodes.length; list = true;
+      });
+      if (!list) return;
+      L.add += add; L.rem += rem; L.nb += 1;
+      L.batches.push({ t: performance.now(), add: add, rem: rem });
+      if (L.batches.length > 4000) L.batches.splice(0, 2000);
+    }).observe(body, { childList: true, subtree: true, characterData: true, attributes: true });
+  });
+})();"""
+
+# The log as a reader sees it, in one evaluation. Exchange rows are keyed by their seq and time
+# cell (unique across a restart). `breaks` lists consecutive exchange rows whose seqs are not
+# consecutive with nothing between them to say why (a gap marker, the restart marker, or a run
+# the filters hide). Each marker row carries the seqs of the exchange rows around it. `vis`: the
+# exchange rows in the log box, with their offset from its top (the page's own anchor rule).
+LOG_PROBE = r"""(() => {
+  const L = window.__lg || {};
+  const w = document.getElementById('logwrap'), wr = w.getBoundingClientRect();
+  const rows = [...document.getElementById('log-body').children];
+  const isEx = r => r.classList.contains('ex');
+  const seq = r => Number(r.querySelector('.c-seq').textContent);
+  const key = r => r.querySelector('.c-seq').textContent + '|' + r.querySelector('.c-time').title;
+  const nav = side => { const tr = document.getElementById('lognav-' + side);
+    return tr && !tr.hidden ? tr.querySelector('.lognav__text').textContent : null; };
+  const ex = [], marks = [], hidden = [], breaks = [];
+  let prev = null, why = [], pending = [];
+  rows.forEach(r => {
+    if (isEx(r)) {
+      const s = seq(r);
+      if (prev !== null && s !== prev + 1 && !why.some(t => t === 'hidden' || t.startsWith('Gap: seq')
+          || t.startsWith('Simulator restarted.'))) breaks.push([prev, s]);
+      pending.forEach(m => { m.next = s; });
+      ex.push(r); prev = s; why = []; pending = [];
+    } else if (r.classList.contains('hiddenrow')) { hidden.push(r.textContent); why.push('hidden'); }
+    else {
+      const m = {text: r.textContent, prev: prev, next: null};
+      marks.push(m); pending.push(m); why.push(r.textContent);
+    }
+  });
+  const vis = [];
+  ex.forEach(r => { const b = r.getBoundingClientRect();
+    if (b.bottom > wr.top && b.top < wr.bottom) vis.push([key(r), Math.round((b.top - wr.top) * 10) / 10]); });
+  const last = ex.length ? ex[ex.length - 1].getBoundingClientRect() : null;
+  const tr = document.getElementById('log-trimmed'), st = document.getElementById('log-state');
+  const fb = document.getElementById('btn-follow'), pb = document.getElementById('btn-pause');
+  const a = document.activeElement;
+  return {count: document.getElementById('log-count').textContent, ex: ex.length, rows: rows.length,
+    keys: ex.map(key), seqs: ex.map(seq), req: ex.map(r => (r.querySelector('.c-req code') || {}).textContent || ''),
+    marks: marks, hidden: hidden, breaks: breaks, vis: vis,
+    newestVisible: !!last && last.top >= wr.top - 0.5 && last.bottom <= wr.bottom + 0.5,
+    boxOnScreen: wr.bottom > 0 && wr.top < window.innerHeight,
+    trimmed: tr && !tr.hidden ? tr.textContent : null, older: nav('older'), newer: nav('newer'),
+    newerButton: !!document.querySelector('#lognav-newer:not([hidden]) [data-lognav="newer"]:not([hidden])'),
+    follow: {text: fb.textContent, disabled: fb.disabled},
+    state: st.hidden ? null : st.textContent,
+    retained: Number((/\((\d+)\)/.exec(document.getElementById('f-ecu').options[0].textContent) || [0, -1])[1]),
+    paused: pb.getAttribute('aria-pressed') === 'true', pauseText: pb.textContent,
+    active: a ? (a.id || a.getAttribute('data-lognav') || a.getAttribute('data-expand') || a.tagName) : null,
+    scrollTop: Math.round(w.scrollTop), atBottom: w.scrollHeight - w.scrollTop - w.clientHeight < 4,
+    conn: document.getElementById('conn-text').textContent,
+    m: {add: L.add, rem: L.rem, inRows: L.inRows, nb: L.nb, focusout: L.focusout}};
+})()"""
+
+# OVERFLOW plus the log's own boxes.
+LOG_OVERFLOW = ("(() => { const out = " + OVERFLOW.strip() + """;
+  ['log-panel', 'logwrap', 'log-state'].forEach(id => { const e = document.getElementById(id);
+    if (e && !e.hidden) out.push(['#' + id, e.scrollWidth, e.clientWidth]); });
+  return out;
+})()""")
+
+
+def n_of(text: str) -> int:
+    return int(text.replace(",", ""))
+
+
+def fmt_n(n: int) -> str:
+    return f"{n:,}"
+
+
+def last_seq(p: dict[str, Any]) -> int | None:
+    m = re.search(r"last seq (\d+)", p["count"])
+    return int(m.group(1)) if m else None
+
+
+def edge_count(text: str | None, side: str) -> int:
+    """The matching exchanges an Older / Newer row counts (0 when the row is absent)."""
+    m = re.match(rf"([\d,]+) {side} exchanges? match", text or "")
+    return n_of(m.group(1)) if m else 0
+
+
+def beyond_count(p: dict[str, Any]) -> int:
+    m = re.search(r"([\d,]+) (?:rows? )?beyond this window", p["follow"]["text"])
+    return n_of(m.group(1)) if m else 0
+
+
+def held_count(p: dict[str, Any]) -> int | None:
+    m = re.search(r"([\d,]+) new exchanges? (?:are|is) held", p["state"] or "")
+    return n_of(m.group(1)) if m else None
+
+
+def trimmed_count(p: dict[str, Any]) -> int | None:
+    m = re.match(r"([\d,]+) older rows?", p["trimmed"] or "")
+    return n_of(m.group(1)) if m else None
+
+
+def accounting(p: dict[str, Any]) -> dict[str, Any]:
+    """The count line, the Older / Newer rows and the drawn rows, read as text: matching =
+    older + shown + newer, and the count line's shown = the exchange rows drawn."""
+    m = re.match(r"([\d,]+) of ([\d,]+) (?:matching )?shown", p["count"])
+    one = re.match(r"([\d,]+) exchanges?\b", p["count"])
+    if m:
+        shown, of = n_of(m.group(1)), n_of(m.group(2))
+    elif one:
+        shown = of = n_of(one.group(1))
+    else:
+        return {"count": p["count"], "adds_up": False, "why": "count line not read"}
+    older, newer = edge_count(p["older"], "older"), edge_count(p["newer"], "newer")
+    return {"count": p["count"], "matching": of, "older": older, "shown": shown, "newer": newer, "rows": p["ex"],
+            "adds_up": of == older + shown + newer and shown == p["ex"]}
+
+
+def delta(a: dict[str, Any], b: dict[str, Any]) -> dict[str, int]:
+    return {k: b["m"][k] - a["m"][k] for k in a["m"]}
+
+
+def window_of(p: dict[str, Any]) -> list[Any]:
+    return [p["seqs"][0], p["seqs"][-1], p["ex"]] if p["seqs"] else [None, None, 0]
+
+
+class LogRun:
+    """One page, the simulator and the traffic for --m3b-log, and the helpers every case uses."""
+
+    def __init__(self, run: Run, m: M3b, sim: subprocess.Popen[bytes]) -> None:
+        self.run, self.m, self.cdp, self.sim = run, m, m.cdp, sim
+        self.traffic: subprocess.Popen[bytes] | None = None
+        self.label = ""
+        self.size = WIDE
+        self.sims = 1
+        # Per width: texts seen for each absent-row kind, each accounting reading, each overflow reading.
+        self.seen: dict[str, list[str]] = {}
+        self.accounts: list[dict[str, Any]] = []
+        self.overflows: list[dict[str, Any]] = []
+
+    async def probe(self) -> dict[str, Any]:
+        result: dict[str, Any] = await self.cdp.js(LOG_PROBE)
+        return result
+
+    async def settle(self, extra: float = 0.3) -> None:
+        await self.m.settled()
+        await asyncio.sleep(extra)
+
+    async def now_ms(self) -> float:
+        return float(await self.cdp.js("performance.now()"))
+
+    async def batches_since(self, t: float) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = await self.cdp.js(f"window.__lg.batches.filter(b => b.t >= {t})")
+        return result
+
+    def steady(self) -> None:
+        if self.traffic is None:
+            self.traffic = start_traffic(self.run)
+
+    def quiet(self) -> None:
+        if self.traffic is not None:
+            self.run.log("stop traffic")
+            self.run.stop(self.traffic)
+            self.traffic = None
+
+    def _burst(self) -> subprocess.Popen[bytes]:
+        self.quiet()
+        self.run.log(f"burst: traffic at {LOG_BURST_RATE}/s")
+        return self.run.spawn([sys.executable, str(ROOT / "scripts" / "gui_demo_traffic.py"), "--interface", IFACE,
+                               "--rate", LOG_BURST_RATE, "--timeout", "0.1"], "burst-traffic.log")
+
+    async def burst(self, n: int, until: Callable[[dict[str, Any]], bool] | None = None,
+                    timeout: float = 200.0) -> list[dict[str, Any]]:
+        """A burst of at least n exchanges (by the count line's last seq), or until ``until``
+        holds; the probes taken meanwhile (one a second) are returned."""
+        start = last_seq(await self.probe()) or 0
+        proc = self._burst()
+        samples: list[dict[str, Any]] = []
+        deadline = time.monotonic() + timeout
+        try:
+            while time.monotonic() < deadline:
+                await asyncio.sleep(1.0)
+                p = await self.probe()
+                samples.append(p)
+                if until is not None:
+                    if until(p):
+                        break
+                elif (last_seq(p) or 0) - start >= n:
+                    break
+            else:
+                raise RuntimeError(f"burst: the condition did not hold in {timeout} s")
+        finally:
+            self.run.stop(proc)
+        await asyncio.sleep(0.6)
+        return samples
+
+    async def unique(self, n: int) -> None:
+        """n OBD mode 0x0A requests from this harness (the simulator answers each with a negative
+        response), with the traffic stopped; then wait until the page has received them all."""
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import gui_demo_traffic
+
+        def send() -> None:
+            tester = gui_demo_traffic.Tester(IFACE, 0.05)
+            try:
+                for _ in range(n):
+                    tester.exchange(gui_demo_traffic.FUNCTIONAL, b"\x0a")
+            finally:
+                tester.close()
+
+        self.quiet()
+        await asyncio.sleep(1.0)
+        start = last_seq(await self.probe()) or 0
+        self.run.log(f"send {n} OBD 0x0A requests from the harness, after seq {start}")
+        await asyncio.to_thread(send)
+        deadline = time.monotonic() + 30
+        while (last_seq(await self.probe()) or 0) - start < n:
+            if time.monotonic() > deadline:
+                raise RuntimeError(f"the page did not receive the {n} 0x0A exchanges")
+            await asyncio.sleep(0.5)
+
+    async def page_at(self, selector: str) -> None:
+        """Bring a control outside the log box into the viewport (the page scrolls, not the box)."""
+        await self.cdp.js(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block: 'center'}})")
+        await asyncio.sleep(0.3)
+
+    async def click(self, selector: str) -> None:
+        """A real click on a control outside the log box."""
+        await self.page_at(selector)
+        await self.cdp.click(selector)
+        await self.settle()
+
+    async def box_at(self, selector: str, block: str = "center") -> None:
+        """Bring a control inside the log box into view. The page takes a box scroll within
+        USER_SCROLL_MS (1 s) of the reader's own input as theirs; this waits that out, so the
+        scroll is the harness's, as a layout scroll would be."""
+        await asyncio.sleep(1.2)
+        await self.cdp.js(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block: '{block}'}})")
+        await asyncio.sleep(0.6)
+
+    async def focus(self, selector: str) -> None:
+        await self.cdp.js(f"document.querySelector({json.dumps(selector)}).focus({{preventScroll: true}})")
+
+    async def key_enter(self) -> None:
+        for kind in ("keyDown", "keyUp"):
+            await self.cdp.send("Input.dispatchKeyEvent", type=kind, key="Enter", code="Enter",
+                                windowsVirtualKeyCode=13, **({"text": "\r"} if kind == "keyDown" else {}))
+
+    async def wheel_up(self, dy: float = -600) -> None:
+        """A real wheel scroll up over the log box (which pins the window)."""
+        await self.cdp.js("document.getElementById('logwrap').scrollIntoView({block: 'center'})")
+        await asyncio.sleep(0.3)
+        await self.cdp.wheel("#logwrap", dy)
+        await asyncio.sleep(1.2)
+
+    async def jump(self) -> None:
+        """Jump to newest by the header control, a real click; nothing when already following."""
+        if not (await self.probe())["follow"]["disabled"]:
+            await self.click("#btn-follow")
+            await asyncio.sleep(0.5)
+
+    async def select(self, sel_id: str, value: str) -> None:
+        """A <select> change as the page receives it (a native popup is not driven over CDP)."""
+        await self.cdp.js(f"(() => {{ const s = document.getElementById({json.dumps(sel_id)}); s.value = "
+                          f"{json.dumps(value)}; s.dispatchEvent(new Event('change', {{bubbles: true}})); }})()")
+        await self.settle()
+
+    def note(self, kind: str, text: str | None) -> None:
+        if text:
+            self.seen.setdefault(kind, []).append(text)
+
+    def account(self, where: str, p: dict[str, Any]) -> dict[str, Any]:
+        a = {"where": where, **accounting(p)}
+        self.accounts.append(a)
+        return a
+
+    async def overflow(self, state: str) -> None:
+        measured = await self.cdp.js(LOG_OVERFLOW)
+        bad = [f"{n} {s} > {c}" for n, s, c in measured if s > c]
+        self.overflows.append({"state": state, "measured": measured, "over": bad})
+        await check_overflow(self.run, self.cdp, f"M3b log {self.label} {state}")
+
+    def record(self, n: int, name: str, rule: str, conds: dict[str, bool], observed: dict[str, Any]) -> None:
+        self.m.cases.record(f"{self.label}: {n}. {name}", rule, conds, {"width": self.label, **observed})
+
+    async def nav(self, kind: str, how: str) -> dict[str, Any]:
+        """One press of Older / Newer / the in-row Jump to newest: a real click (the control
+        brought into view first) or Enter on the focused control (no scroll at all). The rows
+        in the log box are read just before the press; the anchor is the first of them still
+        drawn after it, as the page's own rule takes it."""
+        selector = f'[data-lognav="{kind}"]'
+        if how == "click":
+            await self.box_at(selector, "center" if kind == "older" else "end")
+            a = await self.probe()
+            await self.cdp.click(selector)
+        else:
+            await self.focus(selector)
+            a = await self.probe()
+            await self.key_enter()
+        await self.settle()
+        b = await self.probe()
+        after = dict(b["vis"])
+        anchor = next((k for k, _ in a["vis"] if k in set(b["keys"])), None)
+        off0 = dict(a["vis"]).get(anchor) if anchor else None
+        off1 = after.get(anchor) if anchor else None
+        moved = a["keys"] != b["keys"]
+        clamp = b["scrollTop"] == 0 or b["atBottom"]
+        loaded = None
+        if moved and a["keys"] and b["keys"]:
+            if kind == "older" and a["keys"][0] in b["keys"]:
+                loaded = b["keys"].index(a["keys"][0])
+            elif kind != "older" and b["keys"][0] in a["keys"]:
+                loaded = a["keys"].index(b["keys"][0])
+        step = {"kind": kind, "how": how, "before": window_of(a), "after": window_of(b), "moved": moved,
+                "loaded": loaded, "scroll": [a["scrollTop"], b["scrollTop"]],
+                "to_end": b["scrollTop"] == 0 if kind == "older" else b["atBottom"],
+                "anchor": anchor, "offset": [off0, off1],
+                "diff": round(off1 - off0, 1) if off0 is not None and off1 is not None else None,
+                "clamp": clamp, "following": b["follow"]["disabled"], "focus": b["active"],
+                "overlap": bool(set(a["keys"]) & set(b["keys"])), "breaks": b["breaks"], "ex": b["ex"],
+                "older": b["older"], "newer": b["newer"]}
+        # The rule for one press: it moves the window, or (a step of 0) scrolls the box to the
+        # window's other end; focus to the log box; rows contiguous; a moved window overlaps the
+        # last one; the anchor keeps its offset within 1 px unless the box is at a scroll limit,
+        # or the press reached the newest (following shows the newest at the bottom).
+        step["ok"] = ((moved or step["to_end"]) and b["active"] == "logwrap" and not b["breaks"]
+                      and (not moved or step["overlap"] or b["follow"]["disabled"])
+                      and (not moved or b["follow"]["disabled"] or clamp
+                           or (step["diff"] is not None and abs(step["diff"]) <= 1.0)))
+        step["keys"] = b["keys"]
+        return step
+
+
+async def case_log_following(lg: LogRun) -> None:
+    lg.steady()
+    await lg.jump()
+    await asyncio.sleep(2.0)
+    p0 = await lg.probe()
+    samples = [p0]
+    for _ in range(10):
+        await asyncio.sleep(1.0)
+        samples.append(await lg.probe())
+    p1 = samples[-1]
+    d = delta(p0, p1)
+    arrived = (last_seq(p1) or 0) - (last_seq(p0) or 0)
+    lg.note("outside", p1["older"])
+    acc = lg.account("following", p1)
+    await lg.overflow("following")
+    # No new matching exchange: the traffic stopped, then a filter no arrival matches.
+    lg.quiet()
+    await asyncio.sleep(1.5)
+    q0 = await lg.probe()
+    await asyncio.sleep(5.0)
+    q1 = await lg.probe()
+    dq = delta(q0, q1)
+    await lg.select("f-service", "0a")
+    lg.steady()
+    await asyncio.sleep(2.0)
+    f0 = await lg.probe()
+    await asyncio.sleep(8.0)
+    f1 = await lg.probe()
+    df = delta(f0, f1)
+    f_arrived = (last_seq(f1) or 0) - (last_seq(f0) or 0)
+    await lg.select("f-service", "all")
+    await asyncio.sleep(1.0)
+    lg.record(
+        1, "Live following",
+        "Full buffer (2,000 retained). Following at the standard rate for 10 s: the window slides (its newest seq "
+        "rises); at every sample <= 200 exchange rows and the body holds only them plus marker / hidden rows; the "
+        "newest exchange is drawn in the log box and is the count line's last seq; one row in and one out per "
+        "arrival (row-list adds = removes = arrivals, no other row mutation). No new matching exchange: 5 s "
+        "with the traffic stopped, zero mutations of any kind; 8 s of arrivals under a filter none of them match "
+        "(service 0x0A), zero row-list adds / removes and the same rows",
+        {"full buffer at the start": p0["retained"] == PERF_ROWS,
+         "following throughout (the jump control off)": all(s["follow"]["disabled"] for s in samples),
+         "the window slides": bool(p0["seqs"]) and bool(p1["seqs"]) and p1["seqs"][-1] > p0["seqs"][-1],
+         "<= 200 exchange rows at every sample, 200 at the cap": all(s["ex"] == LOG_WINDOW for s in samples),
+         "the body holds only exchange, marker and hidden rows": all(
+             s["rows"] == s["ex"] + len(s["marks"]) + len(s["hidden"]) for s in samples),
+         "the newest exchange drawn, in the log box, at every sample": all(
+             s["newestVisible"] and s["boxOnScreen"] and s["seqs"][-1] == last_seq(s) for s in samples),
+         "one in / one out per arrival": arrived >= 20 and d["add"] == arrived and d["rem"] == arrived
+         and d["inRows"] == 0 and d["nb"] >= 1,
+         "no arrival: zero mutations in 5 s": all(v == 0 for k, v in dq.items() if k != "focusout"),
+         "arrivals no filter matches: zero row-list mutations, same rows": f_arrived >= 15 and df["add"] == 0
+         and df["rem"] == 0 and f0["keys"] == f1["keys"],
+         "counts add up": acc["adds_up"]},
+        {"retained": p0["retained"], "windows": [window_of(s) for s in samples],
+         "last_seq": [last_seq(s) for s in samples], "arrived": arrived, "mutations": d,
+         "count": p1["count"], "older_row": p1["older"], "rows_body": p1["rows"],
+         "quiet_mutations": dq, "filtered": {"arrived": f_arrived, "mutations": df, "count": f1["count"],
+                                             "hidden_rows": f1["hidden"], "window": window_of(f1)},
+         "accounting": acc})
+
+
+async def case_log_layout(lg: LogRun) -> None:
+    conds = {f"no horizontal overflow ({o['state']})": not o["over"] for o in lg.overflows}
+    observed: dict[str, Any] = {"overflow": lg.overflows}
+    rule = "No scrollWidth above its clientWidth (OVERFLOW, #log-panel, #logwrap, #log-state) in every state measured"
+    if lg.size == WIDE:
+        lg.steady()
+        await lg.jump()
+        await lg.cdp.js("window.scrollTo(0, 0)")
+        readings = []
+        for k in range(3):
+            if k:
+                await asyncio.sleep(1.0)
+            await lg.settle(0.0)
+            readings.append(await lg.cdp.js(LOG_ROWS))
+        rows = min(readings, key=lambda r: r["full"])
+        conds["graphs open"] = (await lg.cdp.js("!document.getElementById('graphs').hidden")) is True
+        conds["at least 5 full log rows (1440 x 900, graphs open, full buffer)"] = rows["full"] >= 5
+        observed["log_rows"] = {"fewest": rows["full"], "readings": [r["full"] for r in readings],
+                                "rowsRegion": rows["rowsRegion"], "heights": rows["heights"][-6:]}
+        rule += "; at 1440 x 900 at least 5 full log rows inside #logwrap with the graphs open (LOG_ROWS, the fewest " \
+                "of 3 readings)"
+    conds["at least one state measured"] = bool(lg.overflows)
+    lg.record(9, "Layout", rule, conds, observed)
+
+
+async def log_width(lg: LogRun, label: str, size: tuple[int, int]) -> None:
+    lg.label, lg.size = label, size
+    lg.seen, lg.accounts, lg.overflows = {}, [], []
+    lg.run.log(f"---- --m3b-log at {label} ----")
+    await lg.cdp.viewport(*size)
+    await asyncio.sleep(1.5)
+    await lg.cdp.js("document.getElementById('logwrap').scrollIntoView({block: 'center'})"
+                    if size == NARROW else "window.scrollTo(0, 0)")
+    await lg.jump()
+    if (await lg.probe())["retained"] < PERF_ROWS:
+        await lg.burst(0, until=lambda p: p["retained"] >= PERF_ROWS)
+    await lg.unique(LOG_UNIQUE)
+    await lg.burst(LOG_AFTER_UNIQUE)
+    lg.steady()
+    await asyncio.sleep(3.0)
+    start = await lg.probe()
+    lg.run.log(f"width start: {start['count']}; retained {start['retained']}")
+    await case_log_following(lg)
+    await case_log_layout(lg)
+
+
+async def m3b_log_session(run: Run, chrome: str, profile_dir: str) -> None:
+    """Task 46a: the windowed log's cases at both widths, each from a full 2,000-exchange buffer."""
+    import hashlib
+
+    await launch_chrome(run, chrome, profile_dir)
+    cases = Cases(run)
+    problems: list[str] = []
+    version = "unknown"
+    served: dict[str, Any] = {}
+    async with aiohttp.ClientSession() as http:
+        ws_url = await page_target(http)
+        version = await chrome_version(http)
+        run.log(f"Chrome: {version}")
+        async with http.ws_connect(ws_url, max_msg_size=0) as ws:
+            cdp = await m3b_cdp(run, http, ws, problems, wrapper=False)
+            await cdp.send("Page.addScriptToEvaluateOnNewDocument", source=LOG_INSTR)
+            m = M3b(run, cdp, http, cases)
+            lg = LogRun(run, m, await m3b_start(run, MOVING_PROFILE, "log-simulator-1.log"))
+            try:
+                async with http.get(f"http://{API}/app.js") as resp:
+                    text = await resp.text()
+                served = {"app_js_sha256": hashlib.sha256(text.encode()).hexdigest(),
+                          "wording_missing": [w for w in LOG_WORDING if w not in text]}
+                run.log(f"served app.js: {served}")
+                cases.record("page: the wording the cases read is the served page's",
+                             "Every phrase the cases match is in the app.js the simulator served",
+                             {"no phrase missing": not served["wording_missing"]}, served)
+                await m.open_page()
+                await m.click_window(120)
+                run.log(f"fill: traffic at {LOG_BURST_RATE}/s until the log holds {PERF_ROWS} exchanges")
+                await lg.burst(0, until=lambda p: p["retained"] >= PERF_ROWS, timeout=300)
+                for label, size in (("1440x900", WIDE), ("390x844", NARROW)):
+                    await log_width(lg, label, size)
+            finally:
+                with contextlib.suppress(ProcessLookupError):
+                    if lg.sim.poll() is None:
+                        os.kill(lg.sim.pid, signal.SIGCONT)
+                lg.quiet()
+                run.stop(lg.sim)
+                cases.record("page: no exception or console message", "Over the whole run: no page exception, "
+                             "console message or browser log entry", {"none": not problems}, {"problems": problems})
+                tally = {}
+                for label in ("1440x900", "390x844", "page"):
+                    mine = [c for c in cases.items if c["case"].startswith(label)]
+                    tally[label] = {"passed": sum(1 for c in mine if c["pass"]), "total": len(mine)}
+                out = {"chrome": version, "served": served, "rows_cap": PERF_ROWS, "traffic_rate": TRAFFIC_RATE,
+                       "profile": str(MOVING_PROFILE.relative_to(ROOT)), "cases": cases.items, "tally": tally,
+                       "problems": problems}
+                (run.outdir / "m3b-log-results.json").write_text(json.dumps(out, indent=1, default=str))
+                run.log(f"log cases: {json.dumps(tally)}")
+                run.log(f"console messages, exceptions and browser log entries: {len(problems)}")
+                for problem in problems:
+                    run.log(f"  {problem}")
+                cdp.reader.cancel()
+    run.log("done")
+
+
 def find_chrome() -> str:
     for name in (os.environ.get("CHROME", ""), "google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
         if name and (path := shutil.which(name)):
@@ -2900,10 +3459,12 @@ def main(argv: list[str] | None = None) -> int:
                        help="the main-thread comparison runs with traces (Task 39, about 22 min)")
     modes.add_argument("--m3b-perf-log", action="store_true",
                        help="the log fix's before / after runs with clicks and Event Timing (Task 44, about 7 min)")
+    modes.add_argument("--m3b-log", action="store_true",
+                       help="the windowed exchange log's cases at a full buffer, 1440 and 390 (Task 46a)")
     args = parser.parse_args(argv)
     mode = ("moving" if args.moving else "m3b" if args.m3b else "m3b-long" if args.m3b_long
             else "m3b-slots" if args.m3b_slots else "m3b-perf" if args.m3b_perf
-            else "m3b-perf-log" if args.m3b_perf_log else "m3a")
+            else "m3b-perf-log" if args.m3b_perf_log else "m3b-log" if args.m3b_log else "m3a")
     args.outdir.mkdir(parents=True, exist_ok=True)
     run = Run(args.outdir.resolve())
     run.log(f"gui demo capture, {datetime.datetime.now(datetime.UTC).isoformat(timespec='seconds')}")

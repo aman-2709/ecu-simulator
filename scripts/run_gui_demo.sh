@@ -18,6 +18,8 @@
 #                                                GUI_PERF_DIAG=lamp-off|flash-off|both-off is a labelled
 #                                                diagnostic with that animation off by a harness stylesheet;
 #                                                GUI_PERF_IDLE=1 adds a no-traffic run per viewport)
+#   scripts/run_gui_demo.sh --m3b-log <outdir>   the windowed exchange log's cases at a full buffer,
+#                                                1440 x 900 and 390 x 844
 #
 # Every process is stopped on every path: the capture script stops what it started by
 # exact PID, and the trap below then signals the capture script's whole process group
@@ -25,12 +27,12 @@
 # also covers the capture script itself being killed with SIGKILL.
 set -euo pipefail
 MODE=""
-if [[ $# -eq 2 && ( "$1" == "--moving" || "$1" == "--m3b" || "$1" == "--m3b-long" || "$1" == "--m3b-slots" || "$1" == "--m3b-perf" || "$1" == "--m3b-perf-log" ) ]]; then
+if [[ $# -eq 2 && ( "$1" == "--moving" || "$1" == "--m3b" || "$1" == "--m3b-long" || "$1" == "--m3b-slots" || "$1" == "--m3b-perf" || "$1" == "--m3b-perf-log" || "$1" == "--m3b-log" ) ]]; then
     MODE="$1"
     shift
 fi
 if [[ $# -ne 1 ]]; then
-    echo "usage: $0 [--moving | --m3b | --m3b-long | --m3b-slots | --m3b-perf | --m3b-perf-log] <outdir>" >&2
+    echo "usage: $0 [--moving | --m3b | --m3b-long | --m3b-slots | --m3b-perf | --m3b-perf-log | --m3b-log] <outdir>" >&2
     exit 2
 fi
 cd "$(dirname "$0")/.."
