@@ -662,7 +662,7 @@ CAP = 4096
 
 WS_WRAPPER = r"""(function () {
   var Native = window.WebSocket, nativeFetch = window.fetch;
-  var T = window.__m3b = { socks: [], states: [], status: [], badFirst: false };
+  var T = window.__m3b = { socks: [], states: [], status: [], badFirst: false, invalidPath: null };
   var live = [];
   function bad(i) {
     var ev = new MessageEvent("message", { data: "{bad" }); ev.__synthetic = true;
@@ -686,6 +686,16 @@ WS_WRAPPER = r"""(function () {
       try {
         var m = JSON.parse(e.data);
         if (m && m.type === "state") { rec.states += 1; T.states.push({ t: Date.now(), sock: i, len: e.data.length }); }
+        // Test only (Task 37's forced-wrap reading): while T.invalidPath is set, each state reaches
+        // the page with that signal sent as null and listed in nonfinite, as the API sends a
+        // non-finite value (§8.2). The simulator's values stay finite, so traffic can run.
+        if (T.invalidPath && m && m.type === "state" && m.vehicle && m.vehicle.signals) {
+          m.vehicle.signals[T.invalidPath] = null;
+          m.vehicle.nonfinite = (m.vehicle.nonfinite || []).concat([T.invalidPath]).sort();
+          e.stopImmediatePropagation();
+          var ev = new MessageEvent("message", { data: JSON.stringify(m) }); ev.__synthetic = true;
+          ws.dispatchEvent(ev);
+        }
       } catch (x) { /* not ours to judge */ }
     });
     var close = ws.close;
@@ -835,6 +845,9 @@ HEAP = ("(() => ({t: Date.now(), used: performance.memory.usedJSHeapSize, total:
         " limit: performance.memory.jsHeapSizeLimit}))()")
 
 GAP_NOTE = r"No data from t = [0-9.]+ to t = [0-9.]+ s \(([^)]*)\)"
+# The owner's restart note (Task 37), complete; it leads the shared notice line.
+RESTART_NOTE = r"Simulator restarted at \d\d:\d\d:\d\d UTC; previous graph history cleared\."
+INVALID_RUN = r"Throttle: invalid value from t = [0-9.]+ to t = [0-9.]+ s \(still invalid\)"
 
 
 class Cases:
@@ -1568,31 +1581,56 @@ async def _restart_and_gap(m: M3b, sim: subprocess.Popen[bytes]) -> None:
     await m.until(lambda s: re.search(GAP_NOTE, s["breaks"]) is not None, timeout=6.0)
     await m.cdp.wait_for("[...document.querySelectorAll('#log-body > tr')].slice(-6)"
                          ".every(r => r.querySelector('td.c-seq'))", timeout=15)
+    rows = await _rows_readings(m, "m3b-b-restart-and-gap-1440.png")
+    m.cases.record(
+        "Log rows at 1440 x 900, restart note and a gap note together (measured)",
+        "At 1440 x 900 with the graphs open, the restart note and a gap note visible together: at least 5 full "
+        "log rows inside #logwrap",
+        # Since Task 37 the restart note, in the owner's short wording, leads the shared notice line,
+        # " · "-joined with the gap; both are checked complete.
+        {"the restart note is shown, complete": re.match(RESTART_NOTE, rows["breaks"]) is not None,
+         "a gap note is shown, complete": re.search(GAP_NOTE, rows["breaks"]) is not None,
+         "the newest rows are exchange rows": rows["fullExchange"] == rows["full"],
+         "the log is filled (more rows than fit)": len((await m.log())["seqs"]) > rows["full"],
+         "at least 5 full log rows": rows["full"] >= 5}, rows)
+    # The forced-wrap reading (Task 37, owner: "including wrapping"): an open invalid run added to
+    # the same line, by the wrapper rewriting each state (test only), so the line wraps to two.
+    await m.cdp.js("window.__m3b.invalidPath = 'engine.throttle'")
+    try:
+        await m.until(lambda s: re.search(INVALID_RUN, s["breaks"]) is not None, timeout=6.0)
+        await m.cdp.wait_for("[...document.querySelectorAll('#log-body > tr')].slice(-6)"
+                             ".every(r => r.querySelector('td.c-seq'))", timeout=15)
+        wrapped = await _rows_readings(m, "m3b-b-restart-gap-invalid-1440.png")
+    finally:
+        await m.cdp.js("window.__m3b.invalidPath = null")
+    m.cases.record(
+        "Log rows at 1440 x 900, restart note, a gap and an open invalid run: the notice line wraps (measured)",
+        "At 1440 x 900 with the graphs open, the restart note, a gap note and an open invalid run on the shared "
+        "notice line, which wraps to two lines, every notice complete: at least 5 full log rows inside #logwrap",
+        {"the restart note is shown, complete": re.match(RESTART_NOTE, wrapped["breaks"]) is not None,
+         "a gap note is shown, complete": re.search(GAP_NOTE, wrapped["breaks"]) is not None,
+         "the open invalid run is shown, complete": re.search(INVALID_RUN, wrapped["breaks"]) is not None,
+         "the notice line wraps (two lines or more)": wrapped["breaksLines"] >= 2,
+         "the newest rows are exchange rows": wrapped["fullExchange"] == wrapped["full"],
+         "at least 5 full log rows": wrapped["full"] >= 5}, wrapped)
+
+
+async def _rows_readings(m: M3b, shot: str) -> dict[str, Any]:
+    """Three readings 1 s apart, the screenshot straight after the last; the result is the fewest
+    rows (the worst moment), with every reading recorded."""
     await m.cdp.js("window.scrollTo(0, 0)")
     await m.settled()
-    # Three readings 1 s apart, the screenshot straight after the last; the case uses the fewest
-    # rows (the worst moment), and every reading is recorded.
     readings = []
     for k in range(3):
         if k:
             await asyncio.sleep(1.0)       # spacing between readings; no page condition to wait on
         await m.settled()
         readings.append(await m.cdp.js(LOG_ROWS))
-    await m.shot("m3b-b-restart-and-gap-1440.png")
+    await m.shot(shot)
     readings.append(await m.cdp.js(LOG_ROWS))
     rows = dict(min(readings, key=lambda r: (r["full"], r["rowsRegion"])))
     rows["readings"] = readings
-    m.cases.record(
-        "Log rows at 1440 x 900, restart note and a gap note together (measured)",
-        "At 1440 x 900 with the graphs open, the restart note and a gap note visible together: at least 5 full "
-        "log rows inside #logwrap",
-        # Since Task 37 the restart note is on the shared notice line, first, " · "-joined with the gap.
-        {"the restart note is shown, complete": rows["breaks"].startswith("Simulator restarted at")
-         and "the previous run's graphs were cleared." in rows["breaks"],
-         "a gap note is shown": re.search(GAP_NOTE, rows["breaks"]) is not None,
-         "the newest rows are exchange rows": rows["fullExchange"] == rows["full"],
-         "the log is filled (more rows than fit)": len((await m.log())["seqs"]) > rows["full"],
-         "at least 5 full log rows": rows["full"] >= 5}, rows)
+    return rows
 
 
 async def case_restart(m: M3b, run: Run, sim: subprocess.Popen[bytes], logname: str) -> subprocess.Popen[bytes]:
@@ -1623,7 +1661,7 @@ async def case_restart(m: M3b, run: Run, sim: subprocess.Popen[bytes], logname: 
              0 <= float(s["graphs"][p]["oldestT"]) <= float(s["graphs"][p]["asOf"])
              and int(s["graphs"][p]["points"]) <= 4 * float(s["graphs"][p]["asOf"]) + 4 for p in paths),
          # Since Task 37 the restart note is on the shared notice line, not in #graphs-note.
-         "restart note visible": s["breaks"].startswith("Simulator restarted at"),
+         "restart note visible": re.match(RESTART_NOTE, s["breaks"]) is not None,
          "restart marker in the log": "Simulator restarted." in lg["text"],
          "segments 1 after the first new point": all(s["graphs"][p]["segments"] == "1" for p in paths)},
         {"before": {p: {k: before["graphs"][p][k] for k in ("run", "points", "oldestT", "asOf")} for p in paths},
