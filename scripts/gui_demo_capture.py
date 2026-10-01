@@ -2441,6 +2441,7 @@ PERF_LOG = """(() => {
           last_seq: m ? Number(m[1]) : null, health: document.body.dataset.health,
           graphs_hidden: document.getElementById('graphs').hidden,
           log_paused: document.getElementById('btn-pause').getAttribute('aria-pressed') === 'true',
+          following: document.getElementById('btn-follow').disabled,
           log_count: document.getElementById('log-count').textContent};
 })()"""
 
@@ -2688,6 +2689,169 @@ PERF_DIAG_CHECK = """(() => { const lamp = document.querySelector('.conn__lamp')
   return {diag: window.__perfDiag || null, sheets: document.adoptedStyleSheets.length,
           conn: document.getElementById('conn').className,
           lamp_animation: lamp ? getComputedStyle(lamp).animationName : null}; })()"""
+# Task 46b. GUI_PERF_REPEATS=N: N following runs per viewport (default PERF_LOG_REPEATS).
+# GUI_PERF_STATES=1: instead of the following runs, one 60 s run per viewport in each state the
+# log fix is meant to freeze, entered before the trace and left alone during it (no clicks):
+# the log paused, the reader pinned (a real wheel scroll up), the graphs hidden while following.
+# Only in these runs the harness counts the mutations of the log's table parts and state box
+# with a MutationObserver it adds just before the trace (a counter, no other work).
+PERF_STATES = ("paused", "pinned", "graphs-hidden")
+FOLLOWING = "document.getElementById('btn-follow').disabled"
+ROWS_OBSERVER = """(() => {
+  if (window.__rows) window.__rows.obs.forEach(o => o.disconnect());
+  const r = window.__rows = {counts: {}, obs: []};
+  for (const id of ['log-body', 'log-head', 'log-tail', 'log-state']) {
+    const el = document.getElementById(id); if (!el) continue;
+    const c = r.counts[id] = {batches: 0, child_adds: 0, child_removes: 0, inside: 0};
+    const o = new MutationObserver(list => { c.batches++; for (const m of list) {
+      if (m.type === 'childList' && m.target === el) { c.child_adds += m.addedNodes.length;
+        c.child_removes += m.removedNodes.length; } else c.inside++; } });
+    o.observe(el, {childList: true, subtree: true, characterData: true, attributes: true});
+    r.obs.push(o);
+  }
+  return Object.keys(r.counts);
+})()"""
+ROWS_TAKE = """(() => { const r = window.__rows; if (!r) return null;
+  r.obs.forEach(o => o.disconnect()); window.__rows = null; return r.counts; })()"""
+# GUI_PERF_VISIBLE=1: a normal, VISIBLE Chrome on the desktop's X display instead of headless,
+# launched as scripts/gui_fault_session.sh launches it: a fresh profile, HOME and TMPDIR in this
+# run's own temp dir; the sandbox on (no --no-sandbox), in a nested user namespace mapped back to
+# the desktop user's uid (Chrome will not run as uid 0, which unshare -r makes this script);
+# DISPLAY and XAUTHORITY passed through as they are (no xhost). The GPU is left on and the
+# DevTools port is the namespace's own loopback. Sizes are the window's own (Browser.
+# setWindowBounds), not emulated; what the window got is recorded. If X or the sandbox fails,
+# the run stops with the error and weakens nothing.
+VISIBLE_ERRORS = re.compile(r"sandbox|Missing X server|cannot open display|Authorization required", re.I)
+WINDOW_SIZE = "[innerWidth, innerHeight, outerWidth, outerHeight, devicePixelRatio, screen.width, screen.height]"
+
+
+def host_ids() -> tuple[int, int]:
+    """The desktop user's uid and gid: what this namespace's root maps to (uid_map "0 <uid> 1")."""
+    ids = []
+    for name in ("uid_map", "gid_map"):
+        inside, outside, _count = Path(f"/proc/self/{name}").read_text().split()[:3]
+        if inside != "0":
+            raise SystemExit(f"unexpected /proc/self/{name}; GUI_PERF_VISIBLE runs only under run_gui_demo.sh")
+        ids.append(int(outside))
+    return ids[0], ids[1]
+
+
+def renderer_seccomp() -> list[str]:
+    """Chrome's renderers in this script's process group (Chrome inherits it), with their
+    seccomp mode (2 = filtered: the sandbox is on)."""
+    group = os.getpgid(0)
+    out = []
+    for proc in Path("/proc").iterdir():
+        if not proc.name.isdigit():
+            continue
+        try:
+            if os.getpgid(int(proc.name)) != group:
+                continue
+            cmd = (proc / "cmdline").read_bytes().split(b"\0")
+            if b"--type=renderer" not in cmd:
+                continue
+            seccomp = next(line for line in (proc / "status").read_text().splitlines() if line.startswith("Seccomp:"))
+        except (OSError, StopIteration):
+            continue
+        out.append(f"pid {proc.name}: {seccomp.split(':')[1].strip()}")
+    return out
+
+
+async def launch_visible_chrome(run: Run, chrome: str,
+                                profile_dir: str) -> tuple[subprocess.Popen[bytes], dict[str, Any]]:
+    display = os.environ.get("DISPLAY")
+    if not display:
+        raise SystemExit("GUI_PERF_VISIBLE=1 needs DISPLAY (run it from the desktop session)")
+    uid, gid = host_ids()
+    nested = ["unshare", f"--map-user={uid}", f"--map-group={gid}", "--"]
+    work = Path(profile_dir)
+    for sub in ("profile", "home", "tmp"):
+        (work / sub).mkdir()
+    env = {**os.environ, "HOME": str(work / "home"), "TMPDIR": str(work / "tmp"),
+           "XDG_CONFIG_HOME": str(work / "home/.config"), "XDG_CACHE_HOME": str(work / "home/.cache"),
+           "XDG_DATA_HOME": str(work / "home/.local/share")}
+    info: dict[str, Any] = {"display": display, "xauthority": os.environ.get("XAUTHORITY"), "uid_gid": [uid, gid]}
+    if shutil.which("xset"):
+        x = subprocess.run([*nested, "xset", "q"], env=env, capture_output=True, text=True, timeout=15)
+        info["xset_q"] = x.returncode
+        if x.returncode:
+            raise RuntimeError(f"BLOCKER: X display {display} is not reachable from the namespace "
+                               f"(xset q exit {x.returncode}): {x.stderr.strip()}")
+        run.log(f"X: xset q on DISPLAY={display} from the namespace: ok (XAUTHORITY {info['xauthority']}, unchanged)")
+    args = [chrome, f"--user-data-dir={work / 'profile'}", "--no-first-run", "--no-default-browser-check",
+            "--password-store=basic", f"--window-size={WIDE[0]},{WIDE[1]}",
+            f"--remote-debugging-port={DEVTOOLS_PORT}", "about:blank"]
+    run.log(f"start VISIBLE Chrome (GPU on, sandbox on): {' '.join(nested + args)}")
+    proc = run.spawn([*nested, *args], "chrome.log", env=env)
+    info["command"] = nested + args
+    return proc, info
+
+
+async def visible_checks(run: Run, proc: subprocess.Popen[bytes]) -> dict[str, Any]:
+    """After the page target is up: Chrome alive, no sandbox or X error in its log, its command
+    line has no sandbox switch, its renderers seccomp-filtered, and where DevTools listens."""
+    if proc.poll() is not None:
+        raise RuntimeError(f"BLOCKER: Chrome exited at start (code {proc.returncode}); see chrome.log")
+    text = (run.outdir / "chrome.log").read_text(errors="replace")
+    errors = [line for line in text.splitlines() if VISIBLE_ERRORS.search(line)]
+    if errors:
+        raise RuntimeError("BLOCKER: Chrome reported sandbox or X errors: " + " | ".join(errors[:5]))
+    cmd = Path(f"/proc/{proc.pid}/cmdline").read_bytes().split(b"\0")
+    if any(a.startswith((b"--no-sandbox", b"--disable-setuid-sandbox")) for a in cmd):
+        raise RuntimeError("BLOCKER: Chrome's command line disables the sandbox")
+    listen = subprocess.run(["ss", "-Htlnp", f"( sport = :{DEVTOOLS_PORT} )"], capture_output=True, text=True).stdout
+    out = {"browser_pid": proc.pid, "browser_netns": os.readlink(f"/proc/{proc.pid}/ns/net"),
+           "browser_userns": os.readlink(f"/proc/{proc.pid}/ns/user"),
+           "this_netns": os.readlink("/proc/self/ns/net"), "host_netns": os.environ.get("GUI_DEMO_HOST_NETNS"),
+           "renderers_seccomp": renderer_seccomp(), "devtools_listen": listen.split("\n")}
+    run.log(f"visible Chrome checks: {out}")
+    if out["browser_netns"] != out["this_netns"] or out["browser_netns"] == out["host_netns"]:
+        raise RuntimeError(f"BLOCKER: the namespace check failed: {out}")
+    return out
+
+
+async def browser_call(http: aiohttp.ClientSession, method: str, **params: Any) -> dict[str, Any]:
+    """One command on the browser target (SystemInfo, Browser), over its own connection."""
+    async with http.get(f"http://127.0.0.1:{DEVTOOLS_PORT}/json/version") as resp:
+        url = (await resp.json())["webSocketDebuggerUrl"]
+    async with http.ws_connect(url, max_msg_size=0) as bws:
+        bcdp = DevTools(bws)
+        try:
+            return await bcdp.send(method, **params)
+        finally:
+            bcdp.reader.cancel()
+
+
+async def gpu_state(http: aiohttp.ClientSession) -> dict[str, Any]:
+    """chrome://gpu's essentials: the feature status (gpu_compositing etc.) and the devices."""
+    info = await browser_call(http, "SystemInfo.getInfo")
+    gpu = info.get("gpu", {})
+    return {"feature_status": gpu.get("featureStatus"), "devices": gpu.get("devices"),
+            "driver_bug_workarounds": len(gpu.get("driverBugWorkarounds", [])),
+            "aux_attributes": {k: v for k, v in (gpu.get("auxAttributes") or {}).items()
+                               if k in ("glRenderer", "glVendor", "glVersion", "glImplementationParts",
+                                        "displayType", "gpuCompositing", "skiaBackendType")},
+            "model": info.get("modelName"), "command_line": info.get("commandLine")}
+
+
+async def window_to(http: aiohttp.ClientSession, cdp: DevTools, target: str, size: tuple[int, int]) -> dict[str, Any]:
+    """Size the visible window so its page area is ``size`` CSS px (or as close as the window
+    manager and Chrome's minimum allow); returns what it got."""
+    win = await browser_call(http, "Browser.getWindowForTarget", targetId=target)
+    w, h = size
+    got: list[Any] = []
+    for _ in range(4):
+        await browser_call(http, "Browser.setWindowBounds", windowId=win["windowId"],
+                           bounds={"width": w, "height": h})
+        await asyncio.sleep(1.0)
+        got = await cdp.js(WINDOW_SIZE)
+        dw, dh = size[0] - got[0], size[1] - got[1]
+        if not dw and not dh:
+            break
+        w, h = w + dw, h + dh
+    bounds = (await browser_call(http, "Browser.getWindowBounds", windowId=win["windowId"]))["bounds"]
+    return {"asked": list(size), "inner": got[:2], "outer": got[2:4], "dpr": got[4], "screen": got[5:7],
+            "bounds": bounds}
 
 
 async def perf_home(cdp: DevTools, size: tuple[int, int]) -> None:
@@ -2771,9 +2935,16 @@ async def m3b_perf_log_session(run: Run, chrome: str, profile_dir: str) -> None:
     if diag is not None and diag not in PERF_DIAG_CSS:
         raise SystemExit(f"GUI_PERF_DIAG must be one of {sorted(PERF_DIAG_CSS)}, not {diag!r}")
     idle = os.environ.get("GUI_PERF_IDLE") == "1"
+    repeats = int(os.environ.get("GUI_PERF_REPEATS") or PERF_LOG_REPEATS)
+    states = os.environ.get("GUI_PERF_STATES") == "1"
+    visible = os.environ.get("GUI_PERF_VISIBLE") == "1"
     if diag:
         run.log(f"DIAGNOSTIC run: {diag}, by a harness stylesheet ({PERF_DIAG_CSS[diag]}); not the shipped page")
-    await launch_chrome(run, chrome, profile_dir)
+    browser: dict[str, Any] = {"visible": visible}
+    if visible:
+        chrome_proc, browser["launch"] = await launch_visible_chrome(run, chrome, profile_dir)
+    else:
+        await launch_chrome(run, chrome, profile_dir)
     problems: list[str] = []
     runs: list[dict[str, Any]] = []
     served: dict[str, Any] = {}
@@ -2782,6 +2953,20 @@ async def m3b_perf_log_session(run: Run, chrome: str, profile_dir: str) -> None:
         ws_url = await page_target(http)
         version = await chrome_version(http)
         run.log(f"Chrome: {version}")
+        if visible:
+            browser["checks"] = await visible_checks(run, chrome_proc)
+        browser["gpu"] = await gpu_state(http)
+        run.log(f"GPU feature status: {browser['gpu']['feature_status']}")
+        target_id = ws_url.rsplit("/", 1)[1]
+
+        async def size_to(size: tuple[int, int]) -> dict[str, Any] | None:
+            if not visible:
+                await cdp.viewport(*size)
+                return None
+            got = await window_to(http, cdp, target_id, size)
+            run.log(f"window for {size}: {got}")
+            return got
+
         async with http.ws_connect(ws_url, max_msg_size=0) as ws:
             cdp = await m3b_cdp(run, http, ws, problems, wrapper=False)
             if diag:
@@ -2793,10 +2978,14 @@ async def m3b_perf_log_session(run: Run, chrome: str, profile_dir: str) -> None:
             try:
                 async with http.get(f"http://{API}/app.js") as resp:
                     text = await resp.text()
+                async with http.get(f"http://{API}/app.css") as resp:
+                    css = await resp.read()
                 lines = gui_trace_breakdown.lines_in(text)
                 served = {"ecu_simulator_origin": origin, "app_js_sha256": hashlib.sha256(text.encode()).hexdigest(),
                           "worktree_app_js_sha256": hashlib.sha256((ROOT / gui_trace_breakdown.APP_JS).read_bytes())
-                          .hexdigest(), "app_js_lines": lines}
+                          .hexdigest(), "app_js_lines": lines, "app_css_sha256": hashlib.sha256(css).hexdigest(),
+                          "worktree_app_css_sha256": hashlib.sha256(
+                              (ROOT / "src/ecu_simulator/api/static/app.css").read_bytes()).hexdigest()}
                 run.log(f"served app.js: {served}")
                 await m.open_page()
                 diag_check = await cdp.js(PERF_DIAG_CHECK)
@@ -2815,7 +3004,7 @@ async def m3b_perf_log_session(run: Run, chrome: str, profile_dir: str) -> None:
                 await asyncio.sleep(5.0)
                 run.log(f"prefilled: {await cdp.js(PERF_LOG)}")
                 for vlabel, size in (("1440x900", WIDE), ("390x844", NARROW)):
-                    await cdp.viewport(*size)
+                    window = await size_to(size)
                     await asyncio.sleep(1.5)
                     if idle:
                         run.log("stop traffic (idle run)")
@@ -2826,7 +3015,34 @@ async def m3b_perf_log_session(run: Run, chrome: str, profile_dir: str) -> None:
                         runs.append(await perf_trace(run, cdp, f"{vlabel}-idle", "no-traffic", size, False, lines))
                         traffic = start_traffic(run)
                         await asyncio.sleep(5.0)
-                    for rep in range(1, PERF_LOG_REPEATS + 1):
+                    for state in PERF_STATES if states else ():
+                        await perf_home(cdp, size)
+                        await asyncio.sleep(3.0)
+                        if state == "paused":
+                            await perf_click(cdp, "#btn-pause", PAUSED, True)
+                        elif state == "graphs-hidden":
+                            await perf_click(cdp, "#btn-graphs-toggle", GRAPHS_HIDDEN, True)
+                        else:
+                            await cdp.js("document.getElementById('logwrap').scrollIntoView({block: 'center'})")
+                            await asyncio.sleep(0.3)
+                            await cdp.wheel("#logwrap", -600)
+                            await cdp.wait_for(f"!({FOLLOWING})", 10)
+                        await perf_home(cdp, size)
+                        await asyncio.sleep(3.0)
+                        observed = await cdp.js(ROWS_OBSERVER)
+                        result = await perf_trace(run, cdp, f"{vlabel}-{state}", state, size, True, lines)
+                        result["mutations"] = await cdp.js(ROWS_TAKE)
+                        result["mutations_observed"] = observed
+                        run.log(f"  {state}: mutations {result['mutations']}")
+                        result["window"] = window
+                        runs.append(result)
+                        if state == "paused":
+                            await perf_click(cdp, "#btn-pause", PAUSED, False)
+                        elif state == "graphs-hidden":
+                            await perf_click(cdp, "#btn-graphs-toggle", GRAPHS_HIDDEN, False)
+                        else:
+                            await perf_click(cdp, "#btn-follow", FOLLOWING, True)
+                    for rep in range(1, 0 if states else repeats + 1):
                         await perf_home(cdp, size)
                         await asyncio.sleep(3.0)
                         observed = await cdp.js(EVENT_OBSERVER)
@@ -2836,6 +3052,7 @@ async def m3b_perf_log_session(run: Run, chrome: str, profile_dir: str) -> None:
                         result["event_timing_supported"] = observed
                         result["event_entries"] = len(entries)
                         result["interactions"] = event_timing(result["interactions"], entries)
+                        result["window"] = window
                         for s in result["interactions"]:
                             et = s.get("event_timing")
                             run.log(f"  {s['name']}: " + (s.get("skipped") or s.get("note") or
@@ -2856,7 +3073,8 @@ async def m3b_perf_log_session(run: Run, chrome: str, profile_dir: str) -> None:
                 out = {"chrome": version, "categories": PERF_CATEGORIES, "seconds": PERF_SECONDS,
                        "rows_cap": PERF_ROWS, "traffic_rate": TRAFFIC_RATE, "served": served,
                        "diagnostic": {"off": diag, "css": PERF_DIAG_CSS[diag], "check": diag_check} if diag
-                       else None, "idle_runs": idle, "animation_check": diag_check,
+                       else None, "idle_runs": idle, "animation_check": diag_check, "repeats": repeats,
+                       "states": list(PERF_STATES) if states else None, "browser": browser,
                        "steps": [list(s[:2]) for s in PERF_LOG_STEPS],
                        "profile": str(MOVING_PROFILE.relative_to(ROOT)), "runs": runs, "problems": problems}
                 (run.outdir / "m3b-perf-log-results.json").write_text(json.dumps(out, indent=1, default=str))

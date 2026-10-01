@@ -17,7 +17,12 @@
 #                                                (PYTHONPATH=<a tree>/src serves that tree's page;
 #                                                GUI_PERF_DIAG=lamp-off|flash-off|both-off is a labelled
 #                                                diagnostic with that animation off by a harness stylesheet;
-#                                                GUI_PERF_IDLE=1 adds a no-traffic run per viewport)
+#                                                GUI_PERF_IDLE=1 adds a no-traffic run per viewport;
+#                                                GUI_PERF_REPEATS=N following runs per viewport (2);
+#                                                GUI_PERF_STATES=1 runs paused / pinned / graphs-hidden
+#                                                instead, with the log's mutations counted;
+#                                                GUI_PERF_VISIBLE=1 uses a visible Chrome on $DISPLAY,
+#                                                GPU and sandbox on, in a nested user namespace)
 #   scripts/run_gui_demo.sh --m3b-log <outdir>   the windowed exchange log's cases at a full buffer,
 #                                                1440 x 900 and 390 x 844
 #
