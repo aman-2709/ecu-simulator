@@ -30,6 +30,15 @@ question: what did that cost, reported in two separate kinds, never combined:
 | Namespace | every run inside `unshare -r -n bash -c 'ip link set lo up && ...'` |
 | Order | three runs each, alternating B, A, B, A, B, A, to spread host noise |
 
+**Provenance (task 30):** the measurements above were taken at `17d6e3b` (after) against
+`c63a9c4` (before). The commits after `17d6e3b` through `1f5a90e` changed, in code, only
+`snapshots.status` (a non-finite `t_last_applied` is now sent as `null`), one comment in
+`api/server.py`'s `_vehicle`, and added the measurement script (`scripts/gui_m3b_state_cost.py`)
+and tests. None of these is on a measured path (`snapshots.vehicle`, `snapshots.dtcs`,
+`snapshots.state_message`; `Publisher.drain_turn`, `Publisher._publish`, HandOff,
+ObservedDispatcher), confirmed with `git diff 17d6e3b 1f5a90e -- src scripts tests`. So the
+measurements were not rerun, and no number below changed.
+
 ## Commands
 
 State build/encode, before (`BEFORE` = the `c63a9c4` export's `src`):
