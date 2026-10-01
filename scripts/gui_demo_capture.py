@@ -662,7 +662,8 @@ CAP = 4096
 
 WS_WRAPPER = r"""(function () {
   var Native = window.WebSocket, nativeFetch = window.fetch;
-  var T = window.__m3b = { socks: [], states: [], status: [], badFirst: false, invalidPath: null };
+  var T = window.__m3b = { socks: [], states: [], status: [], badFirst: false, invalidPath: null, lastState: null,
+                              incompleteFirst: 0 };
   var live = [];
   function bad(i) {
     var ev = new MessageEvent("message", { data: "{bad" }); ev.__synthetic = true;
@@ -673,7 +674,7 @@ WS_WRAPPER = r"""(function () {
     var ws = protocols === undefined ? new Native(url) : new Native(url, protocols);
     var i = T.socks.length;
     var rec = { url: String(url), created: Date.now(), opened: null, error: null, closed: null, code: null,
-                frames: 0, states: 0, bad: null };
+                frames: 0, states: 0, bad: null, incomplete: null };
     T.socks.push(rec); live.push(ws);
     ws.addEventListener("open", function () { rec.opened = Date.now(); });
     ws.addEventListener("error", function () { rec.error = Date.now(); });
@@ -685,7 +686,21 @@ WS_WRAPPER = r"""(function () {
       if (rec.frames === 1 && T.badFirst) { e.stopImmediatePropagation(); bad(i); return; }
       try {
         var m = JSON.parse(e.data);
-        if (m && m.type === "state") { rec.states += 1; T.states.push({ t: Date.now(), sock: i, len: e.data.length }); }
+        if (m && m.type === "state") {
+          rec.states += 1; T.states.push({ t: Date.now(), sock: i, len: e.data.length });
+          T.lastState = e.data;           // the latest real state frame, for T.send's variants
+          // Test only (Task 41): while T.incompleteFirst > 0, a socket's first state reaches the
+          // page without dtcs, once per count: an incomplete state during a recovery attempt.
+          if (rec.states === 1 && T.incompleteFirst > 0) {
+            T.incompleteFirst -= 1;
+            delete m.dtcs;
+            rec.incomplete = Date.now();
+            e.stopImmediatePropagation();
+            var inc = new MessageEvent("message", { data: JSON.stringify(m) }); inc.__synthetic = true;
+            ws.dispatchEvent(inc);
+            return;
+          }
+        }
         // Test only (Task 37's forced-wrap reading): while T.invalidPath is set, each state reaches
         // the page with that signal sent as null and listed in nonfinite, as the API sends a
         // non-finite value (§8.2). The simulator's values stay finite, so traffic can run.
@@ -706,6 +721,15 @@ WS_WRAPPER = r"""(function () {
   W.CONNECTING = 0; W.OPEN = 1; W.CLOSING = 2; W.CLOSED = 3;
   window.WebSocket = W;
   T.bad = function () { bad(T.socks.length - 1); };
+  // Any text as one synthetic frame on the page's latest socket (Task 41: an incomplete state,
+  // an unknown message type). T.sent records each one.
+  T.sent = [];
+  T.send = function (text) {
+    var i = T.socks.length - 1;
+    var ev = new MessageEvent("message", { data: text }); ev.__synthetic = true;
+    T.sent.push({ t: Date.now(), sock: i, text: text.slice(0, 80) });
+    live[i].dispatchEvent(ev);
+  };
   // Every change of the body's health attributes, time-stamped: a state can last a few ms
   // (an attempt that succeeds at once), too short for any sampling to see.
   T.attrs = [];
@@ -1172,6 +1196,118 @@ async def case_malformed_bounded(m: M3b) -> None:
          "attribute_changes": changes, "retry_attribute_changes": retry_changes, "after_retry": slim(retry[-1])})
 
 
+# Task 41: a recognised state whose vehicle or dtcs is not an object is a data fault (the owner's
+# finding: the page used to ignore it and stay Live). The frame is the page's latest real state
+# with one part removed, dispatched on the page's socket by the wrapper (T.send).
+INCOMPLETE = ("(() => { const m = JSON.parse(window.__m3b.lastState); delete m.%s;"
+              " window.__m3b.send(JSON.stringify(m)); return %s; })()")
+
+
+async def case_incomplete_state(m: M3b) -> None:
+    before = await m.status()
+    results: dict[str, Any] = {}
+    conds: dict[str, bool] = {}
+    for drop in ("dtcs", "vehicle"):
+        await asyncio.sleep(1.0)
+        w0 = await m.wrapper()
+        pre = await m.state()
+        imm = await m.cdp.js(INCOMPLETE % (drop, PAGE_STATE))
+        samples, ok = await m.until(lambda s: s["health"] == "live", timeout=6.0)
+        await asyncio.sleep(0.6)                   # the log re-renders at most every 200 ms
+        end = await m.state()
+        changes = await m.attrs(imm["now"])
+        w = await m.wrapper()
+        new_socks = w["socks"][len(w0["socks"]):]
+        first_new_state = next((x["t"] for x in w["states"] if x["sock"] >= len(w0["socks"])), None)
+        first_live = next((x["t"] for x in changes if x["a"] == "health" and x["v"] == "live"), None)
+        tag = f"missing {drop}"
+        conds[f"{tag}: healthy before"] = pre["health"] == "live" and pre["episode"] == "none"
+        conds[f"{tag}: immediately last-known/malformed/active, malformed +1"] = (
+            (imm["conn"], imm["data"], imm["reason"], imm["episode"]) == ("live", "last-known", "malformed", "active")
+            and imm["malformed"] == pre["malformed"] + 1)
+        conds[f"{tag}: immediately the Last known tag"] = any(t.startswith("Last known") for t in imm["known"])
+        conds[f"{tag}: the banner names an incomplete state message"] = (
+            "incomplete state message" in (imm["banner"] or ""))
+        conds[f"{tag}: Live only after the valid state on the new socket"] = (
+            ok and bool(new_socks) and first_new_state is not None and first_live is not None
+            and first_live >= first_new_state)
+        conds[f"{tag}: after: live, episode none, attempts 0, no tag"] = (
+            (end["health"], end["episode"], end["attempts"], end["known"]) == ("live", "none", 0, []))
+        results[tag] = {"before": slim(pre), "immediately": slim(imm), "end": slim(end),
+                        "live_after_s": (samples[-1]["now"] - imm["now"]) / 1000, "new_sockets": new_socks,
+                        "first_new_state_t": first_new_state, "first_live_t": first_live, "attribute_changes": changes}
+    lg = await m.log()
+    after = await m.status()
+    conds["the log names the incomplete state"] = (
+        lg["text"].count("Resynchronised after an incomplete state message") == 2)
+    conds["no restart marker"] = "Simulator restarted" not in lg["text"]
+    conds["started_at unchanged"] = before["started_at"] == after["started_at"]
+    results["log_marks"] = lg["marks"]
+    m.cases.record(
+        "Incomplete state, then unchanged data",
+        "On a healthy page, a recognised state missing dtcs (then one missing vehicle): immediately data-conn live, "
+        "data-data last-known, data-reason malformed, data-episode active, data-malformed-total +1, the Last known "
+        "tag, a banner naming an incomplete state message. The resync's new socket delivers unchanged valid data; "
+        "Live only after that valid state (the first health=live change is not before the new socket's first state); "
+        "then data-episode none, data-attempts 0; the log names the incomplete state; no restart marker; "
+        "started_at unchanged",
+        conds, results)
+    await m.shot("m3b-a2b-incomplete-recovered.png")
+
+
+async def case_unknown_type(m: M3b) -> None:
+    pre = await m.state()
+    imm = await m.cdp.js("(() => { window.__m3b.send('{\"type\":\"future\"}'); return " + PAGE_STATE + "; })()")
+    await asyncio.sleep(2.5)
+    later = await m.state()
+    changes = await m.attrs(imm["now"] - 1)
+
+    def same(s: dict[str, Any]) -> bool:
+        return ((s["text"], s["health"], s["episode"], s["malformed"], s["socks"], s["banner"])
+                == ("Live", "live", "none", pre["malformed"], pre["socks"], None))
+
+    m.cases.record(
+        "Unknown message type ignored",
+        "A {\"type\":\"future\"} frame on a healthy page changes nothing: still Live, data-malformed-total unchanged, "
+        "data-episode none, no new socket, no banner, immediately and 2.5 s later",
+        {"healthy before": pre["health"] == "live", "immediately unchanged": same(imm),
+         "2.5 s later unchanged": same(later),
+         "no health attribute change": not any(x["a"] in ("health", "episode") for x in changes)},
+        {"before": slim(pre), "immediately": slim(imm), "later": slim(later), "attribute_changes": changes})
+
+
+async def case_incomplete_in_attempt(m: M3b) -> None:
+    await asyncio.sleep(1.0)
+    w0 = await m.wrapper()
+    n0 = len(w0["socks"])
+    await m.cdp.js("window.__m3b.incompleteFirst = 1")
+    imm = await m.cdp.js("(() => { window.__m3b.bad(); return " + PAGE_STATE + "; })()")
+    samples, ok = await m.until(lambda s: s["health"] == "live", timeout=10.0)
+    await asyncio.sleep(0.6)
+    end = await m.state()
+    changes = await m.attrs(imm["now"])
+    w = await m.wrapper()
+    attempts = w["socks"][n0:]
+    lg = await m.log()
+    m.cases.record(
+        "Incomplete state during an attempt",
+        "An unreadable frame starts an episode; the first attempt's socket delivers an incomplete state (the wrapper "
+        "removes dtcs from that socket's first state). That ends the attempt (data-attempts 1, then 2 after the "
+        "2 s wait); the second attempt's valid state recovers: Live, data-episode none, data-attempts 0, and the "
+        "resync line names both causes",
+        {"immediately active": imm["episode"] == "active",
+         "two attempt sockets, the first got the incomplete state": len(attempts) == 2
+         and attempts[0]["incomplete"] is not None and attempts[1]["incomplete"] is None,
+         "the second attempt started about 2 s after the first ended (+-0.3)": len(attempts) == 2
+         and abs((attempts[1]["created"] - attempts[0]["incomplete"]) / 1000 - 2.0) <= 0.3,
+         "data-attempts went 1, 2, then 0": [int(x["v"]) for x in changes if x["a"] == "attempts"] == [1, 2, 0],
+         "recovered: live, episode none, attempts 0": ok and (end["health"], end["episode"], end["attempts"])
+         == ("live", "none", 0),
+         "the resync line names the incomplete state": "an incomplete state message." in lg["text"]},
+        {"immediately": slim(imm), "end": slim(end), "attempt_sockets": attempts, "attribute_changes": changes,
+         "live_after_s": (samples[-1]["now"] - imm["now"]) / 1000, "log_marks": lg["marks"][-3:]})
+
+
 async def case_slots(m: M3b, clients: ScriptClients, variant: str) -> None:
     """§12.2, recovery with all four client slots occupied. A leaves the freed slot alone; B takes it."""
     st = await m.status()
@@ -1383,6 +1519,9 @@ async def part_a(run: Run, m: M3b) -> None:
     try:
         await case_no_false_invalidation(m)
         await case_malformed_once(m)
+        await case_incomplete_state(m)
+        await case_unknown_type(m)
+        await case_incomplete_in_attempt(m)
         await case_malformed_bounded(m)
         await run_slot_cases(run, m)
     finally:
