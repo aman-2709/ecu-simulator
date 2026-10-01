@@ -878,28 +878,28 @@
   }
 
   // One shared line under the head (not in each card, so every card keeps its height): the latest
-  // gap inside the drawn window. A drop or fault is the same for every graph; an invalid value names
-  // its signal. Empty, and hidden, when the window has none.
+  // ended gap inside the drawn window, then every invalid run still open. A drop or fault is the
+  // same for every graph; an invalid value names its signal. Empty, and hidden, when there is none.
   function breaksText(end) {
     if (end == null) return "";
-    var start = end - G.win, best = null, who = null, trimmed = false;
-    function consider(b, g) {
-      if (!(b.b > start && b.a < end)) return;
-      if (!best || b.b > best.b || (b.b === best.b && best.invalid && !b.invalid)) { best = b; who = g; }
-    }
+    var start = end - G.win, best = null, who = null, open = [], trimmed = false;
     G.list.forEach(function (g) {
       if (g.fig.hidden || g.state === "unavailable") return;
       var r = g.ring;
-      r.breaks.forEach(function (b) { consider(b, g); });
-      if (r.invalidFrom != null) consider({ a: r.invalidFrom, b: end, invalid: true, open: true }, g);
+      r.breaks.forEach(function (b) {
+        if (!(b.b > start && b.a < end)) return;
+        if (!best || b.b > best.b || (b.b === best.b && best.invalid && !b.invalid)) { best = b; who = g; }
+      });
+      // An open run ends "now", so it would always be the latest: it is listed beside, never instead.
+      if (r.invalidFrom != null && r.invalidFrom < end) open.push(g);
       if (G.paused && r.trimmedPaused) trimmed = true;
     });
     var parts = [];
-    if (best && best.invalid) {
-      parts.push(who.def.name + ": invalid value from t = " + tText(best.a) + " to t = " + tText(best.b) + " s" + (best.open ? " (still invalid)" : ""));
-    } else if (best) {
-      parts.push("No data from t = " + tText(best.a) + " to t = " + tText(best.b) + " s (" + best.why + ")");
-    }
+    if (best && best.invalid) parts.push(who.def.name + ": invalid value from t = " + tText(best.a) + " to t = " + tText(best.b) + " s");
+    else if (best) parts.push("No data from t = " + tText(best.a) + " to t = " + tText(best.b) + " s (" + best.why + ")");
+    open.forEach(function (g) {
+      parts.push(g.def.name + ": invalid value from t = " + tText(g.ring.invalidFrom) + " to t = " + tText(end) + " s (still invalid)");
+    });
     if (trimmed) parts.push("history trimmed while paused");
     return parts.join(" · ");
   }
