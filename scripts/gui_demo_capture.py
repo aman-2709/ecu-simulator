@@ -801,7 +801,8 @@ LOG_ROWS = """(() => {
           banner: !document.getElementById('linkstate').hidden,
           line2: [...document.querySelectorAll('figure.graph:not([hidden]) .graph__line2')].map(e => e.textContent),
           breaks: (b => b && !b.hidden ? b.textContent : '')(document.getElementById('graphs-breaks')),
-          statusH: Math.round(document.querySelector('header').getBoundingClientRect().height)};
+          statusH: Math.round(document.querySelector('header').getBoundingClientRect().height),
+          note: (n => n && !n.hidden ? n.textContent : '')(document.getElementById('graphs-note'))};
 })()"""
 
 CANVASES = """(() => ({dpr: window.devicePixelRatio,
@@ -1415,6 +1416,33 @@ async def case_sigstop(m: M3b, sim: subprocess.Popen[bytes]) -> None:
          "seqs": [len(lg["seqs"]), lg["seqs"][:3], lg["seqs"][-3:]], "log_count": lg["count"]})
 
 
+async def case_restart_and_gap(m: M3b, sim: subprocess.Popen[bytes]) -> None:
+    """Measured (Task 36): at 1440 x 900, the restart note and a gap note shown together, count the
+    full log rows. Just after the restart (the note shows while the window reaches the new run's
+    start), a SIGSTOP/SIGCONT of the new simulator adds a disconnect gap inside the window."""
+    await m.cdp.viewport(*WIDE)
+    await m.until_as_of(3.0)
+    os.kill(sim.pid, signal.SIGSTOP)
+    m.run.log(f"SIGSTOP the restarted simulator (pid {sim.pid}) for a gap beside the restart note")
+    await m.until(lambda s: s["conn"] == "down", timeout=12.0)
+    os.kill(sim.pid, signal.SIGCONT)
+    m.run.log("SIGCONT the restarted simulator")
+    await m.until(lambda s: s["health"] == "live", timeout=20.0, period=0.2)
+    await m.until(lambda s: re.search(GAP_NOTE, s["breaks"]) is not None, timeout=6.0)
+    await m.cdp.js("window.scrollTo(0, 0)")
+    await m.settled()
+    rows = await m.cdp.js(LOG_ROWS)
+    await m.shot("m3b-b-restart-and-gap-1440.png")
+    m.cases.record(
+        "Log rows at 1440 x 900, restart note and a gap note together (measured)",
+        "At 1440 x 900 with the graphs open, the restart note and a gap note visible together: at least 5 full "
+        "log rows inside #logwrap",
+        {"the restart note is shown": rows["note"].startswith("Simulator restarted at"),
+         "a gap note is shown": re.search(GAP_NOTE, rows["breaks"]) is not None,
+         "the log is filled (more rows than fit)": len((await m.log())["seqs"]) > rows["full"],
+         "at least 5 full log rows": rows["full"] >= 5}, rows)
+
+
 async def case_restart(m: M3b, run: Run, sim: subprocess.Popen[bytes], logname: str) -> subprocess.Popen[bytes]:
     before = await m.state()
     run.log("SIGTERM the simulator, then start a new one")
@@ -1618,6 +1646,7 @@ async def part_b(run: Run, m: M3b) -> None:
         traffic = None
         await case_sigstop(m, sim)
         sim = await case_restart(m, run, sim, "b-simulator-2.log")
+        await case_restart_and_gap(m, sim)
     finally:
         if sim.poll() is None:
             with contextlib.suppress(ProcessLookupError):
