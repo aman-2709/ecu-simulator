@@ -254,11 +254,14 @@ async def check_overflow(run: Run, cdp: DevTools, label: str) -> None:
 # numbers describe the same moment. `counted` is every shown log row (exchange or marker)
 # whose top edge is at or below the log box's bottom edge, counted here independently of
 # the page's own code; `partial` is the row cut by that edge, if any. `overlap` is true if
-# the control's box intersects the log box.
+# the control's box intersects the log box. Since the windowed log (Task 43) a pinned window
+# ends with a Newer row (tr.lognav, the window's navigation, not a log row): it is not
+# counted, and `beyond` is the control's "+ M beyond this window" (matching exchanges after
+# the window, not drawn), read from its text.
 JUMP_STATE = """(function(){
   var b = document.getElementById('btn-follow'), w = document.getElementById('logwrap');
   var wr = w.getBoundingClientRect(), br = b.getBoundingClientRect();
-  var rows = document.querySelectorAll('#log-body > tr'), counted = 0, partial = 0;
+  var rows = document.querySelectorAll('#log-body > tr:not(.lognav)'), counted = 0, partial = 0;
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i].getBoundingClientRect();
     if (r.height === 0) continue;
@@ -267,7 +270,9 @@ JUMP_STATE = """(function(){
   var shown = !b.classList.contains('is-off') && getComputedStyle(b).visibility !== 'hidden';
   var overlap = shown && br.left < wr.right && br.right > wr.left && br.top < wr.bottom && br.bottom > wr.top;
   var m = /^([0-9,]+) rows? below/.exec(b.textContent);
+  var k = /([0-9,]+)(?: rows?)? beyond this window/.exec(b.textContent);
   return {shown: shown, text: b.textContent, n: m ? Number(m[1].replace(/,/g, '')) : null,
+          beyond: k ? Number(k[1].replace(/,/g, '')) : 0,
           counted: counted, partial: partial, overlap: overlap,
           in_header: !!b.closest('.panel__head'), last_seq: document.getElementById('log-count').textContent};
 })()"""
