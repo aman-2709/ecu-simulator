@@ -1,0 +1,4 @@
+M3b 1440: #vehicle 378/378, html 1440/1440, body 1440/1440, #graphs 1010/1010, .uplot 0 179/179, .uplot 1 179/179, .uplot 2 179/179, .uplot 3 179/179, .uplot 4 179/179  ok
+M3b 1200: #vehicle 378/378, html 1200/1200, body 1200/1200, #graphs 773/773, .uplot 0 171/171, .uplot 1 171/171, .uplot 2 171/171, .uplot 3 171/171, .uplot 4 171/171  ok
+M3b 390: #vehicle 372/372, html 390/390, body 390/390, #graphs 372/372, .uplot 0 342/342, .uplot 1 342/342, .uplot 2 342/342, .uplot 3 342/342, .uplot 4 342/342  ok
+M3b 2000: #vehicle 498/498, html 2000/2000, body 2000/2000, #graphs 1442/1442, .uplot 0 262/262, .uplot 1 262/262, .uplot 2 262/262, .uplot 3 262/262, .uplot 4 262/262  ok

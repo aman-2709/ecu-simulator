@@ -293,8 +293,8 @@ A fourteenth revision, on 2026-09-30, records M3b checkpoint 2 on branch `gui`. 
 items are implemented:** uPlot 1.6.32 vendored and pinned by SHA-256 (§7, §9.3), the five
 graphs, and the page's health model, "last known" and the recovery budget. The automated
 browser checks (§9.3) passed 21 of 21 on a vcan host in Chrome
-(`docs/validation/gui-m3b-live-demo.md`, run 7 plus the long run). **M3b is not accepted**
-until the owner's manual checklist (design §13) passes, including the CSP check in both
+(`docs/validation/gui-m3b-live-demo.md`, run 8, after the final-review fix wave, plus the
+long run). **M3b is not accepted** until the owner's manual checklist (design §13) passes, including the CSP check in both
 Chrome and Firefox, which nobody has run. The record lists the rulings the controller made
 during checkpoint 2, for the owner to confirm or reverse: the Agreement check covers
 unpaused live screenshots only; break and gap notes sit on one shared line under the
