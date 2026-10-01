@@ -97,6 +97,9 @@ abbr[title] { text-decoration: underline dotted; text-underline-offset: 2px; cur
 .conn--down .conn__lamp { border-color: var(--stale); background: var(--stale-bg); }
 .conn--refused { color: var(--er); }
 .conn--refused .conn__lamp { border-color: var(--er); background: var(--er-bg); }
+/* Connected, with last known data: an amber outline, no fill and no beat (M3b §8.4). */
+.conn--known { color: var(--stale); }
+.conn--known .conn__lamp { border-color: var(--stale-rule); background: transparent; }
 @keyframes beat { 50% { box-shadow: 0 0 0 5px transparent; } }
 
 /* ---------- link state banner (disconnected, refused) ---------- */
@@ -111,6 +114,7 @@ abbr[title] { text-decoration: underline dotted; text-underline-offset: 2px; cur
 .linkstate b { color: var(--stale); }
 .linkstate--refused { background: var(--er-bg); border-bottom-color: var(--er); }
 .linkstate--refused b { color: var(--er); }
+.linkstate--known { border-bottom-style: dotted; }
 
 /* ---------- stale marking: data kept, never presented as current ---------- */
 .stale-tag {
@@ -121,8 +125,20 @@ abbr[title] { text-decoration: underline dotted; text-underline-offset: 2px; cur
   border: 1px solid var(--stale-rule); border-radius: 2px;
 }
 body.is-stale .panel { border-top-color: transparent; border-image: var(--stale-hatch) 1; border-image-width: 3px 0 0 0; }
-body.is-stale .panel__body, body.is-stale .logwrap, body.is-stale .readout:not(.readout--conn) dd { opacity: .62; }
-body.is-stale .readout:not(.readout--conn) dd { text-decoration: line-through 1px var(--rule-2); }
+body.is-stale .panel__body, body.is-stale .logwrap, body.is-stale .readout:not(.readout--conn):not(.readout--malformed) dd { opacity: .62; }
+body.is-stale .readout:not(.readout--conn):not(.readout--malformed) dd { text-decoration: line-through 1px var(--rule-2); }
+
+/* ---------- last known marking: connected, a recovery pending (M3b §8.4) ----------
+   Only the data panels (vehicle, trouble codes, graphs): a dotted top edge and the tag. Values
+   are not faded, and the exchange log is not marked. Stale, above, takes precedence. */
+.known-tag {
+  display: inline-block;
+  padding: 0 0.5rem;
+  font-size: 0.857rem; font-weight: 600;
+  color: var(--stale); background: var(--panel);
+  border: 1px dotted var(--stale-rule); border-radius: 2px;
+}
+body.is-known:not(.is-stale) .panel--data { border-top-style: dotted; border-top-color: var(--stale-rule); }
 
 /* ---------- layout ---------- */
 .layout {

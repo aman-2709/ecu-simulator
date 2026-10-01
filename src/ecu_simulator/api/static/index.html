@@ -22,6 +22,10 @@
         <dt>Connection</dt>
         <dd><span class="conn conn--loading" id="conn"><span class="conn__lamp" aria-hidden="true"></span><span id="conn-text">Connecting</span></span></dd>
       </div>
+      <div class="readout readout--malformed" id="malformed" hidden title="Messages on the live stream that were not JSON objects, counted by this page since it loaded. None is applied.">
+        <dt>Malformed messages</dt>
+        <dd id="malformed-text"></dd>
+      </div>
     </dl>
     <section class="polled" id="polled" aria-labelledby="polled-cap" hidden
              title="Refreshed from GET /status every 2 s; may trail the live exchange log by a few seqs.">
@@ -38,18 +42,20 @@
 
 <main class="layout">
   <div class="side">
-    <section class="panel" id="dtc-panel" aria-labelledby="dtc-h">
+    <section class="panel panel--data" id="dtc-panel" aria-labelledby="dtc-h">
       <div class="panel__head">
         <h2 id="dtc-h">Trouble codes</h2>
         <span class="stale-tag" hidden></span>
+        <span class="known-tag" hidden></span>
       </div>
       <div class="panel__body" id="dtcs"><p class="placeholder">Loading trouble codes</p></div>
     </section>
 
-    <section class="panel" id="vehicle-panel" aria-labelledby="vehicle-h">
+    <section class="panel panel--data" id="vehicle-panel" aria-labelledby="vehicle-h">
       <div class="panel__head">
         <h2 id="vehicle-h">Vehicle signals</h2>
         <span class="stale-tag" hidden></span>
+        <span class="known-tag" hidden></span>
         <span class="panel__meta" id="vehicle-meta"></span>
       </div>
       <div class="panel__body panel__scroll" id="vehicle" tabindex="0" aria-label="Vehicle signals, scrollable"><p class="placeholder">Loading vehicle signals</p></div>

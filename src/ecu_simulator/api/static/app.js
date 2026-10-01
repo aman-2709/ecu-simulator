@@ -17,7 +17,9 @@
   var STABLE_MS = 30000;             // after a 1008/1011/1013 close, only a connection open this long resets the backoff
   var ESCALATING_CLOSES = [1008, 1011, 1013];   // the simulator closed this page: keep backing off
   var FETCH_TIMEOUT_MS = 5000;
-  var MAX_ROWS = 2000;               // exchange rows this page keeps; older ones leave the view
+  var EPISODE_ATTEMPTS = 3;          // a recovery episode's budget (M3b §8.5): attempts after...
+  var EPISODE_FIRST_MS = 1000;       // ...1 s, then 2 s, then 4 s; never reset except by a recovery
+  var MAX_ROWS = 2000;              // exchange rows this page keeps; older ones leave the view
   var RENDER_MIN_MS = 200;           // the log re-renders at most this often
   var HEX_PREVIEW_BYTES = 6;
   var USER_SCROLL_MS = 1000;         // a scroll this soon after the reader's own input is theirs
@@ -47,8 +49,20 @@
   };
 
   // ---------- state ----------
+  // Health is two variables (M3b §8.4). S.conn is the connection: polling and reconnecting
+  // depend on it alone. S.data is "current" when no recovery requirement is pending and
+  // "last-known" while one is (S.req); only applying the state the requirement asks for
+  // clears it. Time without messages changes neither.
   var S = {
-    phase: "loading",        // loading | live | down | refused
+    conn: "loading",         // loading | live | down | refused
+    // The pending recovery requirement, or null. Kinds: connect (this page's data has not yet
+    // come from socket `sock`), malformed (a socket after `faultSock` must deliver it), encoding
+    // (a socket after `okSock`, the last socket before /status read ok true, must deliver it).
+    req: { connect: true, sock: null },
+    dataAt: null,            // ms: when the page last applied a valid state
+    ep: null,                // a recovery episode: { state: active | exhausted, attempts, inFlight, last }
+    sock: null, sockSeq: 0,  // the current socket's record { id, gen, run, spoiled }; sockets opened so far
+    malformed: 0, malformedAt: null, polls: 0,
     reason: null,            // why the latest attempt failed
     cause: null,             // why the page stopped being live
     lastLive: null,          // ms: when data last arrived from a live connection
@@ -114,8 +128,17 @@
   function canId(s) { return s ? s.replace(/^0x/, "").toUpperCase() : "—"; }
   function serviceOf(e) { return typeof e.request === "string" && e.request.length >= 2 ? e.request.slice(0, 2).toLowerCase() : "?"; }
   function ecuKey(e) { return e.ecu === undefined ? "?" : e.ecu === null ? "none" : String(e.ecu); }
-  function isLive() { return S.phase === "live"; }
-  function isStale() { return S.phase === "down" || S.phase === "refused"; }
+  function isLive() { return S.conn === "live"; }
+  function isStale() { return S.conn === "down" || S.conn === "refused"; }
+  function isObject(v) { return v != null && typeof v === "object" && !Array.isArray(v); }
+  function hasFault() { return !!S.req && !!(S.req.malformed || S.req.encoding); }
+  function reasonOf() {
+    var r = S.req;
+    if (!r) return "";
+    if (!r.malformed && !r.encoding) return "connecting";
+    return [r.malformed ? "malformed" : null, r.encoding ? "encoding" : null].filter(Boolean).join(" ");
+  }
+  function episodeActive() { return !!S.ep && S.ep.state === "active"; }
 
   function HttpError(status, text) { this.status = status; this.text = text; }
   function getJSON(path) {
@@ -137,12 +160,14 @@
   // ---------- connection ----------
   // One attempt at a time. S.gen changes whenever an attempt starts or the page goes down, so a
   // fetch, socket or poll left over from an earlier attempt sees a stale token and does nothing.
+  // A recovery episode's resync closes the socket while S.conn stays as it was, so the guard is
+  // on the socket, not on the connection state.
   function connect() {
-    if (S.connecting || isLive()) return;      // one attempt at a time, and none while live
+    if (S.connecting || S.ws) return;          // one attempt at a time, and none while a socket is open
     S.connecting = true;
     var gen = ++S.gen;
-    clearTimeout(S.retryTimer);
-    S.retryTimer = null; S.retryAt = null;
+    clearRetry();
+    if (episodeActive()) { S.ep.attempts += 1; S.ep.inFlight = true; }
     renderLink();
     getJSON("/status").then(function (status) {
       if (gen !== S.gen) return null;
@@ -151,8 +176,14 @@
         addMark("link", "Simulator restarted.", "A new run started at " + utc(status.started_at * 1000) +
           ". Rows above are from the previous run; seq starts again at 1.");
         S.lastSeq = null; S.dropped = null;
+        // A restart ends any recovery episode: the new run starts with a connect requirement.
+        S.ep = null; S.req = { connect: true, sock: null };
       }
       S.runStartedAt = status.started_at;
+      if (!readEncoding(status)) {
+        // An encoding episode's attempt ends when /status still says the state cannot be built.
+        if (episodeActive()) { fail("the simulator still reports that its full state cannot be encoded (state_encoding.ok false)", false); return null; }
+      }
       var first = S.vehicle == null || restarted;
       // While stale, the views keep their data as of the drop; a fresh status waits for the hello,
       // unless this is the first data, or the first of a new run.
@@ -176,11 +207,24 @@
     });
   }
 
-  function closeSocket() {
+  // Reads state_encoding from a /status answer, at connect or in a poll (M3b §8.4). Returns
+  // false when the simulator says its latest full state failed to build or encode.
+  function readEncoding(status) {
+    var enc = status.api && status.api.state_encoding;
+    if (enc && enc.ok === false) {
+      if (!S.req || !S.req.encoding) fault("encoding");   // already pending: nothing changes
+      return false;
+    }
+    // ok true: only sockets opened after this read can carry the state that clears encoding.
+    if (S.req && S.req.encoding) S.req.okSock = S.sockSeq;
+    return true;
+  }
+
+  function closeSocket(code) {
     if (!S.ws) return;
     var ws = S.ws;
     S.ws = null;                        // its handlers now see S.ws !== ws and ignore it
-    try { ws.close(); } catch (e) { /* already closing */ }
+    try { ws.close(code); } catch (e) { /* already closing */ }
   }
 
   function openSocket(refusedBefore, gen) {
@@ -188,13 +232,14 @@
     var scheme = location.protocol === "https:" ? "wss:" : "ws:";
     var url = scheme + "//" + location.host + API + "/events" + (S.lastSeq != null ? "?after=" + S.lastSeq : "");
     var ws = new WebSocket(url);
-    S.ws = ws; S.wsOpenedAt = null; S.hello = null; S.dropped = null;
+    var sock = { id: ++S.sockSeq, gen: gen, run: S.runStartedAt, spoiled: false };
+    S.ws = ws; S.sock = sock; S.wsOpenedAt = null; S.hello = null; S.dropped = null;
     // A handshake that never completes would hold the attempt forever: give it up.
     setTimeout(function () {
       if (S.ws === ws && S.wsOpenedAt == null) fail("the WebSocket handshake did not finish within " + FETCH_TIMEOUT_MS / 1000 + " s", false);
     }, FETCH_TIMEOUT_MS);
     ws.onopen = function () { if (S.ws === ws) S.wsOpenedAt = Date.now(); };
-    ws.onmessage = function (ev) { if (S.ws === ws) onMessage(ev.data); };
+    ws.onmessage = function (ev) { if (S.ws === ws) onMessage(ev.data, sock); };
     ws.onclose = function (ev) {
       if (S.ws !== ws) return;
       S.ws = null;
@@ -220,7 +265,17 @@
     }).catch(function (err) { if (gen === S.gen) fail(fetchReason(err, "status request failed"), false); });
   }
 
+  // The page's single retry timer, shared by M3a's reconnects and recovery attempts (M3b §8.5).
+  // Arming it always clears the previous one; connect() clears it when an attempt starts.
+  function armRetry(delay) {
+    clearTimeout(S.retryTimer);
+    S.retryAt = Date.now() + delay;
+    S.retryTimer = setTimeout(function () { S.retryTimer = null; S.retryAt = null; connect(); }, delay);
+  }
+  function clearRetry() { clearTimeout(S.retryTimer); S.retryTimer = null; S.retryAt = null; }
+
   function fail(reason, refused) {
+    var wasStale = isStale();
     S.gen += 1;                         // ends this attempt and its poll loop
     S.connecting = false;
     // A connection that stayed open STABLE_MS resets the backoff, however it ended.
@@ -228,15 +283,114 @@
     S.wsOpenedAt = null;
     closeSocket();
     clearTimeout(S.pollTimer); S.pollTimer = null;
-    if (!isStale()) { S.downAt = S.lastLive; S.cause = reason; }
-    S.phase = refused ? "refused" : "down";
+    if (!wasStale) { S.downAt = S.lastLive; S.cause = reason; }
+    S.conn = refused ? "refused" : "down";
     S.reason = reason;
-    var delay = refused ? BACKOFF_CAP_MS : Math.min(BACKOFF_START_MS * Math.pow(2, S.attempt), BACKOFF_CAP_MS);
-    S.attempt += 1;
-    S.retryAt = Date.now() + delay;
-    clearTimeout(S.retryTimer);
-    S.retryTimer = setTimeout(connect, delay);
+    if (!wasStale) healthBreak("down");
+    if (S.ep) {
+      // During an episode a failure consumes the attempt and arms the episode's next wait;
+      // once exhausted, nothing is armed: only "Retry now" starts again.
+      if (episodeActive()) episodeAttemptEnded(reason, false);
+    } else {
+      var delay = refused ? BACKOFF_CAP_MS : Math.min(BACKOFF_START_MS * Math.pow(2, S.attempt), BACKOFF_CAP_MS);
+      S.attempt += 1;
+      armRetry(delay);
+    }
     renderAll();
+  }
+
+  // ---------- recovery episodes (M3b §8.5) ----------
+  // The resync is a reconnect: close the socket (normal closure) and run connect() after the
+  // episode's wait. S.conn is left as it is; the gen change ends the poll loop and any fetch.
+  function resyncClose() {
+    S.gen += 1;
+    S.connecting = false;
+    closeSocket(1000);
+    S.wsOpenedAt = null;
+    clearTimeout(S.pollTimer); S.pollTimer = null;
+  }
+  function startEpisode() {
+    S.ep = { state: "active", attempts: 0, inFlight: false, last: null };
+    resyncClose();
+    armRetry(EPISODE_FIRST_MS);
+  }
+  // An attempt ended without its state: count it, then wait 2 s, then 4 s, or stop. `open` is
+  // true when the attempt's socket is still open (a malformed frame, a state that did not
+  // qualify): it is closed for the next attempt, or left open on exhaustion.
+  function episodeAttemptEnded(reason, open) {
+    S.ep.inFlight = false;
+    S.connecting = false;               // the attempt is over, even if its socket stays open
+    S.ep.last = reason;
+    if (S.ep.attempts >= EPISODE_ATTEMPTS) { S.ep.state = "exhausted"; clearRetry(); return; }
+    if (open) resyncClose();
+    armRetry(EPISODE_FIRST_MS * Math.pow(2, S.ep.attempts));
+  }
+  // "Retry now" after exhaustion: a new episode with a fresh budget. With no socket the first
+  // attempt starts at once; an open socket is closed first and the usual first wait applies.
+  function retryNow() {
+    if (S.connecting) return;
+    var open = !!S.ws;
+    S.ep = { state: "active", attempts: 0, inFlight: false, last: null };
+    if (open) { resyncClose(); armRetry(EPISODE_FIRST_MS); } else connect();
+    renderLink();
+  }
+
+  // ---------- health (M3b §8.4) ----------
+  // The graphs' rings register here: called with "malformed", "encoding" or "down" when S.data
+  // enters last-known for a fault or S.conn goes down, so each ring sets a pending break (§6.7).
+  var breakListeners = [];
+  function healthBreak(cause) { breakListeners.forEach(function (fn) { fn(cause); }); }
+
+  // A fault replaces a pending connect requirement; malformed and encoding can both be pending,
+  // and then both rules must be met.
+  function fault(kind) {
+    var entering = !hasFault();
+    if (entering) S.req = { malformed: false, encoding: false, faultSock: 0, okSock: null };
+    S.req[kind] = true;
+    if (kind === "malformed") S.req.faultSock = S.sock ? S.sock.id : S.sockSeq;
+    else S.req.okSock = null;
+    if (entering) healthBreak(kind);
+  }
+
+  // A frame that fails JSON.parse or is not an object: counted, never swallowed.
+  function onMalformed(sock) {
+    S.malformed += 1; S.malformedAt = Date.now();
+    var encodingOnly = hasFault() && S.req.encoding && !S.req.malformed;
+    sock.spoiled = true;                // a state on this socket never clears a requirement now
+    fault("malformed");
+    if (S.ep) {
+      if (episodeActive() && S.ep.inFlight) episodeAttemptEnded("the simulator sent a message this page could not read", true);
+    } else if (!encodingOnly) {
+      startEpisode();
+    }
+    // With an encoding requirement pending, the resync waits for a poll that reads ok true;
+    // that socket is after this fault too, so it meets both rules.
+    renderAll();
+  }
+
+  // Valid: type state, vehicle and dtcs objects, on the current socket, in the current run.
+  function onState(m, sock) {
+    if (!isObject(m.vehicle) || !isObject(m.dtcs) || sock.gen !== S.gen || sock.run !== S.runStartedAt) return;
+    applyState(m.vehicle, m.dtcs);
+    S.dataAt = Date.now();
+    var r = S.req;
+    if (r) {
+      var qualifies = hasFault() ?
+        !sock.spoiled && (!r.malformed || sock.id > r.faultSock) && (!r.encoding || (r.okSock != null && sock.id > r.okSock)) :
+        r.sock === sock.id;
+      if (qualifies) {
+        S.req = null;
+        if (r.malformed || r.encoding) {
+          addMark("link", r.malformed ? "Resynchronised after an unreadable message." : "Resynchronised after the simulator's state recovered.",
+            "A complete state arrived on a new connection at " + utc(S.dataAt) + "; the views are current again." +
+            (S.ep ? " Recovery took " + S.ep.attempts + (S.ep.attempts === 1 ? " attempt." : " attempts.") : ""));
+        }
+        S.ep = null;                    // a recovery ends the episode and resets the budget
+      } else if (episodeActive() && S.ep.inFlight) {
+        episodeAttemptEnded("the state it received did not meet the recovery requirement", true);
+      }
+    }
+    renderLink();
   }
 
   // One status loop per live connection, tied to the generation it started in.
@@ -246,27 +400,32 @@
       if (gen !== S.gen) return;
       getJSON("/status").then(function (status) {
         if (gen !== S.gen || !isLive()) return;
+        S.polls += 1;
         S.status = status; S.statusAt = Date.now(); S.lastLive = Date.now();
-        renderStatus();
         poll(STATUS_POLL_MS, gen);
+        var pending = S.req && S.req.encoding;
+        // ok true with encoding pending starts the resync; it clears nothing by itself. No
+        // automatic resync once an episode is exhausted, and none while one is under way.
+        if (readEncoding(status) && pending && !S.ep) startEpisode();
+        renderStatus(); renderLink();
       }).catch(function (err) {
         if (gen === S.gen && isLive()) fail(fetchReason(err, "status request failed"), false);
       });
     }, delay);
   }
 
-  function onMessage(text) {
+  function onMessage(text, sock) {
     var m;
-    try { m = JSON.parse(text); } catch (e) { return; }
-    if (!m || typeof m !== "object") return;
+    try { m = JSON.parse(text); } catch (e) { onMalformed(sock); return; }
+    if (!isObject(m)) { onMalformed(sock); return; }
     S.lastLive = Date.now();
-    if (m.type === "hello") onHello(m);
-    else if (m.type === "state") applyState(m.vehicle, m.dtcs);
+    if (m.type === "hello") onHello(m, sock);
+    else if (m.type === "state") onState(m, sock);
     else if (m.type === "exchange") addExchange(m);
     else if (m.type === "dropped") { S.dropped = m; renderStatus(); }
   }
 
-  function onHello(h) {
+  function onHello(h, sock) {
     if (h.api !== 1) { fail("this page speaks API v1; the simulator offers v" + h.api, true); return; }
     S.hello = h;
     var resumed = S.lastSeq != null;
@@ -279,8 +438,11 @@
           "Seq 1–" + (h.oldest_seq - 1) + " left the simulator's history before this page connected.");
       }
     } else {
-      addMark("link", "Connection lost, then resumed.", "Last live " + (S.downAt ? utc(S.downAt) : "unknown") +
-        ", resumed " + utc(Date.now()) + " after seq " + S.lastSeq + ".");
+      // A resync is not a lost connection: its own line follows when the state is applied.
+      if (!S.ep) {
+        addMark("link", "Connection lost, then resumed.", "Last live " + (S.downAt ? utc(S.downAt) : "unknown") +
+          ", resumed " + utc(Date.now()) + " after seq " + S.lastSeq + ".");
+      }
       if (h.watermark < S.lastSeq) {
         addGap(1, h.watermark, "The simulator's seq went back to " + h.watermark + ": a new run began. Its earlier exchanges were not received.");
         S.lastSeq = h.watermark;
@@ -290,7 +452,9 @@
       }
     }
     S.connecting = false;
-    S.phase = "live"; S.reason = null; S.cause = null; S.downAt = null;
+    S.conn = "live"; S.reason = null; S.cause = null; S.downAt = null;
+    // Every new socket starts a connect requirement, unless a fault's requirement is pending.
+    if (!hasFault()) S.req = { connect: true, sock: sock.id };
     if (ESCALATING_CLOSES.indexOf(S.lastClose) < 0) S.attempt = 0;
     poll(0, S.gen);
     renderAll();
@@ -401,36 +565,58 @@
         ["handoff", d.handoff, "handoff_dropped: records the dispatcher could not hand to the publisher", true],
         ["this page", d.client, d.client == null ? "client_dropped: no dropped message on this connection yet" : "client_dropped: events this page's queue refused, on this connection", true],
         ["forced", d.forced, "forced_disconnects: clients closed for reading too slowly (1013)", true]
-      ])
-    ].forEach(function (n) { root.appendChild(n); });
+      ]),
+      // Shown once the simulator has failed to build its full state at least once (M3b §8.4).
+      a.state_encode_failed > 0 ? pairs("State", "drops", [
+        ["encode failed", a.state_encode_failed, "state_encode_failed: periodic full-state snapshots that failed to build or encode, since start" +
+          (a.state_encoding && a.state_encoding.last_failed_at ? "; latest " + utc(a.state_encoding.last_failed_at * 1000) : ""), true]
+      ]) : null
+    ].forEach(function (n) { if (n) root.appendChild(n); });
   }
 
+  // "Live" is S.conn live and S.data current (M3b §8.6). Stale (the connection is not live)
+  // takes precedence over last known (live, with a recovery requirement pending).
   function renderLink() {
     var conn = $("conn"), text = $("conn-text"), box = $("linkstate");
-    var stale = isStale();
+    var stale = isStale(), reason = reasonOf(), known = !stale && S.req != null && isLive();
+    var exhausted = !!S.ep && S.ep.state === "exhausted";
     document.body.classList.toggle("is-stale", stale);
+    document.body.classList.toggle("is-known", known);
     var tag = S.lastLive ? "Stale, as of " + utc(S.downAt || S.lastLive) : "No data received";
     Array.prototype.forEach.call(document.querySelectorAll(".stale-tag"), function (t) {
       t.hidden = !stale; t.textContent = tag;
     });
+    var knownTag = "Last known" + (S.dataAt ? ", " + utc(S.dataAt) : "");
+    Array.prototype.forEach.call(document.querySelectorAll(".known-tag"), function (t) {
+      t.hidden = !known; t.textContent = knownTag;
+    });
+    renderMalformed();
+    writeDiagnostics(reason);
     var retry = S.retryAt ? Math.max(0, Math.ceil((S.retryAt - Date.now()) / 1000)) : null;
-    if (S.phase === "live") {
+    if (S.conn === "live" && !S.req) {
       conn.className = "conn conn--live";
       text.textContent = "Live";
       conn.title = "WebSocket open since " + utc(S.wsOpenedAt || Date.now());
-    } else if (S.phase === "loading") {
+    } else if (S.conn === "live") {
+      conn.className = "conn conn--known";
+      text.textContent = reason === "connecting" ? "Connected, waiting for state" : "Connected, last known data";
+      conn.title = reason === "connecting" ? "The connection is open; its first state has not arrived yet." :
+        "The views show the last state applied" + (S.dataAt ? ", at " + utc(S.dataAt) : "") + ".";
+    } else if (S.conn === "loading") {
       conn.className = "conn conn--loading";
       text.textContent = "Connecting";
       conn.title = "";
     } else {
-      conn.className = "conn " + (S.phase === "refused" ? "conn--refused" : "conn--down");
-      text.textContent = (S.phase === "refused" ? "Refused" : "Disconnected") +
-        (retry == null ? ", reconnecting" : ", retry in " + retry + " s");
+      conn.className = "conn " + (S.conn === "refused" ? "conn--refused" : "conn--down");
+      text.textContent = (S.conn === "refused" ? "Refused" : "Disconnected") +
+        (exhausted ? ", not retrying" : retry == null ? ", reconnecting" : ", retry in " + retry + " s");
       conn.title = S.reason || "";
     }
-    if (!stale) { box.hidden = true; return; }
+    // The banner: stale, a recovery's cause, or exhaustion. "connecting" lasts one frame: no banner.
+    var faultText = faultSentence(exhausted);
+    if (!stale && !exhausted && !faultText) { box.hidden = true; return; }
     box.hidden = false;
-    box.className = "linkstate" + (S.phase === "refused" ? " linkstate--refused" : "");
+    box.className = "linkstate" + (S.conn === "refused" && !exhausted ? " linkstate--refused" : !stale ? " linkstate--known" : "");
     // The text is rebuilt every second; the button is not, so a click is never lost to a re-render.
     var p = $("linkstate-text"), button = $("btn-retry");
     if (!p) {
@@ -438,16 +624,69 @@
       button = el("button", { type: "button", id: "btn-retry" });
       box.append(p, button);
     }
-    var lead = S.phase === "refused" ? "Connection refused." : "Disconnected.";
-    var since = S.downAt ? " Last live " + utc(S.downAt) + " (" + ago(S.downAt) + "). The views below show data as of then." :
-      " No data has been received yet.";
-    var reason = S.cause || S.reason || "unknown";
-    if (S.reason && S.cause && S.reason !== S.cause) reason = S.cause + (/\.$/.test(S.cause) ? "" : ".") + " Latest retry: " + S.reason;
-    p.replaceChildren(el("b", { text: lead }), since + " Reason: " + reason + (/\.$/.test(reason) ? " " : ". ") +
-      (retry == null ? "Reconnecting now." : "Retrying in " + retry + " s (" + S.attempt + (S.attempt === 1 ? " failed attempt" : " failed attempts") +
-        "; the wait doubles from " + BACKOFF_START_MS / 1000 + " s to at most " + BACKOFF_CAP_MS / 1000 + " s)."));
+    var episode = episodeActive() ? " Recovery attempt " + S.ep.attempts + " of " + EPISODE_ATTEMPTS +
+      (retry == null ? (S.ep.inFlight ? " is under way." : ".") : (S.ep.attempts ? " failed; the next" : "; the first") + " starts in " + retry + " s.") : "";
+    if (exhausted) {
+      p.replaceChildren(el("b", { text: "Could not recover:" }), " " + (faultText || "the page could not get a complete state.") +
+        " The page made " + EPISODE_ATTEMPTS + " attempts to get a complete state and does not try again by itself." +
+        (S.ep.last ? " Last attempt: " + S.ep.last + "." : ""));
+    } else if (stale) {
+      var lead = S.conn === "refused" ? "Connection refused." : "Disconnected.";
+      var since = S.downAt ? " Last live " + utc(S.downAt) + " (" + ago(S.downAt) + "). The views below show data as of then." :
+        " No data has been received yet.";
+      var why = S.cause || S.reason || "unknown";
+      if (S.reason && S.cause && S.reason !== S.cause) why = S.cause + (/\.$/.test(S.cause) ? "" : ".") + " Latest retry: " + S.reason;
+      p.replaceChildren(el("b", { text: lead }), since + " Reason: " + why + (/\.$/.test(why) ? " " : ". ") +
+        (episode ? episode.slice(1) : retry == null ? "Reconnecting now." : "Retrying in " + retry + " s (" + S.attempt + (S.attempt === 1 ? " failed attempt" : " failed attempts") +
+          "; the wait doubles from " + BACKOFF_START_MS / 1000 + " s to at most " + BACKOFF_CAP_MS / 1000 + " s)."));
+    } else {
+      p.replaceChildren(el("b", { text: "Last known data." }), " " + faultText + episode);
+    }
+    // The button is M3a's "Retry now" while stale, and the only way on after exhaustion.
+    button.hidden = !stale && !exhausted;
     button.disabled = S.connecting;
     button.textContent = S.connecting ? "Retrying" : "Retry now";
+  }
+
+  // The banner names the cause of a malformed or encoding requirement; null for none.
+  function faultSentence(exhausted) {
+    var r = S.req;
+    if (!hasFault()) return null;
+    var parts = [];
+    if (r.malformed) {
+      parts.push("the simulator sent a message this page could not read (" + S.malformed + " so far)" +
+        (exhausted ? "." : ", so the page reconnects to get a complete state."));
+    }
+    if (r.encoding) {
+      var n = S.status && S.status.api ? S.status.api.state_encode_failed : null;
+      parts.push("the simulator could not build its full state (state_encode_failed " + (n == null ? "—" : n) + ")." +
+        (exhausted ? "" : r.okSock != null ? " GET /status reports state_encoding ok again; the page reconnects to get the recovered state." :
+          " The page keeps polling and reconnects once GET /status reports state_encoding ok."));
+    }
+    var text = parts.join(" Also, ");
+    return text.charAt(0).toUpperCase() + text.slice(1) + " The views show the last state applied" +
+      (S.dataAt ? ", at " + utc(S.dataAt) : "") + ".";
+  }
+
+  function renderMalformed() {
+    var box = $("malformed");
+    box.hidden = S.malformed === 0;
+    if (!S.malformed) return;
+    $("malformed-text").replaceChildren(el("b", { text: String(S.malformed) }), ", last " + utc(S.malformedAt));
+  }
+
+  // Read-only diagnostics for the browser checks (M3b §12.2): written here, never read by the page.
+  function writeDiagnostics(reason) {
+    var d = document.body.dataset;
+    d.conn = S.conn;
+    d.data = S.req ? "last-known" : "current";
+    d.reason = reason;
+    d.health = S.conn !== "live" ? "stale" : S.req ? "last-known" : "live";
+    d.episode = S.ep ? S.ep.state : "none";
+    d.attempts = String(S.ep ? S.ep.attempts : 0);
+    d.timers = String(S.retryTimer != null ? 1 : 0);
+    d.polls = String(S.polls);
+    d.malformedTotal = String(S.malformed);
   }
 
   // ---------- rendering: vehicle ----------
@@ -890,7 +1129,9 @@
       }
     });
     $("linkstate").addEventListener("click", function (ev) {
-      if (ev.target instanceof HTMLElement && ev.target.id === "btn-retry" && isStale()) connect();
+      if (!(ev.target instanceof HTMLElement) || ev.target.id !== "btn-retry") return;
+      if (S.ep && S.ep.state === "exhausted") retryNow();
+      else if (isStale()) connect();
     });
     $("foot-limits").textContent = "Filters, pause and clear change this view only; the page sends nothing to the simulator. " +
       "Status refreshes every " + STATUS_POLL_MS / 1000 + " s; signals, trouble codes and exchanges arrive on the live stream. " +
@@ -919,6 +1160,6 @@
   buildControls();
   watchLogScroll();
   renderAll();
-  setInterval(function () { if (isStale()) renderLink(); }, 1000);
+  setInterval(function () { if (isStale() || S.ep) renderLink(); }, 1000);
   connect();
 })();
