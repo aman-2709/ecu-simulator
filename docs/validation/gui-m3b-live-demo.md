@@ -10,9 +10,10 @@ the owner's CSP console check, and Firefox was not run at all.
 **This is a demonstration, not a benchmark.** Nothing here judges M4 performance or any of
 P1–P9 ([decisions/0010 §9.2](../decisions/0010-gui-observer-api.md)). The §11.3 cost figures
 below are browser measurements in headless Chrome. **The page's main-thread load is an open
-finding** (its own section below), and **the log has 4 full rows, not 5, while the restart
-note and a gap note show together** (case 21, a measured finding). The full list of what M3b
-still needs is under "Remaining acceptance items".
+finding** (its own section below). Case 21 (the restart note and a gap note together) now
+keeps 5 full log rows at 1440 × 900, after two owner-authorized layout changes (Task 37, run
+12; "Task 37: the shared notice line and two small layout changes" below). The full list of
+what M3b still needs is under "Remaining acceptance items".
 
 **Still open, and not touched by this record:**
 - **the M2 early-check latency `STOP`** ([gui-m2-early-check.md](gui-m2-early-check.md)).
@@ -32,6 +33,14 @@ Where the numbers come from:
   [long3/m3b-long-results.json](gui-m3b-live-demo/long3/m3b-long-results.json) and
   [long3/capture.log](gui-m3b-live-demo/long3/capture.log). Run 9's two performance traces
   are committed in [traces/](gui-m3b-live-demo/traces/) with a README;
+- **run 12** (Task 37, at `5cd62fe`: the restart note on the shared notice line in the owner's
+  wording, no notice bottom margin, a 4.5rem plot cap) is the record **for the cases Task 37
+  changed**: "Restart reset" (11), the log-rows cases (17, 18, 19), case 21 and the new
+  forced-wrap case (22), and the tally. Its files:
+  [run12/m3b-results.json](gui-m3b-live-demo/run12/m3b-results.json),
+  [run12/capture.log](gui-m3b-live-demo/run12/capture.log),
+  [run12/overflow-check.txt](gui-m3b-live-demo/run12/overflow-check.txt). Every other case
+  passed in run 12 too; its numbers below stay run 9's, which run 12 repeated;
 - **run 8** (the code after the final-review fix wave, page and scripts at `0c564c9`/`e7af7ca`)
   and **run 7** (the page at `391a335`) stay in [run8/](gui-m3b-live-demo/run8/) and
   [run7/](gui-m3b-live-demo/run7/) unchanged, and the earlier long run `m3b-long1` (the page at
@@ -47,8 +56,9 @@ Where the numbers come from:
 | Item | Value |
 |---|---|
 | Branch, commit | Run 9, `m3b-long3`, `m3a-40` and `moving-40`: **`gui` at `f8a8e5f`**. The page is the final-review fix wave's, unchanged since `0c564c9` (`5bdbf4b`, a resync breaks the graphs, the restart note clears, no dead toggle in the fallback; `0c564c9`, the graphs start from the first `state`, not the REST snapshot). `scripts/gui_demo_capture.py` at `f8a8e5f` adds case 21 to run 8's script (`fbadbd5`, `f9fe468`, `f8a8e5f`); nothing else in it changed. Run 8 used `0c564c9` with the scripts at `e7af7ca`; run 7 the page at `391a335` and the scripts at `e479769` |
-| The long run | `m3b-long3`, on the same commit as run 9. (`m3b-long1`, the earlier record, ran on the page at `b577afa`; it also passed) |
-| Date | Run 9: capture start 2026-10-01T05:51:19Z, 520 s. `m3b-long3`: 2026-10-01T05:59:59Z, 694 s. M3a set (`m3a-40`): 06:11:34Z. Moving set (`moving-40`): 06:13:24Z. Run 8: 2026-10-01T04:28:19Z. Run 7: 2026-10-01T03:34:31Z. The hidden shot: about 03:52 UTC the same day |
+| Run 12 | **`gui` at `5cd62fe`** (Task 37): the page at `5cd62fe` (`de9972c` the restart note on the shared notice line; `9dca361` the owner's wording; `5cd62fe` no notice bottom margin, plot cap 4.5rem) and `scripts/gui_demo_capture.py` at `45701a5` (the restart checks read the shared line in the new wording; the forced-wrap case). Beside it, at the same commit: the M3a set `m3a-t37b` and the moving set `moving-t37b`, both rc 0 with every overflow line ok |
+| The long run | `m3b-long3`, on the same commit as run 9. (`m3b-long1`, the earlier record, ran on the page at `b577afa`; it also passed.) Not rerun for Task 37: its case reads only the graphs' `data-*` attributes, with no restart and no notice line, and neither the wording nor the plot height changes them |
+| Date | Run 12: capture start 2026-10-01T09:04:33Z, 532 s. Run 9: capture start 2026-10-01T05:51:19Z, 520 s. `m3b-long3`: 2026-10-01T05:59:59Z, 694 s. M3a set (`m3a-40`): 06:11:34Z. Moving set (`moving-40`): 06:13:24Z. Run 8: 2026-10-01T04:28:19Z. Run 7: 2026-10-01T03:34:31Z. The hidden shot: about 03:52 UTC the same day |
 | Host | Intel Core i7-8700, 12 threads ([gui-m3b-overhead.md](gui-m3b-overhead.md), same host); kernel 6.8.0-138-generic; CPU governor `powersave` (not pinned; not a timing run) |
 | Python | 3.12.12 (worktree `.venv`) |
 | Browser | **Google Chrome 151.0.7922.173**, `--headless=new`, `--disable-gpu`, dpr 1, driven over the DevTools protocol. The M3b modes add `--enable-precise-memory-info`. **Chrome only**; Firefox was not run |
@@ -66,9 +76,14 @@ scripts/run_gui_demo.sh            <scratchpad>/m3a-40       # rc=0, the M3a set
 scripts/run_gui_demo.sh --moving   <scratchpad>/moving-40    # rc=0
 ```
 
-`--m3b` exits 1 because case 21's requirement (at least 5 rows) is not met; that is the
-measured finding, reported and not relaxed (controller ruling: no change to the desktop
-layout the owner kept).
+Run 9's `--m3b` exited 1 because case 21's requirement (at least 5 rows) was not met. Run 12
+(Task 37) is below:
+
+```
+scripts/run_gui_demo.sh --m3b      <scratchpad>/m3b-run12    # rc=0: 23 of 23 passed (at 5cd62fe)
+scripts/run_gui_demo.sh            <scratchpad>/m3a-t37b     # rc=0 (at 5cd62fe)
+scripts/run_gui_demo.sh --moving   <scratchpad>/moving-t37b  # rc=0 (at 5cd62fe)
+```
 
 The parts of the `--m3b` run (Task 34 report, "Layout of the `--m3b` run"):
 - **A:** real simulator, `ice_default.yaml` (no scenario), no traffic;
@@ -83,21 +98,22 @@ The parts of the `--m3b` run (Task 34 report, "Layout of the `--m3b` run"):
 The fault server's seams are public only (controller ruling, below). Nothing under `src/`
 changed for it, and no profile file holds a non-finite value.
 
-## Result: 21 of 22 cases passed; the one failure is a measured layout finding
+## Result: 24 of 24 cases passed (run 12, plus the long run)
 
-21 cases in run 9 (`m3b-results.json` `tally`: `{"passed": 20, "total": 21}`), plus the
-bounded-history case of `m3b-long3`. **The failure is case 21**, added in Task 36: with the
-restart note and a gap note shown together at 1440 × 900, the log has **4** full rows, not
-the 5 required. It is reported as a finding; the desktop layout, which the owner reviewed
-live and keeps, was not changed (controller ruling). Every other case passes against its
-rule as written. Runs 7 and 8 (20 of 20 each) had no case 21.
+23 cases in run 12 (`run12/m3b-results.json` `tally`: `{"passed": 23, "total": 23}`), plus the
+bounded-history case of `m3b-long3`. Case 21, which failed in run 9 (4 rows), passes in run 12
+after Task 37's changes, and the new case 22 (a notice line that wraps to two lines) passes
+too. Runs 7 and 8 (20 of 20 each) had neither; run 9 had 20 of 21.
+
+Rows 11, 17, 18, 19, 21 and 22 below give run 12's numbers. Every other row gives run 9's;
+run 12 passed each of those cases too.
 
 Every check reads only what §12.2 allows: visible text, the tags, the banner, the
 read-only `data-*` attributes, the test-only WebSocket and `fetch` wrapper's records, and
 `GET /status`. The wrapper is added with `Page.addScriptToEvaluateOnNewDocument`; the
 shipped page contains no test code.
 
-| # | Case (§12.2) | Part | Result | Observed in run 9 (or `m3b-long3`) |
+| # | Case (§12.2) | Part | Result | Observed in run 9, or **run 12** where marked (or `m3b-long3`) |
 |---|---|---|---|---|
 | 1 | No false invalidation | A | PASS | 14 samples over 65.08 s, every one "Live", `live`/`current`/`live`, no tag, no banner, malformed 0, episode `none`. `data-polls` rose by **32** (the rule: about 30). **1** `state` received in the whole period, on 1 socket |
 | 2 | Malformed state, then unchanged data | A | PASS | Immediately: `live`/`last-known`/`malformed`/`active`, the "Last known" tags, malformed 1. **Live after 1.021 s**, on a new socket with its `hello` and `state`; episode `none`, attempts 0, tag gone; "Resynchronised after an unreadable message."; `started_at` equal; no restart marker. Seq continuity is vacuous: no traffic, no exchanges |
@@ -109,24 +125,25 @@ shipped page contains no test code.
 | 8 | Pause while buffering | B | PASS | Speed: `data-paused` true, drawn-to held at 55.01 while as-of went 55.51 → 65.51, points 17 → 22, line 1 unchanged; meta "Paused at t = 55.0 s". After Resume: drawn-to = as-of (67.01). The log ran on: last seq 206 → 248 |
 | 9 | Disconnect without restart (SIGSTOP) | B | PASS | **Down after 6.44 s** (the rule: within 8 s): "Disconnected, retry in 1 s", `down`/`stale`/episode `none`, the banner, "Stale, as of 05:57:07 UTC" on 4 panels |
 | 10 | … then SIGCONT | B | PASS | **Live after 1.02 s**. `started_at` equal before and after. No restart marker; "Connection lost, then resumed." present. `data-run` unchanged. All 5 graphs: gaps 0→1, segments 1→2. Shared line: "No data from t = 200.0 to t = 207.7 s (disconnected)"; every line 2 is min/max only. Seq continuity held; 752 exchanges |
-| 11 | Restart reset | B | PASS | `data-run` 1790834027.61 → 1790834236.37. After the first new point: points 1, oldest-t 0.579, as-of 1.08, segments 1. The restart note and the log marker shown |
+| 11 | Restart reset | B | PASS | **Run 12.** `data-run` 1790845629.27 → 1790845838.35. After the first new point: points 1, oldest-t 0.583, as-of 1.08, segments 1. The shared notice line reads, matched in full: "Simulator restarted at 09:10:38 UTC; previous graph history cleared."; the log's "Simulator restarted." marker shown |
 | 12 | Non-finite values | C | PASS | 97 invalid samples, at as-of 10.10 to 19.62 only. Line 1 and the table cell, read in one evaluation: "invalid value"; "Live"; malformed 0. While invalid, newest-t held at 10.10 with points 20; the next stored point was at t = 20.12 with points 21, then gaps 1, segments 2. Shared line while invalid: "Coolant: invalid value from t = 9.6 to t = 19.6 s (still invalid)"; after: "… from t = 9.6 to t = 20.1 s" |
 | 13 | Encoding failure, then recovery to changed data | D | PASS | **last-known/encoding 0.25 s** after scenario t = 30; the banner names `state_encode_failed 1`. `data-conn` live for all 69 fault samples; polls 15 → 18. The fault's gap and the resync's own (see "Stated plainly"); the shared line names the latest: "No data from t = 36.2 to t = 37.2 s (reconnecting to resynchronise)". **Live 7.33 s after t = 30**, with no earlier change to live. Page ms: last `ok:false` answer 1790834307843; the qualifying `ok:true` answer 1790834310848; the recovering socket's first `state` 1790834310879; `t_live` 1790834310880 |
 | 14 | Same-value recovery | E | PASS | 69 fault samples with reason `encoding`; polls 11 → 14. **Live 2.13 s** after the fault ended. 2 `state`s after the recovery (the forced push on the old socket, and the one after `hello`). A page loaded during the 45–55 s fault: health `stale` (loading) → `last-known` → `live` at 1790834368168, 1.07 s after the fault ended (1790834367098), with no change to live before it, although it had received a `state` after `hello` |
 | 15 | REST is not proof (dtcs fault) | E | PASS | 49 `GET /vehicle`, all **200**. The page went last-known (encoding) and stayed there until the fault ended; live 2.18 s after t = 85 |
 | 16 | Overflow (1440, 1200, 390, 2000) | B | PASS | No `scrollWidth` above `clientWidth`; table below |
-| 17 | Log rows at 1440 × 900 | B | PASS | **5** full rows, all exchanges (53, 53, 52, 52, 53 px). Rows region 298 px, graphs section 176 px, status bar 99 px |
-| 18 | Extra: log rows, disconnect break note showing | B | PASS | **5** full rows (4 exchanges and the 33 px "Connection lost, then resumed." marker; traffic was stopped). Rows region 285 px, which also holds 5 exchange rows; section 190 px; status bar 99 px |
-| 19 | Extra: log rows, encoding break note showing | D | PASS | **5** full rows, all exchanges; rows region 278 px; section 196 px; status bar 99 px, with "State encode failed" shown and the shared line naming the resync gap |
-| 20 | Agreement | all | PASS | **15** live shots with the graphs unpaused, all agree, each read in one evaluation (run 9 adds the case 21 shot). `m3b-b-paused.png` is listed as paused and not checked (ruling 1). 9 other shots were not checked: not live, or no graphs drawn (no scenario) |
-| 21 | **Log rows at 1440 × 900, the restart note and a gap note together (measured, Task 36)** | B | **FAIL (finding)** | **4** full rows, all exchanges (52, 52, 53, 53 px), in all four readings (three 1 s apart and one after the shot). Rows region **255 px**, against about 263 px for 5. Graphs section **219 px** (head 42 px, gap line 16 px, restart note 19 px), status bar **99 px**, the log's box 288 px with its sticky header ending at 547 px. The fifth row is clipped about 8 px under that header, so the screenshot shows its text. The restart note: "Simulator restarted at 05:57:16 UTC. …"; the gap line: "No data from t = 3.1 to t = 9.1 s (disconnected)" (a SIGSTOP/SIGCONT of the new run at t ≈ 3, traffic running). Screenshot: [restart-and-gap-1440.png](gui-m3b-live-demo/restart-and-gap-1440.png) |
-| 22 | Bounded history (`--m3b-long`) | `ice_scenario.yaml`, traffic | PASS | `m3b-long3`. 70 samples to as-of 690.6, the 10 min window on all graphs. Every sample: points ≤ cap 4096 (largest: engine_load 2330), points-before-window ≤ 1. 9 samples at as-of ≥ 610: before-window 1 and left-value set on every graph. Coolant, constant from t = 60 in this profile: oldest-t 60.25, older than the window in all 9, with 1 point and before-window 1. No page console entry |
+| 17 | Log rows at 1440 × 900 | B | PASS | **Run 12.** **5** full rows, all exchanges (53, 53, 52, 52, 53 px). Rows region 302 px, 5 rows need 263 px: clearance **+39 px**. Graphs section 172 px, plot 68.75 px, status bar 99 px |
+| 18 | Extra: log rows, disconnect break note showing | B | PASS | **Run 12.** **5** full rows (4 exchanges and the 33 px "Connection lost, then resumed." marker; traffic was stopped). Rows region 293 px against 243 px for these five: **+50 px** (about +28 px for five exchange rows). Section 181 px; the notice line one line, 16 px; status bar 99 px |
+| 19 | Extra: log rows, encoding break note showing | D | PASS | **Run 12.** **5** full rows, all exchanges; rows region 287 px, 5 rows need 263 px: **+24 px**. Section 188 px; the notice line one line, 16 px, naming the resync gap; status bar 99 px, with "State encode failed" shown |
+| 20 | Agreement | all | PASS | **Run 12: 16** live shots with the graphs unpaused, all agree, each read in one evaluation (run 9 had 15; run 12 adds the case 22 shot, where line 1 and the table both read "invalid value" for throttle). `m3b-b-paused.png` is listed as paused and not checked (ruling 1). 9 other shots were not checked: not live, or no graphs drawn (no scenario) |
+| 21 | Log rows at 1440 × 900, the restart note and a gap note together (measured, Task 36) | B | PASS | **Run 12.** **5** full rows, all exchanges, in all four readings (three 1 s apart and one after the shot). Rows region **287 px**, 5 rows need 262–263 px: clearance **+24 to +25 px**. Graphs section 188 px; the shared notice line is **one line, 16 px**, both notices complete: "Simulator restarted at 09:10:38 UTC; previous graph history cleared. · No data from t = 3.1 to t = 9.1 s (disconnected)" (a SIGSTOP/SIGCONT of the new run at t ≈ 3, traffic running). Status bar 99 px. Screenshot: [restart-and-gap-1440.png](gui-m3b-live-demo/restart-and-gap-1440.png). (Run 9, before Task 37: 4 rows, rows region 255 px, section 219 px, the restart note on its own line) |
+| 22 | Log rows at 1440 × 900, a notice line that wraps (measured, Task 37) | B | PASS | **Run 12.** The restart note, the gap and an open invalid run on the shared line, which **wraps to two lines (31 px)**, every notice complete: "Simulator restarted at 09:10:38 UTC; previous graph history cleared. · No data from t = 3.1 to t = 9.1 s (disconnected) · Throttle: invalid value from t = 12.4 to t = 15.4 s (still invalid)" (as the screenshot shows; the case's reading was taken at t = 13.1). **5** full rows, all exchanges, in all four readings. Rows region **271 px**; clearance **+6, +8, +8, +7 px** (5 rows need 263–265 px, as rows are 52 or 53 px). **The worst case is +6 px**, with all five rows at 53 px. Graphs section 203 px, status bar 99 px. The invalid run comes from the test-only WebSocket wrapper rewriting each state (throttle sent as `null` and listed in `nonfinite`, as the API sends a non-finite value), so the simulator stays finite and the traffic can run; the fault server's `--nonfinite` cannot run beside the traffic script (DEV-26). Screenshot: [restart-gap-invalid-wrap-1440.png](gui-m3b-live-demo/restart-gap-invalid-wrap-1440.png) |
+| 23 | Bounded history (`--m3b-long`) | `ice_scenario.yaml`, traffic | PASS | `m3b-long3`. 70 samples to as-of 690.6, the 10 min window on all graphs. Every sample: points ≤ cap 4096 (largest: engine_load 2330), points-before-window ≤ 1. 9 samples at as-of ≥ 610: before-window 1 and left-value set on every graph. Coolant, constant from t = 60 in this profile: oldest-t 60.25, older than the window in all 9, with 1 point and before-window 1. No page console entry |
 
-Page console, run 9: 3 entries, the 503 handshakes of variant B, which the case expects;
+Page console, run 12: 4 entries, the 503 handshakes of variant B (3) and variant C (1, Task 38), which the cases expect. Run 9: 3 entries, variant B's;
 no page exception. The console log holds no Content-Security-Policy entry, which is **not**
 the owner's CSP check (§13). `m3b-long3`: no entries. The M3a set (`m3a-40`) has 3 `ERR_CONNECTION_REFUSED` entries, all while its simulator is stopped (earlier M3a runs had 2: how many reconnect attempts fall in the stopped interval varies); `moving-40` has none. Every overflow line of both is ok.
 
-**Overflow and status bar** (run 9, `overflow-check.txt`, the same values as runs 7 and 8;
+**Overflow and status bar** (run 9, `overflow-check.txt`, the same values as runs 7, 8 and 12;
 scrollWidth/clientWidth; status bar height from the `header` element):
 
 | Viewport | `#graphs` | each `.uplot` | html, body | `#vehicle` | Status bar |
@@ -138,6 +155,48 @@ scrollWidth/clientWidth; status bar height from the `header` element):
 
 The 1200 px status bar was read in steady state only (Task 34, fix round 3). Task 33
 measured it at 1200 with long values and both health readouts: 92 px throughout.
+
+## Task 37: the shared notice line and two small layout changes
+
+**Why.** In run 9, case 21 failed: with the restart note and a gap note shown together at
+1440 × 900, the log kept 4 full rows. The owner asked for a fix, with 5 rows **including when
+the notice line wraps**, and no notice hidden, truncated or clipped. The owner authorized a
+small layout change with reasonable clearance. Three changes were made, all on the page:
+1. **The restart note joins the shared notice line** (`de9972c`). It leads the line, and the
+   gap and invalid-run notices follow, joined with " · ". It no longer takes a line of its own.
+2. **The owner's wording** (`9dca361`): "Simulator restarted at HH:MM:SS UTC; previous graph
+   history cleared." For an `as_of` that went back, the controller's parallel form is "Scenario
+   time went back at HH:MM:SS UTC; previous graph history cleared." These replace §6.8's longer
+   sentence. They are short enough to share one line with a gap note at 1440. The gap notices
+   are unchanged and complete.
+3. **Two small layout changes** (`5cd62fe`): the notice line has **no bottom margin** (it was
+   0.286 rem, about 4.4 px), and the plot height's cap is **4.5rem**, down from 4.75rem
+   (`clamp(3rem, 9vh, 4.5rem)`; the min and the vh are unchanged).
+   - Without them, a notice line that wraps to two lines (the restart note, a gap and an open
+     invalid run) left 4 full rows in 2 of 4 readings (run 11, at `45701a5`).
+   - Nothing else in the desktop layout changed, and the line still wraps.
+
+**The plot height now:**
+- **68.75 px at 1440 × 900** (canvas 68 px; it was 72.6 px), from run 12's readings;
+- **80.1 px at 2000 × 1100** (canvas 80 px; it was 84.5 px), from a **separate measurement**
+  at `5cd62fe` (a throwaway script, `<scratchpad>/plot37.py`, not committed), because no case
+  of the run reads it at 2000;
+- each card is 110.9 px tall at 1440 (it was 114.8 px).
+
+**Log rows at 1440 × 900, run 12.** The clearance is the rows region minus what the 5 newest
+full rows take. Where a case takes four readings, all are given.
+
+| Case | Full rows | Rows region | 5 rows need | Clearance | Graphs section | Notice line |
+|---|---|---|---|---|---|---|
+| 17, steady | 5 | 302 px | 263 px | **+39 px** | 172 px | none |
+| 18, disconnect gap | 5 | 293 px | 243 px (one 33 px marker row) | **+50 px** (about +28 px for five exchange rows) | 181 px | 1 line, 16 px |
+| 19, encoding gap | 5 | 287 px | 263 px | **+24 px** | 188 px | 1 line, 16 px |
+| 21, restart + gap | 5, 5, 5, 5 | 287 px | 262–263 px | **+24 to +25 px** | 188 px | 1 line, 16 px |
+| 22, restart + gap + open invalid run | 5, 5, 5, 5 | 271 px | 263–265 px | **+6, +8, +8, +7 px** | 203 px | **2 lines, 31 px** |
+
+**The worst case is +6 px**: the notice line wraps to two lines and all five rows are 53 px. Every
+reading still had 5 full rows. The controller accepted it; an earlier +8 px target was the
+controller's, not the owner's.
 
 ## The four-client cases: what each variant proves
 
@@ -169,8 +228,9 @@ Across all four runs:
 - `data-timers` was never above 1;
 - the refusal shows in the page console as one 503 handshake entry.
 
-Run 10 is not the run of record. Everything else in this record stays at run 9. Run 10's other
-cases repeated run 9's results: 21 of 22 passed, with the same case 21 failing at 4 rows.
+Run 10 is not the run of record. Run 10's other cases repeated run 9's results: 21 of 22
+passed, with the same case 21 failing at 4 rows. (Task 37's run 12, above, is the record for the
+cases it changed.)
 
 ## Cost in the browser (§11.3): measured next to §11's estimates
 
@@ -181,7 +241,7 @@ committed traces). Run 8's are in brackets where the controller's notes quote th
 | | §11 estimate (**estimate**) | Measured, 1440 × 900 | Measured, 390 × 844 |
 |---|---|---|---|
 | Rings | 320 KiB fixed (5 × 4096 × 2 × 8 B) | Not measured separately. The code allocates two `Float64Array(4096)` per ring, five rings (Task 33), which is the estimate's arithmetic | same |
-| Canvases | 1440, dpr 1: 190 × 73 px, about 0.27 MiB. dpr 2: about 1.1 MiB. 390 at dpr 3: about 5.2 MiB | 5 × 179 × 72 px = **0.246 MiB** (dpr 1) | 5 × 342 × 66 px = **0.431 MiB** (dpr 1). dpr 2 and 3 were not measured |
+| Canvases | 1440, dpr 1: 190 × 73 px, about 0.27 MiB. dpr 2: about 1.1 MiB. 390 at dpr 3: about 5.2 MiB | 5 × 179 × 72 px = **0.246 MiB** (dpr 1, run 9, at the 4.75rem cap). Since Task 37 (4.5rem cap, run 12): 5 × 179 × 68 px = 0.232 MiB | 5 × 342 × 66 px = **0.431 MiB** (dpr 1, run 9). Run 12: 5 × 342 × 63 px = 0.411 MiB. dpr 2 and 3 were not measured |
 | JS heap used (start, every 10 s, end) | Graphs' share: under 2 MiB at dpr 1 (whole graphs feature, not the page) | 2.58, 2.62, 2.65, 3.17, 2.96, 3.08, 3.01 MiB (whole page) | 2.86, 3.14, 3.06, 3.31, 3.13, 3.05, 3.33 MiB (whole page) |
 | JS heap total | — | 3.95–5.21 MiB | 4.45–4.71 MiB |
 | Graph redraws (trace: the rAF callback, `app.js` line 857) | About 1 % of one core at 4 redraws a second | 234 redraws, **29.9 ms in 60 s** (about 0.05 % of one core); median 0.121 ms, max 0.23 ms [run 8: 233, 26.6 ms] | 235 redraws, **31.1 ms**; median 0.127 ms, max 0.26 ms [run 8: 232, 26.8 ms] |
@@ -241,7 +301,8 @@ Each of these was decided by the controller during checkpoint 2, not by the owne
    Pause rule cannot both hold for a paused shot (Task 34, "Contradictory pass rules":
    speed 80 against 48 in `m3b-b-paused.png`). Paused shots are covered by the Pause case.
 2. **Break and gap notes are on one shared line under the graphs head**, not in each
-   card's line 2. This departs from §6.7's wording. It was made for §5.2's 5-log-rows
+   card's line 2. Since Task 37 the restart note leads the same line (owner's decision; see
+   "Task 37"). This departs from §6.7's wording. It was made for §5.2's 5-log-rows
    requirement: per-card notes wrapped every card to about 161.6 px and left 3 full rows
    at 1440 × 900 (Task 34, run 3). The shared line shows the latest ended break, then any
    invalid run still open (`4271882`, `391a335`); see "Stated plainly" for what it does not
@@ -266,9 +327,10 @@ Each of these was decided by the controller during checkpoint 2, not by the owne
    `runtime.runner.apply` on the instance captured through the public `app.build_runtime`.
    Nothing under `src/` changed for the harness.
 7. **Measured:**
-   - the 5-row margin at 1440 × 900 is thin: 278 px of rows region with the encoding break
-     note showing, against about 263 px for 5 rows; and **with the restart note and a gap note
-     together it is 255 px, 4 rows (case 21, a finding)**;
+   - the 5-row margin at 1440 × 900 (run 12): +24 px with the encoding gap note, +24 to +25 px
+     with the restart note and a gap note together (case 21), and **+6 px in the worst case**,
+     when the notice line wraps to two lines (case 22). Before Task 37 (run 9), case 21 had
+     4 rows;
    - the main-thread load is now an **open finding** in its own section above (Task 36);
    - variant A has met no 503 (runs 3 to 10), and its rule does not need one. Since Task 38,
      variant C produces a 503 deterministically and checks the automatic recovery after it.
@@ -301,14 +363,15 @@ Each of these was decided by the controller during checkpoint 2, not by the owne
   graphs cleared themselves with "Scenario time went back …" on an ordinary load or reload.
   The graphs now start from the first `state`. Within a run, published `state`s never go
   back, and a real restart is still caught by `started_at`.
-- **The restart note** ("Simulator restarted at …", or "Scenario time went back …") now
-  clears once the window no longer reaches back to the new run's start (`5bdbf4b`). While it
-  shows alone at 1440 × 900, 5 full log rows remain (Task 33's smoke at `0c564c9`: rows region
-  275 px, graphs section 199 px, status bar 99 px). **With a gap line at the same time (case
-  21, run 9): the graphs section is 219 px and 4 full rows remain** (rows region 255 px). With
-  the 2 min window this lasts until the window no longer reaches the new run's start, at most
-  2 min after a restart (10 min with the 10 min window). The owner keeps the desktop layout;
-  this is recorded as a finding for the owner, not changed.
+- **The restart note** ("Simulator restarted at HH:MM:SS UTC; previous graph history
+  cleared.", or "Scenario time went back at HH:MM:SS UTC; previous graph history cleared.")
+  clears once the window no longer reaches back to the new run's start (`5bdbf4b`). Since
+  Task 37 it leads the shared notice line, " · "-joined with any gap.
+  - With a gap note beside it, the line is one line at 1440, and 5 full rows remain (case 21,
+    run 12: +24 to +25 px).
+  - When the line wraps to two lines (with an open invalid run as well), 5 full rows still
+    remain, at +6 px in the worst reading (case 22).
+  - Before Task 37 the note took its own line, and case 21 had 4 rows (run 9).
 
 ## §12.4, the wheel (Task 31)
 
@@ -320,11 +383,18 @@ Each of these was decided by the controller during checkpoint 2, not by the owne
 
 ## The screenshots
 
-All in [gui-m3b-live-demo/](gui-m3b-live-demo/), copied unchanged and renamed. All are from
-run 7 (the page at `391a335`) except `hidden-1440.png` (taken for this record),
-`break-note-encoding-1440.png` (run 8, because the fix wave changed what it shows) and
-`restart-and-gap-1440.png` (run 9, case 21). The fix
-wave changes nothing else they show. All are at 1440 × 900 unless the name says otherwise.
+All in [gui-m3b-live-demo/](gui-m3b-live-demo/), copied unchanged and renamed. All are at
+1440 × 900 unless the name says otherwise. Each shot's run is in its "Source" column:
+- **Run 12** (the current page, `5cd62fe`): `restart-note-1440.png`, `restart-and-gap-1440.png`
+  and `restart-gap-invalid-wrap-1440.png`. Task 37 changed what these show (the note's
+  wording and place).
+- **Run 8:** `break-note-encoding-1440.png`.
+- **Taken for this record:** `hidden-1440.png`.
+- **Run 7** (the page at `391a335`): all the others.
+
+**Shots from runs 7 and 8, and the hidden shot, show the earlier plot-height cap** (4.75rem: a
+72.6 px plot at 1440, against 68.75 px now) and the notice line's old bottom margin. Otherwise
+they match the current page; none of them shows a restart note.
 
 | File | Size | Source | What it shows |
 |---|---|---|---|
@@ -340,14 +410,16 @@ wave changes nothing else they show. All are at 1440 × 900 unless the name says
 | [last-known-exhausted-1440.png](gui-m3b-live-demo/last-known-exhausted-1440.png) | 192,161 B | run 7 `m3b-a3-malformed-exhausted.png` | **Last known, budget exhausted:** "Could not recover: … The page made 3 attempts …" with "Retry now"; "Malformed messages 5, last 03:35:45 UTC" under Connection |
 | [invalid-value-1440.png](gui-m3b-live-demo/invalid-value-1440.png) | 171,450 B | run 7 `m3b-c-nonfinite-invalid.png` | **Invalid value:** coolant "invalid value" in its card and in the table, the shared line "Coolant: invalid value from t = 9.6 to t = 14.1 s (still invalid)", the page "Live" |
 | [break-note-encoding-1440.png](gui-m3b-live-demo/break-note-encoding-1440.png) | 226,510 B | **run 8** `m3b-d-log-rows-with-break-note.png` | **After the encoding fault:** Live; two gaps in every graph, the fault's and the resync's; the shared line names the latest, "No data from t = 35.9 to t = 37.2 s (reconnecting to resynchronise)"; "State encode failed 20" in the status bar; 5 full log rows (case 19) |
-| [restart-note-1440.png](gui-m3b-live-demo/restart-note-1440.png) | 228,270 B | run 7 `m3b-b-restart.png` | **Restart note:** "Simulator restarted at 03:40:28 UTC. Graphs start again from scenario t = 0; …", the graphs cleared, "history starts at t = 0.6 s (when this run started)", and the log's "Simulator restarted." marker |
-| [restart-and-gap-1440.png](gui-m3b-live-demo/restart-and-gap-1440.png) | 230,895 B | **run 9** `m3b-b-restart-and-gap-1440.png` | **Restart note and a gap together (case 21):** the shared line "No data from t = 3.1 to t = 9.1 s (disconnected)" above the restart note, the graphs section 219 px, and 4 full log rows; the fifth row's text shows but its top is clipped about 8 px under the log's sticky header |
+| [restart-note-1440.png](gui-m3b-live-demo/restart-note-1440.png) | 229,412 B | **run 12** `m3b-b-restart.png` | **Restart note:** the shared notice line "Simulator restarted at 09:10:38 UTC; previous graph history cleared.", the graphs cleared and starting again, "history starts at t = 0.6 s (when this run started)", and the log's "Simulator restarted." marker |
+| [restart-and-gap-1440.png](gui-m3b-live-demo/restart-and-gap-1440.png) | 230,227 B | **run 12** `m3b-b-restart-and-gap-1440.png` | **Restart note and a gap together (case 21):** one notice line, "Simulator restarted at 09:10:38 UTC; previous graph history cleared. · No data from t = 3.1 to t = 9.1 s (disconnected)"; a gap in every graph; 5 full log rows |
+| [restart-gap-invalid-wrap-1440.png](gui-m3b-live-demo/restart-gap-invalid-wrap-1440.png) | 229,381 B | **run 12** `m3b-b-restart-gap-invalid-1440.png` | **A notice line that wraps (case 22):** the restart note, the gap and "Throttle: invalid value from t = 12.4 to t = 15.4 s (still invalid)" on two lines, every notice complete; throttle reads "invalid value" in its card and the table; 5 full log rows (the open invalid run comes from the test-only wrapper, see case 22) |
 | [no-scenario-1440.png](gui-m3b-live-demo/no-scenario-1440.png) | 150,769 B | run 7 `m3b-a1-no-scenario-65s.png` | **No scenario:** `ice_default.yaml` after 65 s alone: "No scenario: the values are constant, as configured. Graphs follow scenario time.", no plots, "Live" |
 
-Total: 15 screenshots, 3,080,013 B. The directory, with runs 7, 8 and 9's results and logs,
-both long runs' results and run 9's two traces, is 6,327,513 B. Every other run-7, run-8 and
-run-9 shot, and the 10 min shots of `m3b-long1` and `m3b-long3`, stay in the scratchpad (not
-durable); the run of record's numbers are all in the committed results files.
+Total: 16 screenshots, 3,309,868 B. The directory, with runs 7, 8, 9 and 12's results and
+logs, both long runs' results and run 9's two traces, is 6,773,999 B. Every other run-7,
+run-8, run-9 and run-12 shot, and the 10 min shots of `m3b-long1` and `m3b-long3`, stay in the
+scratchpad (not durable). The record's numbers are all in the committed results files, except
+the 2000 × 1100 plot height (a separate measurement, "Task 37" above).
 
 **How the hidden shot was taken.** No run of record has one. A throwaway script,
 `<scratchpad>/hide35.py` (not committed), reused `gui_demo_capture.py`'s helpers in the
@@ -392,9 +464,11 @@ Findings and untested paths:
 - [ ] **The open main-thread finding** (section above). The page is busy about 52 % at
       1440 × 900 and 71 % at 390 × 844 with traffic, almost all of it in M3a's log rebuild. It
       needs an owner decision: accept it as M3a behaviour, or schedule a log change.
-- [ ] **Case 21:** 4 full log rows, not 5, while the restart note and a gap note show together
-      at 1440 × 900, for up to one window length after a restart. The owner keeps the desktop
-      layout, so this needs an owner decision: accept it, or ask for a change.
+- Resolved, not an acceptance item (Task 37): **case 21**, 4 full log rows while the restart
+      note and a gap note showed together at 1440 × 900 (run 9). The fix was the owner's
+      wording on the shared notice line, no notice bottom margin, and a 4.5rem plot cap. Run 12
+      has 5 rows in case 21 (+24 to +25 px), and 5 rows with a wrapped two-line notice line in
+      case 22, with +6 px in the worst reading.
 - Resolved, not an acceptance item (Task 38): "the 503 path of variant A has never been met".
       Variant A's rule does not need a 503. **Variant C** produces one deterministically, and shows automatic
       recovery without "Retry now", the budget reset, and a fresh episode at attempt 1. It

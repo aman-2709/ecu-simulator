@@ -13,8 +13,8 @@ mockup under `docs/mockups/m3a-dashboard/` is not served. **M3b, live signal gra
 implemented and not accepted** (`docs/plans/gui-m3b-graphs-design.md`, tenth to fourteenth
 revisions below): checkpoint 1 (the `nonfinite` field, the state-encoding containment, the
 encoding health in `GET /status` and the first-good publish rule of §4.3 and §5) and
-checkpoint 2 (vendored uPlot, the graphs and the page's health model; 21 of 22 automated
-browser checks passed on the run of record, run 9, the one failure a measured layout finding,
+checkpoint 2 (vendored uPlot, the graphs and the page's health model; 24 of 24 automated
+browser checks passed, run 12 for the cases Task 37 changed and run 9 for the rest,
 `docs/validation/gui-m3b-live-demo.md`) are **implemented**. **M3b is
 not accepted** until the owner's §13 checklist passes, including the CSP check in both
 Chrome and Firefox, which is unverified. M4 has not run. **Still open, and unchanged by any of
@@ -293,11 +293,14 @@ the Phase 8b gate and the V1.0 branch rule stay open.
 A fourteenth revision, on 2026-09-30, records M3b checkpoint 2 on branch `gui`. **The page
 items are implemented:** uPlot 1.6.32 vendored and pinned by SHA-256 (§7, §9.3), the five
 graphs, and the page's health model, "last known" and the recovery budget. The automated
-browser checks (§9.3) passed 21 of 22 on a vcan host in Chrome
-(`docs/validation/gui-m3b-live-demo.md`, run 9 and its long run, both at `f8a8e5f`). The
-failure is a measured case added for the owner: 4 log rows, not 5, while the restart note
-and a gap note show together at 1440 × 900; the record lists it, and the page's main-thread
-load, as open findings under "Remaining acceptance items". **M3b is not accepted** until the owner's manual checklist (design §13) passes, including the CSP check in both
+browser checks (§9.3) passed 24 of 24 on a vcan host in Chrome
+(`docs/validation/gui-m3b-live-demo.md`: run 9 and its long run at `f8a8e5f`, and run 12 at
+`5cd62fe` for the cases Task 37 changed). Run 9's one failure, 4 log rows while the restart
+note and a gap note showed together at 1440 × 900, was fixed in Task 37 with the owner's
+short restart note on the shared notice line, no notice bottom margin and a 4.5rem plot cap:
+5 rows in run 12, including when the notice line wraps (+6 px in the worst reading). The
+record lists the page's main-thread load as an open finding under "Remaining acceptance
+items". **M3b is not accepted** until the owner's manual checklist (design §13) passes, including the CSP check in both
 Chrome and Firefox, which nobody has run. The record lists the rulings the controller made
 during checkpoint 2, for the owner to confirm or reverse: the Agreement check covers
 unpaused live screenshots only; break and gap notes sit on one shared line under the
@@ -942,7 +945,7 @@ pass.
 | Non-finite values and state-encoding containment (tenth revision, **implemented at M3b checkpoint 1**): `null` plus a sorted `nonfinite` list; `unavailable` wins over `nonfinite`; strict encoding; the state task survives a failed snapshot and counts `state_encode_failed`; 500 from `GET /vehicle`; the startup refusal | nothing (`observe`); `.[dev,gui]` and loopback (`api`) | **Yes**, every job for `observe`, the `.[dev,gui]` job for `api` |
 | Encoding health and the first-good publish (eleventh revision, **implemented at M3b checkpoint 1**): `ok` set per attempt and never from the timestamps; a successful `GET /vehicle` leaves a failed full state failed; same-value recovery is pushed again, then only-when-changed resumes; a client connecting during a failure gets the last good state. Faults are injected in-process, never through a profile file | nothing (`observe`); `.[dev,gui]` and loopback (`api`) | **Yes**, every job for `observe`, the `.[dev,gui]` job for `api` |
 | The strict-encoding guard (twelfth revision, **implemented at M3b checkpoint 1**): a non-finite float placed where the sanitiser does not look (the DTC part, `as_of`) is caught only by `allow_nan=False`. The test shows the same input encodes under the default, so it fails if the guard is removed, and the failure is contained (counter, `ok: false`, task alive, last known state kept) | nothing (`observe`) | **Yes**, every job |
-| M3b browser checks: no false invalidation (no scenario, 65 s "Live", polls changing nothing), held value at the left edge, bounded history (at most one predecessor point before the window, plus the count cap), recovery with all four client slots occupied (the budget, no overlapping timers, no tight loop), polling while last known, SIGSTOP disconnect and recovery without restart, restart reset, window persistence, pause while buffering, non-finite values, malformed state then unchanged data, bounded resync, encoding failure and same-value recovery, overflow. Faults come from an in-process test server, not from the shipped page or a profile file. (Fourteenth revision: **implemented at M3b checkpoint 2**; 21 of 22 passed on run 9, the failure a measured layout finding, `docs/validation/gui-m3b-live-demo.md`; M3b not accepted) | vcan, Chrome, the capture script | **No.** Local, recorded evidence. Firefox is manual only |
+| M3b browser checks: no false invalidation (no scenario, 65 s "Live", polls changing nothing), held value at the left edge, bounded history (at most one predecessor point before the window, plus the count cap), recovery with all four client slots occupied (the budget, no overlapping timers, no tight loop), polling while last known, SIGSTOP disconnect and recovery without restart, restart reset, window persistence, pause while buffering, non-finite values, malformed state then unchanged data, bounded resync, encoding failure and same-value recovery, overflow. Faults come from an in-process test server, not from the shipped page or a profile file. (Fourteenth revision: **implemented at M3b checkpoint 2**; 24 of 24 passed (runs 9 and 12, `docs/validation/gui-m3b-live-demo.md`); M3b not accepted) | vcan, Chrome, the capture script | **No.** Local, recorded evidence. Firefox is manual only |
 
 The CI changes, made on branch `gui` only:
 - a job installing `.[dev,gui]` for the `api` tests;
