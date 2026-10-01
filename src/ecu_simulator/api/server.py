@@ -48,6 +48,10 @@ FRONTEND = {
     "/": ("index.html", "text/html"),
     "/app.css": ("app.css", "text/css"),
     "/app.js": ("app.js", "text/javascript"),
+    # M3b (gui-m3b-graphs-design.md §5.1, §10): uPlot 1.6.32, vendored byte-identical.
+    "/uPlot.iife.min.js": ("uPlot.iife.min.js", "text/javascript"),
+    "/uPlot.min.css": ("uPlot.min.css", "text/css"),
+    "/uPlot-LICENSE.txt": ("uPlot-LICENSE.txt", "text/plain"),
 }
 # On the frontend responses only; the JSON API is unchanged. connect-src 'self' covers the
 # same-host ws:// socket in current browsers (CSP Level 3).

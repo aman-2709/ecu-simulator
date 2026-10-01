@@ -1,7 +1,9 @@
-"""The M3a frontend files (decisions/0010 §6, §7, §9.3): each is served at a fixed route with
-its content type and body, from package data, and nothing else under ``static/`` is reachable.
+"""The M3a/M3b frontend files (decisions/0010 §6, §7, §9.3; gui-m3b-graphs-design.md §4.4,
+§5.1, §10): each is served at a fixed route with its content type and body, from package
+data, and nothing else under ``static/`` is reachable.
 """
 
+import hashlib
 from importlib import resources
 
 import pytest
@@ -15,6 +17,15 @@ FRONTEND = {
     "/": ("index.html", "text/html"),
     "/app.css": ("app.css", "text/css"),
     "/app.js": ("app.js", "text/javascript"),
+    "/uPlot.iife.min.js": ("uPlot.iife.min.js", "text/javascript"),
+    "/uPlot.min.css": ("uPlot.min.css", "text/css"),
+    "/uPlot-LICENSE.txt": ("uPlot-LICENSE.txt", "text/plain"),
+}
+# gui-m3b-graphs-design.md §5.1: the vendored uPlot 1.6.32 files, pinned by hash.
+UPLOT_SHA256 = {
+    "uPlot.iife.min.js": "19c8d4c6ad88929a79f4ae49d6f7161566dfd0ba3d15cc495e974f787eb78f1f",
+    "uPlot.min.css": "df630c6a8d6f8eeaff264b50f73ce5b114f646ffd9a0bb74f049b0a00135fa04",
+    "uPlot-LICENSE.txt": "8f989229699b4fe2f1a0432d0e9edc338a8a911e250e2d1b01ecd770a5f5b1bd",
 }
 SECURITY_HEADERS = {
     "Content-Security-Policy": (
@@ -61,6 +72,11 @@ def test_the_static_directory_holds_exactly_the_served_files():
     names = {p.name for p in resources.files("ecu_simulator.api").joinpath("static").iterdir()
              if p.is_file() and not p.name.startswith(".")}
     assert names == {name for name, _ in FRONTEND.values()}
+
+
+@pytest.mark.parametrize("name", sorted(UPLOT_SHA256))
+def test_the_vendored_uplot_files_match_their_pinned_sha256(name):
+    assert hashlib.sha256(static_bytes(name)).hexdigest() == UPLOT_SHA256[name], name
 
 
 @pytest.mark.asyncio
