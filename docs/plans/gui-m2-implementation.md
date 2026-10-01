@@ -3083,3 +3083,153 @@ if the startup split needs it); `tests/unit/api/test_server_http.py`,
   sections**, never combined; the host, Python version, commits, commands and the raw
   output; and states that the state task is not a publisher turn. The optional M2 early
   check is not run at checkpoint 1. The M2 latency STOP stays open and is not affected.
+
+## M3b checkpoint 2: graph rendering and the browser checks (owner, 2026-09-30)
+
+Authority: `docs/plans/gui-m3b-graphs-design.md` (§4.3-4.4, §5, §6, §7, §8.4-8.6, §9, §10,
+§11, §12.2-12.4, §13, §14.1 C1-C10, §16, §17 checkpoint 2) and decision 0010 (§7, §9.3,
+§10). Checkpoint 1 (server JSON and health) is pushed at `71cf40e`. The owner accepted C9:
+an exhausted recovery episode needs "Retry now"; ordinary disconnects keep M3a's automatic
+reconnect. The shipped page stays live-data-only: no test mode, no fault switch, no sample
+data. Tests and checks are Chrome over CDP in a namespace; Firefox is manual only (§13).
+
+Global constraints (as checkpoint 1, plus): no build step, npm or CDN at run time; the CSP
+is unchanged; the vendored uPlot files are byte-identical to the npm tarball and pinned by
+SHA-256; nothing in `ecu/`, `transport/`, `protocols/`, `scenario/` or the hot path
+changes; the fault-injection harness changes nothing under `src/` and uses only public
+seams (public module functions and public attributes of the runtime objects); a capture or
+demo run never touches the host vcan0/can0 and runs only in a namespace
+(`scripts/run_gui_demo.sh`'s guard). M3b is not accepted at the end of checkpoint 2: the
+owner's §13 checklist, including the manual Chrome and Firefox CSP checks, decides.
+
+### Task 31: vendor uPlot 1.6.32 and serve it
+
+**Files:** `src/ecu_simulator/api/static/uPlot.iife.min.js`, `uPlot.min.css`,
+`uPlot-LICENSE.txt`; `src/ecu_simulator/api/server.py` (`FRONTEND`);
+`tests/unit/api/test_frontend_files.py`.
+
+- Download `https://registry.npmjs.org/uplot/-/uplot-1.6.32.tgz`; copy `dist/uPlot.iife.min.js`,
+  `dist/uPlot.min.css` and `LICENSE` (as `uPlot-LICENSE.txt`) byte-identical. Their SHA-256
+  must equal §5.1's three values; stop if any differs.
+- Three `FRONTEND` rows (§10): `/uPlot.iife.min.js` `text/javascript`, `/uPlot.min.css`
+  `text/css`, `/uPlot-LICENSE.txt` `text/plain`. Same headers as the other frontend files.
+- Tests: the file test's own route list gains the three rows (body, type, charset, headers,
+  "exactly the served files", read once); a new test pins the three SHA-256 values against
+  the files on disk; the existing ban on `http://`, `https://`, `//cdn` and "sample" keeps
+  applying to `index.html`, `app.js` and `app.css` only (the vendored header has a URL).
+- §12.4 by hand: build a wheel (`.venv/bin/python -m pip wheel --no-deps -w <scratch> .`) and
+  list it; record in the report that the three files are under `ecu_simulator/api/static/`.
+- No page change in this task (Task 33 links the files).
+
+### Task 32: page health: connection, data validity, recovery requirement and episodes
+
+**Files:** `src/ecu_simulator/api/static/app.js`, `app.css`, `index.html` (only the
+"Retry now" control and the banner/tag text hooks, if needed).
+
+Implements §8.4-8.6 exactly, with no graphs yet:
+- `S.phase` becomes `S.conn` (`loading`, `live`, `down`, `refused`), same meaning; `isLive()`
+  and `poll()` test `S.conn` only, so a page whose data is last known keeps polling (C8).
+- `S.data` (`current` / `last-known`) with a reason (`connecting`, `malformed`, `encoding`,
+  or both malformed and encoding) and the time of the last applied valid `state`; the
+  single recovery requirement with its kinds and clearing rules (§8.4 table); "valid state"
+  as §8.4 defines it (parsed, type, objects, current socket `S.gen`, current run).
+- Malformed frames (fail `JSON.parse` or not an object) are counted, never swallowed:
+  "Malformed messages N, last HH:MM:SS UTC" once N > 0; `state_encode_failed` shown once > 0.
+- Recovery episodes (§8.5): the resync is a reconnect; one budget of 3 attempts per episode
+  (waits 1, 2, 4 s); every attempt outcome listed in §8.5 counts; reset only by a successful
+  recovery; exhaustion → "Could not recover: … Retry now", no automatic attempt; "Retry now"
+  starts a new episode; a new `started_at` ends the episode (M3a restart path). Outside an
+  episode, M3a's backoff is unchanged. One retry timer (`S.retryTimer`), never overlapping;
+  at most one attempt in flight.
+- Marking: stale (unchanged M3a styling, takes precedence) vs last known (dotted top edge
+  and "Last known, HH:MM:SS UTC" on the vehicle and DTC panels — and the graphs panel once
+  Task 33 adds it — values not faded, the log not marked; lamp amber outline "Connected,
+  last known data" / "Connected, waiting for state"; a banner naming the cause for
+  `malformed` and `encoding`). "Live" = `S.conn` live and `S.data` current (§8.6).
+- Log lines "Resynchronised after an unreadable message" / "Resynchronised after the
+  simulator's state recovered".
+- The `<body>` diagnostic attributes of §12.2: `data-conn`, `data-data`, `data-reason`,
+  `data-health`, `data-episode`, `data-attempts`, `data-timers`, `data-polls`,
+  `data-malformed-total`. Written by the page, never read by it.
+- Expose a hook Task 33 uses: a function the health code calls when `S.data` enters
+  `last-known` (`malformed`/`encoding`) or `S.conn` goes `down`, so rings can set a pending
+  break (§6.7, §8.4).
+- Check: the existing M3a capture run (`scripts/run_gui_demo.sh`) still passes; plus a
+  short CDP smoke in the namespace showing `data-health` = `live` on a healthy page and a
+  dispatched `{bad` frame producing `last-known`/`malformed` then recovery. (The full §12.2
+  matrix is Task 34.)
+
+### Task 33: the graphs section: markup, layout, rings, drawing
+
+**Files:** `index.html`, `app.js`, `app.css`.
+
+Implements §5.2, §5.3, §6, §7, §9 and the graph half of §8.4:
+- Markup and layout (§5.2, §7): `uPlot.min.css` linked before `app.css`; `<script
+  src="uPlot.iife.min.js" defer>` before `app.js`; the collapsible "Signal graphs" section
+  above the log in the main column, open on every load (not saved), toggle button with
+  `aria-expanded`/`aria-controls`, closed head "Signal graphs — hidden, still recording";
+  wide shell second column as a flex column (graphs `flex: none`, log `flex: 1 1 auto;
+  min-height: 0`); five `<figure>` cards in `repeat(auto-fit, minmax(11rem, 1fr))`; plot
+  height `clamp(3rem, 9vh, 4.75rem)`; compact head buttons; 390 px two-row head, one card
+  per row; the footer links `uPlot-LICENSE.txt`.
+- Signals, units and scales exactly §5.3; `UNITS` gains `"engine.rpm": "rpm"`.
+- Rings exactly §6.3 (Float64Array(4096) ×2 per signal, store on change or around a gap,
+  equal `as_of` replaces, 600 s horizon keeping the newest older point, 4096 cap).
+- Time base `as_of` (§6.1); step-hold with `paths.stepped({align: 1})` and the draw-time
+  right-edge point (§6.2); gaps as `null` with `spanGaps: false`, never a line to or from
+  an invalid value (§8.4); windows 30 s / 2 min (default) / 10 min with `aria-pressed`,
+  saved under `ecu-simulator.graphs.window` with every access in try/catch (§6.4); the
+  missing-signal and missing-time cases (§6.5); loop boundaries need nothing special
+  (§6.6); disconnect breaks and "No data from t = A to t = B s (disconnected)" (§6.7);
+  restart clears with the note (§6.8); pause buffers and resume jumps to latest, separate
+  from the log's pause (§6.9); hide stops drawing only.
+- Drawing coalesced with `requestAnimationFrame`; ResizeObserver on the card grid calls
+  `setSize` with the floored card content width (§7); axis font from computed style;
+  cursor, legend and selection off; nothing animated; plot containers `aria-hidden`.
+- Fallback: `typeof uPlot !== "function"` → "Graphs unavailable: the chart library did
+  not load", the rest of the page works (§10).
+- The per-graph `data-*` attributes of §12.2, exactly as listed, written after each ring
+  update and draw, never read by the page.
+- Check: the M3a capture run still passes; a CDP smoke on the stepped demo shows five
+  cards drawing, line 1 equal to the signal table, no horizontal overflow at 1440, 2000
+  and 390, and at least 5 full log rows at 1440 × 900 with the section open (if not, reduce
+  the plot height first, §5.2).
+
+### Task 34: the fault-injection server and the capture-run checks
+
+**Files:** `scripts/gui_fault_server.py`; `scripts/gui_demo_capture.py` (new M3b checks,
+the WebSocket wrapper); `scripts/run_gui_demo.sh` (an M3b mode if needed).
+
+- `scripts/gui_fault_server.py` exactly §12.3, using public seams only: it wraps the
+  public `app.build_runtime` to capture the runtime and replace `runtime.runner.apply` on
+  that instance (`--nonfinite PATH:START:END`; with no scenario, set once on a timer), and
+  replaces the public `snapshots.state_message` / `snapshots.dtcs` / `snapshots.vehicle`
+  module functions during the window (`--state-fault START:END[:vehicle|dtcs]`), returning
+  the real result otherwise. It runs the real `app.run(..., api=...)` in-process on vcan
+  in the namespace, from a shipped profile or the stepped demo. No traffic by default.
+- The WebSocket wrapper (§12.2) installed with `Page.addScriptToEvaluateOnNewDocument`.
+- Every §12.2 case, reading only visible text, the tags/banner and the `data-*`
+  attributes, with its pass rule as written; the overflow check gains `#graphs` and each
+  `.uplot` at 1440, 390 and 2000; the 1440 × 900 log-rows check; the agreement check on
+  every live screenshot. The `--long` bounded-history case is included (about 11 min).
+- The cost measurement of §11.3 (heap samples, a DevTools trace, `Performance.getMetrics`
+  `TaskDuration`, canvas sizes) at 1440 × 900 and 390 × 844 over 60 s with traffic, saved
+  with the run. Recorded, not judged.
+- Each case reports pass/fail; a failing case is a finding to fix in the page (Task 32/33
+  code) within this task's fix loop, not a reason to relax its pass rule. A pass rule that
+  proves contradictory is reported, not changed.
+
+### Task 35: the M3b live-demo record and 0010
+
+**Files:** `docs/validation/gui-m3b-live-demo.md` (and its screenshots directory);
+`docs/decisions/0010-gui-observer-api.md` (status lines, §7, §9.3, §10 M3b row);
+`docs/plans/gui-m3b-graphs-design.md` (status line only).
+
+- The record: commands; host, Chrome version; every §12.2 case with its result; the §11.3
+  measurements next to §11's estimates (estimates stay labelled as such where not
+  measured); screenshots at 1440 × 900, 2000 and 390 (normal, hidden, paused, stale, last
+  known, invalid value, restart note, no scenario); the §13 checklist copied with every box
+  **unticked** for the owner, and the Firefox and Chrome CSP items marked unverified.
+- 0010 fourteenth revision: checkpoint 2 implemented; M3b **not accepted** until the owner's
+  §13 checklist, including both CSP checks, passes. The M2 latency STOP, the hosted
+  CAN_ISOTP gap, the Phase 8b gate and the V1.0 branch rule stay open.
