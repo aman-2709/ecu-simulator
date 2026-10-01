@@ -3233,3 +3233,23 @@ the WebSocket wrapper); `scripts/run_gui_demo.sh` (an M3b mode if needed).
 - 0010 fourteenth revision: checkpoint 2 implemented; M3b **not accepted** until the owner's
   §13 checklist, including both CSP checks, passes. The M2 latency STOP, the hosted
   CAN_ISOTP gap, the Phase 8b gate and the V1.0 branch rule stay open.
+
+### Task 36: remaining checks, durable traces, and the acceptance list (owner, 2026-09-30)
+
+The owner reviewed the desktop layout live and keeps it; graph readouts match the signal
+table. **Files:** `scripts/gui_demo_capture.py`, `docs/validation/gui-m3b-live-demo.md` and
+its directory; `app.css` only if the new measured case fails and the fix keeps the
+desktop layout the owner approved.
+
+- A new measured case: at 1440 × 900 with the restart note **and** a gap note visible
+  together, count full log rows in `#logwrap` (requirement: at least 5). Report the number
+  and the section height; if it fails, report it as a finding and do not change the layout
+  without a ruling.
+- Re-run the full `--m3b` matrix and `--m3b-long` on the final page code, so every case is
+  on one commit, plus the M3a and `--moving` captures.
+- The performance traces of that run (1440 × 900 and 390 × 844) are committed under
+  `docs/validation/gui-m3b-live-demo/traces/` with their sizes and the commit they were
+  taken on; nothing is left only in a session scratchpad.
+- The record: the browser main-thread load (mostly M3a's log rebuild) is an **open
+  finding**, not "recorded, not judged"; a section "Remaining acceptance items" lists
+  explicitly what is still needed for M3b acceptance; M3b is not marked accepted.
