@@ -1379,6 +1379,116 @@
     ]);
   }
 
+  // ---- log selection (pure, no DOM) ----
+  // Which rows the exchange log draws: a window of at most `size` exchanges the filters show,
+  // chosen after the filters apply to every retained exchange. Everything is passed in, so
+  // scripts/gui_log_check.js runs this block alone. Arguments shared by every function here:
+  //   entries  exchanges { kind: "ex", e, id } and markers { kind: "gap" | "note" | …, id }, in id order;
+  //   matches  the filter predicate, given an exchange's event `e`;
+  //   opts     { clearedAfter, pauseAfter (null when not paused), endId, size }: rows up to
+  //            clearedAfter are out of view, exchanges after pauseAfter are held; endId null
+  //            means following (the window ends at the newest matching exchange), an id pins
+  //            the window's end there.
+  var LOG_WINDOW = 200;              // matching exchanges the log draws at most
+  var LOG_STEP = 100;                // matching exchanges one Older / Newer press moves the window
+
+  // The matching exchanges in view, as entry indices, and where a window ending at
+  // opts.endId ends among them: `end` is one past its newest exchange, `upper` the highest id
+  // it may hold (Infinity while following). A pin is honoured as given: one older than every
+  // matching exchange (its rows left the page's cap, or were cleared) gives an empty window
+  // with them all newer; logAnchorEnd moves such a pin to the oldest of them.
+  function logPlace(entries, matches, opts) {
+    var m = [], end = 0, en;
+    for (var i = 0; i < entries.length; i += 1) {
+      en = entries[i];
+      if (en.kind !== "ex" || en.id <= opts.clearedAfter) continue;
+      if (opts.pauseAfter != null && en.id > opts.pauseAfter) break;
+      if (!matches(en.e)) continue;
+      m.push(i);
+      if (opts.endId == null || en.id <= opts.endId) end = m.length;
+    }
+    return { m: m, end: end, upper: opts.endId == null ? Infinity : opts.endId };
+  }
+
+  // The rows to draw and the counts beside them. Returns { items, firstId, lastId, counts }:
+  // items, in entry order, are { kind: "entry", entry } and { kind: "hidden", n } (a run of
+  // exchanges the filters hide, only ever between two drawn rows); firstId / lastId are the
+  // oldest / newest drawn exchange (null when none). Markers between them are drawn in place;
+  // where no matching exchange lies beyond the window on a side, the window reaches the end
+  // of the view on that side and takes its markers too. Every other marker or hidden exchange
+  // is counted as older or newer. A pinned window holds only rows up to endId, so rows
+  // appended later never change it. counts: inView (exchanges between the clear and pause
+  // boundaries), matching, shown, olderMatching, newerMatching, hiddenTotal,
+  // hiddenOutside { older, newer }, markersOlder / markersNewer { gaps, notes }, held.
+  function selectLog(entries, matches, opts) {
+    var p = logPlace(entries, matches, opts), m = p.m;
+    var start = Math.max(0, p.end - opts.size);
+    var lower = start > 0 ? entries[m[start]].id : -Infinity;
+    var c = {
+      inView: 0, matching: m.length, shown: p.end - start, olderMatching: start, newerMatching: m.length - p.end,
+      hiddenTotal: 0, hiddenOutside: { older: 0, newer: 0 },
+      markersOlder: { gaps: 0, notes: 0 }, markersNewer: { gaps: 0, notes: 0 }, held: 0
+    };
+    var items = [], run = 0, rows = 0, en;
+    for (var i = 0; i < entries.length; i += 1) {
+      en = entries[i];
+      if (en.id <= opts.clearedAfter) continue;
+      if (opts.pauseAfter != null && en.id > opts.pauseAfter) { if (en.kind === "ex") c.held += 1; continue; }
+      var isEx = en.kind === "ex";
+      if (isEx) c.inView += 1;
+      var shows = !isEx || matches(en.e);
+      if (!shows) c.hiddenTotal += 1;
+      if (en.id < lower || en.id > p.upper) {
+        if (!shows) c.hiddenOutside[en.id < lower ? "older" : "newer"] += 1;
+        else if (!isEx) c[en.id < lower ? "markersOlder" : "markersNewer"][en.kind === "gap" ? "gaps" : "notes"] += 1;
+        continue;
+      }
+      if (!shows) { run += 1; continue; }
+      if (run) {
+        if (rows) items.push({ kind: "hidden", n: run }); else c.hiddenOutside.older += run;
+        run = 0;
+      }
+      items.push({ kind: "entry", entry: en });
+      rows += 1;
+    }
+    // A run after the last drawn row is newer; with no drawn row at all, every run is older.
+    c.hiddenOutside[rows ? "newer" : "older"] += run;
+    return {
+      items: items,
+      firstId: c.shown ? entries[m[start]].id : null,
+      lastId: c.shown ? entries[m[p.end - 1]].id : null,
+      counts: c
+    };
+  }
+
+  // The window end after "Older": `step` matching exchanges back, but never past the oldest
+  // full window. Returns opts.endId unchanged (null stays following) when nothing older matches.
+  function logOlderEnd(entries, matches, opts, step) {
+    var p = logPlace(entries, matches, opts), k = p.end - 1;
+    if (p.end - opts.size <= 0) return opts.endId;
+    var to = Math.max(k - step, Math.min(opts.size, p.m.length) - 1);
+    return to < k ? entries[p.m[to]].id : opts.endId;
+  }
+
+  // The window end after "Newer": `step` matching exchanges on; null (following again) when
+  // that reaches or passes the newest matching exchange, or when already following.
+  function logNewerEnd(entries, matches, opts, step) {
+    if (opts.endId == null) return null;
+    var p = logPlace(entries, matches, opts), to = p.end - 1 + step;
+    return to >= p.m.length - 1 ? null : entries[p.m[to]].id;
+  }
+
+  // The window end after a filter change, from the previous pin opts.endId: the newest
+  // exchange the new `matches` shows at or before it, else the oldest after it; null
+  // (following) when nothing matches or the window was already following.
+  function logAnchorEnd(entries, matches, opts) {
+    if (opts.endId == null) return null;
+    var p = logPlace(entries, matches, opts);
+    if (!p.m.length) return null;
+    return entries[p.m[Math.max(0, p.end - 1)]].id;
+  }
+  // ---- end log selection ----
+
   // ---------- rendering: exchange log ----------
   function passes(e) {
     if (view.ecu !== "all" && ecuKey(e) !== view.ecu) return false;
