@@ -230,6 +230,7 @@ From the committed traces (`CrRendererMain`, 60 s each):
   would be to M3a's log, outside M3b's scope. It needs an owner decision: accept it as M3a
   behaviour, or schedule a log change (for example appending rows instead of rebuilding the
   table) with its own acceptance.
+- **Investigated in [gui-m3b-main-thread.md](gui-m3b-main-thread.md) (Task 39):** at the log's 2,000-row cap the page is saturated (about 100 %) at both widths; it proposes a fix, not implemented.
 
 ## Rulings made during checkpoint 2 (controller, for the owner to confirm or reverse)
 
