@@ -334,6 +334,8 @@ reader may scroll back to, is the owner's decision.
 - Turning the animations off, as the reduced-motion runs did, takes:
   - the *N* ≈ 200 condition from about 40 % to about 24–25 %;
   - an idle page at the cap from 83 % to 12 %.
+- Those runs turned the lamp and the change flash off together. How much of the effect is the
+  lamp's alone is not measured.
 - A change there means either no endless animation, or one on a property the compositor can run
   without a main-thread repaint. It is a visual of the M2/M3a status bar and needs the owner's
   decision. Its effect on a GPU-composited real browser is not measured here.
