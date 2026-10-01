@@ -197,7 +197,7 @@
             S.lastLive = Date.now();
             if (isStale()) S.downAt = S.lastLive;
             S.ecus = initial[2];
-            applyState(initial[0], initial[1]);
+            applyState(initial[0], initial[1], true);
             renderAll();
           }
           openSocket(status.api.refused_clients, gen);
@@ -484,10 +484,13 @@
   }
 
   // ---------- data ----------
-  function applyState(vehicle, dtcs) {
+  // `rest` marks the first data of a run, from GET /vehicle and /dtcs. The graphs skip it: it is
+  // read live, so it can be newer than the published state that follows hello, and that state's
+  // as_of would then go back and read as a new run (§6.8). The graphs start from the first state.
+  function applyState(vehicle, dtcs, rest) {
     S.vehicle = vehicle; S.dtcs = dtcs;
     renderVehicle(); renderDtcs();
-    graphsApply(vehicle);
+    if (!rest) graphsApply(vehicle);
     document.body.classList.remove("is-loading");
   }
 
