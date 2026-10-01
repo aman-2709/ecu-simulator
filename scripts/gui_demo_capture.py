@@ -806,7 +806,14 @@ LOG_ROWS = """(() => {
           line2: [...document.querySelectorAll('figure.graph:not([hidden]) .graph__line2')].map(e => e.textContent),
           breaks: (b => b && !b.hidden ? b.textContent : '')(document.getElementById('graphs-breaks')),
           statusH: Math.round(document.querySelector('header').getBoundingClientRect().height),
-          note: (n => n && !n.hidden ? n.textContent : '')(document.getElementById('graphs-note'))};
+          note: (n => n && !n.hidden ? n.textContent : '')(document.getElementById('graphs-note')),
+          // The parts of the second column, to explain a difference between two readings.
+          parts: {graphsHead: Math.round(document.querySelector('.graphs__head').getBoundingClientRect().height),
+                  breaksLine: Math.round(document.getElementById('graphs-breaks').getBoundingClientRect().height),
+                  noteLine: Math.round(document.getElementById('graphs-note').getBoundingClientRect().height),
+                  logwrap: Math.round(wr.height),
+                  logPanelTop: Math.round(w.closest('section').getBoundingClientRect().top),
+                  logwrapTop: Math.round(wr.top), headerBottom: Math.round(top)}};
 })()"""
 
 CANVASES = """(() => ({dpr: window.devicePixelRatio,
@@ -1447,8 +1454,18 @@ async def _restart_and_gap(m: M3b, sim: subprocess.Popen[bytes]) -> None:
                          ".every(r => r.querySelector('td.c-seq'))", timeout=15)
     await m.cdp.js("window.scrollTo(0, 0)")
     await m.settled()
-    rows = await m.cdp.js(LOG_ROWS)
+    # Three readings 1 s apart, the screenshot straight after the last; the case uses the fewest
+    # rows (the worst moment), and every reading is recorded.
+    readings = []
+    for k in range(3):
+        if k:
+            await asyncio.sleep(1.0)       # spacing between readings; no page condition to wait on
+        await m.settled()
+        readings.append(await m.cdp.js(LOG_ROWS))
     await m.shot("m3b-b-restart-and-gap-1440.png")
+    readings.append(await m.cdp.js(LOG_ROWS))
+    rows = dict(min(readings, key=lambda r: (r["full"], r["rowsRegion"])))
+    rows["readings"] = readings
     m.cases.record(
         "Log rows at 1440 x 900, restart note and a gap note together (measured)",
         "At 1440 x 900 with the graphs open, the restart note and a gap note visible together: at least 5 full "
