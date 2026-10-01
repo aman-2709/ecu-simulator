@@ -2,8 +2,10 @@
 
 Status: **revised after the owner's review of 2026-09-30. Checkpoint 1's code (§17), the
 observer JSON and health safeguards with their tests, and its overhead measurement
-(docs/validation/gui-m3b-overhead.md), are implemented on `gui`; checkpoint 2, the graphs,
-is not, and nothing is vendored** (0010, thirteenth revision).
+(docs/validation/gui-m3b-overhead.md), are implemented on `gui`; checkpoint 2, vendored
+uPlot, the graphs and the page's health model, is implemented too, with its browser checks
+(docs/validation/gui-m3b-live-demo.md). M3b is not accepted until the owner's §13
+checklist, including both CSP checks, passes** (0010, fourteenth revision).
 - **Approved as designed** (owner, 2026-09-30, §2): five separate graphs with the VIN kept
   as text; the 30 s / 2 min / 10 min windows; stepped rendering; bounded browser history;
   gaps at restart and disconnect; "rpm" as the unit in the graph and the signal table; no

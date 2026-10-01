@@ -10,10 +10,13 @@ median wire latency exceeds condition 1's median + 0.10 ms
 (`docs/validation/gui-m2-early-check.md`). **M3a, the live frontend, is built and live on
 `gui`:** it serves live data only (`docs/validation/gui-m3a-live-demo.md`). The offline
 mockup under `docs/mockups/m3a-dashboard/` is not served. **M3b, live signal graphs, is
-partly implemented** (`docs/plans/gui-m3b-graphs-design.md`, tenth to thirteenth revisions
-below): checkpoint 1 (the `nonfinite` field, the state-encoding containment, the encoding
-health in `GET /status` and the first-good publish rule of §4.3 and §5) is **implemented**;
-checkpoint 2 (the graphs and the page) is **designed, not implemented**. M4 has not run. **Still open, and unchanged by any of
+implemented and not accepted** (`docs/plans/gui-m3b-graphs-design.md`, tenth to fourteenth
+revisions below): checkpoint 1 (the `nonfinite` field, the state-encoding containment, the
+encoding health in `GET /status` and the first-good publish rule of §4.3 and §5) and
+checkpoint 2 (vendored uPlot, the graphs and the page's health model; 21 of 21 automated
+browser checks passed, `docs/validation/gui-m3b-live-demo.md`) are **implemented**. **M3b is
+not accepted** until the owner's §13 checklist passes, including the CSP check in both
+Chrome and Firefox, which is unverified. M4 has not run. **Still open, and unchanged by any of
 this:** the M2 latency `STOP`, the hosted-CI `CAN_ISOTP` gap (§9.3), the Phase 8b gate,
 and the branch rule below.
 
@@ -285,6 +288,23 @@ designed, not implemented:** the graphs and vendored uPlot (§7), and the page's
 model, "last known" and the recovery budget. Nothing here changes a threshold of P1–P9,
 V1.0 code, or any V1.0 or Phase 8b gate. The M2 latency `STOP`, the hosted `CAN_ISOTP` gap,
 the Phase 8b gate and the V1.0 branch rule stay open.
+
+A fourteenth revision, on 2026-09-30, records M3b checkpoint 2 on branch `gui`. **The page
+items are implemented:** uPlot 1.6.32 vendored and pinned by SHA-256 (§7, §9.3), the five
+graphs, and the page's health model, "last known" and the recovery budget. The automated
+browser checks (§9.3) passed 21 of 21 on a vcan host in Chrome
+(`docs/validation/gui-m3b-live-demo.md`, run 7 plus the long run). **M3b is not accepted**
+until the owner's manual checklist (design §13) passes, including the CSP check in both
+Chrome and Firefox, which nobody has run. The record lists the rulings the controller made
+during checkpoint 2, for the owner to confirm or reverse: the Agreement check covers
+unpaused live screenshots only; break and gap notes sit on one shared line under the
+graphs head, not in each card (a departure from the design's §6.7 wording); a status bar
+of stable height from 1101 px wide (an M3a layout change); five cards wrapping 4 + 1
+between 1101 and about 1260 px; a malformed frame while only an encoding requirement is
+pending defers the resync to the `ok: true` poll; and the fault server's public seams.
+Nothing here changes a threshold of P1–P9, V1.0 code, or any V1.0 or Phase 8b gate. The M2
+latency `STOP`, the hosted `CAN_ISOTP` gap, the Phase 8b gate and the V1.0 branch rule stay
+open.
 
 The evidence for the routing and ordering claims is in §12.
 
@@ -714,9 +734,11 @@ in-flight exchange to that resolution, so that it counts as exactly what happene
   - an exchange log, filterable by ECU, service and outcome (`no_response`, `unrouted`,
     `error`), with pause and clear. It shows a gap marker wherever `seq` jumps (§4.5).
 - **Milestone 3b: live signal graphs** (revised in the tenth revision, 2026-09-30;
-  **designed, not implemented**; `docs/plans/gui-m3b-graphs-design.md`. Thirteenth
-  revision: the server items are implemented at M3b checkpoint 1; the graphs and the page
-  are not):
+  **implemented, not accepted**; `docs/plans/gui-m3b-graphs-design.md`. Thirteenth
+  revision: the server items are implemented at M3b checkpoint 1. Fourteenth revision: the
+  graphs and the page are implemented at M3b checkpoint 2,
+  `docs/validation/gui-m3b-live-demo.md`; not accepted until the owner's checklist,
+  including both CSP checks, passes):
   - five separate graphs: `vehicle.speed` (km/h), `engine.rpm` (rpm), `engine.throttle`
     (%), `engine.engine_load` (%) and `engine.coolant_temp` (°C). The VIN stays text;
   - drawn only from the `state` messages and `GET /vehicle` the page receives, against
@@ -913,11 +935,11 @@ pass.
 | vcan integration: a real ISO-TP request produces the matching WebSocket `exchange` event | `.[dev,gui]` and a kernel with `CAN_ISOTP` | **No.** It skips on hosted runners (`linux-azure` has no `can_isotp`). It is **pending a compatible runner** ([0009](0009-self-hosted-vcan-runner.md)), runs locally, and is **never counted as validated from a CI run that skipped it** |
 | Performance (§9.2) | vcan and `CAN_ISOTP` | No. Local, recorded evidence |
 
-| Frontend files (M3): every file M3 adds is served with its content type, and nothing else is. From M3b, the vendored uPlot files are also **pinned by SHA-256**, its licence is shipped and linked, and the page loads it before `app.js` (tenth revision) | `.[dev,gui]` and loopback | **Yes**, in the `.[dev,gui]` job, from M3 |
+| Frontend files (M3): every file M3 adds is served with its content type, and nothing else is. From M3b, the vendored uPlot files are also **pinned by SHA-256**, its licence is shipped and linked, and the page loads it before `app.js` (tenth revision; **implemented at M3b checkpoint 2**) | `.[dev,gui]` and loopback | **Yes**, in the `.[dev,gui]` job, from M3 |
 | Non-finite values and state-encoding containment (tenth revision, **implemented at M3b checkpoint 1**): `null` plus a sorted `nonfinite` list; `unavailable` wins over `nonfinite`; strict encoding; the state task survives a failed snapshot and counts `state_encode_failed`; 500 from `GET /vehicle`; the startup refusal | nothing (`observe`); `.[dev,gui]` and loopback (`api`) | **Yes**, every job for `observe`, the `.[dev,gui]` job for `api` |
 | Encoding health and the first-good publish (eleventh revision, **implemented at M3b checkpoint 1**): `ok` set per attempt and never from the timestamps; a successful `GET /vehicle` leaves a failed full state failed; same-value recovery is pushed again, then only-when-changed resumes; a client connecting during a failure gets the last good state. Faults are injected in-process, never through a profile file | nothing (`observe`); `.[dev,gui]` and loopback (`api`) | **Yes**, every job for `observe`, the `.[dev,gui]` job for `api` |
 | The strict-encoding guard (twelfth revision, **implemented at M3b checkpoint 1**): a non-finite float placed where the sanitiser does not look (the DTC part, `as_of`) is caught only by `allow_nan=False`. The test shows the same input encodes under the default, so it fails if the guard is removed, and the failure is contained (counter, `ok: false`, task alive, last known state kept) | nothing (`observe`) | **Yes**, every job |
-| M3b browser checks: no false invalidation (no scenario, 65 s "Live", polls changing nothing), held value at the left edge, bounded history (at most one predecessor point before the window, plus the count cap), recovery with all four client slots occupied (the budget, no overlapping timers, no tight loop), polling while last known, SIGSTOP disconnect and recovery without restart, restart reset, window persistence, pause while buffering, non-finite values, malformed state then unchanged data, bounded resync, encoding failure and same-value recovery, overflow. Faults come from an in-process test server, not from the shipped page or a profile file | vcan, Chrome, the capture script | **No.** Local, recorded evidence. Firefox is manual only |
+| M3b browser checks: no false invalidation (no scenario, 65 s "Live", polls changing nothing), held value at the left edge, bounded history (at most one predecessor point before the window, plus the count cap), recovery with all four client slots occupied (the budget, no overlapping timers, no tight loop), polling while last known, SIGSTOP disconnect and recovery without restart, restart reset, window persistence, pause while buffering, non-finite values, malformed state then unchanged data, bounded resync, encoding failure and same-value recovery, overflow. Faults come from an in-process test server, not from the shipped page or a profile file. (Fourteenth revision: **implemented at M3b checkpoint 2**; 21 of 21 passed, `docs/validation/gui-m3b-live-demo.md`; M3b not accepted) | vcan, Chrome, the capture script | **No.** Local, recorded evidence. Firefox is manual only |
 
 The CI changes, made on branch `gui` only:
 - a job installing `.[dev,gui]` for the `api` tests;
@@ -936,7 +958,7 @@ reported as local results, with their commands.
 | **M1** | `observe`: `HandOff`, `ObservedDispatcher`, `Publisher`, snapshots, sequence and watermark; the §9.1 proofs, including the differential comparison; the ordering tests; the M1 early check | yes, core, no dependencies | Tests green in CI; differential comparison clean; M1 early check reported |
 | **M2** | `ApiServer`, `--api`, the `[gui]` extra, §6 security, §4.3 limits, API tests, the CI job; the M2 early check | yes | API tests green in CI on a `gui` push; M2 early check reported |
 | **M3a** | Frontend MVP: status, vehicle, DTCs, exchange log with gap markers | yes | Frontend file tests green in CI; owner runs the manual rendering checklist |
-| **M3b** | Live signal graphs with vendored uPlot 1.6.32 (§7); the non-finite rule and state-encoding containment (§4.3, §5). The non-finite rule, containment and encoding health are **implemented at M3b checkpoint 1** (thirteenth revision); the graphs (§7) are **designed, not implemented** (tenth and eleventh revisions). Two checkpoints: (1) the observer JSON and health safeguards with their tests and a before-and-after measurement of state build and encode cost and of the publisher's longest turn; (2) graph rendering and the browser checks | yes | The frontend file tests and the non-finite and containment tests are green in CI; the capture-run browser checks pass on a vcan host; the owner runs the manual view checklist; **and the CSP check passes in both Chrome and Firefox**, which is manual and unverified until run |
+| **M3b** | Live signal graphs with vendored uPlot 1.6.32 (§7); the non-finite rule and state-encoding containment (§4.3, §5). The non-finite rule, containment and encoding health are **implemented at M3b checkpoint 1** (thirteenth revision); the graphs (§7) are **implemented at M3b checkpoint 2, not accepted** (fourteenth revision; `docs/validation/gui-m3b-live-demo.md`). Two checkpoints: (1) the observer JSON and health safeguards with their tests and a before-and-after measurement of state build and encode cost and of the publisher's longest turn; (2) graph rendering and the browser checks | yes | The frontend file tests and the non-finite and containment tests are green in CI; the capture-run browser checks pass on a vcan host; the owner runs the manual view checklist; **and the CSP check passes in both Chrome and Firefox**, which is manual and unverified until run |
 | **M4** | Full benchmark (§9.2) and MVP acceptance report | benchmark scripts only | P1–P9 met and the forced-close run passed in every round, or failures reported; owner accepts |
 | Later | Raw CAN frame panel (optional, read-only, a raw CAN socket in the API process) | — | Separate approval |
 | Later | `ControlPort` controls (§8) | — | Own decision record first |
