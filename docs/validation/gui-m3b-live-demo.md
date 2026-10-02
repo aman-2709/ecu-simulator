@@ -15,7 +15,11 @@ keeps 5 full log rows at 1440 × 900, after two owner-authorized layout changes 
 12; "Task 37: the shared notice line and two small layout changes" below). The full list of
 what M3b still needs is under "Remaining acceptance items". **Task 41** (run 13) fixed an
 owner finding: a `state` message missing `vehicle` or `dtcs` was ignored and the page stayed
-Live; it is now a data fault (its own section below).
+Live; it is now a data fault (its own section below). **Tasks 42-46** changed the exchange log
+to a bounded, navigable window of 200 matching exchanges and moved the live lamp's beat to
+compositor-only properties; on headless numbers the main-thread finding is **mitigated, and it
+stays open** until the owner confirms it in their own browser ("Tasks 42-46" below, and
+[gui-m3b-main-thread.md](gui-m3b-main-thread.md), "Outcome").
 
 **Still open, and not touched by this record:**
 - **the M2 early-check latency `STOP`** ([gui-m2-early-check.md](gui-m2-early-check.md)).
@@ -67,7 +71,15 @@ Where the numbers come from:
 - the Task 31–34 reports (`.superpowers/sdd/gui-m2-implementation/task-3[1-4]-report.md`),
   where a measurement is not in the run's files. **Task 34 has four rounds; where its
   rounds disagree, the latest round (fix round 3, run 7) is used**, and the place says so;
-- one extra screenshot, the hidden section, taken for this record (see "The screenshots").
+- one extra screenshot, the hidden section, taken for this record (see "The screenshots");
+- **the windowed log (Tasks 42-46):** the two final `--m3b-log` runs, Task 46a's fix-round runs
+  (harness `c18c132`, page `3593be7`), copied unchanged:
+  [log-run1/m3b-log-results.json](gui-m3b-live-demo/log-run1/m3b-log-results.json),
+  [log-run1/capture.log](gui-m3b-live-demo/log-run1/capture.log),
+  [log-run2/m3b-log-results.json](gui-m3b-live-demo/log-run2/m3b-log-results.json) and
+  [log-run2/capture.log](gui-m3b-live-demo/log-run2/capture.log); the Task 42-46 reports
+  (`.superpowers/sdd/gui-m2-implementation/task-4{2,3,4,5,6a,6b}-report.md`); and the
+  screenshots of the new log and the lamp taken for this record (see "The screenshots").
 
 ## What was run
 
@@ -335,7 +347,103 @@ committed traces). Run 8's are in brackets where the controller's notes quote th
   (Perfetto, DevTools, `chrome://tracing`). Run 8's traces were never committed and stay only in
   the session scratchpad.
 
+## Tasks 42-46: the windowed exchange log, the `--m3b-log` cases and the lamp
+
+The owner's fix for the main-thread finding (plan: "M3b main-thread fix: a bounded, navigable
+exchange log"). Browser only; retention stays 2,000 exchanges; no API, diagnostic-path or M2
+latency change. The design, every measurement and what they do not show are in
+[gui-m3b-main-thread.md](gui-m3b-main-thread.md), "Outcome". This section is what a reader of
+the page sees, and the committed browser cases.
+
+### How the log behaves now
+
+- **A window of 200 matching exchanges** (`LOG_WINDOW`), chosen after the ECU, service and outcome
+  filters are applied to all 2,000 retained. While **following**, it ends at the newest and slides.
+  The reader's own scroll pins it at the newest row shown; arrivals are then counted, not drawn.
+- **Controls inside the table**, real buttons: a row at the top, "1,800 older exchanges match your
+  filters." with **Show older exchanges**; when pinned with newer ones, a row at the bottom,
+  "35 newer exchanges match your filters." with **Show newer exchanges** and **Jump to newest**.
+  Each press moves the window by up to 100 matching exchanges (`LOG_STEP`) and keeps the row the
+  reader was looking at in the window, at its place unless the box reaches a scroll limit; when
+  the window's far end is already in view the press scrolls the box there instead, so no press
+  does nothing. The header control reads, for example,
+  "11 rows below + 35 beyond this window, jump to newest". Jump to newest follows again.
+- **The count line:** "200 of 2,000 shown (seq 2,529–2,728), last seq 2728 (live)";
+  with a filter, "200 of 250 matching shown (seq 2,062–2,261; 2,000 retained)".
+- **Four kinds of absent rows, each in its own words:** outside this window ("… match your
+  filters", "beyond this window"); hidden by filters ("634 exchanges hidden by filters (not a
+  gap)"); gap markers and connection notes, drawn where they fall in the window and otherwise
+  counted ("1 gap marker and 1 connection note in older rows"); and rows that left the 2,000 cap
+  (the existing "… older rows left this view." note, which after a pinned reader's rows have left
+  too adds "Rows this view was showing left too, so it moved to the oldest exchanges kept.").
+- **Pause, Clear view, payload expansion** keep their meaning. Paused or pinned, the row list is
+  not touched; only counters change.
+
+(Example texts: fix-round run 1, 1440 × 900, [log-run1/m3b-log-results.json](gui-m3b-live-demo/log-run1/m3b-log-results.json).)
+
+### The `--m3b-log` mode (Task 46a)
+
+```
+scripts/run_gui_demo.sh --m3b-log <outdir>      # about 9 min; m3b-log-results.json and capture.log; rc 1 on any failed case
+```
+
+Set-up: the real simulator on the stepped demo in a private namespace with its own `vcan0`,
+headless Chrome 151; the log filled to 2,000 retained at 50/s; per width (1440 × 900, then
+390 × 844 on the same page), 250 OBD mode 0x0A requests sent by the harness (a service the traffic
+cycle never uses), then a burst of 400 so they lie older than the window, then the standard rate.
+The only harness code in the page is a MutationObserver on `#log-body`, a `focusout` counter and a
+WebSocket wrapper that can keep N events from the page (for a real seq gap). Controls are driven
+by real clicks, wheel scrolls and Enter on a focused button; the service `<select>` by value and a
+`change` event (task-46a-report, "The mode").
+
+**The final runs: 20 of 20 each** (Task 46a fix round 1, `c18c132`; served `app.js`
+`4c2419ca…`, the shipped page): run 1 started 2026-10-01T22:56:24Z, run 2 23:05:35Z; both exit 0;
+tally `{"1440x900": 9/9, "390x844": 9/9, "page": 2/2}`. The two earlier runs of the same cases
+(`d0e4ba7`) also passed 20 of 20 (task-46a-report).
+
+| # | Case (conditions at 1440 / 390) | What it proves (run 1, 1440 unless stated) |
+|---|---|---|
+| 1 | Live following (10 / 10) | Over 10 s the window slides and holds 200 exchange rows at every sample, the newest drawn and equal to the count line's last seq; one row in and one out per arrival (38 arrivals, 38 adds, 38 removes, nothing else); zero mutations with the traffic stopped; under a filter none of the arrivals match, zero row adds or removes |
+| 2 | Pause / resume, Clear view (13 / 13) | Paused 20 s: zero row mutations, identical text, the held count rising 3 → 22 → 41 → 60 → 80 and equal to the arrivals; Resume brings every held row in one batch (81 / 81) and follows; Clear view and Show cleared rows keep their meaning |
+| 3 | Filtering across all retained (19 / 19) | Service 0x0A finds its 250 exchanges although all are older than the unfiltered window ("200 of 250 matching shown …"; Older reaches all 250); hidden runs worded "(not a gap)"; one rebuild per change; a focused Reset filters keeps focus through arrivals, then restores every filter |
+| 4 | Older-history navigation (16 / 16) | A wheel scroll pins: over 8 s the same rows, every visible row within 1 px, zero row mutations, "beyond this window" 5 → 35 equal to the Newer row; Older / Newer clicks move a full 100 with the anchor within 0.4 px; Jump to newest follows; walking Older to the oldest and Newer back to the newest, 28 presses each way, no press silent, together reaching all 2,000 retained |
+| 5 | Eviction past the cap (14 / 14) | Following, the trimmed count rises by exactly the arrivals (1,024 → 1,352 for 328); pinned while the reader's whole window leaves the cap, 200 rows at all 49 samples, contiguous, still pinned, ending at the oldest kept with the re-pin sentence; Jump removes the sentence |
+| 6 | Reconnect and gap markers (11 / 11) | A real gap ("Gap: seq 5378–5380 not received (3).") and "Connection lost, then resumed." drawn where they fall; moved outside the window, counted exactly ("1 gap marker and 1 connection note in newer rows", later "in older rows"), never both drawn and counted; a restart drawn between runs, the count line "… across a restart" |
+| 7 | Payload expansion kept (5 / 5) | A row opened with "show all" leaves the window with Older and comes back with Newer still expanded, same 20 bytes |
+| 8 | The four absent-row wordings (9 / 9) | Each kind appears in its own situation and its own row carries no other kind's phrase; in every state read, matching = older + drawn + newer |
+| 9 | Layout (7 / 5) | No horizontal overflow (page, `#log-panel`, `#logwrap`, `#log-state`) following, filtered, with nothing matching and pinned; at 1440 × 900, 5 full log rows with the graphs open |
+| — | Page: the wording is the served page's (1) | Every phrase the cases match is in the served `app.js` |
+| — | Page: no exception or console message (1) | None over the whole run |
+
+At 390 the cases share the page and buffer with 1440, so several 390 texts carry width 1's
+markers (for example "… ; 1 gap marker and 2 connection notes in older rows"); the rules allow
+and check for that (task-46a-report, Concerns). The other modes on the new page all passed
+(M3a, `--moving`, `--m3b` 26 of 26, `--m3b-slots` 3 of 3; task-46a-report).
+
+### The lamp (Task 45)
+
+The live lamp's beat is the same 2 s rhythm on a ring (`.conn--live .conn__lamp::after`) animated
+on `transform: scale(1.2)` and `opacity` instead of the lamp's `box-shadow`, only under
+`prefers-reduced-motion: no-preference` (task-45-report Part B). Task 45 compared shots before
+(`84c0637`) and after:
+- **The same, byte for byte:** the lamp fully faded (1,000 ms into the beat), last known, refused,
+  disconnected, and the change flash at 390.
+- **Different pixels, the same look:** the live lamp at 0 and 500 ms and under reduced motion; side
+  by side the same glow, ring size and fade, the differences being antialiasing of the ring edge.
+  Reduced motion still shows a still 3 px glow.
+
+The cost it removed and the one-frame click-presentation increase at 1440 it brought (headless) are
+in [gui-m3b-main-thread.md](gui-m3b-main-thread.md), "Outcome".
+
 ## Open finding: the page's main-thread load (mostly M3a's log rebuild)
+
+**Status (Tasks 42-46): mitigated on headless numbers, still OPEN.** On the shipped page
+(`3593be7`) at the 2,000-exchange cap and 3.8 requests/s, the main thread is busy 9.7-10.0 % at
+1440 × 900 and 6.3-6.4 % at 390 × 844, with no task over 50 ms, against 99.9-100 % before
+(task-46b-report Part A; task-44-report baseline). These are headless `--disable-gpu` runs on a
+shared host; the visible-browser run was blocked by the locked desktop. The finding stays open
+until the owner confirms it in their own browser ("Remaining acceptance items"). The text below
+is the finding as recorded at run 9, kept as history.
 
 **This is an open finding, not a measurement to note and move past.** With the traffic script
 at 4 Hz, the page keeps Chrome's main thread busy **about half the time at 1440 × 900 and about
@@ -468,7 +576,9 @@ All in [gui-m3b-live-demo/](gui-m3b-live-demo/), copied unchanged and renamed. A
   and `restart-gap-invalid-wrap-1440.png`. Task 37 changed what these show (the note's
   wording and place).
 - **Run 8:** `break-note-encoding-1440.png`.
-- **Taken for this record:** `hidden-1440.png`.
+- **Taken for this record:** `hidden-1440.png`; and, on the page after the log fix (`3593be7`),
+  the `log-*` and `lamp-*` shots in their own table below. Every other shot predates the log fix,
+  so its log's count line and controls are the old ones.
 - **Run 7** (the page at `391a335`): all the others.
 
 **Shots from runs 7 and 8, and the hidden shot, show the earlier plot-height cap** (4.75rem: a
@@ -507,6 +617,51 @@ real simulator on the stepped demo, the traffic script at 4 Hz, headless Chrome 
 1440 × 900, at commit `e479769`. At as-of ≥ 30 it clicked "Hide graphs", waited 2 s and
 took the shot. It printed `HIDE PASS`, rc 0, and every process it started was stopped.
 
+### The windowed log and the lamp (taken for this record, Task 46c)
+
+No `--m3b-log` run saves screenshots, so these were taken for this record on the shipped page
+(served `app.js` `4c2419ca…`, `app.css` `ecbea9ec…`, the files at `3593be7`), about
+23:53-23:58 UTC on 2026-10-01. A throwaway script (`<scratchpad>/shots46c.py`, not committed)
+reused `gui_demo_capture.py`'s helpers in the same kind of namespace (`unshare -r -n`, `lo` up, a
+private `vcan0`): the real simulator on the stepped demo, the log filled to 2,000 retained at 50/s,
+then the traffic script at 4 Hz; headless Chrome 151 at 1440 × 900 and 390 × 844. **No harness
+code was injected into the page.** Each state was entered by real input as in `--m3b-log` (a
+click on Pause, a real wheel scroll to pin, a burst past the cap), except two harness scrolls of
+the log box to its top, made more than 1 s after any input so the page takes them as layout
+scrolls, which do not change pinning. The connection note comes from a real SIGSTOP / SIGCONT
+of the simulator, with the traffic stopped so the note stays at the window's end. The last-known
+lamp comes from the fault server (`--state-fault 15:300` on the stepped demo): a real
+"Connected, last known data". The live lamp's beat was paused at 0 ms by the Web Animations API,
+so the crop is repeatable. The page's text was read straight after each shot
+([log-shots-facts.json](gui-m3b-live-demo/log-shots-facts.json), with the step log
+[log-shots-capture.log](gui-m3b-live-demo/log-shots-capture.log)); no exception or console
+message. Every process the script started was stopped by its PID, and the namespace closed.
+
+The 1440 shots are clipped to the log panel down to the log box's bottom; the 390 shots are the
+viewport, scrolled to the log panel. The 390 marker shot was dropped: the note sat below the
+fold.
+
+| File | Size | What it shows |
+|---|---|---|
+| [log-following-1440.png](gui-m3b-live-demo/log-following-1440.png) | 96,766 B | **Following** at the cap: "200 of 2,000 shown (seq 1,835–2,034), last seq 2034 (live)", the newest row at the bottom, the header control hidden |
+| [log-following-390.png](gui-m3b-live-demo/log-following-390.png) | 75,183 B | Following at 390: "200 of 2,000 shown (seq 3,989–4,188), last seq 4188 (live)" |
+| [log-paused-1440.png](gui-m3b-live-demo/log-paused-1440.png) | 88,109 B | **Paused:** "View paused. 33 new exchanges are held; they appear when you resume. The simulator keeps running.", "Resume view", the count line "200 of 1,967 shown (seq 1,837–2,036; 2,000 retained), last seq 2069 (live)" |
+| [log-paused-390.png](gui-m3b-live-demo/log-paused-390.png) | 72,097 B | Paused at 390: 33 held, "200 of 1,967 shown (seq 3,990–4,189; 2,000 retained), last seq 4222 (live)" |
+| [log-marker-1440.png](gui-m3b-live-demo/log-marker-1440.png) | 92,806 B | **A marker row in the window:** "Connection lost, then resumed. Last live 23:55:00 UTC, resumed 23:55:07 UTC after seq 2076." drawn right after seq 2076, following |
+| [log-pinned-1440.png](gui-m3b-live-demo/log-pinned-1440.png) | 89,563 B | **Pinned** by a wheel scroll: the window held at seq 1,887–2,086 while arrivals went on ("last seq 2115"), the header control "10 rows below + 29 beyond this window, jump to newest" |
+| [log-pinned-390.png](gui-m3b-live-demo/log-pinned-390.png) | 80,320 B | Pinned at 390: seq 4,040–4,239, "5 rows below + 28 beyond this window, jump to newest" |
+| [log-older-row-1440.png](gui-m3b-live-demo/log-older-row-1440.png) | 96,764 B | **The top of a pinned window:** the trimmed note "124 older rows left this view. …", the Older row "1,762 older exchanges match your filters." with "Show older exchanges", then seq 1887; header "195 rows below + 38 beyond this window, jump to newest" |
+| [log-older-row-390.png](gui-m3b-live-demo/log-older-row-390.png) | 78,917 B | The same at 390: "1,762 older exchanges match your filters.", "Show older exchanges", seq 4040 first |
+| [log-evicted-repin-1440.png](gui-m3b-live-demo/log-evicted-repin-1440.png) | 94,950 B | **Eviction while pinned:** after a burst carried the reader's whole window past the cap, "2,149 older rows and 1 connection note left this view. The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap. Rows this view was showing left too, so it moved to the oldest exchanges kept."; no Older row (the oldest kept, seq 2,150–2,349, 200 rows); "196 rows below + 1,800 beyond this window, jump to newest" |
+| [log-evicted-repin-390.png](gui-m3b-live-demo/log-evicted-repin-390.png) | 83,929 B | The same at 390: "4,301 older rows and 2 connection notes left this view. … so it moved to the oldest exchanges kept.", seq 4,302–4,501, "195 rows below + 1,800 beyond this window" |
+| [lamp-live-1440.png](gui-m3b-live-demo/lamp-live-1440.png) | 5,519 B | **The live lamp** (crop of `#conn`, ×3): the filled lamp with its resting ring glow, "Live"; the beat paused at 0 ms |
+| [lamp-live-390.png](gui-m3b-live-demo/lamp-live-390.png) | 5,444 B | The same at 390 |
+| [lamp-last-known-1440.png](gui-m3b-live-demo/lamp-last-known-1440.png) | 13,333 B | **Last known** (crop, ×3): the amber outline lamp, no beat (0 `beat` animations), "Connected, last known data" (`conn conn--known`) |
+| [lamp-last-known-390.png](gui-m3b-live-demo/lamp-last-known-390.png) | 13,107 B | The same at 390 |
+
+Total: 15 files, 986,807 B. They show the page as it is; they do not tick the owner's visual
+review.
+
 ## Remaining acceptance items
 
 **M3b is implemented, not accepted.** Every item below is still open. None is ticked by this
@@ -539,9 +694,39 @@ checklist" below:
       main-thread load is the open finding below.
 
 Findings and untested paths:
-- [ ] **The open main-thread finding** (section above). The page is busy about 52 % at
-      1440 × 900 and 71 % at 390 × 844 with traffic, almost all of it in M3a's log rebuild. It
-      needs an owner decision: accept it as M3a behaviour, or schedule a log change.
+- [ ] **The main-thread finding: mitigated on headless numbers, still open** (section above,
+      and [gui-m3b-main-thread.md](gui-m3b-main-thread.md), "Outcome"). Before the log fix the
+      page was saturated (99.9-100 %) at the 2,000 cap; on the shipped page it is busy about
+      10 % at 1440 × 900 and 6 % at 390 × 844, headless `--disable-gpu`. It stays open until
+      the owner confirms it in their own browser.
+- [ ] **The owner's visual review of the windowed log and the lamp**: following, scroll-to-pin,
+      Older / Newer / Jump to newest, the count line and the four absent-row wordings, Pause,
+      the eviction note; the lamp live, last known, down and refused. See "Running the live GUI
+      for visual review" and the screenshots. The screenshots do not tick it.
+- [ ] **The visible-browser measurement: BLOCKED**, it needs an unlocked desktop. Task 46b's
+      visible GPU run was invalid because the desktop was locked with the monitor off. Re-run
+      `GUI_PERF_VISIBLE=1 GUI_PERF_REPEATS=1 scripts/run_gui_demo.sh --m3b-perf-log <outdir>` at
+      an unlocked desktop, or follow the five DevTools steps in
+      [gui-m3b-main-thread.md](gui-m3b-main-thread.md), "What the numbers do not show".
+- [ ] **The 1440 click-latency question.** Since the lamp change, a click at 1440 × 900 takes one
+      frame longer to present in headless Chrome (Task 45: p50 48 ms against 32 over 20 pooled
+      clicks; Task 46b: p95 48 ms against Task 44's 32-40). Input delay and processing are
+      unchanged, and 390 is unchanged. With a GPU it is
+      unknown. An owner decision if it shows in a real browser; the alternative, a pulse only on a
+      state change, is a visible behaviour change and was not made.
+- [ ] **Deferred findings, reported and not changed** (page work was out of scope):
+      - `#log-count` keeps its pre-existing `aria-live="polite"` and re-announces the count line,
+        with its "last seq N", on every render while live (task-43-report, Concerns). Report only;
+        removing the attribute is an owner call;
+      - the "No exchanges match these filters." state line prints its count unformatted
+        ("2000 are hidden by the ECU, service or outcome filter."), while every other number on
+        the page reads "2,000"; the paused line's held count is likewise unformatted, which would
+        show at 1,000 or more (task-46a-report, Page findings);
+      - with nothing matching, the count line reads "0 of 0 matching shown (2,000 retained)":
+        accurate, and the state line explains it, but awkward (the same);
+      - one unidentified single failure in one full-suite run (Task 44's first run; the failing
+        test's name was not captured), not reproduced in six later full runs (three in Task 44, one
+        each in Tasks 45, 46a and 46b, all 1339 passed, 69 skipped, 2 xfailed).
 - Resolved, not an acceptance item (Task 37): **case 21**, 4 full log rows while the restart
       note and a gap note showed together at 1440 × 900 (run 9). The fix was the owner's
       wording on the shared notice line, no notice bottom margin, and a 4.5rem plot cap. Run 12
@@ -560,6 +745,41 @@ Gates that stay open whatever happens to M3b:
 - [ ] **The hosted-CI `CAN_ISOTP` gap.** The vcan tests skip on hosted runners (0010 §9.3).
 - [ ] **The Phase 8b gate.**
 - [ ] **The V1.0 branch rule:** `gui` is not merged into `modernization` until V1.0 is tagged.
+
+## Running the live GUI for visual review
+
+For the owner's own look at the windowed log and the lamp. On the host network, from the gui
+worktree, with the host's `vcan0` up. **Never use `can0`.** The host's `vcan0` is shared with
+anything else on it, and port 8765 must be free (stop any simulator already running there
+first).
+
+```
+cd /home/aman/dev/personal-projects/ecu-simulator/.claude/worktrees/gui
+
+# terminal 1: the simulator, stepped demo, observer API
+.venv/bin/ecu-simulator --profile docs/examples/ice_drive_cycle_stepped.yaml --interface vcan0 --api 127.0.0.1:8765
+
+# terminal 2, in the same directory: the read-only traffic script
+.venv/bin/python scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+
+# browser
+http://127.0.0.1:8765/
+```
+
+The log reaches its 2,000-exchange cap after about 9 minutes at this rate (Task 39). To see a
+full buffer sooner, run the traffic script at `--rate 50` until the ECU filter reads
+"All ECUs (2000)", then restart it at `--rate 4`, as the measurements did.
+
+To stop: Ctrl-C in terminal 2 (the traffic), then Ctrl-C in terminal 1 (the simulator), and
+close the tab.
+
+**An isolated alternative that does not use the host's `vcan0`: none for the plain demo.**
+`scripts/gui_fault_session.sh` (the isolated launcher with a visible Chrome; "Running the two
+fault checks yourself" below) takes exactly one of the modes `nonfinite` or `state-fault`, and
+always opens a fault window (by default 40-60 s or 40-50 s of scenario time); it has no
+fault-free mode. Its `state-fault` mode does run the stepped demo with the traffic script, so the
+windowed log can be seen there, with a "last known" interval in the middle. `scripts/run_gui_demo.sh`
+is isolated but headless: its page is reachable only inside its namespace.
 
 ## Owner startup commands for the §13 checklist
 

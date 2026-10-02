@@ -1,5 +1,231 @@
 # The observer page's main-thread load: investigation (Task 39)
 
+## Outcome (Tasks 42-46)
+
+**Status: mitigated on headless numbers; the finding stays open** until the owner confirms it in
+their own browser. M3b stays **implemented, not accepted**. **The M2 early-check latency `STOP` is
+separate and unaffected** ([gui-m2-early-check.md](gui-m2-early-check.md)): nothing in Tasks 42-46
+measures or changes the simulator's answer latency, the API rate or the diagnostic path.
+
+The owner's instruction (2026-10-01; [plan](../plans/gui-m2-implementation.md), "M3b main-thread fix:
+a bounded, navigable exchange log") set the design and the measurement protocol. Everything below
+was measured in **headless Chrome 151 with `--disable-gpu`**, in a private network namespace, on a
+shared host. Sources are named beside each number: the task reports under
+`.superpowers/sdd/gui-m2-implementation/` (`task-4N-report.md`) and their scratchpad run
+directories (not durable; the committed copies are named where they exist).
+
+### What was implemented
+
+Commits on `gui`: `7f7aa84`, `9afdef6` (Task 42); `ebac21f`, `bd01d8f`, `330620a`, `b46f843`,
+`4a78120` (Task 43); `782140e` (Task 44); `3593be7` (Task 45). The browser cases and measurements
+are `e506632`, `d0e4ba7`, `c18c132` (Task 46a) and `84c0637`, `7676b32`, `9c7afd2`, `e903a7b`.
+Retention is unchanged: the page keeps 2,000 exchanges (`MAX_ROWS`).
+
+- **A window over the filtered list (Task 42, 43).** The log draws at most `LOG_WINDOW` = 200
+  *matching* exchanges, chosen after the filters are applied to all 2,000 retained;
+  `LOG_STEP` = 100. The selection is a pure, DOM-free block in `app.js`
+  (`selectLog`, `logOlderEnd`, `logNewerEnd`, `logAnchorEnd`, `logFullEnd`, `logRows`), checked by
+  `scripts/gui_log_check.js` (`LOGCHECK PASS (24 checks)`, task-44-report "Verification").
+- **Follow / pin.** The window *follows* (it ends at the newest matching exchange) or is *pinned*
+  at a fixed exchange id. The reader's own scroll, or Older, pins it at the newest exchange shown;
+  arrivals while pinned are counted, not drawn. A scroll back to the end resumes following only
+  when no matching exchange waits beyond the window (task-43-report, decision 1). Clear view
+  follows again (decision 2). When eviction past the cap reaches a pinned window, it is re-pinned
+  to a full window at the oldest exchanges kept (task-43-report, fix round 1).
+- **Older / Newer / Jump to newest.** "Show older exchanges" and "Show newer exchanges" are real
+  buttons in rows at the top and bottom of the table; each moves the window by up to 100 matching
+  exchanges while keeping the topmost (Older) or bottom-most (Newer) visible row in the window, at
+  its offset unless the box reaches a scroll limit; when the far end
+  is already in view the step is 0 and the box scrolls to that end instead, so a press never does
+  nothing (fix round 2). The existing header control and an in-row "Jump to newest" resume
+  following. Focus goes to the log box after a press. Payload expansion is kept for rows that leave
+  and re-enter the window.
+- **Four kinds of absent rows, each worded differently** (exact strings, task-43-report "Strings"
+  and fix round 2; seen in the served page by `--m3b-log` case 8):
+  1. *outside this window*: the Older row "1,800 older exchanges match your filters." (and "N newer
+     exchanges match your filters" in the Newer row); the header control
+     "11 rows below + 35 beyond this window, jump to newest";
+  2. *hidden by filters*: "634 exchanges hidden by filters (not a gap)", and beside Older / Newer
+     "1,116 older exchanges hidden by filters (not a gap)";
+  3. *sequence gaps and connection notes*: drawn where they fall in the window ("Gap: seq 5378–5380
+     not received (3).", "Connection lost, then resumed."); outside it, counted as "1 gap marker and
+     1 connection note in older rows" (or "in newer rows");
+  4. *left the page's 2,000-row cap*: the existing note, "1,352 older rows left this view. The page
+     keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not
+     a gap.", plus after a re-pin "Rows this view was showing left too, so it moved to the oldest
+     exchanges kept."
+
+  The count line reads, for example, "200 of 2,000 shown (seq 2,529–2,728), last seq 2728 (live)"
+  or "200 of 250 matching shown (seq 2,062–2,261; 2,000 retained)". The example numbers are from
+  `--m3b-log` fix-round run 1, 1440 × 900
+  ([log-run1/m3b-log-results.json](gui-m3b-live-demo/log-run1/m3b-log-results.json)).
+- **Render only what changed (Task 44).** A row key (`logRows`) decides whether the drawn rows
+  changed; only then are rows inserted or removed (`syncChildren` moves only the rows that came or
+  went). Counters (held count, Older / Newer counts, trimmed count, filter counts, count line) are
+  written only when their text changes, and the state box keeps stable nodes. While following,
+  each arrival moves one row in and one out; paused or pinned, the row list is not touched.
+- **The lamp (Task 45).** The live lamp's 2 s `beat` moved from an animated `box-shadow` on the lamp
+  to a ring (`::after`) animated on `transform` and `opacity` only, under
+  `prefers-reduced-motion: no-preference`. The resting glow, the "last known", down and refused
+  looks, every status text and the change flash are unchanged (task-45-report Part B).
+
+### How it differs from the Task 39 proposal
+
+The proposal (below, kept as history) was "render at most the newest *N* rows" (counted with the
+filters applied) and one note row saying the older ones are kept but not shown. Alone, that would
+have left every older retained exchange unreachable from the page: with no filter, 1,800 of the
+2,000. The owner's design therefore added pinning, Older / Newer and Jump to newest over a window
+chosen after filtering, a reader's position kept while the window shifts, the four distinct
+absent-row wordings, and render-only-what-changed. The lamp change was the
+proposal's separate, optional item, made only after a diagnostic attributed the cost.
+
+### Results: before and after, same protocol
+
+Protocol (task-44-report "Protocol as run"; the same in Tasks 45 and 46b): the stepped demo, the
+2 min graph window, the log filled to 2,000 retained at 50/s, then the traffic script at `--rate 4`;
+two 60 s traced runs per width, log following, with ten real clicks per run (Pause, Resume, the
+"no response" chip off / on twice each, a wheel scroll up and Older, Jump to newest). Older and Jump
+to newest exist only on the new page. **The interaction runs are not identical in state:** on the
+new page the wheel scroll at 47 s pins the window, so about 5 s of each run (47-54 s) is pinned,
+while the baseline page follows throughout (apart from the 8 s paused on both pages).
+
+"rL" is the `renderLog` timer task; LT is top-level tasks over 50 ms; times per 60 s. Run 1 / run 2.
+
+| Page | Width | Busy % | rL sum s | rL p95 ms | rL max ms | LT n (max ms) | Rows drawn / retained | Req/s | Source |
+|---|---|---|---|---|---|---|---|---|---|
+| **Before**, `3cfefec` | 1440 × 900 | 99.9 / 99.9 | 43.69 / 43.56 | 326 / 331 | 361 / 352 | 323 (396) / 320 (369) | 2,000 / 2,000 (+ the trimmed note) | 3.82 / 3.78 | task-44-report; `perf44-base-1/` |
+| Before | 390 × 844 | 99.9 / 100.0 | 44.32 / 45.53 | 394 / 400 | 429 / 441 | 264 (460) / 265 (455) | 2,000 / 2,000 | 3.80 / 3.78 | same |
+| **Tasks 43 + 44**, `782140e` | 1440 × 900 | 29.3 / 28.8 | 0.73 / 0.69 | 4.4 / 4.5 | 7.7 / 5.4 | 0 / 0 | 200 / 2,000 | 3.80 / 3.82 | task-44-report; `perf44-after-1/` |
+| Tasks 43 + 44 | 390 × 844 | 19.9 / 19.7 | 0.34 / 0.34 | 1.8 / 1.9 | 2.7 / 3.1 | 0 / 0 | 200 / 2,000 | 3.80 / 3.78 | same |
+| Task 43 only, `4a78120` (attribution) | 1440 × 900 | 29.1 / 28.3 | 0.76 / 0.76 | 4.0 / 4.6 | 6.2 / 6.4 | 0 / 0 | 200 / 2,000 | 3.80 / 3.78 | task-44-report; `perf44-t43-1/` |
+| Task 43 only | 390 × 844 | 19.8 / 20.2 | 0.41 / 0.41 | 2.5 / 2.5 | 3.4 / 3.0 | 0 / 0 | 200 / 2,000 | 3.80 / 3.80 | same |
+| **After Task 45, shipped `3593be7`** | 1440 × 900 | 10.0 / 9.7 | 0.74 / 0.72 | 4.68 / 4.09 | 8.69 / 8.92 | 0 / 0 | 200 / 2,000 | 3.80 / 3.78 | task-46b-report Part A; `perf46b-A/`, [results/perf46b-A-following.json](gui-m3b-perf/results/perf46b-A-following.json), run 1 traces committed |
+| After Task 45 | 390 × 844 | 6.4 / 6.3 | 0.37 / 0.37 | 1.94 / 2.10 | 4.92 / 3.18 | 0 / 0 | 200 / 2,000 | 3.80 / 3.80 | same |
+
+The shipped-page rows use Task 46b's runs, the latest on that page. Task 45's own after runs on the
+same page agree (means 9.5 % at 1440 and 6.4 % at 390 over four runs, task-45-report
+`after45-1/`, `after45-2/`). The uncommitted baseline at `3cfefec` is close to the committed Task 39
+baselines ("Runs" below): busy 99.9-100 % against 99.8-100 %, `renderLog` 43.6-45.5 s a minute
+against 45.8-48.7 s, so they remain comparable.
+
+**Event Timing** (ms; Chrome rounds durations to 8 ms; Pause and Resume n = 4, the filter n = 8,
+Older and Jump n = 2, so a p95 is close to a maximum). Duration p50 / p95:
+
+| Width | Interaction | Before `3cfefec` | Tasks 43 + 44 `782140e` | After Task 45 `3593be7` |
+|---|---|---|---|---|
+| 1440 × 900 | Pause | 404 / 448 | 32 / 32 | 32 / 48 |
+| 1440 × 900 | filter change | 424 / 480 | 32 / 32 | 32 / 48 |
+| 1440 × 900 | Older | (not on the page) | 36 / 40 | 48 / 48 |
+| 1440 × 900 | Jump to newest | (not on the page) | 40 / 40 | 48 / 48 |
+| 390 × 844 | Pause | 424 / 480 | 32 / 32 | 24 / 24 |
+| 390 × 844 | filter change | 456 / 544 | 32 / 32 | 24 / 32 |
+| 390 × 844 | Older | (not on the page) | 32 / 32 | 32 / 32 |
+| 390 × 844 | Jump to newest | (not on the page) | 40 / 40 | 32 / 40 |
+
+Sources: task-44-report "Event Timing" (before and `782140e`); task-46b-report "Event Timing,
+Part A" (`3593be7`). Task 43 alone gave the same Event Timing as `782140e`, every duration 32-40 ms
+(task-44-report). Before the fix, the median processing of a click was 253-257 ms at 1440 and
+329-338 ms at 390; after, input delay and processing are a few ms (Older up to about 18 ms) and the
+rest is presentation.
+
+**Attribution between Tasks 43 and 44** (task-44-report): nearly all of the change is Task 43's
+window. Task 44's measurable effect under live following is `renderLog` 7-10 % lower at 1440 and
+about 17 % lower at 390; its busy-% difference (at most 0.6 points) is inside the run-to-run spread.
+Its effect is in the frozen states (below).
+
+**The remaining paint after Task 44.** At `782140e`, paint was 13.2-13.5 s of 17.3-17.6 s busy at
+1440 (about 77 %) and 9.1 of 11.9 s at 390, at a steady 3,601 frames a minute. Task 44's report
+named the lamp's continuous `beat` as the likely cause; **that was a hypothesis until Task 45's
+diagnostic attributed it** (next table).
+
+### The lamp diagnostic (Task 45, labelled diagnostic, page `84c0637`)
+
+One animation was turned off by a harness stylesheet; otherwise the same protocol. Busy %, mean of
+two runs following with clicks (task-45-report "Attribution"; `diag45-A/` … `diag45-D/`):
+
+| Condition | 1440 × 900 | 390 × 844 | Idle, no traffic (1440 / 390) |
+|---|---|---|---|
+| A, as shipped (`84c0637`) | 30.4 | 19.4 | 23.8 / 16.4 |
+| B, lamp `beat` off | 8.8 | 6.5 | 3.3 / 2.9 |
+| C, change flash off | 28.4 | 19.7 | — |
+| D, both off | 9.6 | 6.6 | — |
+
+- **The lamp was the cost:** turning it off removed 71 % of busy time at 1440 and 66 % at 390
+  (86 % / 82 % idle); frames fell from about 3,600 a minute to 400-900.
+- **The change flash is not measurable:** C and D differ from A and B by −2.0 to +0.8 points, inside
+  A's own run-to-run spread (29.2 against 31.7).
+- **After the change** (shipped `3593be7`, four runs; task-45-report "Before / after"): 9.5 % at
+  1440 and 6.4 % at 390 (idle 3.8 % / 2.7 %), within about 0.7 points of no lamp animation at all.
+  The beat's per-frame work is now on the compositor and viz threads, at about the cost it already
+  had there (renderer compositor 1.96 → 1.52 s, viz compositor 1.64 → 1.56 s a minute at 1440).
+
+### Frozen states (Task 46b Part B, one 60 s run per state, no clicks)
+
+Busy % and `renderLog` sum, against Part A's following runs (mean of 2) on the same page
+(task-46b-report Part B; `perf46b-B/`, [results/perf46b-B-states.json](gui-m3b-perf/results/perf46b-B-states.json)):
+
+| Width | Following (with clicks) | Paused | Pinned | Graphs hidden, following |
+|---|---|---|---|---|
+| 1440 × 900 | 9.9 %, 0.73 s | 7.5 %, 0.62 s | 7.4 %, 0.58 s | 7.6 %, 0.72 s |
+| 390 × 844 | 6.4 %, 0.37 s | 4.7 %, 0.26 s | 4.4 %, 0.27 s | 5.6 %, 0.40 s |
+
+A MutationObserver (these runs only) counted **zero row-list mutations in 60 s** while paused or
+pinned at both widths; following moved one row in and one out per arrival (240 / 237 a minute).
+
+### What the numbers do not show
+
+- **A real user's browser.** Every number is headless `--disable-gpu` (GPU compositing
+  `disabled_software`). Nothing here is the owner's desktop, a GPU-composited window or Firefox.
+- **A quiet host.** One of the owner's own Chrome renderers ran at about 99 % CPU during the Task 44
+  runs (task-44-report; about 97 % during Task 46b's, task-46b-report). It was not touched. The
+  run-to-run spread stayed small (busy within 0.5 points at `782140e`).
+- **Many samples.** Two runs per width (one per state in Part B); Event Timing has 2-8 samples per
+  interaction and width.
+- **The visible-browser measurement: BLOCKED.** Task 46b's visible GPU run (Part C) was invalid:
+  the owner's desktop was locked with the monitor off (GNOME screensaver active, DPMS off), so the
+  window got about 1 frame a second and its numbers measure nothing. GPU compositing was on; the
+  launch mechanism worked. It was not retried and the session was not touched. The owner can run
+  it at an unlocked desktop (about 4 min; a Chrome window appears for that time):
+
+  ```
+  GUI_PERF_VISIBLE=1 GUI_PERF_REPEATS=1 scripts/run_gui_demo.sh --m3b-perf-log <outdir>
+  ```
+
+  Or in their own Chrome, DevTools > Performance (task-46b-report, Part C):
+  1. Start the simulator with the stepped demo and the API (`--api 127.0.0.1:8765`), and run
+     `scripts/gui_demo_traffic.py --rate 50` until the page's ECU filter shows "All ECUs (2000)".
+     Then restart it at `--rate 4`.
+  2. Open the page in a normal Chrome window with the page area at 1440 × 900 (DevTools undocked,
+     so it does not shrink the page). Leave the log following.
+  3. DevTools > Performance: open the capture settings. Leave CPU and network throttling off and
+     turn "Screenshots" off. Press Record.
+  4. Over 60 s, click Pause, Resume, a filter chip off and on, scroll the log up, press Older, then
+     Jump to newest. Stop the recording.
+  5. Read the Summary pie (scripting / rendering / painting / idle) and the "Interactions" track.
+     Each click's duration splits into input delay / processing / presentation, which compares
+     with the tables above. Note chrome://gpu's "GPU compositing" line. Repeat with the window
+     about 390 px wide, or the narrowest Chrome allows.
+- **That the lamp change is free for clicks at 1440.** After Task 45 a click's next paint at
+  1440 × 900 lands about one frame later: duration p50 48 ms against 32 before the change
+  (task-45-report, both sessions and a no-`will-change` variant; reproduced in Task 46b, p95 48).
+  Input delay and processing are unchanged; it is presentation. At 390 it is unchanged. A likely
+  cause, not proven, is software compositing of the beat under `--disable-gpu`. **With a GPU it is
+  unknown** (the visible run above was blocked).
+- **That paused and pinned cost nothing.** `renderLog` still runs on every arrival (227-228 times a
+  minute) to update the counters: about 0.6 s a minute at 1440 (0.58-0.62 s) and 0.26-0.27 s at
+  390. The rows are untouched; the cost is the counter text writes and the layout they cause.
+- **A split of the following-vs-frozen gap.** The following reference includes the clicks
+  (a filter rebuild, 13 s paused or pinned), so the 2.5-point gap at 1440 cannot be divided between
+  "frozen" and "no clicks".
+- **The 40 % figure** is Task 39's earlier estimate from an analogue (the "Clear view" runs). It was
+  neither a target nor a result, and nothing here is judged against it or against any threshold.
+
+**Open, for the owner:** confirm the finding in their own browser (the measurement above), decide on
+the 1440 click-latency question, and review the windowed log and the lamp visually
+([gui-m3b-live-demo.md](gui-m3b-live-demo.md), "Remaining acceptance items").
+
+## Task 39's investigation (history: unchanged but for the Proposal heading)
+
 **An investigation, not a change.** Nothing under `src/` changed. It ends in a fix
 **proposal**, which is **not implemented**. It follows the open finding of the M3b record
 ([gui-m3b-live-demo.md](gui-m3b-live-demo.md), "Open finding: the page's main-thread load").
@@ -269,7 +495,7 @@ timer is line 1431):
 4. **The graphs are not the problem.** Their redraw is 0.06–0.16 s a minute in every run where they are shown.
    Hiding them changes nothing measurable.
 
-## Proposal (not implemented)
+## Proposal (implemented, differently — see "Outcome" at the top)
 
 **Render at most the newest *N* log rows. Keep `MAX_ROWS` (2,000) retained** for the counts,
 filters, gaps and clear/pause, as now.

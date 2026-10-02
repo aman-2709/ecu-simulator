@@ -105,3 +105,12 @@ them with `--rev 3593be7`:
 
 As for the files above, the raw traces were kept only in a session scratchpad; the second runs, the
 traced paused / pinned / graphs-hidden runs and the visible-browser runs are recorded as numbers only.
+
+## Results files after the log fix (Task 46b)
+
+`results/` holds the results JSON of the two final headless `--m3b-perf-log` runs on the shipped page
+(`3593be7`), copied unchanged from the session scratchpad: `perf46b-A-following.json` (two following
+runs per width with the ten clicks; run 1 of each is the trace above) and `perf46b-B-states.json`
+(one 60 s run per width in each of paused, pinned and graphs-hidden, with the log's mutation counts).
+The visible-browser run (Part C) is not committed: the desktop was locked, so its numbers are invalid
+([../gui-m3b-main-thread.md](../gui-m3b-main-thread.md), "Outcome").
