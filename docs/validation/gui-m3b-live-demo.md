@@ -80,6 +80,12 @@ Where the numbers come from:
   [log-run2/capture.log](gui-m3b-live-demo/log-run2/capture.log); the Task 42-46 reports
   (`.superpowers/sdd/gui-m2-implementation/task-4{2,3,4,5,6a,6b}-report.md`); and the
   screenshots of the new log and the lamp taken for this record (see "The screenshots").
+  **Those reports are local and untracked** (`.superpowers/` is in the repository's
+  `.git/info/exclude`). In the repository the log cases can be checked against the two
+  committed `log-run*/` files, and the measurements only as
+  [gui-m3b-main-thread.md](gui-m3b-main-thread.md), "Outcome", lists: the committed Task 39
+  baselines and Task 46b's committed results. The rest rests only on the local reports (that
+  list names which).
 
 ## What was run
 
@@ -424,7 +430,8 @@ and check for that (task-46a-report, Concerns). The other modes on the new page 
 
 The live lamp's beat is the same 2 s rhythm on a ring (`.conn--live .conn__lamp::after`) animated
 on `transform: scale(1.2)` and `opacity` instead of the lamp's `box-shadow`, only under
-`prefers-reduced-motion: no-preference` (task-45-report Part B). Task 45 compared shots before
+`prefers-reduced-motion: no-preference` (task-45-report Part B; the report and its shots are
+local and untracked, so this comparison rests on them only). Task 45 compared shots before
 (`84c0637`) and after:
 - **The same, byte for byte:** the lamp fully faded (1,000 ms into the beat), last known, refused,
   disconnected, and the change flash at 390.
@@ -440,7 +447,9 @@ in [gui-m3b-main-thread.md](gui-m3b-main-thread.md), "Outcome".
 **Status (Tasks 42-46): mitigated on headless numbers, still OPEN.** On the shipped page
 (`3593be7`) at the 2,000-exchange cap and 3.8 requests/s, the main thread is busy 9.7-10.0 % at
 1440 × 900 and 6.3-6.4 % at 390 × 844, with no task over 50 ms, against 99.9-100 % before
-(task-46b-report Part A; task-44-report baseline). These are headless `--disable-gpu` runs on a
+(task-46b-report Part A, committed as `gui-m3b-perf/results/perf46b-A-following.json`;
+task-44-report baseline, which is local and untracked: the committed before-side figures are
+Task 39's, 99.8-100 %). These are headless `--disable-gpu` runs on a
 shared host; the visible-browser run was blocked by the locked desktop. The finding stays open
 until the owner confirms it in their own browser ("Remaining acceptance items"). The text below
 is the finding as recorded at run 9, kept as history.
@@ -714,10 +723,30 @@ Findings and untested paths:
       unchanged, and 390 is unchanged. With a GPU it is
       unknown. An owner decision if it shows in a real browser; the alternative, a pulse only on a
       state change, is a visible behaviour change and was not made.
+- [ ] **Owner decision before M3b acceptance: keyboard access to Newer** (whole-work review of
+      `3cfefec..b0b1250`). After any Older / Newer press focus goes to the log box (ruling e), and
+      Tab then passes every per-row "show all" button in the window before it reaches the Newer
+      row, while Older is one Tab away. Options: compact Older / Newer controls in the log header
+      beside the jump control; or return focus to the pressed nav button, with `preventScroll`,
+      when it is still visible. Note: the code comment's "(WCAG 2.4.11)" beside that focus move
+      (`app.js`, the nav click handler) is a stretch: a control scrolled out of a scroll box is not
+      "obscured by author content". The code is not edited here.
+- [ ] **Owner decision, recommended before M3b acceptance: `#log-count`'s `aria-live="polite"`.**
+      The pre-existing attribute makes a screen reader announce the count line, with its
+      "last seq N", about 4-5 times a second while live (the review; task-43-report, Concerns).
+      The reviewer recommends fixing it before acceptance; it is one attribute; the owner's call.
+- [ ] **Owner decision: repository size before `gui` merges into `modernization`.**
+      `docs/validation/gui-m3b-perf/` is 24 MB, almost all from Task 39 (already pushed). The range
+      `3cfefec..b0b1250` adds about 1.8 MB of traces, 1.0 MB of PNGs and 0.4 MB of JSON. The gzip
+      traces do not delta-compress, so they stay in the packed history (about 3.9 MB). Decide
+      Git LFS or an external store before the merge; add no more traces meanwhile.
 - [ ] **Deferred findings, reported and not changed** (page work was out of scope):
-      - `#log-count` keeps its pre-existing `aria-live="polite"` and re-announces the count line,
-        with its "last seq N", on every render while live (task-43-report, Concerns). Report only;
-        removing the attribute is an owner call;
+      - a rare "not following, not pinned" state: `setFollow(false)` with no matching exchange
+        shown (`view.lastId` null) leaves `follow = false` and `endId = null`, so the window keeps
+        sliding while the page treats the reader as pinned. It is reachable when a filter matches
+        no exchange but marker rows are drawn and the reader scrolls them (the review). Deferred;
+      - `view.expanded` keys are never pruned when their rows leave the cap: a small, pre-existing
+        leak (the review);
       - the "No exchanges match these filters." state line prints its count unformatted
         ("2000 are hidden by the ECU, service or outcome filter."), while every other number on
         the page reads "2,000"; the paused line's held count is likewise unformatted, which would
@@ -745,6 +774,23 @@ Gates that stay open whatever happens to M3b:
 - [ ] **The hosted-CI `CAN_ISOTP` gap.** The vcan tests skip on hosted runners (0010 §9.3).
 - [ ] **The Phase 8b gate.**
 - [ ] **The V1.0 branch rule:** `gui` is not merged into `modernization` until V1.0 is tagged.
+
+## Rulings made during the log fix (for the owner to confirm or reverse)
+
+Each of these was decided by the controller during Tasks 42-46. They are not spec, and none is
+owner-accepted. Sources: the task reports (local, untracked) and the code at `3593be7`.
+
+| # | Ruling | What it means for a reader | What reversing costs |
+|---|---|---|---|
+| a | **Scrolling back to the bottom of a pinned window does not re-follow while newer matching exchanges wait.** Only Newer or Jump to newest brings them in (task-43-report, decision 1) | After any scroll-up at live rates, a later scroll down stays pinned; the reader uses the header control or the Newer row's Jump to newest. A reader at the bottom of an Older-navigated window is not yanked to the live end | A one-line change in `readerScroll` (re-follow on any scroll to the end), and the `--m3b-log` pinned cases' expectations |
+| b | **Leaving follow by the reader's own input pins the window**, so arrivals are counted ("… beyond this window", the Newer row) rather than appended below. This applies the plan's central design rule | Rows never move under a reader inspecting history; new rows appear only on Newer or Jump to newest | Appending below while pinned would let the window grow or slide under the reader; the selection logic, the row key and cases 4, 5 and 7 would change |
+| c | **Clear view resumes following** (decision 2) | After Clear, new rows are drawn at the bottom as they come | Without it, a pin left over from before the Clear re-pins at the first arrival and draws one row with every later one counted as newer; a different Clear rule is needed instead |
+| d | **`LOG_WINDOW` = 200, `LOG_STEP` = 100; the step is reduced so the reader's anchor row (the topmost visible for Older, the bottom-most for Newer) stays in the window; when the window's far end is already on screen, a press scrolls the log box to that end instead of doing nothing** (task-43-report, fix round 2) | A press always does something visible. Repeated presses without scrolling go full step, reduced step, then a scroll to the end (case 4's walks: 19 moves and 9 scrolls each way) | The constants are two lines in `app.js` and the harness's copies; other sizes need the measurements re-run. Dropping the anchor rule lets rows in view leave the window on a press |
+| e | **After an Older / Newer / in-row Jump press, focus goes to the log box** (`#logwrap`), never to an off-screen button | Keyboard users land in the log box; see the keyboard finding under "Remaining acceptance items" | Returning focus to the pressed button (with `preventScroll`) when it is still visible is a small change in the click handler |
+| f | **The jump control keeps the owner-ruled "N rows below" meaning and adds "+ M beyond this window"** ("11 rows below + 35 beyond this window, jump to newest"; task-43-report "Strings") | The Task 21 count is unchanged; exchanges outside the window are named separately | Wording only (`renderFollow`) and the M3a jump check |
+| g | **The re-pin after eviction shows the oldest full window** (200 exchanges) **with a one-sentence note**, "Rows this view was showing left too, so it moved to the oldest exchanges kept." (task-43-report, fix round 1) | A pinned reader whose rows left the 2,000 cap sees a full window at the oldest kept, never a shrunken one | Task 43's first version re-pinned to a 1-row window; reversing removes `logFullEnd`'s use in `renderLog` and the sentence |
+| h | **The lamp's beat moved to a ring animated by `transform` / `opacity`**, the same 2 s rhythm, only under `prefers-reduced-motion: no-preference` (task-45-report Part B) | The same look; pixel differences only at the ring's edge (see "The lamp") | Restoring the `box-shadow` beat in `app.css`. Headless it brings back about 21 points of busy time at 1440 and 13 at 390 (diagnostic B against A). The other candidate, a pulse only on a state change, is a visible behaviour change |
+| i | **The diagnostic threshold:** an animation counted as a measurable share if turning it off alone removed more than about 10 % of busy time at both widths, beyond the run-to-run spread (task-45-report "Threshold used") | The lamp (66-71 % of busy time) was changed; the change flash (inside the noise) was not | A lower threshold would still not separate the flash from the run-to-run spread with two runs per width; more runs would be needed before changing it |
 
 ## Running the live GUI for visual review
 

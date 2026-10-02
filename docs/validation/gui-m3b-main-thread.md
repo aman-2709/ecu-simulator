@@ -14,6 +14,20 @@ shared host. Sources are named beside each number: the task reports under
 `.superpowers/sdd/gui-m2-implementation/` (`task-4N-report.md`) and their scratchpad run
 directories (not durable; the committed copies are named where they exist).
 
+**Those task reports are local and untracked** (`.superpowers/` is listed in the repository's
+`.git/info/exclude`), and so are the scratchpad runs. In the repository, the before-side figures can
+be checked only against the committed Task 39 baselines ([gui-m3b-perf/](gui-m3b-perf/), below),
+and the after-side figures only where results are committed: Task 46b Part A and Part B
+(`gui-m3b-perf/results/`, and Part A's run-1 traces) and the two `--m3b-log` runs
+(`gui-m3b-live-demo/log-run1/`, `log-run2/`). **These numbers rest only on the local reports:**
+- the uncommitted `3cfefec` baseline, the `782140e` and Task-43-only (`4a78120`) runs, and their
+  Event Timing (Task 44);
+- Task 44's mutation-count check;
+- the lamp diagnostic A-D, Task 45's after runs (9.5 % / 6.4 %, idle 3.8 % / 2.7 %), the
+  per-thread table and Task 45's click-latency figures (p50 48 against 32);
+- the invalid visible run (Part C) and its lock-screen evidence;
+- the CPU readings of the owner's Chrome renderer.
+
 ### What was implemented
 
 Commits on `gui`: `7f7aa84`, `9afdef6` (Task 42); `ebac21f`, `bd01d8f`, `330620a`, `b46f843`,
@@ -169,8 +183,10 @@ Busy % and `renderLog` sum, against Part A's following runs (mean of 2) on the s
 | 1440 × 900 | 9.9 %, 0.73 s | 7.5 %, 0.62 s | 7.4 %, 0.58 s | 7.6 %, 0.72 s |
 | 390 × 844 | 6.4 %, 0.37 s | 4.7 %, 0.26 s | 4.4 %, 0.27 s | 5.6 %, 0.40 s |
 
-A MutationObserver (these runs only) counted **zero row-list mutations in 60 s** while paused or
-pinned at both widths; following moved one row in and one out per arrival (240 / 237 a minute).
+A MutationObserver (these Part B runs only) counted **zero row-list mutations in 60 s** while paused
+or pinned at both widths. The "following" mutation counts, one row in and one out per arrival
+(240 / 237 adds and removes a minute at 1440 / 390), come from Part B's **graphs-hidden following
+runs**: Part A's following runs had no MutationObserver.
 
 ### What the numbers do not show
 
