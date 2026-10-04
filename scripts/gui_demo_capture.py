@@ -3141,11 +3141,12 @@ LOG_WORDING = (W_MATCH, W_BEYOND, W_HIDDEN, W_GAP, W_LEFT, W_REPIN, W_NOMATCH, W
                W_USE_OLDER, W_USE_NEWER, W_USE_JUMP)
 
 LOG_INSTR = r"""(function () {
-  var L = window.__lg = { drop: 0, dropped: [], add: 0, rem: 0, inRows: 0, nb: 0, focusout: 0, batches: [] };
+  var L = window.__lg = { drop: 0, dropped: [], add: 0, rem: 0, inRows: 0, nb: 0, focusout: 0, batches: [], socks: [] };
   var Native = window.WebSocket;
   // Test only: while L.drop > 0, exchange events are kept from the page, which then sees a seq gap.
   function W(url, protocols) {
     var ws = protocols === undefined ? new Native(url) : new Native(url, protocols);
+    L.socks.push(ws);
     ws.addEventListener("message", function (e) {
       if (L.drop <= 0) return;
       try {
@@ -3158,6 +3159,11 @@ LOG_INSTR = r"""(function () {
   W.prototype = Native.prototype;
   W.CONNECTING = 0; W.OPEN = 1; W.CLOSING = 2; W.CLOSED = 3;
   window.WebSocket = W;
+  // Test only (Task 48): one unreadable frame on the page's latest socket, a malformed fault.
+  L.bad = function () {
+    var ev = new MessageEvent("message", { data: "{bad" });
+    L.socks[L.socks.length - 1].dispatchEvent(ev);
+  };
   document.addEventListener("focusout", function () { L.focusout += 1; }, true);
   document.addEventListener("DOMContentLoaded", function () {
     var body = document.getElementById("log-body");
@@ -4344,6 +4350,108 @@ async def case_log_layout(lg: LogRun) -> None:
     lg.record(9, "Layout", rule, conds, observed)
 
 
+# Task 48: every live-region mechanism on the page, and whether the continuously updating parts
+# sit inside one. `live` lists each element carrying aria-live, a live role (status, alert, log,
+# marquee, timer), aria-atomic or aria-relevant; `ancestors` gives, for each continuously
+# updating element, its nearest live-region ancestor (null: none).
+LIVE_AUDIT = r"""(() => {
+  const any = '[aria-live], [role="status"], [role="alert"], [role="log"], [role="marquee"], [role="timer"],'
+    + ' [aria-atomic], [aria-relevant]';
+  const region = '[aria-live]:not([aria-live="off"]), [role="status"], [role="alert"], [role="log"], [role="marquee"],'
+    + ' [role="timer"]';
+  const ids = ['log-count', 'log-below', 'btn-follow', 'btn-older', 'btn-newer', 'log-head', 'log-body', 'log-tail',
+    'log-state', 'f-ecu', 'f-service', 'f-outcome', 'status', 'conn-text', 'malformed', 'status-polled', 'vehicle',
+    'vehicle-meta', 'dtcs', 'graphs-status', 'graphs-fine', 'graphs-breaks', 'graphs-note', 'graphs-grid'];
+  const ancestors = {};
+  ids.forEach(id => { const e = document.getElementById(id);
+    ancestors[id] = !e ? 'missing' : (a => a ? (a.id || a.tagName) : null)(e.closest(region)); });
+  return {live: [...document.querySelectorAll(any)].map(e => e.id || e.tagName), ancestors: ancestors};
+})()"""
+
+# A harness-only MutationObserver on #linkstate: `changed` counts the records that change
+# something (a node added or removed, text or an attribute to a different value); `raw` counts
+# every record (an attribute written with its own value is one). The log counter's texts are
+# recorded as they change.
+LIVE_WATCH = r"""(() => {
+  const ls = document.getElementById('linkstate'), lc = document.getElementById('log-count');
+  const W = window.__live = {raw: 0, changed: 0, kinds: {}, counts: [], reset: () => {
+    W.raw = 0; W.changed = 0; W.kinds = {}; W.counts = []; }};
+  new MutationObserver(recs => recs.forEach(r => {
+    W.raw += 1;
+    const real = r.type === 'attributes' ? r.oldValue !== r.target.getAttribute(r.attributeName)
+      : r.type === 'characterData' ? r.oldValue !== r.target.data : r.addedNodes.length + r.removedNodes.length > 0;
+    if (!real) return;
+    const k = r.type + (r.attributeName ? ':' + r.attributeName : '');
+    W.changed += 1; W.kinds[k] = (W.kinds[k] || 0) + 1;
+  })).observe(ls, {subtree: true, childList: true, characterData: true, attributes: true, attributeOldValue: true,
+                   characterDataOldValue: true});
+  new MutationObserver(() => { if (W.counts.length < 400) W.counts.push(lc.textContent); })
+    .observe(lc, {subtree: true, childList: true, characterData: true});
+  return true;
+})()"""
+LIVE_READ = ("(() => { const W = window.__live, ls = document.getElementById('linkstate');"
+             " return {raw: W.raw, changed: W.changed, kinds: W.kinds, counts: W.counts.length,"
+             " distinct: new Set(W.counts).size, banner: ls.hidden ? null : ls.textContent,"
+             " health: document.body.dataset.health}; })()")
+
+
+async def case_log_live_regions(lg: LogRun) -> None:
+    lg.steady()
+    await lg.jump()
+    audit = await lg.cdp.js(LIVE_AUDIT)
+    await lg.cdp.js(LIVE_WATCH)
+    await lg.cdp.wait_for("document.body.dataset.health === 'live' && document.getElementById('linkstate').hidden",
+                          timeout=30)
+    await asyncio.sleep(1.0)
+    await lg.cdp.js("window.__live.reset()")
+    c0 = await lg.probe()
+    await asyncio.sleep(20.0)
+    quiet = await lg.cdp.js(LIVE_READ)
+    c1 = await lg.probe()
+    # A disconnect: SIGSTOP the simulator until the banner says so, then SIGCONT.
+    await lg.cdp.js("window.__live.reset()")
+    os.kill(lg.sim.pid, signal.SIGSTOP)
+    lg.run.log(f"SIGSTOP the simulator (pid {lg.sim.pid})")
+    try:
+        await lg.cdp.wait_for("(() => { const ls = document.getElementById('linkstate');"
+                              " return !ls.hidden && ls.textContent.indexOf('Disconnected.') >= 0; })()", timeout=20)
+        down = await lg.cdp.js(LIVE_READ)
+    finally:
+        os.kill(lg.sim.pid, signal.SIGCONT)
+        lg.run.log("SIGCONT the simulator")
+    await lg.cdp.wait_for("document.body.dataset.health === 'live' && document.getElementById('linkstate').hidden",
+                          timeout=30)
+    # A fault: one unreadable frame on the page's socket (the harness's wrapper), as part A's
+    # malformed case does; the banner names it while the page resynchronises.
+    await asyncio.sleep(1.0)
+    await lg.cdp.js("window.__live.reset()")
+    await lg.cdp.js("window.__lg.bad()")
+    await lg.cdp.wait_for("(() => { const ls = document.getElementById('linkstate');"
+                          " return !ls.hidden && ls.textContent.indexOf('Last known data.') >= 0; })()", timeout=10)
+    fault = await lg.cdp.js(LIVE_READ)
+    await lg.cdp.wait_for("document.body.dataset.health === 'live' && document.getElementById('linkstate').hidden",
+                          timeout=30)
+    lg.record(
+        11, "Live regions",
+        "The page's live regions (aria-live, role status / alert / log / marquee / timer, aria-atomic, "
+        "aria-relevant) are exactly #linkstate; #log-count and every other continuously updating element has no "
+        "live-region ancestor. Over 20 s of traffic, healthy: zero mutations of #linkstate that change anything "
+        "(nodes, text, an attribute's value), while the log counter's text does change. A disconnect (SIGSTOP) and "
+        "a fault (one unreadable frame) each change #linkstate, whose banner names them. Automation verifies "
+        "markup and mutations, not what a screen reader says",
+        {"the live regions are exactly #linkstate": audit["live"] == ["linkstate"],
+         "no continuously updating element has a live-region ancestor": all(
+             v is None for v in audit["ancestors"].values()),
+         "20 s of traffic: #linkstate unchanged (0 changing mutations), hidden": quiet["changed"] == 0
+         and quiet["banner"] is None and quiet["health"] == "live",
+         "20 s of traffic: the log counter's text changed": quiet["distinct"] >= 2
+         and (last_seq(c1) or 0) > (last_seq(c0) or 0),
+         "a disconnect changes #linkstate": down["changed"] > 0 and "Disconnected." in (down["banner"] or ""),
+         "a fault changes #linkstate": fault["changed"] > 0 and "Last known data." in (fault["banner"] or "")},
+        {"audit": audit, "quiet_20s": quiet, "log_count": [c0["count"], c1["count"]], "disconnect": down,
+         "fault": fault})
+
+
 async def log_width(lg: LogRun, label: str, size: tuple[int, int]) -> None:
     lg.label, lg.size = label, size
     lg.seen, lg.accounts, lg.overflows = {}, [], []
@@ -4405,6 +4513,12 @@ async def m3b_log_session(run: Run, chrome: str, profile_dir: str) -> None:
                 await lg.burst(0, until=lambda p: p["retained"] >= PERF_ROWS, timeout=300)
                 for label, size in (("1440x900", WIDE), ("390x844", NARROW)):
                     await log_width(lg, label, size)
+                # Once, at 1440 x 900, after both widths (it ends with a disconnect and a fault).
+                lg.label, lg.size = "1440x900", WIDE
+                await lg.cdp.viewport(*WIDE)
+                await asyncio.sleep(1.5)
+                await lg.cdp.js("window.scrollTo(0, 0)")
+                await case_log_live_regions(lg)
             finally:
                 with contextlib.suppress(ProcessLookupError):
                     if lg.sim.poll() is None:
