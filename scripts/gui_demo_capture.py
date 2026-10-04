@@ -261,10 +261,13 @@ async def check_overflow(run: Run, cdp: DevTools, label: str) -> None:
 # the page's own code; `partial` is the row cut by that edge, if any. `overlap` is true if
 # the control's box intersects the log box. Since the windowed log (Task 43) a pinned window
 # ends with a Newer row (tr.lognav, in its own tbody after #log-body: the window's navigation,
-# not a log row): it is not counted, and `beyond` is the control's "+ M beyond this window"
-# (matching exchanges after the window, not drawn), read from its text.
+# not a log row): it is not counted, and `beyond` is the "+ M beyond this window" (matching
+# exchanges after the window, not drawn). Since Task 47 the control reads "Jump to newest" and
+# its count is plain text beside it in the header (#log-below), where N and M are read; `active`
+# is the focused element (after a click on the control: the log box, as the control hides).
 JUMP_STATE = """(function(){
   var b = document.getElementById('btn-follow'), w = document.getElementById('logwrap');
+  var t = document.getElementById('log-below').textContent;
   var wr = w.getBoundingClientRect(), br = b.getBoundingClientRect();
   var rows = document.querySelectorAll('#log-body > tr:not(.lognav)'), counted = 0, partial = 0;
   for (var i = 0; i < rows.length; i++) {
@@ -274,19 +277,22 @@ JUMP_STATE = """(function(){
   }
   var shown = !b.classList.contains('is-off') && getComputedStyle(b).visibility !== 'hidden';
   var overlap = shown && br.left < wr.right && br.right > wr.left && br.top < wr.bottom && br.bottom > wr.top;
-  var m = /^([0-9,]+) rows? below/.exec(b.textContent);
-  var k = /([0-9,]+)(?: rows?)? beyond this window/.exec(b.textContent);
-  return {shown: shown, text: b.textContent, n: m ? Number(m[1].replace(/,/g, '')) : null,
+  var m = /^([0-9,]+) rows? below/.exec(t);
+  var k = /([0-9,]+)(?: rows?)? beyond this window/.exec(t);
+  var a = document.activeElement;
+  return {shown: shown, text: t, label: b.textContent, n: m ? Number(m[1].replace(/,/g, '')) : null,
           beyond: k ? Number(k[1].replace(/,/g, '')) : 0,
           counted: counted, partial: partial, overlap: overlap,
-          in_header: !!b.closest('.panel__head'), last_seq: document.getElementById('log-count').textContent};
+          in_header: !!b.closest('.panel__head'), active: a ? (a.id || a.tagName) : null,
+          last_seq: document.getElementById('log-count').textContent};
 })()"""
 
 
 async def jump_pair(run: Run, cdp: DevTools, label: str) -> None:
     """At the current width: a real wheel scroll up over the log, a shot of the header's
-    "N rows below" control with N checked against the DOM, then a real click on it and a
-    shot back at the newest row with the control hidden."""
+    "N rows below" count beside Jump to newest with N checked against the DOM, then a real
+    click on the control and a shot back at the newest row with the control hidden and the
+    focus on the log box."""
     await cdp.js("document.getElementById('log-panel').scrollIntoView({block: 'start'})")
     await asyncio.sleep(0.5)
     await cdp.wheel("#logwrap", -700)
@@ -852,7 +858,15 @@ LOG_ROWS = """(() => {
   const five = heights.slice(-5), need5 = five.length === 5 ? five.reduce((a, h) => a + h, 0) : null;
   const bl = document.getElementById('graphs-breaks'), blH = bl.getBoundingClientRect().height;
   const blLine = parseFloat(getComputedStyle(bl).lineHeight);
+  // The log header (Task 47: Older, Newer and Jump to newest with its count): its height, and
+  // whether anything in it starts below the heading's line (the header wrapped).
+  const lh = document.querySelector('#log-panel > .panel__head'), h2 = lh.querySelector('h2').getBoundingClientRect();
+  const inHead = [...lh.querySelectorAll(':scope > *, .lognav-ctl > *')].filter(k => k.getClientRects().length);
   return {full: full, fullExchange: fullExchange, heights: heights,
+          logHead: {h: Math.round(lh.getBoundingClientRect().height * 10) / 10,
+                    wrapped: inHead.some(k => k.getBoundingClientRect().top >= h2.bottom - 1),
+                    count: document.getElementById('log-count').textContent,
+                    below: (document.getElementById('log-below') || {}).textContent || ''},
           need5: need5, clearance5: need5 === null ? null : Math.round(wr.bottom - top) - need5,
           breaksLines: blH && blLine ? Math.round(blH / blLine) : 0,
           rowsRegion: Math.round(wr.bottom - top), graphsH: Math.round(gp.height),
@@ -1681,9 +1695,11 @@ async def case_sigstop(m: M3b, sim: subprocess.Popen[bytes]) -> None:
     rows = await m.cdp.js(LOG_ROWS)
     m.cases.record(
         "Log rows at 1440 x 900, graphs open, a break note showing (extra, disconnect break)",
-        "At least 5 full log rows inside #logwrap at 1440 x 900 with the graphs open and a break note showing",
+        "At least 5 full log rows inside #logwrap at 1440 x 900 with the graphs open and a break note showing; "
+        "the log header (Older, Newer, Jump to newest: Task 47) one line",
         {"a break note is shown": re.search(GAP_NOTE, rows["breaks"]) is not None,
-         "at least 5 full log rows": rows["full"] >= 5}, rows)
+         "at least 5 full log rows": rows["full"] >= 5,
+         "the log header is one line": not rows["logHead"]["wrapped"]}, rows)
     m.cases.record(
         "... then SIGCONT",
         "SIGCONT, Live within the backoff (<= 16 s): GET /status started_at equals the value read before; no "
@@ -1739,14 +1755,15 @@ async def _restart_and_gap(m: M3b, sim: subprocess.Popen[bytes]) -> None:
     m.cases.record(
         "Log rows at 1440 x 900, restart note and a gap note together (measured)",
         "At 1440 x 900 with the graphs open, the restart note and a gap note visible together: at least 5 full "
-        "log rows inside #logwrap",
+        "log rows inside #logwrap; the log header one line",
         # Since Task 37 the restart note, in the owner's short wording, leads the shared notice line,
         # " · "-joined with the gap; both are checked complete.
         {"the restart note is shown, complete": re.match(RESTART_NOTE, rows["breaks"]) is not None,
          "a gap note is shown, complete": re.search(GAP_NOTE, rows["breaks"]) is not None,
          "the newest rows are exchange rows": rows["fullExchange"] == rows["full"],
          "the log is filled (more rows than fit)": len((await m.log())["seqs"]) > rows["full"],
-         "at least 5 full log rows": rows["full"] >= 5}, rows)
+         "at least 5 full log rows": rows["full"] >= 5,
+         "the log header is one line": not rows["logHead"]["wrapped"]}, rows)
     # The forced-wrap reading (Task 37, owner: "including wrapping"): an open invalid run added to
     # the same line, by the wrapper rewriting each state (test only), so the line wraps to two.
     await m.cdp.js("window.__m3b.invalidPath = 'engine.throttle'")
@@ -1760,13 +1777,15 @@ async def _restart_and_gap(m: M3b, sim: subprocess.Popen[bytes]) -> None:
     m.cases.record(
         "Log rows at 1440 x 900, restart note, a gap and an open invalid run: the notice line wraps (measured)",
         "At 1440 x 900 with the graphs open, the restart note, a gap note and an open invalid run on the shared "
-        "notice line, which wraps to two lines, every notice complete: at least 5 full log rows inside #logwrap",
+        "notice line, which wraps to two lines, every notice complete: at least 5 full log rows inside #logwrap; "
+        "the log header one line",
         {"the restart note is shown, complete": re.match(RESTART_NOTE, wrapped["breaks"]) is not None,
          "a gap note is shown, complete": re.search(GAP_NOTE, wrapped["breaks"]) is not None,
          "the open invalid run is shown, complete": re.search(INVALID_RUN, wrapped["breaks"]) is not None,
          "the notice line wraps (two lines or more)": wrapped["breaksLines"] >= 2,
          "the newest rows are exchange rows": wrapped["fullExchange"] == wrapped["full"],
-         "at least 5 full log rows": wrapped["full"] >= 5}, wrapped)
+         "at least 5 full log rows": wrapped["full"] >= 5,
+         "the log header is one line": not wrapped["logHead"]["wrapped"]}, wrapped)
 
 
 async def _rows_readings(m: M3b, shot: str) -> dict[str, Any]:
@@ -1958,10 +1977,12 @@ async def part_b(run: Run, m: M3b) -> None:
         await m.until_as_of(24.0)
         await overflow_at(m, "1440", WIDE)
         rows = await m.cdp.js(LOG_ROWS)
-        m.cases.record("Log rows at 1440 x 900", "Section open, log filled: at least 5 full log rows inside #logwrap",
+        m.cases.record("Log rows at 1440 x 900", "Section open, log filled: at least 5 full log rows inside #logwrap; "
+                       "the log header (Older, Newer, Jump to newest: Task 47) one line",
                        {"graphs open": (await m.cdp.js("!document.getElementById('graphs').hidden")) is True,
                         "log filled (more rows than fit)": (await m.log())["seqs"].__len__() > rows["full"],
-                        "at least 5 full log rows": rows["full"] >= 5}, rows)
+                        "at least 5 full log rows": rows["full"] >= 5,
+                        "the log header is one line": not rows["logHead"]["wrapped"]}, rows)
         await overflow_at(m, "1200", MID)
         await overflow_at(m, "390", NARROW)
         await overflow_at(m, "2000", OWNER_WIDE)
@@ -2172,8 +2193,9 @@ async def part_d_encoding(run: Run, m: M3b) -> None:
         m.cases.record(
             "Log rows at 1440 x 900, graphs open, a break note showing (extra, encoding break)",
             "At least 5 full log rows inside #logwrap at 1440 x 900 with the graphs open and a break note showing "
-            "(the shared line under the graphs head: No data from t = A to t = B s (...))",
-            {"a break note is shown": noted is not None, "at least 5 full log rows": rows["full"] >= 5},
+            "(the shared line under the graphs head: No data from t = A to t = B s (...)); the log header one line",
+            {"a break note is shown": noted is not None, "at least 5 full log rows": rows["full"] >= 5,
+             "the log header is one line": not rows["logHead"]["wrapped"]},
             rows)
         run.log("stop traffic")
         run.stop(traffic)
@@ -3111,9 +3133,12 @@ W_NOMATCH = "No exchanges match these filters."
 W_CLEARED = "No exchanges since you cleared the view."
 W_CONN = "Connection lost, then resumed."
 W_RESTART = "Simulator restarted."
-W_ACROSS = "across a restart"
+# Task 47: the edge rows are plain text and point at the header controls.
+W_USE_OLDER = " Use Older in the log header to show them."
+W_USE_NEWER = " Use Newer or Jump to newest in the log header to show them."
+W_USE_JUMP = " Use Jump to newest in the log header to show them and follow new ones."
 LOG_WORDING = (W_MATCH, W_BEYOND, W_HIDDEN, W_GAP, W_LEFT, W_REPIN, W_NOMATCH, W_CLEARED, W_CONN, W_RESTART,
-               W_ACROSS)
+               W_USE_OLDER, W_USE_NEWER, W_USE_JUMP)
 
 LOG_INSTR = r"""(function () {
   var L = window.__lg = { drop: 0, dropped: [], add: 0, rem: 0, inRows: 0, nb: 0, focusout: 0, batches: [] };
@@ -3195,8 +3220,14 @@ LOG_PROBE = r"""(() => {
     newestVisible: !!last && last.top >= wr.top - 0.5 && last.bottom <= wr.bottom + 0.5,
     boxOnScreen: wr.bottom > 0 && wr.top < window.innerHeight,
     trimmed: tr && !tr.hidden ? tr.textContent : null, older: nav('older'), newer: nav('newer'),
-    newerButton: !!document.querySelector('#lognav-newer:not([hidden]) [data-lognav="newer"]:not([hidden])'),
-    follow: {text: fb.textContent, disabled: fb.disabled},
+    newerButton: document.getElementById('btn-newer').getAttribute('aria-disabled') === 'false',
+    // Task 47: Older / Newer in the header (aria-disabled when unavailable); the jump control's
+    // count is the plain text beside it (#log-below), its label stays "Jump to newest".
+    nav: {older: document.getElementById('btn-older').getAttribute('aria-disabled'),
+          newer: document.getElementById('btn-newer').getAttribute('aria-disabled'),
+          disabledAttr: document.getElementById('btn-older').disabled || document.getElementById('btn-newer').disabled,
+          rowButtons: document.querySelectorAll('#log-head button, #log-tail button').length},
+    follow: {text: document.getElementById('log-below').textContent, label: fb.textContent, disabled: fb.disabled},
     state: st.hidden ? null : st.textContent,
     retained: Number((/\((\d+)\)/.exec(document.getElementById('f-ecu').options[0].textContent) || [0, -1])[1]),
     paused: pb.getAttribute('aria-pressed') === 'true', pauseText: pb.textContent,
@@ -3408,6 +3439,17 @@ class LogRun:
             await self.cdp.send("Input.dispatchKeyEvent", type=kind, key="Enter", code="Enter",
                                 windowsVirtualKeyCode=13, **({"text": "\r"} if kind == "keyDown" else {}))
 
+    async def tab_order(self, start: str, presses: int) -> list[str | None]:
+        """Real Tab key presses from the focused ``start`` control: the focused element after each."""
+        await self.focus(start)
+        seen: list[str | None] = []
+        for _ in range(presses):
+            for kind in ("keyDown", "keyUp"):
+                await self.cdp.send("Input.dispatchKeyEvent", type=kind, key="Tab", code="Tab", windowsVirtualKeyCode=9)
+            await asyncio.sleep(0.1)
+            seen.append((await self.probe())["active"])
+        return seen
+
     async def wheel_up(self, dy: float = -600) -> None:
         """A real wheel scroll up over the log box (which pins the window)."""
         await self.cdp.js("document.getElementById('logwrap').scrollIntoView({block: 'center'})")
@@ -3446,17 +3488,24 @@ class LogRun:
         self.m.cases.record(f"{self.label}: {n}. {name}", rule, conds, {"width": self.label, **observed})
 
     async def nav(self, kind: str, how: str) -> dict[str, Any]:
-        """One press of Older / Newer / the in-row Jump to newest: a real click (the control
-        brought into view first) or Enter on the focused control (no scroll at all). The rows
-        in the log box are read just before the press; the anchor is the first of them still
-        drawn after it, as the page's own rule takes it."""
-        selector = f'[data-lognav="{kind}"]'
+        """One press of Older / Newer (the log header's controls, Task 47): a real click, or
+        Enter on the focused control (no scroll at all). For a click the box is first scrolled
+        (as a layout scroll) to the window's edge row on that side, where the press brings rows,
+        as before Task 47 the in-table button was; Enter keeps the focus where the last press
+        left it (the control is focused only if the focus is elsewhere, and `refocused` says
+        so). The rows in the log box are read just before the press; the anchor is the first of
+        them still drawn after it, as the page's own rule takes it."""
+        selector = f'#btn-{kind}'
+        refocused = False
         if how == "click":
-            await self.box_at(selector, "center" if kind == "older" else "end")
+            await self.box_at(f"#lognav-{kind}", "center" if kind == "older" else "end")
+            await self.page_at(selector)
             a = await self.probe()
             await self.cdp.click(selector)
         else:
-            await self.focus(selector)
+            if (await self.probe())["active"] != f"btn-{kind}":
+                await self.focus(selector)
+                refocused = True
             a = await self.probe()
             await self.key_enter()
         await self.settle()
@@ -3485,14 +3534,16 @@ class LogRun:
                 "to_end": scroll_delta != 0 and (b["scrollTop"] == 0 if kind == "older" else b["atBottom"]),
                 "anchor": anchor, "offset": [off0, off1], "diff": diff,
                 "clamp": clamp, "following": b["follow"]["disabled"], "focus": b["active"],
+                "refocused": refocused, "available_after": b["nav"][kind] == "false",
                 "overlap": bool(set(a["keys"]) & set(b["keys"])), "breaks": b["breaks"], "ex": b["ex"],
                 "older": b["older"], "newer": b["newer"]}
         # The rule for one press: it moves the window, or (a step of 0) scrolls the box to the
-        # window's other end; focus to the log box; rows contiguous; a moved window overlaps the
-        # last one; the anchor keeps its offset within 1 px unless the box ended at the scroll limit
-        # the press drives toward with the anchor drifted that way (a clamp), or the press reached
-        # the newest (following shows the newest at the bottom).
-        step["ok"] = ((moved or step["to_end"]) and b["active"] == "logwrap" and not b["breaks"]
+        # window's other end; the focus stays on the pressed header control (Task 47; never on
+        # body); rows contiguous; a moved window overlaps the last one; the anchor keeps its offset
+        # within 1 px unless the box ended at the scroll limit the press drives toward with the
+        # anchor drifted that way (a clamp), or the press reached the newest (following shows the
+        # newest at the bottom).
+        step["ok"] = ((moved or step["to_end"]) and b["active"] == f"btn-{kind}" and not b["breaks"]
                       and (not moved or step["overlap"] or b["follow"]["disabled"])
                       and (not moved or b["follow"]["disabled"] or clamp
                            or (step["diff"] is not None and abs(step["diff"]) <= 1.0)))
@@ -3665,7 +3716,7 @@ async def case_log_filters(lg: LogRun) -> None:
     lg.note("outside", f["older"])
     for x in f["hidden"]:
         lg.note("hidden", x)
-    count_re = rf"{LOG_WINDOW} of {fmt_n(LOG_UNIQUE)} matching shown \(seq [\d,]+–[\d,]+; 2,000 retained\)"
+    count_re = rf"{LOG_WINDOW} of {fmt_n(LOG_UNIQUE)} matching shown \(2,000 retained\)"
     conds.update({
         "0x0A: one rebuild": df["nb"] == 1,
         "0x0A: the count line": re.match(count_re, f["count"]) is not None,
@@ -3674,7 +3725,7 @@ async def case_log_filters(lg: LogRun) -> None:
         "0x0A: all older than the unfiltered window": bool(f["seqs"]) and max(f["seqs"]) < u["seqs"][0],
         "0x0A: the Older row counts the rest, and the hidden ones as not a gap": re.match(
             rf"{LOG_UNIQUE - LOG_WINDOW} older exchanges match your filters; (?:[^;]+ in older rows; )?[\d,]+ "
-            rf"older exchanges {re.escape(W_HIDDEN)}\.$", f["older"] or "") is not None,
+            rf"older exchanges {re.escape(W_HIDDEN)}\.{re.escape(W_USE_OLDER)}$", f["older"] or "") is not None,
         "0x0A: the trailing hidden run worded (not a gap)": len(f["hidden"]) == 1
         and re.fullmatch(rf"[\d,]+ exchanges {re.escape(W_HIDDEN)}", f["hidden"][0]) is not None,
         "0x0A: counts add up": acc_f["adds_up"]})
@@ -3755,7 +3806,7 @@ async def case_log_filters(lg: LogRun) -> None:
         3, "Filtering across all retained exchanges",
         f"Full buffer; traffic stopped while filters change (so every rebuild is the filter's own). Service 0x0A, "
         f"which only the harness's {LOG_UNIQUE} old requests match: one rebuild; the count line reads "
-        f"'{LOG_WINDOW} of {LOG_UNIQUE} matching shown (seq a–b; 2,000 retained)'; every drawn row is a 0x0A "
+        f"'{LOG_WINDOW} of {LOG_UNIQUE} matching shown (2,000 retained)'; every drawn row is a 0x0A "
         "request and older than the unfiltered window; the Older row counts the other 50 (then any older "
         "markers) and the hidden older ones as not a gap; Older (a real click) reaches all of them, the leading "
         "hidden run worded (not a gap). Then all services, and the outcome chips off one at a time (no response "
@@ -3802,6 +3853,9 @@ async def case_log_navigation(lg: LogRun) -> None:
     lg.note("outside", p1["follow"]["text"])
     acc_p = lg.account("pinned by a scroll", p1)
     await lg.overflow("pinned, Newer row shown")
+    # Task 47: the tab order from the graphs' last control, pinned (Jump to newest shown): Older,
+    # Newer, Jump to newest, then the filters; no row button on the way.
+    tabs_pinned = await lg.tab_order("#btn-graphs-toggle", 4)
     # b-d. Older, Newer, Jump to newest: real clicks.
     older = await lg.nav("older", "click")
     newer = await lg.nav("newer", "click")
@@ -3811,8 +3865,11 @@ async def case_log_navigation(lg: LogRun) -> None:
     j1 = await lg.probe()
     await asyncio.sleep(2.5)
     j2 = await lg.probe()
+    # Following: Jump to newest is hidden and out of the tab order.
+    tabs_following = await lg.tab_order("#btn-graphs-toggle", 3)
     # e. The whole history: traffic stopped, pinned, Older by Enter (no scroll) until no older
-    # exchange is left, then Newer by Enter until following again.
+    # exchange is left, then Newer by Enter until following again. The focus is put on Older
+    # once; every later press finds it where the last one left it.
     lg.quiet()
     await asyncio.sleep(1.5)
     await lg.wheel_up(-300)
@@ -3823,25 +3880,38 @@ async def case_log_navigation(lg: LogRun) -> None:
             break
         back.append(await lg.nav("older", "enter"))
     oldest = await lg.probe()
+    # A press on the now unavailable Older does nothing, and the focus stays on it.
+    await lg.key_enter()
+    await lg.settle()
+    oldest2 = await lg.probe()
     fwd: list[dict[str, Any]] = []
     for _ in range(80):
         if (await lg.probe())["follow"]["disabled"]:
             break
         fwd.append(await lg.nav("newer", "enter"))
     end = await lg.probe()
+    await lg.key_enter()
+    await lg.settle()
+    end2 = await lg.probe()
     sb, sf = walk_summary(back, w0["keys"]), walk_summary(fwd, oldest["keys"])
     lg.steady()
     lg.record(
         4, "Older-history navigation",
         "Full buffer. A real wheel scroll up pins: for 8 s of arrivals the drawn rows are unchanged and every visible"
         " row keeps its offset within 1 px, zero row-list mutations, the header's 'beyond this window' count rises "
-        "and equals the Newer row's count. Older and Newer (real clicks) each move the window by 100 with the anchor "
-        "row within 1 px and focus on the log box; Jump to newest (the header control, a real click) follows again: "
-        "newest drawn, at the bottom, the control off, the window sliding. With the traffic stopped, Older pressed by"
-        " Enter with no scroll until no older exchange matches, then Newer until following: every press moves the "
-        "window or (a step of 0) scrolls the box to the window's other end, never nothing; focus on the log box; rows"
-        " contiguous; each moved window overlaps the last; the anchor within 1 px except at a scroll limit (a clamp, "
-        "counted); the windows together hold every retained exchange (2,000), both ways",
+        "and equals the Newer row's count. Older, Newer and Jump to newest are together in the log header (Task 47): "
+        "the edge rows are plain text (no button) pointing at them, unavailable directions are aria-disabled (never "
+        "disabled), and real Tab presses from the graphs' last control reach Older, Newer, Jump to newest (only "
+        "while shown), then the ECU filter. Older and Newer (real clicks) each move the window by 100 with the "
+        "anchor row within 1 px and the focus staying on the pressed control; Jump to newest (a real click) follows "
+        "again: newest drawn, at the bottom, the control off, the focus on the log box, the window sliding. With the "
+        "traffic stopped, Older pressed by Enter with no scroll until no older exchange matches, then Newer until "
+        "following: the focus is put on each control once and stays there through every press, never on body; "
+        "every press moves the window or (a step of 0) scrolls the box to the window's other end, never nothing; "
+        "the press that leaves nothing in its direction keeps the focus on the now aria-disabled control, and a "
+        "further press on it changes nothing; rows contiguous; each moved window overlaps the last; the anchor "
+        "within 1 px except at a scroll limit (a clamp, counted); the windows together hold every retained "
+        "exchange (2,000), both ways",
         {"full buffer at the start": s0["retained"] == PERF_ROWS,
          "scroll up pins (the jump control on)": not p0["follow"]["disabled"] and not p1["follow"]["disabled"],
          "pinned: the same rows, every visible row within 1 px of its offset": p0["keys"] == p1["keys"] and still,
@@ -3850,33 +3920,58 @@ async def case_log_navigation(lg: LogRun) -> None:
          and (last_seq(p1) or 0) > (last_seq(p0) or 0),
          "pinned: the Newer row counts the same": edge_count(p1["newer"], "newer") == beyond_count(p1),
          "pinned: counts add up": acc_p["adds_up"],
-         "Older (click): 100 back, anchor kept, focus on the log box": older["ok"] and older["loaded"] == LOG_STEP
+         "the edge rows are plain text pointing at the header controls; aria-disabled, never disabled": p1["nav"][
+             "rowButtons"] == 0 and not p1["nav"]["disabledAttr"] and (p1["older"] or "").endswith(W_USE_OLDER)
+         and (p1["newer"] or "").endswith(W_USE_NEWER),
+         "Tab order, pinned: Older, Newer, Jump to newest, then the ECU filter": tabs_pinned == [
+             "btn-older", "btn-newer", "btn-follow", "f-ecu"],
+         "Tab order, following: Older, Newer, then the ECU filter (Jump hidden)": tabs_following == [
+             "btn-older", "btn-newer", "f-ecu"],
+         "Older (click): 100 back, anchor kept, focus stays on Older": older["ok"] and older["loaded"] == LOG_STEP
          and not older["clamp"],
-         "Newer (click): 100 on, anchor kept, focus on the log box": newer["ok"] and newer["loaded"] == LOG_STEP
+         "Newer (click): 100 on, anchor kept, focus stays on Newer": newer["ok"] and newer["loaded"] == LOG_STEP
          and not newer["clamp"],
-         "Jump to newest: following, newest drawn, at the bottom": not j0["follow"]["disabled"]
-         and j1["follow"]["disabled"] and j1["atBottom"] and j1["newestVisible"] and j1["seqs"][-1] == last_seq(j1),
+         "Jump to newest: following, newest drawn, at the bottom, focus on the log box": not j0["follow"]["disabled"]
+         and j1["follow"]["disabled"] and j1["atBottom"] and j1["newestVisible"] and j1["seqs"][-1] == last_seq(j1)
+         and j1["active"] == "logwrap",
          "Jump to newest: the window slides again": j2["seqs"][-1] > j1["seqs"][-1] and j2["ex"] == LOG_WINDOW,
          "walk back: every press correct, none silent": bool(back) and not sb["bad"] and sb["silent"] == 0,
+         "walk back: the focus put on Older once, then kept by every press": bool(back)
+         and not any(x["refocused"] for x in back[1:]) and all(x["focus"] == "btn-older" for x in back),
          "walk back: reached the oldest (no Older row) and every retained exchange": oldest["older"] is None
          and sb["union"] == oldest["retained"] == PERF_ROWS,
+         "walk back: the last press left Older aria-disabled with the focus on it": oldest["nav"]["older"] == "true"
+         and oldest["active"] == "btn-older" and bool(back) and not back[-1]["available_after"],
+         "walk back: a press on the unavailable Older changes nothing, focus kept": oldest2["keys"] == oldest["keys"]
+         and oldest2["scrollTop"] == oldest["scrollTop"] and oldest2["active"] == "btn-older",
          "walk back: at least one step of 0 that scrolled to the top": sb["zero_steps_scrolled"] >= 1,
          "walk forward: every press correct, none silent": bool(fwd) and not sf["bad"] and sf["silent"] == 0,
+         "walk forward: the focus put on Newer once, then kept by every press": bool(fwd)
+         and not any(x["refocused"] for x in fwd[1:]) and all(x["focus"] == "btn-newer" for x in fwd),
          "walk forward: following again, every retained exchange": end["follow"]["disabled"]
-         and sf["union"] == PERF_ROWS and end["newestVisible"]},
+         and sf["union"] == PERF_ROWS and end["newestVisible"],
+         "walk forward: the last press left Newer aria-disabled with the focus on it, a further press changes "
+         "nothing": end["nav"]["newer"] == "true" and end["active"] == "btn-newer" and end2["keys"] == end["keys"]
+         and end2["active"] == "btn-newer"},
         {"retained": s0["retained"], "pinned": {"window": window_of(p0), "beyond": beyond, "mutations": d,
                                                 "newer": p1["newer"], "follow": p1["follow"]["text"],
                                                 "anchor": p0["vis"][:1], "accounting": acc_p},
          "older_click": {k: v for k, v in older.items() if k != "keys"},
          "newer_click": {k: v for k, v in newer.items() if k != "keys"},
-         "jump": {"before": j0["follow"]["text"], "after": [window_of(j1), j1["atBottom"]], "later": window_of(j2)},
+         "jump": {"before": j0["follow"]["text"], "label": j0["follow"]["label"],
+                  "after": [window_of(j1), j1["atBottom"], j1["active"]], "later": window_of(j2)},
+         "tab_order": {"pinned": tabs_pinned, "following": tabs_following}, "edge_rows": [p1["older"], p1["newer"]],
+         "nav_attrs": p1["nav"],
          "walk_back": sb, "walk_forward": sf, "oldest_window": window_of(oldest),
+         "after_walks": {"oldest": [oldest["nav"], oldest["active"]], "unavailable_older_press": [
+             window_of(oldest2), oldest2["active"]], "end": [end["nav"], end["active"]],
+                         "unavailable_newer_press": [window_of(end2), end2["active"]]},
          "oldest_count": oldest["count"], "back_steps": [{k: s[k] for k in ("before", "after", "loaded", "scroll",
                                                                                 "diff", "clamp", "scroll_delta",
-                                                                                "focus")}
+                                                                                "focus", "refocused")}
                                                          for s in back],
          "forward_steps": [{k: s[k] for k in ("before", "after", "loaded", "scroll", "diff", "clamp", "scroll_delta",
-                                              "following")}
+                                              "following", "focus", "refocused")}
                            for s in fwd]})
 
 
@@ -4087,13 +4182,18 @@ async def case_log_markers(lg: LogRun) -> None:
     newer_m = re.search(MARKS_RE.format(side="newer"), n["newer"] or "")
     lg.note("gap", n["newer"])
     cn = marker_census(n)
-    conds["outside the window (newer): neither drawn, the Newer row counts exactly 1 and 1, beside Jump to newest"] = (
+    conds["outside the window (newer): neither drawn, the Newer row counts exactly 1 and 1, pointing at Jump to newest "
+          "(shown in the header)"] = (
         newer_m is not None and cn["newer"] == [1, 1] and own_drawn(n) == [False, False]
-        and cn["total"] == plus(c0["total"], [1, 1])
-        and await lg.cdp.js("!!document.querySelector('#lognav-newer:not([hidden]) [data-lognav=\"newest\"]')"))
+        and cn["total"] == plus(c0["total"], [1, 1]) and not n["follow"]["disabled"]
+        and (n["newer"] or "").endswith((W_USE_NEWER, W_USE_JUMP)))
     acc_n = lg.account("markers newer than a pinned window", n)
-    jumped = await lg.nav("newest", "click")
-    conds["the in-row Jump to newest follows again"] = jumped["following"] and jumped["focus"] == "logwrap"
+    await lg.click("#btn-follow")
+    await asyncio.sleep(0.5)
+    jp = await lg.probe()
+    jumped = {"after": window_of(jp), "following": jp["follow"]["disabled"], "focus": jp["active"]}
+    conds["Jump to newest (the header control) follows again, focus on the log box"] = (
+        jumped["following"] and jumped["focus"] == "logwrap")
     # Older than the following window, after a burst: counted beside Older.
     await lg.burst(LOG_WINDOW + 60)
     lg.steady()
@@ -4127,12 +4227,14 @@ async def case_log_markers(lg: LogRun) -> None:
     await lg.settle(0.5)
     r = await lg.probe()
     restart = mark_with(r, W_RESTART)
-    across = re.search(rf"seq ([\d,]+) … ([\d,]+) {W_ACROSS}", r["count"])
+    ranged = re.search(r"seq [\d,]+ *[–…]", r["count"])
     conds["the restart marker drawn between the two runs' rows"] = (
         restart is not None and restart["prev"] is not None and restart["next"] is not None
         and restart["next"] < restart["prev"])
-    conds["across a restart the count line says so"] = (
-        across is not None and n_of(across.group(1)) == r["seqs"][0] and n_of(across.group(2)) == r["seqs"][-1])
+    # Task 47 shortened the count line: it no longer names the window's seq range, so across a
+    # restart there is no backward range to explain; the restart marker row is the record.
+    conds["across a restart: the window spans both runs, the count line names no seq range"] = (
+        ranged is None and bool(r["seqs"]) and r["seqs"][0] > r["seqs"][-1])
     lg.record(
         6, "Reconnect and gap markers",
         "Full buffer, following, standard traffic. Every marker the page accounts for (left the cap + older + drawn +"
@@ -4140,12 +4242,14 @@ async def case_log_markers(lg: LogRun) -> None:
         "case's own add exactly 1 gap marker and 1 connection note to that total at every step. 3 exchange events "
         "kept from the page: 'Gap: seq a–b not received (3).' drawn between seq a-1 and b+1. SIGSTOP / SIGCONT: "
         "'Connection lost, then resumed.' drawn after the exchange it names ('after seq N'). Pinned and moved older "
-        "(Older by Enter) until both are newer than the window: neither is drawn and the Newer row, beside its Jump "
-        "to newest, reads exactly '1 gap marker and 1 connection note in newer rows'; the in-row Jump to newest "
-        "follows. A burst of 260 makes them older than the following window: not drawn, no marker drawn in either "
+        "(Older by Enter) until both are newer than the window: neither is drawn and the Newer row reads exactly "
+        "'1 gap marker and 1 connection note in newer rows' and points at the header's Jump to newest (shown); "
+        "Jump to newest (a real click) follows, the focus on the log box. A burst of 260 makes them older than the "
+        "following window: not drawn, no marker drawn in either "
         "window, and the older side (Older row plus left the cap) rose by exactly 1 and 1. Counts add up. SIGTERM and"
         " a new simulator: 'Simulator restarted.' drawn between the old run's rows and the new run's (seq goes back),"
-        " and the count line reads 'seq A … B across a restart' with A and B the window's first and last seq",
+        " and the window spans both runs (its first seq above its last); the count line names no seq range (Task 47"
+        " shortened it), so the marker row is the record of the restart",
         conds,
         {"retained": m0["retained"], "dropped": dropped, "gap": gap, "connection_note": conn,
          "older_presses": [s["after"] for s in pressed], "newer_row": n["newer"], "newer_window": window_of(n),
@@ -4210,10 +4314,32 @@ async def case_log_layout(lg: LogRun) -> None:
         rows = min(readings, key=lambda r: r["full"])
         conds["graphs open"] = (await lg.cdp.js("!document.getElementById('graphs').hidden")) is True
         conds["at least 5 full log rows (1440 x 900, graphs open, full buffer)"] = rows["full"] >= 5
+        conds["following: the log header is one line"] = not any(r["logHead"]["wrapped"] for r in readings)
         observed["log_rows"] = {"fewest": rows["full"], "readings": [r["full"] for r in readings],
-                                "rowsRegion": rows["rowsRegion"], "heights": rows["heights"][-6:]}
+                                "rowsRegion": rows["rowsRegion"], "clearance5": rows["clearance5"],
+                                "logHead": rows["logHead"], "heights": rows["heights"][-6:]}
+        # Pinned (Task 47): Older, Newer, Jump to newest and its "N rows below + M beyond this
+        # window" count all in the header, with arrivals counted beyond the window.
+        await lg.wheel_up()
+        await asyncio.sleep(3.0)
+        await lg.cdp.js("window.scrollTo(0, 0)")
+        pinned = []
+        for k in range(3):
+            if k:
+                await asyncio.sleep(1.0)
+            await lg.settle(0.0)
+            pinned.append(await lg.cdp.js(LOG_ROWS))
+        prow = min(pinned, key=lambda r: r["full"])
+        conds["pinned, with the 'beyond this window' count: at least 5 full log rows"] = prow["full"] >= 5 and all(
+            W_BEYOND in r["logHead"]["below"] for r in pinned)
+        conds["pinned: the log header is one line"] = not any(r["logHead"]["wrapped"] for r in pinned)
+        observed["log_rows_pinned"] = {"fewest": prow["full"], "readings": [r["full"] for r in pinned],
+                                       "rowsRegion": prow["rowsRegion"], "clearance5": prow["clearance5"],
+                                       "logHead": prow["logHead"], "heights": prow["heights"][-6:]}
+        await lg.jump()
         rule += "; at 1440 x 900 at least 5 full log rows inside #logwrap with the graphs open (LOG_ROWS, the fewest " \
-                "of 3 readings)"
+                "of 3 readings), following and pinned with the header's 'beyond this window' count, the log header " \
+                "one line in both (Task 47)"
     conds["at least one state measured"] = bool(lg.overflows)
     lg.record(9, "Layout", rule, conds, observed)
 
