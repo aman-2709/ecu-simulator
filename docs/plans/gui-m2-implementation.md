@@ -3550,3 +3550,34 @@ saves complete output (`-rfE`), and a recurrence is investigated by its identifi
   that need the owner's observation.
 - After review, the affected checks and the required gates: push the final `gui` head as a
   fast-forward and report the exact SHA and hosted CI with skip reasons.
+
+### Task 47b: five full log rows in the paused, stale and last-known states (owner, 2026-10-03/04)
+
+The owner required five fully visible exchange rows at 1440 × 900 in the filtered-and-pinned state
+and in the other states identified. Measured after Task 47: filtered + pinned 5 (+38 px),
+filtered following 5 (+39), pinned with a long count 4 (the region has room; one full row
+was a marker row), **paused 4 (−21 px), stale 4 (−17), "Last known" 3 (−42)**. The header is
+one line in every state, so header text cannot recover them; the paused line (58 px) and the
+connection banner (54 px stale, 64 px last known) take the height.
+- Lever 1 (no information removed): make the log's filter bar fit one row at 1440 (the design
+  record already noted that fitting it on one row returns about 50 px): tighter spacing and
+  chip padding first; moving the Pause view / Clear view buttons up beside the other log view
+  buttons only if spacing alone is not enough. Controls stay readable (font size, targets) with
+  full accessible labels. Measure all six states again.
+- Lever 2, only for a state still short of five rows after lever 1: compact the paused line to
+  one line, and shorten banner wording that repeats information shown elsewhere (never
+  information that exists nowhere else). Measure again.
+- If a state is still short, STOP and report with numbers. Document the minimum clearance; no
+  extra pixel target beyond five full rows.
+
+### Task 51: live announcements, ticking values and the recovery announcement (owner, 2026-10-04)
+
+The full requirement and design are in `.superpowers/sdd/gui-m2-implementation/task-51-brief.md`
+(local). In short: the retry countdown and the "Ns ago" elapsed time stay visible but outside
+any live region; one always-mounted, visually hidden `#announce` (role=status, polite, atomic) at
+body level carries every transition announcement; recovery wording follows the connection and
+data-validity model ("Connection restored; data current" after an outage that included a
+disconnect, "Live data restored." for a data fault without a disconnect, nothing while data
+remains last known, each recovery once, none on first load or on healthy polls); Retry now,
+reconnect timing and the retry budget unchanged; verification by markup and mutation checks, with
+screen-reader behaviour left to the owner.
