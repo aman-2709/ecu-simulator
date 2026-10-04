@@ -1,0 +1,637 @@
+{
+ "chrome": "Chrome/151.0.7922.173",
+ "cases": [
+  {
+   "case": "Recovery with all four client slots occupied, variant A",
+   "rule": "Both: data-timers <= 1 at every 100 ms sample; no two attempts start less than 0.9 s apart; each attempt raises data-attempts by exactly 1; any 503 is counted in refused_clients and matches one attempt. A: recovery within the budget, then data-health live and the budget reset. B: exactly 3 attempts, then exhausted and Retry now, with no further upgrade request in 30 s (refused_clients stops rising). Releasing the slot and pressing Retry now recovers",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "data-timers <= 1 at every 100 ms sample and every change": true,
+    "no two attempts start less than 0.9 s apart": true,
+    "each attempt raises data-attempts by exactly 1": true,
+    "each 503 counted in refused_clients, one per attempt": true,
+    "recovered within the budget, then live and the budget reset": true
+   },
+   "observed": {
+    "immediately": {
+     "now": 1791110710730,
+     "conn": "live",
+     "data": "last-known",
+     "reason": "malformed",
+     "health": "last-known",
+     "episode": "active",
+     "attempts": 0,
+     "timers": 1,
+     "polls": 1,
+     "malformed": 1,
+     "text": "Connected, last known data",
+     "banner": "Last known data. The simulator sent a message this page could not read (1 malformed so far), so the page reconnects to get a complete state. The views show the last state applied, at 10:45:10 UTC. Recovery attempt 0 of 3; the first starts in 1 s.",
+     "retry": null,
+     "known": [
+      "Last known, 10:45:10 UTC",
+      "Last known, 10:45:10 UTC",
+      "Last known, 10:45:10 UTC"
+     ],
+     "stale": [],
+     "socks": 1,
+     "states": 1,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    },
+    "attempt_sockets": [
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=0",
+      "created": 1791110711732,
+      "opened": 1791110711734,
+      "error": null,
+      "closed": null,
+      "code": null,
+      "frames": 3,
+      "states": 1,
+      "bad": null,
+      "incomplete": null
+     }
+    ],
+    "start_gaps_s": [],
+    "attempts_seen": [
+     0,
+     1,
+     0
+    ],
+    "refused_before": 0,
+    "attribute_changes": [
+     {
+      "t": 1791110710733,
+      "a": "health",
+      "v": "last-known"
+     },
+     {
+      "t": 1791110710733,
+      "a": "episode",
+      "v": "active"
+     },
+     {
+      "t": 1791110710733,
+      "a": "timers",
+      "v": "1"
+     },
+     {
+      "t": 1791110711730,
+      "a": "attempts",
+      "v": "1"
+     },
+     {
+      "t": 1791110711730,
+      "a": "timers",
+      "v": "0"
+     },
+     {
+      "t": 1791110711736,
+      "a": "health",
+      "v": "live"
+     },
+     {
+      "t": 1791110711736,
+      "a": "episode",
+      "v": "none"
+     },
+     {
+      "t": 1791110711736,
+      "a": "attempts",
+      "v": "0"
+     }
+    ],
+    "refused_after": 0,
+    "attempts_not_opened": 0,
+    "end": {
+     "now": 1791110711753,
+     "conn": "live",
+     "data": "current",
+     "reason": "",
+     "health": "live",
+     "episode": "none",
+     "attempts": 0,
+     "timers": 0,
+     "polls": 2,
+     "malformed": 1,
+     "text": "Live",
+     "banner": null,
+     "retry": null,
+     "known": [],
+     "stale": [],
+     "socks": 2,
+     "states": 2,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    },
+    "setup": {},
+    "live_after_s": 1.023
+   }
+  },
+  {
+   "case": "Recovery with all four client slots occupied, variant B",
+   "rule": "Both: data-timers <= 1 at every 100 ms sample; no two attempts start less than 0.9 s apart; each attempt raises data-attempts by exactly 1; any 503 is counted in refused_clients and matches one attempt. A: recovery within the budget, then data-health live and the budget reset. B: exactly 3 attempts, then exhausted and Retry now, with no further upgrade request in 30 s (refused_clients stops rising). Releasing the slot and pressing Retry now recovers",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "data-timers <= 1 at every 100 ms sample and every change": true,
+    "no two attempts start less than 0.9 s apart": true,
+    "each attempt raises data-attempts by exactly 1": true,
+    "each 503 counted in refused_clients, one per attempt": true,
+    "setup: the script holds the freed slot before the page's first attempt": true,
+    "exactly 3 attempts, then exhausted and Retry now": true,
+    "no further upgrade request in 30 s (refused_clients stops rising)": true,
+    "releasing the slot and pressing Retry now recovers": true
+   },
+   "observed": {
+    "immediately": {
+     "now": 1791110714759,
+     "conn": "live",
+     "data": "last-known",
+     "reason": "malformed",
+     "health": "last-known",
+     "episode": "active",
+     "attempts": 0,
+     "timers": 1,
+     "polls": 3,
+     "malformed": 2,
+     "text": "Connected, last known data",
+     "banner": "Last known data. The simulator sent a message this page could not read (2 malformed so far), so the page reconnects to get a complete state. The views show the last state applied, at 10:45:11 UTC. Recovery attempt 0 of 3; the first starts in 1 s.",
+     "retry": null,
+     "known": [
+      "Last known, 10:45:11 UTC",
+      "Last known, 10:45:11 UTC",
+      "Last known, 10:45:11 UTC"
+     ],
+     "stale": [],
+     "socks": 2,
+     "states": 2,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    },
+    "attempt_sockets": [
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=0",
+      "created": 1791110715761,
+      "opened": null,
+      "error": 1791110715763,
+      "closed": 1791110715763,
+      "code": 1006,
+      "frames": 0,
+      "states": 0,
+      "bad": null,
+      "incomplete": null
+     },
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=0",
+      "created": 1791110717768,
+      "opened": null,
+      "error": 1791110717769,
+      "closed": 1791110717769,
+      "code": 1006,
+      "frames": 0,
+      "states": 0,
+      "bad": null,
+      "incomplete": null
+     },
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=0",
+      "created": 1791110721774,
+      "opened": null,
+      "error": 1791110721775,
+      "closed": 1791110721775,
+      "code": 1006,
+      "frames": 0,
+      "states": 0,
+      "bad": null,
+      "incomplete": null
+     }
+    ],
+    "start_gaps_s": [
+     2.007,
+     4.006
+    ],
+    "attempts_seen": [
+     0,
+     1,
+     2,
+     3
+    ],
+    "refused_before": 0,
+    "attribute_changes": [
+     {
+      "t": 1791110714760,
+      "a": "health",
+      "v": "last-known"
+     },
+     {
+      "t": 1791110714760,
+      "a": "episode",
+      "v": "active"
+     },
+     {
+      "t": 1791110714760,
+      "a": "timers",
+      "v": "1"
+     },
+     {
+      "t": 1791110715759,
+      "a": "attempts",
+      "v": "1"
+     },
+     {
+      "t": 1791110715759,
+      "a": "timers",
+      "v": "0"
+     },
+     {
+      "t": 1791110715766,
+      "a": "conn",
+      "v": "refused"
+     },
+     {
+      "t": 1791110715766,
+      "a": "health",
+      "v": "stale"
+     },
+     {
+      "t": 1791110715766,
+      "a": "timers",
+      "v": "1"
+     },
+     {
+      "t": 1791110717766,
+      "a": "attempts",
+      "v": "2"
+     },
+     {
+      "t": 1791110717766,
+      "a": "timers",
+      "v": "0"
+     },
+     {
+      "t": 1791110717771,
+      "a": "timers",
+      "v": "1"
+     },
+     {
+      "t": 1791110721771,
+      "a": "attempts",
+      "v": "3"
+     },
+     {
+      "t": 1791110721771,
+      "a": "timers",
+      "v": "0"
+     },
+     {
+      "t": 1791110721777,
+      "a": "episode",
+      "v": "exhausted"
+     }
+    ],
+    "refused_after": 3,
+    "attempts_not_opened": 3,
+    "end": {
+     "now": 1791110751774,
+     "conn": "refused",
+     "data": "last-known",
+     "reason": "malformed",
+     "health": "stale",
+     "episode": "exhausted",
+     "attempts": 3,
+     "timers": 0,
+     "polls": 3,
+     "malformed": 2,
+     "text": "Refused, not retrying",
+     "banner": "Could not recover: The simulator sent a message this page could not read (2 malformed so far). The views show the last state applied, at 10:45:11 UTC. The page made 3 attempts to get a complete state and does not try again by itself. Last attempt: refused: too many clients (503). The simulator's client limit is reached; 4 are connected now. Close another observer to free a place..\n\nRetry now",
+     "retry": "Retry now",
+     "known": [],
+     "stale": [
+      "Stale, as of 10:45:14 UTC",
+      "Stale, as of 10:45:14 UTC",
+      "Stale, as of 10:45:14 UTC",
+      "Stale, as of 10:45:14 UTC"
+     ],
+     "socks": 5,
+     "states": 2,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    },
+    "setup": {
+     "slot_taken_after_s": 0.001,
+     "clients_now": 4,
+     "page_sockets_open": 0
+    },
+    "refused_series_30s": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "after_retry": {
+     "now": 1791110752041,
+     "conn": "live",
+     "data": "current",
+     "reason": "",
+     "health": "live",
+     "episode": "none",
+     "attempts": 0,
+     "timers": 0,
+     "polls": 4,
+     "malformed": 2,
+     "text": "Live",
+     "banner": null,
+     "retry": null,
+     "known": [],
+     "stale": [],
+     "socks": 6,
+     "states": 3,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    }
+   }
+  },
+  {
+   "case": "Recovery with all four client slots occupied, variant C (deterministic 503, automatic recovery)",
+   "rule": "The script holds the freed slot, waits until refused_clients rises (a real 503 to the page's attempt), then releases it. The page's next scheduled attempt recovers without Retry now; health live; data-episode none and data-attempts 0 (the budget reset); data-timers never above 1; no two attempts less than 0.9 s apart; refused_clients rose by exactly the refused attempts. A second malformed frame then starts a fresh episode at attempt 1",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "setup: the script held the slot before the page's first attempt": true,
+    "the refusal was observed (refused_clients rose) before the release": true,
+    "the first attempt was refused, a later one recovered": true,
+    "recovered without Retry now, within the episode's waits": true,
+    "after: live, data-episode none, data-attempts 0": true,
+    "data-timers never above 1": true,
+    "no two attempts less than 0.9 s apart": true,
+    "each attempt raises data-attempts by exactly 1": true,
+    "refused_clients rose by exactly the refused attempts": true,
+    "a second fault starts a fresh episode at attempt 1, and recovers": true
+   },
+   "observed": {
+    "setup": {
+     "slot_taken_after_s": 0.002,
+     "clients_now": 4,
+     "page_sockets_open": 0
+    },
+    "refused_series": [
+     3,
+     4
+    ],
+    "refused_before": 3,
+    "refused_after": 4,
+    "t_bad_ms": 1791110755045,
+    "t_refusal_seen_ms": 1791110756069.5193,
+    "t_released_ms": 1791110756070.1223,
+    "attempt_starts_ms": [
+     1791110756047,
+     1791110758052
+    ],
+    "start_gaps_s": [
+     2.005
+    ],
+    "refused_attempts": [
+     1
+    ],
+    "recovering_attempt": 2,
+    "wait_after_refusal_s": 2.004,
+    "live_after_bad_s": 3.059,
+    "attempts_seen": [
+     0,
+     1,
+     2,
+     0
+    ],
+    "end": {
+     "now": 1791110758405,
+     "conn": "live",
+     "data": "current",
+     "reason": "",
+     "health": "live",
+     "episode": "none",
+     "attempts": 0,
+     "timers": 0,
+     "polls": 6,
+     "malformed": 3,
+     "text": "Live",
+     "banner": null,
+     "retry": null,
+     "known": [],
+     "stale": [],
+     "socks": 8,
+     "states": 4,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    },
+    "attempt_sockets": [
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=0",
+      "created": 1791110756047,
+      "opened": null,
+      "error": 1791110756048,
+      "closed": 1791110756048,
+      "code": 1006,
+      "frames": 0,
+      "states": 0,
+      "bad": null,
+      "incomplete": null
+     },
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=0",
+      "created": 1791110758052,
+      "opened": 1791110758054,
+      "error": null,
+      "closed": null,
+      "code": null,
+      "frames": 4,
+      "states": 1,
+      "bad": null,
+      "incomplete": null
+     }
+    ],
+    "attribute_changes": [
+     {
+      "t": 1791110755046,
+      "a": "health",
+      "v": "last-known"
+     },
+     {
+      "t": 1791110755046,
+      "a": "episode",
+      "v": "active"
+     },
+     {
+      "t": 1791110755046,
+      "a": "timers",
+      "v": "1"
+     },
+     {
+      "t": 1791110756045,
+      "a": "attempts",
+      "v": "1"
+     },
+     {
+      "t": 1791110756045,
+      "a": "timers",
+      "v": "0"
+     },
+     {
+      "t": 1791110756050,
+      "a": "conn",
+      "v": "refused"
+     },
+     {
+      "t": 1791110756050,
+      "a": "health",
+      "v": "stale"
+     },
+     {
+      "t": 1791110756050,
+      "a": "timers",
+      "v": "1"
+     },
+     {
+      "t": 1791110758050,
+      "a": "attempts",
+      "v": "2"
+     },
+     {
+      "t": 1791110758050,
+      "a": "timers",
+      "v": "0"
+     },
+     {
+      "t": 1791110758054,
+      "a": "conn",
+      "v": "live"
+     },
+     {
+      "t": 1791110758054,
+      "a": "health",
+      "v": "last-known"
+     },
+     {
+      "t": 1791110758055,
+      "a": "health",
+      "v": "live"
+     },
+     {
+      "t": 1791110758055,
+      "a": "episode",
+      "v": "none"
+     },
+     {
+      "t": 1791110758055,
+      "a": "attempts",
+      "v": "0"
+     }
+    ],
+    "second_fault": {
+     "attempts_seen": [
+      1,
+      0
+     ],
+     "episode_seen": [
+      "active",
+      "none"
+     ],
+     "live_after_s": 1.019,
+     "end": {
+      "now": 1791110759517,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 7,
+      "malformed": 4,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 9,
+      "states": 5,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     }
+    }
+   }
+  }
+ ],
+ "problems": [
+  "log error (network): WebSocket connection to 'ws://127.0.0.1:8765/api/v1/events?after=0' failed: Error during WebSocket handshake: Unexpected response code: 503",
+  "log error (network): WebSocket connection to 'ws://127.0.0.1:8765/api/v1/events?after=0' failed: Error during WebSocket handshake: Unexpected response code: 503",
+  "log error (network): WebSocket connection to 'ws://127.0.0.1:8765/api/v1/events?after=0' failed: Error during WebSocket handshake: Unexpected response code: 503",
+  "log error (network): WebSocket connection to 'ws://127.0.0.1:8765/api/v1/events?after=0' failed: Error during WebSocket handshake: Unexpected response code: 503"
+ ],
+ "tally": {
+  "passed": 3,
+  "total": 3
+ }
+}
