@@ -542,6 +542,7 @@
 
   // Keep the newest MAX_ROWS exchanges. Rows that leave are counted and said so; not a gap.
   function trim() {
+    var pruned = false;
     while (S.exCount > MAX_ROWS || (S.entries.length && S.entries[0].kind !== "ex" && S.trimmed > 0)) {
       var old = S.entries.shift();
       rowCache.delete(old.id);
@@ -552,8 +553,18 @@
         count(S.counts.ecu, ecuKey(old.e), -1);
         count(S.counts.service, serviceOf(old.e), -1);
         count(S.counts.outcome, old.e.outcome, -1);
+        delete view.expanded[old.id + ":request"];   // an expansion leaves with its row
+        delete view.expanded[old.id + ":response"];
+        pruned = true;
       }
     }
+    if (pruned) writeExpansions();
+  }
+  // Read-only diagnostic for the browser checks: the payload expansions the page keeps.
+  // Written here, never read by the page.
+  function writeExpansions() {
+    var n = String(Object.keys(view.expanded).length), d = $("log-panel").dataset;
+    if (d.expansionsKept !== n) d.expansionsKept = n;
   }
 
   function dropCounters() {
@@ -1919,8 +1930,11 @@
     view.followFrame = requestAnimationFrame(function () { view.followFrame = 0; renderFollow(); });
   }
   // Leaving follow pins the window at the newest exchange shown at that moment; following
-  // again lets the window slide to the newest.
+  // again lets the window slide to the newest. With no exchange shown (a filter matching
+  // nothing, marker rows only) there is nothing to pin, so the log stays following: it is never
+  // left not following yet not pinned, a window that slides while the reader looks pinned.
   function setFollow(on) {
+    if (!on && view.lastId == null) on = true;
     if (view.follow !== on) {
       view.follow = on;
       view.endId = on ? null : view.lastId;
@@ -2126,7 +2140,8 @@
         if (t.getAttribute("aria-disabled") !== "true") moveWindow(t.dataset.lognav);
       } else if (t.dataset.expand) {
         var key = t.dataset.expand;
-        view.expanded[key] = !view.expanded[key];
+        if (view.expanded[key]) delete view.expanded[key]; else view.expanded[key] = true;
+        writeExpansions();
         rowCache.delete(Number(t.dataset.id));
         view.rowKey = null;          // the row is drawn anew; logRows' key does not hold expansion
         renderLog();
@@ -2164,6 +2179,7 @@
   function renderAll() { renderLink(); renderPlaceholders(); renderStatus(); renderLog(); }
 
   buildControls();
+  writeExpansions();
   graphsBuild();
   watchLogScroll();
   renderAll();

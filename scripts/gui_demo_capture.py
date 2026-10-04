@@ -3240,6 +3240,8 @@ LOG_PROBE = r"""(() => {
     active: a ? (a.id || a.getAttribute('data-lognav') || a.getAttribute('data-expand') || a.tagName) : null,
     scrollTop: Math.round(w.scrollTop), atBottom: w.scrollHeight - w.scrollTop - w.clientHeight < 4,
     conn: document.getElementById('conn-text').textContent,
+    // Task 49: the page's read-only count of the payload expansions it keeps.
+    kept: Number(document.getElementById('log-panel').dataset.expansionsKept),
     m: {add: L.add, rem: L.rem, inRows: L.inRows, nb: L.nb, focusout: L.focusout}};
 })()"""
 
@@ -3993,6 +3995,7 @@ async def case_log_expansion(lg: LogRun) -> None:
              " const c = b.closest('td').querySelector('code');"
              " return [b.getAttribute('aria-expanded'), c.className, c.textContent.split(' ').length]; })()")
     opened = None
+    kept0 = (await lg.probe())["kept"]
     if key:
         await lg.box_at(sel)
         await lg.cdp.click(sel)
@@ -4010,19 +4013,22 @@ async def case_log_expansion(lg: LogRun) -> None:
             break
         came.append(await lg.nav("newer", "enter"))
     back = await lg.cdp.js(state)
+    kept1 = (await lg.probe())["kept"]
     await lg.jump()
     lg.record(
         7, "Payload expansion kept",
         "Pinned, with traffic: a real click on a row's 'show all' opens it (aria-expanded true, hex--open, more than "
         "6 bytes shown); Older moves the window until that row is no longer drawn; Newer brings it back, still "
-        "expanded (aria-expanded true, hex--open, the same bytes)",
+        "expanded (aria-expanded true, hex--open, the same bytes); the page's count of kept expansions "
+        "(data-expansions-kept) is one more than before the click, before and after the row left the window",
         {"a row to expand": key is not None,
+         "the kept-expansions count rose by one and held while the row was out of the window": kept1 == kept0 + 1,
          "opened": opened is not None and opened[0] == "true" and "hex--open" in opened[1] and opened[2] > 6,
          "the row left the window": gone and bool(left),
          "the row came back still expanded": back is not None and opened is not None and back[0] == "true"
          and "hex--open" in back[1] and back[2] == opened[2],
          "every press correct": all(s["ok"] for s in left + came)},
-        {"key": key, "opened": opened, "older_presses": [s["after"] for s in left],
+        {"key": key, "opened": opened, "kept": [kept0, kept1], "older_presses": [s["after"] for s in left],
          "newer_presses": [s["after"] for s in came], "back": back})
 
 
@@ -4059,7 +4065,9 @@ async def case_log_eviction(lg: LogRun) -> None:
         "filters' (then any marker counts). Pinned by a real wheel scroll, a burst until every row of the "
         "reader's window has left the cap: at every 1 s sample the window holds 200 exchanges (never fewer), "
         "contiguous; it stays pinned; at the end it is at the oldest exchanges kept (no Older row) and the note "
-        "adds '" + W_REPIN + "'; counts add up. Jump to newest then follows and the sentence goes",
+        "adds '" + W_REPIN + "'; counts add up. Jump to newest then follows and the sentence goes. The expansion "
+        "case 7 left open is kept while its row is retained (after the following burst) and pruned once its row "
+        "has left the cap (data-expansions-kept back to 0 after the pinned burst; Task 49)",
         {"full buffer at the start": e0["retained"] == PERF_ROWS,
          "following: the trimmed count rises by the arrivals": arrived >= 300 and left == arrived,
          "following: the note's wording": (e1["trimmed"] or "").endswith(
@@ -4080,7 +4088,9 @@ async def case_log_eviction(lg: LogRun) -> None:
          "pinned: the note adds the re-pin sentence": W_REPIN in (z["trimmed"] or ""),
          "pinned: counts add up": acc_p["adds_up"],
          "Jump to newest: following, the sentence gone": after_jump["follow"]["disabled"]
-         and W_REPIN not in (after_jump["trimmed"] or "")},
+         and W_REPIN not in (after_jump["trimmed"] or ""),
+         "an expansion of a retained row is kept": e0["kept"] >= 1 and e1["kept"] == e0["kept"],
+         "an expansion whose row left the cap is pruned": z["kept"] == 0},
         {"retained": e0["retained"], "following": {"trimmed": [trimmed_count(e0), trimmed_count(e1)],
                                                    "arrived": arrived, "note": e1["trimmed"], "count": e1["count"],
                                                    "older": e1["older"], "accounting": acc_f},
@@ -4088,7 +4098,9 @@ async def case_log_eviction(lg: LogRun) -> None:
                     "min_rows": min((s["ex"] for s in pinned), default=None),
                     "windows": [window_of(s) for s in pinned][::3], "end": window_of(z), "note": z["trimmed"],
                     "newer": z["newer"], "count": z["count"], "accounting": acc_p},
-         "after_jump": [after_jump["count"], after_jump["trimmed"]]})
+         "after_jump": [after_jump["count"], after_jump["trimmed"]],
+         "expansions_kept": {"start": e0["kept"], "after_following_burst": e1["kept"],
+                             "after_pinned_burst": z["kept"]}})
 
 
 def mark_with(p: dict[str, Any], prefix: str) -> dict[str, Any] | None:
@@ -4350,6 +4362,89 @@ async def case_log_layout(lg: LogRun) -> None:
     lg.record(9, "Layout", rule, conds, observed)
 
 
+async def case_log_nothing_to_pin(lg: LogRun) -> None:
+    """Task 49: with no exchange shown (a filter matching nothing) there is nothing to pin. Marker
+    rows are drawn and scrolled by the reader; the log must keep following, not be left
+    "not following, not pinned" (a window that slides while the page treats the reader as pinned)."""
+    lg.steady()
+    await lg.cdp.viewport(*lg.size)
+    await lg.cdp.js("window.scrollTo(0, 0)")
+    await lg.jump()
+    await asyncio.sleep(1.0)
+    chips = [i for i, on in await lg.cdp.js("[...document.querySelectorAll('#f-outcome input')]"
+                                              ".map(i => [i.id, i.checked])") if on]
+    for chip in chips:
+        await lg.click(f'label[for="{chip}"]')
+    none = await lg.probe()
+    # Gap markers (the harness keeps one exchange event from the page at a time) until the
+    # marker rows overflow the log box, so the reader can scroll them.
+    made = 0
+    for _ in range(40):
+        if await lg.cdp.js("(() => { const w = document.getElementById('logwrap');"
+                           " return w.scrollHeight > w.clientHeight + 150; })()"):
+            break
+        gaps = await lg.cdp.js("document.querySelectorAll('#log-body tr.mark--gap').length")
+        await lg.cdp.js("window.__lg.drop = 1")
+        await lg.cdp.wait_for(f"document.querySelectorAll('#log-body tr.mark--gap').length > {gaps}", timeout=15)
+        made += 1
+    await lg.settle(0.5)
+    m0 = await lg.probe()
+    box = ("(() => { const w = document.getElementById('logwrap');"
+           " return [Math.round(w.scrollTop), w.scrollHeight - w.clientHeight]; })()")
+    b0 = await lg.cdp.js(box)
+    # The reader's own scroll up over the marker rows. The lowest scroll position reached is
+    # recorded by a scroll listener (a following log may go back to the end at its next render).
+    await lg.cdp.js("(() => { const w = document.getElementById('logwrap'); window.__minTop = w.scrollTop;"
+                    " w.addEventListener('scroll', () => { window.__minTop = Math.min(window.__minTop, w.scrollTop); },"
+                    " {passive: true}); })()")
+    await lg.wheel_up(-300)
+    b1 = await lg.cdp.js(box)
+    min_top = await lg.cdp.js("Math.round(window.__minTop)")
+    w1 = await lg.probe()
+    # Two more markers arrive with no input; then Reset filters brings exchanges back.
+    for _ in range(2):
+        gaps = await lg.cdp.js("document.querySelectorAll('#log-body tr.mark--gap').length")
+        await lg.cdp.js("window.__lg.drop = 1")
+        await lg.cdp.wait_for(f"document.querySelectorAll('#log-body tr.mark--gap').length > {gaps}", timeout=15)
+    await lg.settle(0.5)
+    w2 = await lg.probe()
+    await lg.click("#btn-reset")
+    await asyncio.sleep(1.0)
+    r0 = await lg.probe()
+    await asyncio.sleep(6.0)
+    r1 = await lg.probe()
+    d = delta(r0, r1)
+    await lg.jump()
+    lg.record(
+        10, "No exchange shown: nothing to pin",
+        "Every outcome chip off, so no exchange matches; gap markers (one exchange event kept from the page at a "
+        "time) until the marker rows overflow the log box. A real wheel scroll up over them: with no exchange "
+        "shown there is nothing to pin, so the log stays following (Jump to newest hidden, no count beside it, "
+        "Newer unavailable); markers arriving then are drawn at the end as a following log draws them. Reset "
+        "filters: following, the newest exchange drawn at the bottom of the box, the window sliding over 6 s of "
+        "arrivals (not a window that slides while the page shows the reader as pinned)",
+        {"nothing matches; marker rows drawn and scrollable": none["ex"] == 0 and m0["ex"] == 0
+         and (m0["state"] or "").startswith(W_NOMATCH) and len(m0["marks"]) >= 3 and b0[1] > 150,
+         "the wheel scrolled the box up (the reader's own scroll)": min_top < b0[0],
+         "after the scroll: still following (Jump to newest hidden, no count), Newer unavailable":
+         w1["follow"]["disabled"] and w1["follow"]["text"] == "" and w1["nav"]["newer"] == "true",
+         "markers arriving with no input: still following": w2["follow"]["disabled"] and w2["follow"]["text"] == "",
+         "Reset filters: following, the newest drawn at the bottom": r0["follow"]["disabled"] and r0["atBottom"]
+         and r0["newestVisible"] and r0["ex"] == LOG_WINDOW,
+         "Reset filters: the window slides while following, at the bottom": r1["follow"]["disabled"]
+         and r1["atBottom"] and r1["newestVisible"] and (r1["seqs"] or [0])[-1] > (r0["seqs"] or [0])[-1]
+         and d["add"] > 0},
+        {"chips_off": chips, "gaps_made": made, "marks_drawn": len(m0["marks"]), "state": m0["state"],
+         "box_before_wheel": b0, "lowest_scroll_top_after_wheel": min_top, "box_1s_after_wheel": b1,
+         "after_wheel": {"follow": w1["follow"], "nav": w1["nav"], "atBottom": w1["atBottom"],
+                         "marks": len(w1["marks"])},
+         "after_two_markers": {"follow": w2["follow"], "nav": w2["nav"], "atBottom": w2["atBottom"],
+                               "marks": len(w2["marks"]), "scrollTop": w2["scrollTop"], "newer": w2["newer"]},
+         "after_reset": [{"window": window_of(x), "follow": x["follow"], "atBottom": x["atBottom"],
+                          "newestVisible": x["newestVisible"], "count": x["count"]} for x in (r0, r1)],
+         "mutations_6s": d})
+
+
 # Task 48: every live-region mechanism on the page, and whether the continuously updating parts
 # sit inside one. `live` lists each element carrying aria-live, a live role (status, alert, log,
 # marquee, timer), aria-atomic or aria-relevant; `ancestors` gives, for each continuously
@@ -4513,11 +4608,12 @@ async def m3b_log_session(run: Run, chrome: str, profile_dir: str) -> None:
                 await lg.burst(0, until=lambda p: p["retained"] >= PERF_ROWS, timeout=300)
                 for label, size in (("1440x900", WIDE), ("390x844", NARROW)):
                     await log_width(lg, label, size)
-                # Once, at 1440 x 900, after both widths (it ends with a disconnect and a fault).
+                # Once, at 1440 x 900, after both widths: they add markers, a disconnect and a fault.
                 lg.label, lg.size = "1440x900", WIDE
                 await lg.cdp.viewport(*WIDE)
                 await asyncio.sleep(1.5)
                 await lg.cdp.js("window.scrollTo(0, 0)")
+                await case_log_nothing_to_pin(lg)
                 await case_log_live_regions(lg)
             finally:
                 with contextlib.suppress(ProcessLookupError):
