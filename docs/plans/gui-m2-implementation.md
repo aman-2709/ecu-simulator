@@ -3581,3 +3581,39 @@ disconnect, "Live data restored." for a data fault without a disconnect, nothing
 remains last known, each recovery once, none on first load or on healthy polls); Retry now,
 reconnect timing and the retry budget unchanged; verification by markup and mutation checks, with
 screen-reader behaviour left to the owner.
+
+### Task 52: five full log rows in paused+stale and pinned+stale (owner, 2026-10-04)
+
+Paused while stale and stale while pinned are supported combinations under the five-full-row
+requirement at 1440 x 900. Measured after Task 51b: paused while stale 4 rows (rows region 237 px,
+about 27 px short); stale while pinned 4 rows (the log header wraps to 72.1 px: stale tag + count +
+"N rows below + M beyond this window"). Fix both without removing information and without shrinking
+the graphs further: candidates are the paused text inline with the Pause/Resume/Clear row, and
+keeping the log header on one line by shortening its text or moving the stale tag. Measure before
+choosing. If a larger layout change is needed, STOP and report the concrete alternative first.
+Remove the "recorded, not required" wording (record and capture case); both become required cases.
+
+### Task 53: Pause toggles without aria-pressed (owner, 2026-10-04)
+
+The log and graph Pause/Resume buttons keep their changing labels, accessible names, behaviour,
+focus and paused styling, and lose `aria-pressed`. The graph time-window selectors keep
+`aria-pressed`. Anything keyed on `[aria-pressed="true"]` for the paused look or pause cases
+(`app.css`, `app.js`, `scripts/gui_demo_capture.py`) moves to a class or `data-paused`.
+
+### Task 54: announcement policy (owner, 2026-10-04; refines Task 51)
+
+Routine automatic retry starts and repeated failures stay visible in the banner but are silent.
+Announced once each: the initial disconnect or data fault, a materially different fault, recovery
+exhaustion ("Could not recover"), confirmed recovery (existing wordings; nothing while data stays
+last known). Countdowns and "Ns ago" stay silent; retry timing and budgets unchanged.
+"Materially different fault" is defined in the record (e.g. disconnect -> data fault or the reverse,
+or a different cause). Harness: the "a retry attempt starting" assertion now expects NO announcement
+and a visible banner change; zero mutations between ticks, load-time-outage recovery cases and no
+duplicates stay.
+
+### Task 55: record, review, push
+
+Update `docs/validation/gui-m3b-live-demo.md` (Tasks 47-51 section, rulings, ordered owner
+checklist, remaining-deficit wording, chattiness decision resolved, Pause aria-pressed resolved),
+focused regression checks, required gates, review, fast-forward push of the reviewed head, hosted
+CI report, short owner checklist. M3b stays "implemented, not accepted".
