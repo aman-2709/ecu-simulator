@@ -3464,3 +3464,89 @@ cost, and is not the reported comparison.
   tasks, Event Timing, rows rendered / retained, request rate), what was and was not
   measured, the 40 % estimate stated as an earlier estimate and not a target, the open
   items; M3b stays "implemented, not accepted".
+
+## M3b follow-ups after the log-fix review (owner, 2026-10-03)
+
+The owner's authorization: items 1-3 below, the record wording, the owner checklist, and the
+publication of the final `gui` head for code review (not M3b acceptance). Out of scope:
+artifact-storage migration (LFS), sliders, opendbc, and the separate performance / hardware /
+release tracks. The owner approved these behaviours as built: leaving follow pins the window;
+reaching the bottom of an older window does not jump to live data; Clear view resumes
+following; Older / Newer move by overlapping 100-row steps while preserving the reading
+position (the step still shrinks when needed to keep the anchor row in the window, and a press
+with the window's far end already on screen scrolls instead of moving; the record says so).
+The unidentified full-suite failure is NOT to be chased by repeated runs under load: validation
+saves complete output (`-rfE`), and a recurrence is investigated by its identified test.
+
+### Task 47: Older / Newer / Jump to newest together in the log header
+
+**Files:** `index.html`, `app.js`, `app.css`; `scripts/gui_demo_capture.py`.
+- The Older and Newer buttons move out of the table's `#log-head` / `#log-tail` rows into the
+  log panel's header, beside "Jump to newest" (`#btn-follow`), in the order Older, Newer, Jump
+  to newest. The explanatory rows stay in the table as plain text (the "outside this window"
+  wording and the marker counts, now pointing at the header controls, no buttons), so there is
+  one tab stop per direction. Visible text "Older" / "Newer" / "Jump to newest"; each
+  accessible name starts with its visible text; no numbers in labels.
+- An unavailable direction (nothing older / newer) is `aria-disabled="true"`, never
+  `disabled`, so a pressed button that becomes unavailable keeps focus; pressing it does
+  nothing.
+- Focus is predictable: after Older or Newer the focus stays on the pressed header button (the
+  header never scrolls away), however many times it is pressed; the earlier "focus goes to the
+  log box" rule is removed. After "Jump to newest", which hides itself when the log is
+  following again, focus moves to the log box (`#logwrap`), because the control it was on has
+  gone. Focus is never left on `body` by these actions.
+- The anchor-only step rule, the step-0 scroll, the full-window re-pin and everything else in
+  Task 43's behaviour are unchanged.
+- Vertical budget: at least 5 full log rows at 1440 × 900 in the steady, pinned (with the
+  "beyond this view" count), disconnect-gap, encoding-gap and the worst wrapped
+  three-notice states, with the header measured in each. If the header wraps at 1440, shorten
+  the count line, not the plots. Narrower widths may wrap; no horizontal overflow at 1200,
+  1440, 2000 and 390.
+- Update the capture cases that assert the old behaviour (`--m3b-log` navigation, focus and
+  wording cases; the M3a jump check), keeping each rule's meaning.
+
+### Task 48: no automatic announcements from the continuously changing log counter
+
+**Files:** `index.html`, `app.js`; `scripts/gui_demo_capture.py`.
+- Remove `aria-live` from `#log-count`. The visible counts are unchanged. `#linkstate`
+  (`role="status"`, the connection and fault banner) stays. The page has exactly these two live
+  regions today (grep); confirm no other continuously changing region is announced.
+- Capture check: the live regions on the page are exactly `#linkstate`; `#log-count` and every
+  other continuously updating element have no live-region ancestor; during 20 s of traffic the
+  live region's mutation count is 0 while the log counter text does change; on a disconnect and
+  on a fault, `#linkstate` does change (the meaningful announcement is preserved). Automation
+  verifies markup and mutations, not what a screen reader says; the record says so.
+
+### Task 49: prune expansion state on eviction; the "not following, not pinned" state
+
+**Files:** `app.js`, `index.html` (a read-only diagnostic attribute only if needed);
+`scripts/gui_demo_capture.py`.
+- `view.expanded` entries are removed when their entry is evicted from `S.entries`
+  (`trim()`); expansion of rows still retained is kept. Regression: expand a row, evict it past
+  the 2,000 cap, and show the expansion state no longer holds it (a small read-only
+  diagnostic count the harness reads, written by the page and never read by it, like the
+  page's other `data-*` diagnostics).
+- Investigate `setFollow(false)` with no exchange shown (`view.lastId == null`), which leaves
+  `follow = false, endId = null`: reproduce it through the harness (a filter that matches
+  nothing while marker rows are drawn and scrolled). If it violates reader position or
+  navigation (a window that keeps sliding while the page treats the reader as pinned), fix it:
+  with no exchange shown there is nothing to pin, so the log stays following. Add a focused
+  regression; if it cannot be reproduced or does not violate behaviour, report the evidence
+  and change nothing.
+
+### Task 50: the record, the owner checklist, and publication
+
+**Files:** the records under `docs/validation/`; no code.
+- Correct the performance record's 48 ms versus 32 ms wording: name the conditions of each
+  measurement (headless Chrome 151, GPU disabled, 1440 × 900, full buffer, about 3.8 requests/s,
+  p95 of a scripted click's Event Timing, the page with the old box-shadow beat versus the
+  ring, two runs per width, 390 unchanged). The visible-browser result stays unverified.
+- Update the rulings list (the focus rule replaced; the approvals above recorded as owner
+  approvals), mark the keyboard-Newer and `#log-count` findings and the two cleanups resolved
+  as plain lines with what automation verified and what still needs the owner's observation;
+  no box ticked; M3b not accepted.
+- An ordered owner checklist with commands: the visual review, the Chrome and Firefox CSP
+  checks, and the isolated fault checks; automation-verified items marked apart from items
+  that need the owner's observation.
+- After review, the affected checks and the required gates: push the final `gui` head as a
+  fast-forward and report the exact SHA and hosted CI with skip reasons.
