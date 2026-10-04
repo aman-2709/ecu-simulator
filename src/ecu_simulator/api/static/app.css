@@ -149,6 +149,11 @@ abbr[title] { text-decoration: underline dotted; text-underline-offset: 2px; cur
 .linkstate--refused { background: var(--er-bg); border-bottom-color: var(--er); }
 .linkstate--refused b { color: var(--er); }
 .linkstate--known { border-bottom-style: dotted; }
+/* The announcer (#announce): read by screen readers, not shown, and takes no space. */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
 
 /* ---------- stale marking: data kept, never presented as current ---------- */
 .stale-tag {

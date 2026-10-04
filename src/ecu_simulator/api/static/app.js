@@ -97,6 +97,7 @@
   var rowCache = new Map();
   var renderTimer = null, lastRender = 0;
   var vehicleCells = null, vehicleKey = null, dtcKey = null;
+  var linkKey = null;                // the banner's stable text at its last build (renderLink)
 
   // ---------- helpers ----------
   function $(id) { return document.getElementById(id); }
@@ -1135,6 +1136,7 @@
     });
     renderMalformed();
     writeDiagnostics(reason);
+    announceState();
     var retry = S.retryAt ? Math.max(0, Math.ceil((S.retryAt - Date.now()) / 1000)) : null;
     if (S.conn === "live" && !S.req) {
       conn.className = "conn conn--live";
@@ -1160,30 +1162,48 @@
     if (!stale && !exhausted && !faultText) { box.hidden = true; return; }
     box.hidden = false;
     box.className = "linkstate" + (S.conn === "refused" && !exhausted ? " linkstate--refused" : !stale ? " linkstate--known" : "");
-    // The text is rebuilt every second; the button is not, so a click is never lost to a re-render.
+    // The banner is not a live region (#announce is, Task 51). Its text has stable parts and
+    // ticking parts: the retry countdown and "N s ago", each in an inline span in the sentence.
+    // The stable parts are rebuilt only when they change; each second only a tick's span is
+    // rewritten. The button is never rebuilt, so a click is never lost to a re-render.
     var p = $("linkstate-text"), button = $("btn-retry");
     if (!p) {
       p = el("p", { id: "linkstate-text" });
       button = el("button", { type: "button", id: "btn-retry" });
       box.append(p, button);
     }
-    var episode = episodeActive() ? " Recovery attempt " + S.ep.attempts + " of " + EPISODE_ATTEMPTS +
-      (retry == null ? (S.ep.inFlight ? " is under way." : ".") : (S.ep.attempts ? " failed; the next" : "; the first") + " starts in " + retry + " s.") : "";
+    // Segments: a string, { b: bold text } or { tick: ticking text }.
+    var segs;
+    var episode = !episodeActive() ? [] : retry == null ?
+      [" Recovery attempt " + S.ep.attempts + " of " + EPISODE_ATTEMPTS + (S.ep.inFlight ? " is under way." : ".")] :
+      [" Recovery attempt " + S.ep.attempts + " of " + EPISODE_ATTEMPTS + (S.ep.attempts ? " failed; the next" : "; the first") + " starts in ",
+        { tick: retry + " s" }, "."];
     if (exhausted) {
-      p.replaceChildren(el("b", { text: "Could not recover:" }), " " + (faultText || "the page could not get a complete state.") +
+      segs = [{ b: "Could not recover:" }, " " + (faultText || "the page could not get a complete state.") +
         " The page made " + EPISODE_ATTEMPTS + " attempts to get a complete state and does not try again by itself." +
-        (S.ep.last ? " Last attempt: " + S.ep.last + "." : ""));
+        (S.ep.last ? " Last attempt: " + S.ep.last + "." : "")];
     } else if (stale) {
       var lead = S.conn === "refused" ? "Connection refused." : "Disconnected.";
-      var since = S.downAt ? " Last live " + utc(S.downAt) + " (" + ago(S.downAt) + "). The views below show data as of then." :
-        " No data has been received yet.";
+      var since = S.downAt ? [" Last live " + utc(S.downAt) + " (", { tick: ago(S.downAt) }, "). The views below show data as of then."] :
+        [" No data has been received yet."];
       var why = S.cause || S.reason || "unknown";
       if (S.reason && S.cause && S.reason !== S.cause) why = S.cause + (/\.$/.test(S.cause) ? "" : ".") + " Latest retry: " + S.reason;
-      p.replaceChildren(el("b", { text: lead }), since + " Reason: " + why + (/\.$/.test(why) ? " " : ". ") +
-        (episode ? episode.slice(1) : retry == null ? "Reconnecting now." : "Retrying in " + retry + " s (" + S.attempt + (S.attempt === 1 ? " failed attempt" : " failed attempts") +
-          "; the wait doubles from " + BACKOFF_START_MS / 1000 + " s to at most " + BACKOFF_CAP_MS / 1000 + " s)."));
+      var next = episode.length ? [episode[0].slice(1)].concat(episode.slice(1)) : retry == null ? ["Reconnecting now."] :
+        ["Retrying in ", { tick: retry + " s" }, " (" + S.attempt + (S.attempt === 1 ? " failed attempt" : " failed attempts") +
+          "; the wait doubles from " + BACKOFF_START_MS / 1000 + " s to at most " + BACKOFF_CAP_MS / 1000 + " s)."];
+      segs = [{ b: lead }].concat(since, [" Reason: " + why + (/\.$/.test(why) ? " " : ". ")], next);
     } else {
-      p.replaceChildren(el("b", { text: "Last known data." }), " " + faultText + episode);
+      segs = [{ b: "Last known data." }, " " + faultText].concat(episode);
+    }
+    var key = segs.map(function (s) { return typeof s === "string" ? s : s.b != null ? "<b>" + s.b + "</b>" : "<tick>"; }).join("");
+    if (key !== linkKey) {
+      linkKey = key;
+      p.replaceChildren.apply(p, segs.map(function (s) {
+        return typeof s === "string" ? s : s.b != null ? el("b", { text: s.b }) : el("span", { cls: "linkstate__tick", text: s.tick });
+      }));
+    } else {
+      var ticks = p.getElementsByClassName("linkstate__tick"), k = 0;
+      segs.forEach(function (s) { if (typeof s !== "string" && s.tick != null) setText(ticks[k++], s.tick); });
     }
     // The button is M3a's "Retry now" while stale, and the only way on after exhaustion.
     // While an episode is active its own timer starts the next attempt: no early attempt by hand.
@@ -1198,15 +1218,19 @@
       r.incomplete ? "an incomplete state message" : "an unreadable message";
   }
 
+  // What a malformed requirement's messages were, in the banner's and the announcer's words.
+  function malformedSent(r) {
+    return "the simulator sent " + (r.incomplete && !r.unreadable ? "an incomplete state message" :
+      r.incomplete ? "a message this page could not read and an incomplete state message" : "a message this page could not read");
+  }
+
   // The banner names the cause of a malformed or encoding requirement; null for none.
   function faultSentence(exhausted) {
     var r = S.req;
     if (!hasFault()) return null;
     var parts = [];
     if (r.malformed) {
-      parts.push("the simulator sent " + (r.incomplete && !r.unreadable ? "an incomplete state message" :
-        r.incomplete ? "a message this page could not read and an incomplete state message" : "a message this page could not read") +
-        " (" + S.malformed + " malformed so far)" +
+      parts.push(malformedSent(r) + " (" + S.malformed + " malformed so far)" +
         (exhausted ? "." : ", so the page reconnects to get a complete state."));
     }
     if (r.encoding) {
@@ -1218,6 +1242,105 @@
     var text = parts.join(" Also, ");
     return text.charAt(0).toUpperCase() + text.slice(1) + " The views show the last state applied" +
       (S.dataAt ? ", at " + utc(S.dataAt) : "") + ".";
+  }
+
+  // ---------- announcements (Task 51) ----------
+  // One visually hidden live region, #announce (role status, polite, atomic), says every
+  // transition: a disconnect or refusal, a data fault, each retry or recovery attempt as it starts
+  // and as it fails, exhaustion, and a recovery. Nothing else on the page is a live region, so the
+  // banner's countdown and "N s ago", which change every second, are never announced. A transition
+  // is a change of annState(), which holds no ticking value; renderLink() calls announceState()
+  // on every render, and only a changed state can speak. Each announcement replaces the region's
+  // content with a fresh element, so a repeated message is announced again and an earlier one is
+  // never read with it (the region is atomic); the element is removed ANNOUNCE_CLEAR_MS later.
+  // Recovery (S.conn live and S.data current again) is said once: "Connection restored; data
+  // current." when the outage included a disconnect (S.conn left live), "Live data restored." for a
+  // data fault without one. The first Live of a page load is not a recovery and says nothing.
+  var ANNOUNCE_CLEAR_MS = 10000;
+  var ann = { key: null, last: null, everLive: false, hadDisconnect: false, hadFault: false, timer: null };
+
+  function annState() {
+    if (S.conn === "loading") return { kind: "loading" };
+    if (S.conn === "live" && !S.req) return { kind: "live" };
+    // Connected, the first state not here yet: no announcement until it is (or a fault comes).
+    if (S.conn === "live" && !hasFault() && !S.ep) return { kind: "connecting" };
+    var stale = isStale(), r = S.req || {};
+    return { kind: "trouble", conn: S.conn,
+      why: reasonOf() + (r.unreadable ? " unreadable" : "") + (r.incomplete ? " incomplete" : ""),
+      ep: S.ep ? S.ep.state : "none", attempts: S.ep ? S.ep.attempts : 0, inFlight: !!S.ep && S.ep.inFlight,
+      tries: stale && !S.ep ? S.attempt : 0, connecting: stale && !S.ep && S.connecting, reason: stale ? S.reason : null };
+  }
+
+  function sentence(s) { return /[.!?]$/.test(s) ? s : s + "."; }
+
+  // The cause of the pending data fault, for an announcement; null for none.
+  function faultCause() {
+    var r = S.req;
+    if (!hasFault()) return null;
+    return [r.malformed ? malformedSent(r) : null, r.encoding ? "the simulator could not build its full state" : null]
+      .filter(Boolean).join(", and ");
+  }
+
+  // What the change from state p to state c says, or null.
+  function annText(p, c) {
+    if (c.kind === "live") {
+      var said = !ann.everLive ? null : ann.hadDisconnect ? "Connection restored; data current." :
+        ann.hadFault ? "Live data restored." : null;
+      ann.everLive = true; ann.hadDisconnect = false; ann.hadFault = false;
+      return said;
+    }
+    if (c.kind !== "trouble") return null;
+    var stale = c.conn !== "live", was = p && p.kind === "trouble" ? p : null, wasStale = !!was && was.conn !== "live";
+    var entering = stale && !wasStale, cause = faultCause(), out = [];
+    // An attempt whose socket has opened goes on: its state decides, so the connection's return
+    // alone says nothing (the data is still last known until that state qualifies).
+    if (c.ep === "active" && c.inFlight && was && was.ep === "active" && was.inFlight && was.attempts === c.attempts) return null;
+    if (stale) ann.hadDisconnect = true;
+    if (cause) ann.hadFault = true;
+    if (entering) out.push((c.conn === "refused" ? "Connection refused." : "Disconnected.") + " Reason: " + sentence(S.cause || S.reason || "unknown"));
+    if (c.ep === "exhausted") {
+      if (!was || was.ep !== "exhausted") {
+        out.push("Could not recover: " + (cause || "the page could not get a complete state") + ". The page made " + EPISODE_ATTEMPTS +
+          " attempts and does not try again by itself; use Retry now to try again.");
+      } else if (entering) out.push("The page does not try again by itself; use Retry now to try again.");
+      return out.length ? out.join(" ") : null;
+    }
+    // A data fault entering (or a second cause added) while connected; after a disconnect this is
+    // the connection back with the data still last known, never a recovery.
+    if (!stale && cause && (!was || wasStale || was.why !== c.why)) {
+      out.push((ann.hadDisconnect ? "Reconnected, but the data is still last known: " : "Last known data: ") + cause + ".");
+    }
+    if (c.ep === "active") {
+      var n = " " + c.attempts + " of " + EPISODE_ATTEMPTS;
+      if (c.inFlight) out.push("Recovery attempt" + n + " under way.");
+      else if (c.attempts > 0) {
+        if (!(was && was.ep === "active" && was.attempts === c.attempts && !was.inFlight)) {
+          out.push("Recovery attempt" + n + " failed" + (entering ? "." : ": " + sentence(S.ep.last || "unknown")));
+        }
+      } else {
+        out.push(was && was.ep === "exhausted" ? "Retrying: a new recovery of " + EPISODE_ATTEMPTS + " attempts starts." :
+          "The page reconnects to get a complete state.");
+      }
+    } else if (stale) {
+      if (c.connecting) out.push("Reconnecting: retry " + c.tries + ".");
+      else if (!entering) out.push("Retry " + Math.max(1, c.tries - 1) + " failed: " + sentence(S.reason || "unknown") + " The page retries on its own.");
+      else out.push("The page retries on its own.");
+    } else if (S.req && S.req.encoding && !(was && was.why === c.why)) {
+      out.push("The page keeps polling and reconnects once the simulator reports that it can build its state again.");
+    }
+    return out.length ? out.join(" ") : null;
+  }
+
+  function announceState() {
+    var c = annState(), key = JSON.stringify(c);
+    if (key === ann.key) return;
+    var text = annText(ann.last, c);
+    ann.key = key; ann.last = c;
+    if (!text) return;
+    var box = $("announce");
+    box.replaceChildren(el("p", { text: text }));
+    clearTimeout(ann.timer);
+    ann.timer = setTimeout(function () { box.replaceChildren(); }, ANNOUNCE_CLEAR_MS);
   }
 
   function renderMalformed() {
@@ -1236,6 +1359,7 @@
     d.health = S.conn !== "live" ? "stale" : S.req ? "last-known" : "live";
     d.episode = S.ep ? S.ep.state : "none";
     d.attempts = String(S.ep ? S.ep.attempts : 0);
+    d.retries = String(S.attempt);                      // M3a's failed-attempt count (the banner's "N failed attempts")
     d.timers = String(S.retryTimer != null ? 1 : 0);   // the single S.retryTimer slot; only armRetry() schedules it
     d.polls = String(S.polls);
     d.malformedTotal = String(S.malformed);
