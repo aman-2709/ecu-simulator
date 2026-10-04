@@ -1654,26 +1654,22 @@
   }
   // The window's edges, built once and updated in place (stable nodes, text set only when it
   // changes), in their own table bodies around #log-body: the note on rows that left the cap
-  // and the Older row above, the Newer row below a pinned window. A focused button there
-  // keeps the focus through every routine render. Text, not colour alone.
+  // and the Older row above, the Newer row below a pinned window. They are plain text: what
+  // lies beyond, and which header control (Older, Newer, Jump to newest) brings it in; the
+  // controls themselves are in the log header, one tab stop each. Text, not colour alone.
   var edges = null;
   function edgeNodes() {
     if (edges) return edges;
-    function nav(side, buttons) {
+    function nav(side) {
       var text = el("p", { cls: "lognav__text" });
-      var tr = el("tr", { id: "lognav-" + side, cls: "lognav lognav--" + side, hidden: true }, [el("td", { colspan: "9" }, [
-        el("div", { cls: "lognav__in" }, [text, el("div", { cls: "lognav__buttons" }, buttons)])])]);
+      var tr = el("tr", { id: "lognav-" + side, cls: "lognav lognav--" + side, hidden: true }, [el("td", { colspan: "9" }, [text])]);
       return { tr: tr, text: text };
     }
-    var older = el("button", { type: "button", cls: "compact", "data-lognav": "older" }, ["Show older exchanges"]);
-    var newer = el("button", { type: "button", cls: "compact", "data-lognav": "newer" }, ["Show newer exchanges"]);
-    var newest = el("button", { type: "button", cls: "compact", "data-lognav": "newest",
-      "aria-label": "Jump to newest exchange and follow new ones" }, ["Jump to newest"]);
     var title = el("span", { cls: "mark__title" }), note = el("span");
     edges = {
       trimmed: el("tr", { id: "log-trimmed", cls: "mark mark--note", hidden: true }, [el("td", { colspan: "9" }, [title, note])]),
       trimmedTitle: title, trimmedText: note,
-      older: nav("older", [older]), newer: nav("newer", [newer, newest]), newerButton: newer
+      older: nav("older"), newer: nav("newer")
     };
     $("log-head").append(edges.trimmed, edges.older.tr);
     $("log-tail").append(edges.newer.tr);
@@ -1681,12 +1677,15 @@
   }
   function showEdge(node, on) { if (node.hidden !== on) return false; node.hidden = !on; return true; }
   // What lies beyond the window on one side: the count of matching exchanges there, then the
-  // gap / note / hidden counts.
+  // gap / note / hidden counts, then the header control that brings them in.
   function edgeText(side, c) {
     var n = side === "older" ? c.olderMatching : c.newerMatching;
     var lead = n ? plural(n, side + " exchange matches", side + " exchanges match") + " your filters"
       : "No " + side + " exchange matches your filters";
-    return [lead].concat(beyondParts(c, side)).join("; ") + ".";
+    var how = side === "older" ? " Use Older in the log header to show them." :
+      n ? " Use Newer or Jump to newest in the log header to show them." :
+        " Use Jump to newest in the log header to show them and follow new ones.";
+    return [lead].concat(beyondParts(c, side)).join("; ") + "." + how;
   }
   // The edges as they should read, worked out before anything is written, so a render can
   // tell whether the rows above the window move (the trimmed note and the Older row) first.
@@ -1702,7 +1701,7 @@
         (view.leftCap && view.endId != null ? " Rows this view was showing left too, so it moved to the oldest exchanges kept." : "");
     }
     if (p.older) p.olderText = edgeText("older", c);
-    if (p.newer) { p.newerText = edgeText("newer", c); p.newerButton = c.newerMatching > 0; }
+    if (p.newer) p.newerText = edgeText("newer", c);
     return p;
   }
   // Whether the edges above the window would change: shown or hidden, or their text.
@@ -1719,7 +1718,7 @@
     w = showEdge(x.older.tr, p.older) | w;
     if (p.older) w = setText(x.older.text, p.olderText) | w;
     w = showEdge(x.newer.tr, p.newer) | w;
-    if (p.newer) w = setText(x.newer.text, p.newerText) | showEdge(x.newerButton, p.newerButton) | w;
+    if (p.newer) w = setText(x.newer.text, p.newerText) | w;
     return !!w;
   }
   // Puts `nodes` in `parent` in order, touching only what differs: a row that stays is never
@@ -1810,11 +1809,9 @@
     var h = S.hello, mine = c.matching === c.inView, of = mine ? c.inView : c.matching, extra = [];
     var counted = c.shown === c.inView ? plural(c.inView, "exchange", "exchanges") :
       fmtN(c.shown) + " of " + fmtN(of) + (mine ? " shown" : " matching shown");
-    if (c.shown < c.inView && view.shownRows.length) {
-      var s0 = sel.items.filter(function (it) { return it.kind === "entry" && it.entry.kind === "ex"; });
-      var a0 = s0[0].entry.e.seq, a1 = s0[s0.length - 1].entry.e.seq;
-      extra.push(a0 <= a1 ? "seq " + fmtN(a0) + "–" + fmtN(a1) : "seq " + fmtN(a0) + " … " + fmtN(a1) + " across a restart");
-    }
+    // Kept short, so the log header stays one line at 1440 with Older, Newer and the jump
+    // control's count beside it: the window's seq range is not named (its rows show it, and a
+    // restart inside it is a marker row there).
     if (S.exCount !== of) extra.push(fmtN(S.exCount) + " retained");
     if (extra.length) counted += " (" + extra.join("; ") + ")";
     setText($("log-count"), !h && S.lastSeq == null ? "" : counted +
@@ -1862,8 +1859,9 @@
     if (Math.abs(d) >= 1) wrap.scrollTop += d;
   }
   // The focus is moved only when a render removed or hid the focused control in the log (a
-  // window shift took its row): then it goes to the log box itself, not to the page's top.
-  // A routine render leaves it alone.
+  // window shift took the row of a focused "show all"): then it goes to the log box itself,
+  // not to the page's top. A routine render leaves it alone. The header controls are outside
+  // the table: a render never takes the focus from them.
   function logFocused() {
     var a = document.activeElement;
     return a instanceof HTMLElement && a !== $("logwrap") && $("log").contains(a) ? a : null;
@@ -1884,24 +1882,30 @@
     }
     return rows.length - lo;
   }
-  // The control lives in the log header and always keeps its place (visibility, not display),
-  // so showing it never moves a row, and it never lies over one. Its count is the shown rows
-  // below the visible part of the log, plus the matching exchanges beyond a pinned window.
-  // The rows below are measured again only when `measure` says they may have moved (a scroll,
-  // a resize, rows or edges changed); otherwise the last count stands. Nothing is written
-  // that is already so.
+  function setAttr(node, name, value) { if (node.getAttribute(name) !== value) node.setAttribute(name, value); }
+  // The log header's controls: Older, Newer, then Jump to newest with its count beside it.
+  // Older and Newer always keep their place; a direction with nothing to bring is
+  // aria-disabled (never disabled, so a focused button that becomes unavailable keeps the
+  // focus) and a press on it does nothing. Jump to newest keeps its place too (visibility, not
+  // display), so showing it never moves a row, and it never lies over one; it is shown only
+  // while the log is not following. Its count, in plain text beside it (no number in a
+  // control's name), is the shown rows below the visible part of the log, plus the matching
+  // exchanges beyond a pinned window. The rows below are measured again only when `measure`
+  // says they may have moved (a scroll, a resize, rows or edges changed); otherwise the last
+  // count stands. Nothing is written that is already so.
   function renderFollow(measure) {
-    var b = $("btn-follow");
+    var b = $("btn-follow"), c = view.counts;
     if (view.follow) view.below = 0;
     else if (measure !== false) view.below = rowsBelow();
     var n = view.below;
-    var beyond = !view.follow && view.counts ? view.counts.newerMatching : 0;
+    var beyond = !view.follow && c ? c.newerMatching : 0;
+    setAttr($("btn-older"), "aria-disabled", String(!(c && c.olderMatching > 0)));
+    setAttr($("btn-newer"), "aria-disabled", String(!(c && view.endId != null && c.newerMatching > 0)));
     b.classList.toggle("is-off", view.follow);
     if (b.disabled !== view.follow) b.disabled = view.follow;
-    if (b.getAttribute("aria-hidden") !== String(view.follow)) b.setAttribute("aria-hidden", String(view.follow));
-    var parts = n > 0 ? plural(n, "row below", "rows below") + (beyond ? " + " + fmtN(beyond) + " beyond this window" : "") :
-      beyond ? plural(beyond, "row", "rows") + " beyond this window" : "";
-    setText(b, parts ? parts + ", jump to newest" : "Jump to newest");
+    setAttr(b, "aria-hidden", String(view.follow));
+    setText($("log-below"), n > 0 ? plural(n, "row below", "rows below") + (beyond ? " + " + fmtN(beyond) + " beyond this window" : "") :
+      beyond ? plural(beyond, "row", "rows") + " beyond this window" : "");
   }
   // A shorter list or a smaller box makes the browser move the scroll position itself (it
   // clamps to the new end). That move is the layout's, not the reader's: remember where it
@@ -1935,7 +1939,6 @@
   }
   // Older / Newer move a pinned window by LOG_STEP matching exchanges (Older first pins a
   // following window where it is); Newer reaching the newest, and Jump to newest, follow again.
-  // The exchange rows in the log box stay in the window: the step shrinks if it would drop them.
   // The reader's anchor stays in the window: Older keeps the topmost exchange row in view,
   // Newer the bottom-most, and the step shrinks only if it would drop it. When the step is 0
   // (the window's far end is already in view), the press scrolls the log box to the window's
@@ -2006,10 +2009,10 @@
         scheduleFollow();
       }).observe(wrap);
     }
+    // The control hides itself once the log follows again, so the focus moves to the log box.
     $("btn-follow").addEventListener("click", function () {
-      var focused = document.activeElement === this;
       moveWindow("newest");
-      if (focused) wrap.focus({ preventScroll: true });   // the control hides while following
+      wrap.focus({ preventScroll: true });
     });
   }
 
@@ -2118,8 +2121,9 @@
         view.ecu = "all"; view.service = "all"; view.outcomes = OUTCOMES.slice();
         syncControls(); filtersChanged(); $("f-ecu").focus();
       } else if (t.dataset.lognav) {
-        moveWindow(t.dataset.lognav);
-        $("logwrap").focus({ preventScroll: true });     // never an off-screen button (WCAG 2.4.11)
+        // Older / Newer in the log header: the focus stays on the pressed button, which never
+        // scrolls away, however often it is pressed. An unavailable one does nothing.
+        if (t.getAttribute("aria-disabled") !== "true") moveWindow(t.dataset.lognav);
       } else if (t.dataset.expand) {
         var key = t.dataset.expand;
         view.expanded[key] = !view.expanded[key];

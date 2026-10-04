@@ -307,8 +307,16 @@ fieldset.outcomes legend { padding: 0; margin-bottom: 0.143rem; float: left; wid
 /* The page keeps the reader's rows in place itself (app.js keepAnchor), so the browser's own
    scroll anchoring is off here: two adjustments for one window shift would move the rows. */
 .logwrap { overflow: auto; min-height: 14.286rem; overflow-anchor: none; }
-/* The jump control sits in the log header, not over the rows. It always keeps its space;
-   while following it is invisible, so appearing never shifts anything. */
+/* The log header's controls: Older, Newer, then the jump control with its count beside it.
+   Jump to newest sits in the header, not over the rows. It always keeps its space; while
+   following it is invisible, so appearing never shifts anything. */
+#log-panel > .panel__head { column-gap: 0.429rem; }
+.lognav-ctl { display: flex; align-items: center; gap: 0.286rem; }
+.follow__n { margin-left: 0.286rem; color: var(--ink-2); font-size: 0.857rem; }
+.follow__n:empty { display: none; }
+/* A direction with nothing to bring: still focusable (aria-disabled), visibly unavailable. */
+button[aria-disabled="true"] { color: var(--ink-2); background: transparent; border-style: dashed; cursor: default; }
+button[aria-disabled="true"]:hover { border-color: var(--rule-2); }
 .follow {
   min-height: 0; padding: 0.143rem 0.571rem;
   font-size: 0.857rem; line-height: 1.3;
@@ -366,11 +374,9 @@ td.c-ecu { white-space: nowrap; }
 .mark--note td { color: var(--ink-2); background: var(--panel); border-bottom: 1px solid var(--rule); }
 .mark__title { margin-right: 0.429rem; font-weight: 700; }
 .hiddenrow td { padding: 0.143rem 0.429rem; font-size: 0.786rem; color: var(--ink-2); background: var(--panel-2); border-bottom: 1px solid var(--rule); }
-/* Older / Newer: the window's edges. What lies beyond is in words; the buttons bring it in. */
+/* The window's edges, in words: what lies beyond, and the header control that brings it in. */
 .lognav td { padding: 0.357rem 0.571rem; font-size: 0.857rem; background: var(--panel-2); border-top: 1px solid var(--rule-2); border-bottom: 1px solid var(--rule-2); }
-.lognav__in { display: flex; flex-wrap: wrap; align-items: center; gap: 0.286rem 0.857rem; }
-.lognav__text { flex: 1 1 18rem; min-width: 0; color: var(--ink); }
-.lognav__buttons { display: flex; flex-wrap: wrap; gap: 0.286rem; }
+.lognav__text { color: var(--ink); }
 
 .logfoot { padding: 0.571rem 0.857rem 0.714rem; border-top: 1px solid var(--rule); font-size: 0.857rem; color: var(--ink-2); display: grid; gap: 0.143rem; }
 
@@ -498,7 +504,8 @@ button.compact { min-height: 0; padding: 0.143rem 0.571rem; font-size: 0.857rem;
   .log td.c-us::before { content: "disp. "; font-family: var(--sans); }
   .log td.c-us::after { content: " µs"; font-family: var(--sans); }
   .log tr.mark, .log tr.hiddenrow, .log tr.lognav, .log tr.mark td, .log tr.hiddenrow td, .log tr.lognav td { display: block; }
-  .lognav__buttons button.compact { min-height: 2.286rem; }
+  .lognav-ctl { flex-wrap: wrap; }
+  .lognav-ctl button.compact, .lognav-ctl .follow { min-height: 2.286rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -93,7 +93,13 @@
       <h2 id="log-h">Exchange log</h2>
       <span class="stale-tag" hidden></span>
       <span class="panel__meta" id="log-count" aria-live="polite"></span>
-      <button type="button" class="follow is-off" id="btn-follow" disabled aria-hidden="true">Jump to newest</button>
+      <div class="lognav-ctl" role="group" aria-label="Log window">
+        <button type="button" class="compact" id="btn-older" data-lognav="older" aria-disabled="true" aria-label="Older exchanges">Older</button>
+        <button type="button" class="compact" id="btn-newer" data-lognav="newer" aria-disabled="true" aria-label="Newer exchanges">Newer</button>
+        <span class="follow__n" id="log-below"></span>
+        <button type="button" class="follow is-off" id="btn-follow" disabled aria-hidden="true"
+                aria-label="Jump to newest exchange and follow new ones" aria-describedby="log-below">Jump to newest</button>
+      </div>
     </div>
 
     <div class="logbar" role="group" aria-label="Log view controls (this view only)">
