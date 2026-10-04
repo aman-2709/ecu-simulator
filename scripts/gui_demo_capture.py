@@ -3304,7 +3304,7 @@ def trimmed_count(p: dict[str, Any]) -> int | None:
 def accounting(p: dict[str, Any]) -> dict[str, Any]:
     """The count line, the Older / Newer rows and the drawn rows, read as text: matching =
     older + shown + newer, and the count line's shown = the exchange rows drawn."""
-    m = re.match(r"([\d,]+) of ([\d,]+) (?:matching )?shown", p["count"])
+    m = re.match(r"([\d,]+) of ([\d,]+) (?:matching|shown)\b", p["count"])
     one = re.match(r"([\d,]+) exchanges?\b", p["count"])
     if m:
         shown, of = n_of(m.group(1)), n_of(m.group(2))
@@ -3691,7 +3691,7 @@ async def case_log_pause(lg: LogRun) -> None:
          "Clear view: no row up to the clear drawn, 2,000 retained": all(s > l0 for s in k0["seqs"] + k1["seqs"])
          and k0["retained"] == k1["retained"] == PERF_ROWS,
          "Clear view: new exchanges appear, following": k1["ex"] > 0 and k1["follow"]["disabled"]
-         and "2,000 retained" in k1["count"],
+         and k1["count"].startswith(fmt_n(k1["ex"]) + " exchange"),
          "paused and cleared: the cleared line with Show cleared rows": k2["ex"] == 0
          and (k2["state"] or "").find(W_CLEARED) >= 0 and "Show cleared rows" in (k2["state"] or ""),
          "Show cleared rows: the 200-row window back": k3["ex"] == 200 and k3["paused"],
@@ -3724,7 +3724,7 @@ async def case_log_filters(lg: LogRun) -> None:
     lg.note("outside", f["older"])
     for x in f["hidden"]:
         lg.note("hidden", x)
-    count_re = rf"{LOG_WINDOW} of {fmt_n(LOG_UNIQUE)} matching shown \(2,000 retained\)"
+    count_re = rf"{LOG_WINDOW} of {fmt_n(LOG_UNIQUE)} matching, last seq \d+"
     conds.update({
         "0x0A: one rebuild": df["nb"] == 1,
         "0x0A: the count line": re.match(count_re, f["count"]) is not None,
@@ -3814,7 +3814,7 @@ async def case_log_filters(lg: LogRun) -> None:
         3, "Filtering across all retained exchanges",
         f"Full buffer; traffic stopped while filters change (so every rebuild is the filter's own). Service 0x0A, "
         f"which only the harness's {LOG_UNIQUE} old requests match: one rebuild; the count line reads "
-        f"'{LOG_WINDOW} of {LOG_UNIQUE} matching shown (2,000 retained)'; every drawn row is a 0x0A "
+        f"'{LOG_WINDOW} of {LOG_UNIQUE} matching, last seq N'; every drawn row is a 0x0A "
         "request and older than the unfiltered window; the Older row counts the other 50 (then any older "
         "markers) and the hidden older ones as not a gap; Older (a real click) reaches all of them, the leading "
         "hidden run worded (not a gap). Then all services, and the outcome chips off one at a time (no response "

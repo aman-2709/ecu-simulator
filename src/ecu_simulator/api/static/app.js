@@ -1817,16 +1817,16 @@
     }
     if (moved) keepFocus(focused);
     renderFollow(moved || followChanged);
-    var h = S.hello, mine = c.matching === c.inView, of = mine ? c.inView : c.matching, extra = [];
-    var counted = c.shown === c.inView ? plural(c.inView, "exchange", "exchanges") :
-      fmtN(c.shown) + " of " + fmtN(of) + (mine ? " shown" : " matching shown");
     // Kept short, so the log header stays one line at 1440 with Older, Newer and the jump
-    // control's count beside it: the window's seq range is not named (its rows show it, and a
-    // restart inside it is a marker row there).
-    if (S.exCount !== of) extra.push(fmtN(S.exCount) + " retained");
-    if (extra.length) counted += " (" + extra.join("; ") + ")";
+    // control's count beside it, filtered and pinned too. Only what the page shows nowhere else:
+    // the window's seq range is not named (its rows show it, and a restart inside it is a marker
+    // row there), nor the retained count (the ECU and service filters' "All (N)" options) or
+    // "live" (the Connection readout; the Stale tag otherwise).
+    var h = S.hello, mine = c.matching === c.inView, of = mine ? c.inView : c.matching;
+    var counted = c.shown === c.inView ? plural(c.inView, "exchange", "exchanges") :
+      fmtN(c.shown) + " of " + fmtN(of) + (mine ? " shown" : " matching");
     setText($("log-count"), !h && S.lastSeq == null ? "" : counted +
-      (S.lastSeq != null ? ", last seq " + S.lastSeq + (isLive() ? " (live)" : "") : "") + (S.duplicates ? ", " + S.duplicates + " duplicates ignored" : ""));
+      (S.lastSeq != null ? ", last seq " + S.lastSeq : "") + (S.duplicates ? ", " + S.duplicates + " duplicates ignored" : ""));
   }
   function atBottom(wrap) { return wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 4; }
   function toBottom() { var wrap = $("logwrap"); wrap.scrollTop = wrap.scrollHeight; }
