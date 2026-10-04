@@ -1298,9 +1298,9 @@ async def case_announce_disconnect(m: M3b, sim: subprocess.Popen[bytes]) -> None
         out = []
         if b.get("conn") == "down" and b.get("timers") == "1" and any(
                 x["a"] == "timers" and x["v"] == "0" for x in g["changes"]):
-            out.append(("retry starts", f"Reconnecting: retry {b.get('retries')}.", True))
+            out.append(("retry starts", f"Reconnecting: attempt {int(b.get('retries', '0')) + 1}.", True))
         if b.get("conn") == "down" and a.get("conn") == "down" and (b.get("timers"), a.get("timers")) == ("0", "1"):
-            out.append(("retry fails", f"Retry {int(a.get('retries', '0')) - 1} failed: ", False))
+            out.append(("retry fails", f"Attempt {a.get('retries')} failed: ", False))
         if b.get("conn") == "live" and a.get("conn") == "down":
             out.append(("disconnect", "Disconnected. Reason: ", False))
         if b.get("health") != "live" and a.get("health") == "live":
@@ -1346,9 +1346,10 @@ async def case_announce_disconnect(m: M3b, sim: subprocess.Popen[bytes]) -> None
     m.cases.record(
         "Announcements: a disconnect, its retries and the recovery (SIGSTOP 24 s, then SIGCONT)",
         "The simulator stopped about 24 s past the disconnect. Each transition says exactly its own announcement: the "
-        "disconnect 'Disconnected. Reason: ...'; each retry as it starts 'Reconnecting: retry N.' and as it fails "
-        "'Retry N failed: ...', N read from the page's data-retries; the connection's return before its first state "
-        "nothing; the recovery exactly once 'Connection restored; data current.'. Every #announce mutation is an "
+        "disconnect 'Disconnected. Reason: ...'; each retry as it starts 'Reconnecting: attempt N.' and as it fails "
+        "'Attempt N failed: ...', N numbered as the banner's failed attempts (data-retries + 1 under way, data-retries "
+        "once failed); never the same text twice in a row; the connection's return before its first state nothing; "
+        "the recovery exactly once 'Connection restored; data current.'. Every #announce mutation is an "
         "announcement written with a transition (within 50 ms) or the clean-up of one 10 s later: none is a tick. "
         "Between transitions zero #announce mutations, while in each interval of 2.5 s or more the banner's visible "
         "text changes about once a second (countdown, 'N s ago': at least the interval's whole seconds minus 2); no "
@@ -1362,6 +1363,7 @@ async def case_announce_disconnect(m: M3b, sim: subprocess.Popen[bytes]) -> None
          "exactly one recovery announcement, 'Connection restored; data current.'":
          [x["text"] for x in said if x["text"] in (RESTORED, LIVE_RESTORED)] == [RESTORED],
          "every #announce mutation is a transition's announcement or a clean-up": not kinds["other"],
+         "never the same announcement twice in a row": no_repeat(said),
          "between transitions: zero #announce mutations": bool(long) and all(
              iv["announcer_mutations"] == 0 for iv in intervals),
          # A tick that lands next to a rounding boundary can repeat its text once: one change in an
@@ -1423,6 +1425,7 @@ async def case_announce_outages(m: M3b, sim: subprocess.Popen[bytes]) -> None:
          [x["text"] for x in recoveries] == [RESTORED] and restored is not None
          and abs(recoveries[0]["t"] - restored) <= ANN_TOL_MS,
          "no announcement holds a ticking value": not any(TICKING.search(x["text"]) for x in said),
+         "never the same announcement twice in a row": no_repeat(said),
          "every #announce mutation is a transition's announcement or a clean-up":
          not ann_classify(rec, t0, t1)["other"]},
         {"announcements": said, "connection_back_ms": back, "data_current_ms": restored,
@@ -1461,10 +1464,95 @@ async def case_announce_outages(m: M3b, sim: subprocess.Popen[bytes]) -> None:
          [x["text"] for x in recoveries2] == [RESTORED] and restored2 is not None
          and abs(recoveries2[0]["t"] - restored2) <= ANN_TOL_MS,
          "no announcement holds a ticking value": not any(TICKING.search(t) for t in texts),
+         "never the same announcement twice in a row": no_repeat(said2),
          "every #announce mutation is a transition's announcement or a clean-up":
          not ann_classify(rec, t2, t3)["other"]},
         {"announcements": said2, "data_current_ms": restored2,
          "transitions": [x for x in rec["trans"] if x["t"] >= t2]})
+
+
+async def case_announce_first_load(m: M3b, sim: subprocess.Popen[bytes]) -> None:
+    """Task 51b: an outage that began at the page load is announced when it ends, once. (iii), a
+    healthy first load saying nothing, is the case "Announcements: none on load or over 65 s healthy"."""
+    # (i) The simulator stopped at load: the page itself is served, then its first GET /status is
+    # held in DevTools while the simulator is stopped, and released to the stopped simulator.
+    held: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+
+    def paused(p: dict[str, Any]) -> None:
+        if not held.done():
+            held.set_result(p)
+        else:
+            asyncio.ensure_future(m.cdp.send("Fetch.continueRequest", requestId=p["requestId"]))
+
+    m.cdp.handlers["Fetch.requestPaused"] = paused
+    await m.cdp.send("Fetch.enable", patterns=[{"urlPattern": "*/api/v1/status*", "requestStage": "Request"}])
+    await m.cdp.send("Page.navigate", url=PAGE)
+    first = await asyncio.wait_for(held, 20)
+    os.kill(sim.pid, signal.SIGSTOP)
+    m.run.log(f"SIGSTOP the simulator (pid {sim.pid}) at the page load, its first /status held, then released")
+    try:
+        await m.cdp.send("Fetch.continueRequest", requestId=first["requestId"])
+        await m.cdp.send("Fetch.disable")
+        m.cdp.handlers.pop("Fetch.requestPaused", None)
+        await m.cdp.wait_for("document.body && document.body.dataset.conn === 'down'", timeout=20)
+        await asyncio.sleep(8.0)                 # a retry starts and fails meanwhile
+    finally:
+        os.kill(sim.pid, signal.SIGCONT)
+        m.run.log("SIGCONT the simulator")
+    _, live = await m.until(lambda s: s["health"] == "live", timeout=25.0, period=0.2)
+    await asyncio.sleep(1.0)
+    rec = await m.ann()
+    t1 = (await m.state())["now"]
+    said = ann_said(rec, 0, t1)
+    texts = [x["text"] for x in said]
+    restored = next((x["t"] for x in rec["trans"] if x["a"] == "health" and x["v"] == "live"), None)
+    ever_live_before = [x for x in rec["trans"] if x["a"] == "health" and x["v"] == "live" and restored is not None
+                        and x["t"] < restored]
+    recoveries = [x for x in said if x["text"] in (RESTORED, LIVE_RESTORED)]
+    m.cases.record(
+        "Announcements: the simulator stopped at the page load, then back",
+        "The page is loaded while the simulator is stopped (its first GET /status held in DevTools, the simulator "
+        "SIGSTOPped, the request released). The page never was Live before; it says the disconnect once and its "
+        "retries; after SIGCONT exactly one recovery announcement, 'Connection restored; data current.', written "
+        "with its first change to Live; never the same text twice in a row; no ticking value",
+        {"down at load, then live": live and restored is not None and not ever_live_before,
+         "the disconnect said once": sum(1 for t in texts if t.startswith("Disconnected. Reason: ")) == 1,
+         "exactly one recovery announcement, 'Connection restored; data current.', with the first change to Live":
+         [x["text"] for x in recoveries] == [RESTORED] and restored is not None
+         and abs(recoveries[0]["t"] - restored) <= ANN_TOL_MS,
+         "never the same announcement twice in a row": no_repeat(said),
+         "no announcement holds a ticking value": not any(TICKING.search(t) for t in texts),
+         "every #announce mutation is a transition's announcement or a clean-up":
+         not ann_classify(rec, 0, t1)["other"]},
+        {"announcements": said, "first_live_ms": restored, "transitions": rec["trans"]})
+    # (ii) A load whose first state is incomplete (the wrapper removes its dtcs): a data fault from
+    # the start, then the resync's valid state.
+    added = await m.cdp.send("Page.addScriptToEvaluateOnNewDocument", source="window.__m3b.incompleteFirst = 1;")
+    try:
+        await m.cdp.send("Page.navigate", url=PAGE)
+        await m.cdp.wait_for("document.body && document.body.dataset.health === 'live' && window.__m3b"
+                             " && window.__m3b.socks.length >= 2", timeout=20)
+    finally:
+        await m.cdp.send("Page.removeScriptToEvaluateOnNewDocument", identifier=added["identifier"])
+    await asyncio.sleep(1.0)
+    rec = await m.ann()
+    w = await m.wrapper()
+    t2 = (await m.state())["now"]
+    conds, observed = fault_announcements(rec, 0, t2, "the simulator sent an incomplete state message.")
+    first_live = [x for x in rec["trans"] if x["a"] == "health" and x["v"] == "live"]
+    m.cases.record(
+        "Announcements: a page load whose first state is incomplete",
+        "A fresh load whose first state is incomplete (the wrapper removes its dtcs): the fault said once ('Last known "
+        "data: the simulator sent an incomplete state message. ...'), the recovery attempt by its number, then exactly "
+        "one 'Live data restored.' with the page's first change to Live; never the same text twice in a row",
+        {"the first state was incomplete": bool(w["socks"]) and w["socks"][0].get("incomplete") is not None,
+         "Live once, after the fault": len(first_live) == 1, **conds},
+        {**observed, "health_live_changes": first_live, "sockets": w["socks"]})
+
+
+def no_repeat(said: list[dict[str, Any]]) -> bool:
+    """No announcement is the same text as the one just before it."""
+    return all(x["text"] != y["text"] for x, y in itertools.pairwise(said))
 
 
 def attempt_no(text: str) -> str | None:
@@ -1493,6 +1581,7 @@ def fault_announcements(rec: dict[str, Any], t0: float, t1: float,
         and abs(recoveries[0]["t"] - live) <= ANN_TOL_MS,
         "no announcement holds a ticking value": not any(TICKING.search(t) for t in texts),
         "every #announce mutation is a transition's announcement or a clean-up": not ann_classify(rec, t0, t1)["other"],
+        "never the same announcement twice in a row": no_repeat(said),
     }
     return conds, {"announcements": said, "data_current_ms": live, "attempts_seen": sorted(attempts)}
 
@@ -1574,6 +1663,8 @@ async def case_malformed_bounded(m: M3b) -> None:
     await m.cdp.js("document.getElementById('btn-retry').focus()")
     focused = await m.cdp.js("document.activeElement && document.activeElement.id")
     await key_enter(m.cdp)
+    # Task 51b: the activation hides the focused button; the focus goes to the banner's text.
+    focus_after = await m.cdp.js("(a => a ? (a.id || a.tagName) : null)(document.activeElement)")
     retry, recovered = await m.until(lambda s: s["health"] == "live", timeout=12.0)
     retry_changes = await m.attrs(t_click)
     retry_attempts = [int(x["v"]) for x in retry_changes if x["a"] == "attempts"]
@@ -1619,9 +1710,9 @@ async def case_malformed_bounded(m: M3b) -> None:
         "Each attempt as it starts ('Recovery attempt K of 3 under way.', K = 1, 2, 3) and as it fails ('Recovery "
         "attempt K of 3 failed: ...', K = 1, 2) once; the third failure says 'Could not recover: ...' once; no "
         "recovery announcement before Retry now; in the 30 s after exhaustion no #announce mutation but the clean-up "
-        "of the exhaustion's announcement. Retry now pressed by keyboard (focused, Enter) then recovery: exactly one "
-        "recovery announcement, 'Live data restored.' (no disconnect), written with the change to Live; no ticking "
-        "value",
+        "of the exhaustion's announcement. Retry now pressed by keyboard (focused, Enter): the focus then on the "
+        "banner's text (the button hides), never body; then recovery: exactly one recovery announcement, 'Live data "
+        "restored.' (no disconnect), written with the change to Live; no ticking value",
         {"the fault said once": sum(1 for t in before if t.startswith("Last known data: ")) == 1,
          "attempts 1, 2, 3 each said once as they start": all(
              before.count(f"Recovery attempt {k} of 3 under way.") == 1 for k in (1, 2, 3)),
@@ -1634,12 +1725,15 @@ async def case_malformed_bounded(m: M3b) -> None:
          "30 s after exhaustion: no #announce mutation but the clean-up": in_quiet is not None
          and not in_quiet["announcement"] and not in_quiet["other"] and len(in_quiet["cleanup"]) <= 1,
          "Retry now was focused and pressed by Enter": focused == "btn-retry",
+         "after Enter the focus is on the banner's text, not on body": focus_after == "linkstate-text",
+         "never the same announcement twice in a row": no_repeat(ann_said(rec, imm["now"] - 5, t_end)),
          "after Retry now: exactly one recovery announcement, 'Live data restored.', with the change to Live":
          [t for t in after if t in (RESTORED, LIVE_RESTORED)] == [LIVE_RESTORED] and live_t is not None
          and any(x["text"] == LIVE_RESTORED and abs(x["t"] - live_t) <= ANN_TOL_MS
                  for x in ann_said(rec, t_click, t_end)),
          "no announcement holds a ticking value": not any(TICKING.search(t) for t in before + after)},
         {"before_retry_now": before, "after_retry_now": after, "exhausted_ms": t_exhausted,
+         "focus_after_enter": focus_after,
          "quiet_after_exhaustion": in_quiet, "retry_now_ms": t_click, "live_ms": live_t})
 
 
@@ -1989,6 +2083,7 @@ async def part_a(run: Run, m: M3b) -> None:
         await case_unknown_type(m)
         await case_incomplete_in_attempt(m)
         await case_announce_outages(m, sim)
+        await case_announce_first_load(m, sim)
         await case_malformed_bounded(m)
         await run_slot_cases(run, m)
     finally:
@@ -5273,7 +5368,7 @@ async def case_log_live_regions(lg: LogRun) -> None:
          "a disconnect: the banner's ticking text changed each second": len(shown) >= 3,
          "a disconnect: #announce said it once, then only retries": sum(
              1 for t in while_down if t.startswith("Disconnected. Reason: ")) == 1 and all(
-             t.startswith(("Disconnected. Reason: ", "Reconnecting: retry ", "Retry ")) for t in while_down),
+             t.startswith(("Disconnected. Reason: ", "Reconnecting: attempt ", "Attempt ")) for t in while_down),
          "after SIGCONT: exactly one 'Connection restored; data current.'": restored == [RESTORED],
          "a fault: the banner says Last known data.": fault["changed"] > 0
          and "Last known data." in (fault["banner"] or ""),
