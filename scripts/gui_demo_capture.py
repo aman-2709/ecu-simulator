@@ -826,6 +826,9 @@ ANNOUNCE_REC = r"""(function () {
 ANN_READ = "JSON.parse(JSON.stringify(window.__ann))"
 ANN_TOL_MS = 50                  # an announcement and its transition are written in the same render
 ANNOUNCE_CLEAR_MS = 10000        # app.js ANNOUNCE_CLEAR_MS: an announcement's element is removed after this
+# The recorder stamps each mutation in its observer callback (Date.now(), whole ms), so a clean-up
+# can read up to a few ms short of ANNOUNCE_CLEAR_MS after its announcement (9,999 ms seen, Task 54).
+ANN_CLEAR_EARLY_MS = 5
 RESTORED = "Connection restored; data current."
 LIVE_RESTORED = "Live data restored."
 # A ticking value as the banner shows it: "N s ago", or a countdown "in N s".
@@ -852,7 +855,7 @@ def ann_classify(rec: dict[str, Any], t0: float, t1: float) -> dict[str, list[di
         if m["type"] == "childList" and m["added"] and near is not None and near <= ANN_TOL_MS:
             out["announcement"].append({"t": m["t"], "text": " ".join(m["added"]), "transition_ms": near})
         elif (m["type"] == "childList" and not m["added"] and m["removed"] and prev is not None
-              and 0 <= m["t"] - prev - ANNOUNCE_CLEAR_MS <= 300):
+              and -ANN_CLEAR_EARLY_MS <= m["t"] - prev - ANNOUNCE_CLEAR_MS <= 300):
             out["cleanup"].append({"t": m["t"], "after_ms": m["t"] - prev})
         else:
             out["other"].append(m)
