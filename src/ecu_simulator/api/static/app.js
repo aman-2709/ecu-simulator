@@ -1168,7 +1168,7 @@
     // rewritten. The button is never rebuilt, so a click is never lost to a re-render.
     var p = $("linkstate-text"), button = $("btn-retry");
     if (!p) {
-      p = el("p", { id: "linkstate-text" });
+      p = el("p", { id: "linkstate-text", tabindex: "-1" });   // focusable by script only (Retry now's activation)
       button = el("button", { type: "button", id: "btn-retry" });
       box.append(p, button);
     }
@@ -1255,9 +1255,11 @@
   // never read with it (the region is atomic); the element is removed ANNOUNCE_CLEAR_MS later.
   // Recovery (S.conn live and S.data current again) is said once: "Connection restored; data
   // current." when the outage included a disconnect (S.conn left live), "Live data restored." for a
-  // data fault without one. The first Live of a page load is not a recovery and says nothing.
+  // data fault without one. What decides is what this page announced: the flags are set only by a
+  // trouble state, so a healthy first load says nothing, and a load that began in an outage (the
+  // simulator down, refusing, or in a data fault) says its recovery like any other.
   var ANNOUNCE_CLEAR_MS = 10000;
-  var ann = { key: null, last: null, everLive: false, hadDisconnect: false, hadFault: false, timer: null };
+  var ann = { key: null, last: null, hadDisconnect: false, hadFault: false, timer: null };
 
   function annState() {
     if (S.conn === "loading") return { kind: "loading" };
@@ -1265,8 +1267,11 @@
     // Connected, the first state not here yet: no announcement until it is (or a fault comes).
     if (S.conn === "live" && !hasFault() && !S.ep) return { kind: "connecting" };
     var stale = isStale(), r = S.req || {};
+    // While stale the data's reason is not said (only the connection is), so it is not in the key:
+    // a requirement restarted or an encoding read during a retry would otherwise repeat that retry's
+    // announcement.
     return { kind: "trouble", conn: S.conn,
-      why: reasonOf() + (r.unreadable ? " unreadable" : "") + (r.incomplete ? " incomplete" : ""),
+      why: stale ? "" : reasonOf() + (r.unreadable ? " unreadable" : "") + (r.incomplete ? " incomplete" : ""),
       ep: S.ep ? S.ep.state : "none", attempts: S.ep ? S.ep.attempts : 0, inFlight: !!S.ep && S.ep.inFlight,
       tries: stale && !S.ep ? S.attempt : 0, connecting: stale && !S.ep && S.connecting, reason: stale ? S.reason : null };
   }
@@ -1284,9 +1289,8 @@
   // What the change from state p to state c says, or null.
   function annText(p, c) {
     if (c.kind === "live") {
-      var said = !ann.everLive ? null : ann.hadDisconnect ? "Connection restored; data current." :
-        ann.hadFault ? "Live data restored." : null;
-      ann.everLive = true; ann.hadDisconnect = false; ann.hadFault = false;
+      var said = ann.hadDisconnect ? "Connection restored; data current." : ann.hadFault ? "Live data restored." : null;
+      ann.hadDisconnect = false; ann.hadFault = false;
       return said;
     }
     if (c.kind !== "trouble") return null;
@@ -1322,8 +1326,10 @@
           "The page reconnects to get a complete state.");
       }
     } else if (stale) {
-      if (c.connecting) out.push("Reconnecting: retry " + c.tries + ".");
-      else if (!entering) out.push("Retry " + Math.max(1, c.tries - 1) + " failed: " + sentence(S.reason || "unknown") + " The page retries on its own.");
+      // Numbered as the banner counts failed attempts (the drop itself is the first): the attempt
+      // under way is S.attempt + 1, and when it fails S.attempt is its number.
+      if (c.connecting) out.push("Reconnecting: attempt " + (c.tries + 1) + ".");
+      else if (!entering) out.push("Attempt " + c.tries + " failed: " + sentence(S.reason || "unknown") + " The page retries on its own.");
       else out.push("The page retries on its own.");
     } else if (S.req && S.req.encoding && !(was && was.why === c.why)) {
       out.push("The page keeps polling and reconnects once the simulator reports that it can build its state again.");
@@ -2275,8 +2281,16 @@
     });
     $("linkstate").addEventListener("click", function (ev) {
       if (!(ev.target instanceof HTMLElement) || ev.target.id !== "btn-retry") return;
+      var button = ev.target, focused = document.activeElement === button;
       if (S.ep && S.ep.state === "exhausted") retryNow();
       else if (isStale() && !episodeActive()) connect();
+      // Its own activation can hide or disable the focused button: the focus goes to the banner's
+      // text while the banner is shown, else to the log box, never to the page's body.
+      if (focused && (button.hidden || button.disabled)) {
+        var text = $("linkstate-text");
+        if (!$("linkstate").hidden && text) text.focus({ preventScroll: true });
+        else $("logwrap").focus({ preventScroll: true });
+      }
     });
     $("foot-limits").textContent = "Filters, pause and clear change this view only; the page sends nothing to the simulator. " +
       "Status refreshes every " + STATUS_POLL_MS / 1000 + " s; signals, trouble codes and exchanges arrive on the live stream. " +
