@@ -270,7 +270,7 @@ table { border-collapse: collapse; width: 100%; }
 /* ---------- log ---------- */
 .panel--log { display: flex; flex-direction: column; }
 .logbar {
-  display: flex; flex-wrap: wrap; align-items: end; gap: 0.714rem 0.857rem;
+  display: flex; flex-wrap: wrap; align-items: end; gap: 0.714rem 0.357rem;
   padding: 0.571rem 0.857rem;
   background: var(--panel-2);
   border-bottom: 1px solid var(--rule);
@@ -284,11 +284,13 @@ table { border-collapse: collapse; width: 100%; }
 button { cursor: pointer; font-weight: 600; }
 button:hover, .field select:hover { border-color: var(--ink); }
 button[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
-fieldset.outcomes { border: 0; padding: 0; margin: 0; flex-direction: row; flex-wrap: wrap; gap: 0.286rem; }
-fieldset.outcomes legend { padding: 0; margin-bottom: 0.143rem; float: left; width: 100%; }
+fieldset.outcomes { border: 0; padding: 0; margin: 0; flex-direction: row; flex-wrap: wrap; gap: 0.214rem; }
+/* The legend sits above the chips as the fieldset's own legend (not a float, which would add
+   its width to the row's and keep the bar from fitting one row at 1440). */
+fieldset.outcomes legend { padding: 0; margin-bottom: 0.143rem; }
 .chip {
-  display: inline-flex; align-items: center; gap: 0.357rem;
-  padding: 0.214rem 0.571rem 0.214rem 0.429rem; min-height: 2.286rem;
+  display: inline-flex; align-items: center; gap: 0.214rem;
+  padding: 0.214rem 0.357rem 0.214rem 0.286rem; min-height: 2.286rem;
   border: 1px solid var(--rule-2); border-radius: 3px; background: var(--panel);
   color: var(--ink); font-size: 0.929rem; cursor: pointer;
 }
@@ -296,7 +298,10 @@ fieldset.outcomes legend { padding: 0; margin-bottom: 0.143rem; float: left; wid
 .chip:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
 .chip:has(input:not(:checked)) { color: var(--ink-2); background: transparent; border-style: dashed; }
 .chip__n { font-family: var(--mono); font-size: 0.786rem; color: var(--ink-2); }
-.logbar__actions { display: flex; gap: 0.429rem; margin-left: auto; }
+.logbar__actions { display: flex; gap: 0.286rem; margin-left: auto; }
+/* Tighter sides than the page's other controls, so the bar fits one row at 1440 x 900;
+   the font size and the 2.286rem target height are unchanged. */
+.logbar .field select, .logbar button { padding-left: 0.357rem; padding-right: 0.357rem; }
 
 .log-state { padding: 0.714rem 0.857rem; border-bottom: 1px solid var(--rule); display: grid; gap: 0.571rem; }
 .log-state__line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.571rem 1.143rem; }

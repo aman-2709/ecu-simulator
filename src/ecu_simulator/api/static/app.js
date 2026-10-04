@@ -2161,7 +2161,10 @@
   function syncControls() {
     var pause = $("btn-pause");
     pause.setAttribute("aria-pressed", String(view.paused));
-    pause.textContent = view.paused ? "Resume view" : "Pause view";
+    // Short visible text so the log's filter bar is one row at 1440; the name starts with it
+    // and says what it acts on (this view only, as the footer says).
+    pause.textContent = view.paused ? "Resume" : "Pause";
+    pause.setAttribute("aria-label", view.paused ? "Resume view" : "Pause view");
     $("f-ecu").value = view.ecu;
     $("f-service").value = view.service;
     OUTCOMES.forEach(function (o) { $("o-" + o).checked = view.outcomes.indexOf(o) >= 0; });

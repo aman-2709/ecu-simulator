@@ -3237,6 +3237,7 @@ LOG_PROBE = r"""(() => {
     state: st.hidden ? null : st.textContent,
     retained: Number((/\((\d+)\)/.exec(document.getElementById('f-ecu').options[0].textContent) || [0, -1])[1]),
     paused: pb.getAttribute('aria-pressed') === 'true', pauseText: pb.textContent,
+    pauseName: pb.getAttribute('aria-label'),
     active: a ? (a.id || a.getAttribute('data-lognav') || a.getAttribute('data-expand') || a.tagName) : null,
     scrollTop: Math.round(w.scrollTop), atBottom: w.scrollHeight - w.scrollTop - w.clientHeight < 4,
     conn: document.getElementById('conn-text').textContent,
@@ -3670,7 +3671,8 @@ async def case_log_pause(lg: LogRun) -> None:
     k4 = await lg.probe()
     lg.record(
         2, "Pause / resume, Clear view",
-        "Full buffer, standard traffic. Pause view: aria-pressed true, the button reads Resume view. Paused 20 s: "
+        "Full buffer, standard traffic. Pause view: aria-pressed true, the button reads Resume (named Resume view; "
+        "Task 47b shortened the visible text). Paused 20 s: "
         "zero row-list and in-row mutations, the same rows and the same log text, the held counter rising at every "
         "5 s sample. Resume: the first row-list batch brings every held exchange at once (one rebuild: its adds >= "
         "the held count), later batches are single arrivals; every held seq is drawn; following, newest drawn. "
@@ -3678,7 +3680,8 @@ async def case_log_pause(lg: LogRun) -> None:
         "and cleared: No exchanges since you cleared the view. with Show cleared rows, which brings back the "
         "200-row window; resume follows again",
         {"full buffer at the start": p_start["retained"] == PERF_ROWS,
-         "paused: aria-pressed true, Resume view": a["paused"] and a["pauseText"] == "Resume view",
+         "paused: aria-pressed true, Resume (named Resume view)": a["paused"] and a["pauseText"] == "Resume"
+         and a["pauseName"] == "Resume view",
          "paused 20 s: zero mutations": d["add"] == d["rem"] == d["nb"] == d["inRows"] == 0,
          "paused: same rows and the log text frozen": a["keys"] == b["keys"] and text_a == text_b,
          "paused: the held counter rises at every sample": None not in held
@@ -3687,7 +3690,8 @@ async def case_log_pause(lg: LogRun) -> None:
          "resume: one rebuild brings the held rows": first["add"] >= h and first["rem"] == first["add"]
          and all(x["add"] <= 3 for x in batches[1:]),
          "resume: every held seq drawn, following, newest drawn": want <= set(c["seqs"]) and not c["paused"]
-         and c["pauseText"] == "Pause view" and c["follow"]["disabled"] and c["newestVisible"] and c["ex"] == 200,
+         and c["pauseText"] == "Pause" and c["pauseName"] == "Pause view" and c["follow"]["disabled"]
+         and c["newestVisible"] and c["ex"] == 200,
          "Clear view: no row up to the clear drawn, 2,000 retained": all(s > l0 for s in k0["seqs"] + k1["seqs"])
          and k0["retained"] == k1["retained"] == PERF_ROWS,
          "Clear view: new exchanges appear, following": k1["ex"] > 0 and k1["follow"]["disabled"]
