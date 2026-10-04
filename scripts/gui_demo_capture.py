@@ -782,6 +782,108 @@ WS_WRAPPER = r"""(function () {
 # The wrapper's record of the body's attribute changes since a page time (ms).
 ATTRS_SINCE = "window.__m3b.attrs.filter(x => x.t >= %d)"
 
+# Task 51: a harness-only recorder of the page's announcer (#announce, the one live region), added
+# with Page.addScriptToEvaluateOnNewDocument (--m3b, --m3b-log). It attaches when the document
+# becomes interactive, which is before the page's deferred scripts run, so the page's first render
+# is recorded too. `muts`: every mutation record inside #announce (the text of any node added, the
+# count removed). `trans`: every change of the page's health diagnostics on <body>, the
+# transitions. `banner`: the visible banner's text (null when hidden) and its ticking spans, at each
+# change; `conn`: the Connection readout's text at each change. All time-stamped (Date.now()).
+ANNOUNCE_REC = r"""(function () {
+  var R = window.__ann = { muts: [], trans: [], banner: [], conn: [] };
+  var last = {};
+  function cap(list) { if (list.length > 6000) list.splice(0, 3000); }
+  function attach() {
+    var a = document.getElementById("announce"), ls = document.getElementById("linkstate"),
+        ct = document.getElementById("conn-text");
+    R.attached = Date.now();
+    if (a) new MutationObserver(function (recs) { recs.forEach(function (r) {
+      R.muts.push({ t: Date.now(), type: r.type, attr: r.attributeName || null, removed: r.removedNodes.length,
+                    added: [].map.call(r.addedNodes, function (n) { return n.textContent; }) });
+    }); }).observe(a, { subtree: true, childList: true, characterData: true, attributes: true });
+    new MutationObserver(function (recs) { recs.forEach(function (m) {
+      var k = m.attributeName.slice(5), v = document.body.getAttribute(m.attributeName);
+      if (last[k] !== v) { last[k] = v; R.trans.push({ t: Date.now(), a: k, v: v }); cap(R.trans); }
+    }); }).observe(document.body, { attributes: true, attributeFilter: ["data-conn", "data-data", "data-reason",
+      "data-health", "data-episode", "data-attempts", "data-timers", "data-retries"] });
+    var lb = null, lc = null;
+    function seen() {
+      var b = ls.hidden ? null : ls.textContent;
+      if (b !== lb) {
+        lb = b; cap(R.banner);
+        var ticks = ls.querySelectorAll(".linkstate__tick");
+        R.banner.push({ t: Date.now(), text: b, ticks: [].map.call(ticks, function (n) { return n.textContent; }) });
+      }
+      var c = ct.textContent;
+      if (c !== lc) { lc = c; cap(R.conn); R.conn.push({ t: Date.now(), text: c }); }
+    }
+    var all = { subtree: true, childList: true, characterData: true, attributes: true };
+    if (ls) new MutationObserver(seen).observe(ls, all);
+    if (ct) new MutationObserver(seen).observe(ct, { subtree: true, childList: true, characterData: true });
+  }
+  document.addEventListener("readystatechange", function () { if (document.readyState === "interactive") attach(); });
+})();"""
+ANN_READ = "JSON.parse(JSON.stringify(window.__ann))"
+ANN_TOL_MS = 50                  # an announcement and its transition are written in the same render
+ANNOUNCE_CLEAR_MS = 10000        # app.js ANNOUNCE_CLEAR_MS: an announcement's element is removed after this
+RESTORED = "Connection restored; data current."
+LIVE_RESTORED = "Live data restored."
+# A ticking value as the banner shows it: "N s ago", or a countdown "in N s".
+TICKING = re.compile(r"\d+ s ago|\bin \d+ s\b")
+
+
+def ann_said(rec: dict[str, Any], t0: float, t1: float = float("inf")) -> list[dict[str, Any]]:
+    """The announcements made in [t0, t1]: each mutation that added a node, with its text."""
+    return [{"t": m["t"], "text": " ".join(m["added"])} for m in rec["muts"] if m["added"] and t0 <= m["t"] <= t1]
+
+
+def ann_classify(rec: dict[str, Any], t0: float, t1: float) -> dict[str, list[dict[str, Any]]]:
+    """Every announcer mutation in [t0, t1], by kind: an announcement written in the same render
+    as a transition (a health diagnostic change within ANN_TOL_MS), the clean-up that removes an
+    announcement ANNOUNCE_CLEAR_MS after it was made (nothing added, no announcement between), or
+    anything else (which would be a tick or an unexplained change)."""
+    adds = [m["t"] for m in rec["muts"] if m["added"]]
+    out: dict[str, list[dict[str, Any]]] = {"announcement": [], "cleanup": [], "other": []}
+    for m in rec["muts"]:
+        if not t0 <= m["t"] <= t1:
+            continue
+        near = min((abs(m["t"] - x["t"]) for x in rec["trans"]), default=None)
+        prev = max((a for a in adds if a < m["t"]), default=None)
+        if m["type"] == "childList" and m["added"] and near is not None and near <= ANN_TOL_MS:
+            out["announcement"].append({"t": m["t"], "text": " ".join(m["added"]), "transition_ms": near})
+        elif (m["type"] == "childList" and not m["added"] and m["removed"] and prev is not None
+              and 0 <= m["t"] - prev - ANNOUNCE_CLEAR_MS <= 300):
+            out["cleanup"].append({"t": m["t"], "after_ms": m["t"] - prev})
+        else:
+            out["other"].append(m)
+    return out
+
+
+def attrs_at(trans: list[dict[str, Any]], t: float) -> dict[str, str]:
+    """The page's health diagnostics as they stood at page time t."""
+    out: dict[str, str] = {}
+    for x in trans:
+        if x["t"] <= t:
+            out[x["a"]] = x["v"]
+    return out
+
+
+def trans_groups(trans: list[dict[str, Any]], t0: float, t1: float) -> list[dict[str, Any]]:
+    """The transitions in [t0, t1] grouped by render (changes within 5 ms), each with the
+    diagnostics just before and just after it."""
+    groups: list[dict[str, Any]] = []
+    for x in trans:
+        if not t0 <= x["t"] <= t1:
+            continue
+        if groups and x["t"] - groups[-1]["t1"] <= 5:
+            groups[-1]["t1"] = x["t"]
+            groups[-1]["changes"].append(x)
+        else:
+            groups.append({"t": x["t"], "t1": x["t"], "changes": [x]})
+    for g in groups:
+        g["before"], g["after"] = attrs_at(trans, g["t"] - 1), attrs_at(trans, g["t1"])
+    return groups
+
 # The page's condition, its graphs and the wrapper's counts, in one evaluation.
 PAGE_STATE = """(() => {
   const d = document.body.dataset, ls = document.getElementById('linkstate');
@@ -1015,6 +1117,18 @@ class M3b:
         result: dict[str, Any] = await self.cdp.js(LOG_READ)
         return result
 
+    async def ann(self) -> dict[str, Any]:
+        """The announcer recorder's logs (ANNOUNCE_REC)."""
+        result: dict[str, Any] = await self.cdp.js(ANN_READ)
+        return result
+
+
+async def key_enter(cdp: DevTools) -> None:
+    """A real Enter key press on whatever has the focus."""
+    for kind in ("keyDown", "keyUp"):
+        await cdp.send("Input.dispatchKeyEvent", type=kind, key="Enter", code="Enter",
+                       windowsVirtualKeyCode=13, **({"text": "\r"} if kind == "keyDown" else {}))
+
 
 def seq_continuous(seqs: list[int]) -> bool:
     """No duplicate seq, and each row's seq is the previous one plus 1."""
@@ -1122,7 +1236,258 @@ async def case_no_false_invalidation(m: M3b) -> None:
          "exactly one state since the page loaded": len(w["states"]) == 1},
         {"samples": [slim(s) for s in samples], "span_s": span, "polls_rose": rose, "states": w["states"],
          "sockets": len(w["socks"])})
+    # Task 51: the page load, its first Live and 65 s of healthy polls and the state message say
+    # nothing; the markup has one live region, the announcer, mounted at body level.
+    rec = await m.ann()
+    audit = await m.cdp.js(LIVE_AUDIT)
+    first_live = next((x["t"] for x in rec["trans"] if x["a"] == "health" and x["v"] == "live"), None)
+    m.cases.record(
+        "Announcements: none on load or over 65 s healthy",
+        "From the page load (the recorder attaches before the page's scripts run), through its first Live and 65 s "
+        "of healthy polls and a state message: zero mutations of #announce. Markup: the only live region on the "
+        "page is #announce (role status, aria-live polite, aria-atomic true), a child of body with no hidden "
+        "ancestor; #linkstate, #log-count and every other element have no live-region attribute and no live-region "
+        "ancestor. Automation verifies markup, mutations and announcement text and timing, not what a screen "
+        "reader says",
+        {"the recorder attached before the first Live": rec.get("attached") is not None and first_live is not None
+         and rec["attached"] <= first_live,
+         "zero #announce mutations since the page loaded": rec["muts"] == [],
+         "healthy over the whole period": all(healthy(s) for s in samples),
+         **live_markup(audit)},
+        {"announce_mutations": rec["muts"], "transitions": rec["trans"], "attached_ms": rec.get("attached"),
+         "first_live_ms": first_live, "audit": audit})
     await m.shot("m3b-a1-no-scenario-65s.png")
+
+
+async def case_announce_disconnect(m: M3b, sim: subprocess.Popen[bytes]) -> None:
+    """Task 51: a disconnect long enough for several retries. The banner's countdown and "N s ago"
+    tick every second while #announce changes only at transitions: the disconnect, each retry as
+    it starts and as it fails, and the recovery, said once as "Connection restored; data current."."""
+    await asyncio.sleep(1.0)
+    t0 = (await m.state())["now"]
+    os.kill(sim.pid, signal.SIGSTOP)
+    m.run.log(f"SIGSTOP the simulator (pid {sim.pid}) for the announcement checks")
+    try:
+        _, down = await m.until(lambda s: s["conn"] == "down", timeout=15.0, period=0.2)
+        await asyncio.sleep(24.0)              # several retries: waits of 1, 2 and 4 s, each attempt up to 5 s
+        t_cont = (await m.state())["now"]
+    finally:
+        os.kill(sim.pid, signal.SIGCONT)
+        m.run.log("SIGCONT the simulator")
+    _, live = await m.until(lambda s: s["health"] == "live", timeout=25.0, period=0.2)
+    await asyncio.sleep(1.0)
+    end = await m.state()
+    rec = await m.ann()
+    said = ann_said(rec, t0)
+    kinds = ann_classify(rec, t0, end["now"])
+    groups = trans_groups(rec["trans"], t0, end["now"])
+    # What each transition said: the disconnect, a retry starting (timers 1 -> 0 while down), a
+    # retry failing (timers 0 -> 1 while down), the connection back (nothing while the first state
+    # is still to come) and the recovery. One render can hold more than one of them when they
+    # follow within a few ms (a retry that starts and recovers at once): each is expected, in order.
+    # Each announcement belongs to the transition nearest to it.
+    def expected(g: dict[str, Any]) -> list[tuple[str, str, bool]]:
+        b, a = g["before"], g["after"]
+        out = []
+        if b.get("conn") == "down" and b.get("timers") == "1" and any(
+                x["a"] == "timers" and x["v"] == "0" for x in g["changes"]):
+            out.append(("retry starts", f"Reconnecting: retry {b.get('retries')}.", True))
+        if b.get("conn") == "down" and a.get("conn") == "down" and (b.get("timers"), a.get("timers")) == ("0", "1"):
+            out.append(("retry fails", f"Retry {int(a.get('retries', '0')) - 1} failed: ", False))
+        if b.get("conn") == "live" and a.get("conn") == "down":
+            out.append(("disconnect", "Disconnected. Reason: ", False))
+        if b.get("health") != "live" and a.get("health") == "live":
+            out.append(("recovery", RESTORED, True))
+        return out
+
+    owner: dict[int, list[str]] = {i: [] for i in range(len(groups))}
+    stray = []
+    for x in said:
+        dist = [(max(g["t"] - x["t"], x["t"] - g["t1"], 0), i) for i, g in enumerate(groups)]
+        near = min(dist, default=None)
+        if near is not None and near[0] <= ANN_TOL_MS:
+            owner[near[1]].append(x["text"])
+        else:
+            stray.append(x)
+    table, unexpected = [], []
+    for i, g in enumerate(groups):
+        exp, here = expected(g), owner[i]
+        ok = len(here) == len(exp) and all(t == e if exact else t.startswith(e)
+                                           for t, (_, e, exact) in zip(here, exp, strict=False))
+        kind = " + ".join(k for k, _, _ in exp) or (
+            "connected, first state to come" if g["before"].get("conn") != "live" and g["after"].get("conn") == "live"
+            else "other")
+        row = {"t": g["t"], "offset_s": round((g["t"] - t0) / 1000, 3), "kind": kind, "said": here,
+               "expected": [e for _, e, _ in exp], "ok": ok, "changes": [f"{x['a']}={x['v']}" for x in g["changes"]]}
+        table.append(row)
+        if not ok:
+            unexpected.append(row)
+    unexpected.extend({"stray_announcement": x} for x in stray)
+    t_down = next((r["t"] for r in table if "disconnect" in r["kind"]), None)
+    # The intervals between transitions while down: no announcer mutation inside; the banner's
+    # visible text changes about once a second (its countdown and "N s ago").
+    marks = [r["t"] for r in table if t_down is not None and t_down <= r["t"] <= t_cont] + [t_cont]
+    intervals = []
+    for x, y in itertools.pairwise(marks):
+        inner = [mu for mu in rec["muts"] if x + ANN_TOL_MS < mu["t"] < y - ANN_TOL_MS]
+        shown = [bn for bn in rec["banner"] if x + ANN_TOL_MS < bn["t"] < y - ANN_TOL_MS]
+        intervals.append({"from_s": round((x - t0) / 1000, 3), "length_s": round((y - x) / 1000, 3),
+                          "announcer_mutations": len(inner), "banner_changes": len(shown),
+                          "ticks": [shown[0]["ticks"], shown[-1]["ticks"]] if shown else None})
+    long = [iv for iv in intervals if iv["length_s"] >= 2.5]
+    stale_banners = [bn["text"] or "" for bn in rec["banner"] if t_down is not None and t_down <= bn["t"] <= t_cont]
+    m.cases.record(
+        "Announcements: a disconnect, its retries and the recovery (SIGSTOP 24 s, then SIGCONT)",
+        "The simulator stopped about 24 s past the disconnect. Each transition says exactly its own announcement: the "
+        "disconnect 'Disconnected. Reason: ...'; each retry as it starts 'Reconnecting: retry N.' and as it fails "
+        "'Retry N failed: ...', N read from the page's data-retries; the connection's return before its first state "
+        "nothing; the recovery exactly once 'Connection restored; data current.'. Every #announce mutation is an "
+        "announcement written with a transition (within 50 ms) or the clean-up of one 10 s later: none is a tick. "
+        "Between transitions zero #announce mutations, while in each interval of 2.5 s or more the banner's visible "
+        "text changes about once a second (countdown, 'N s ago': at least the interval's whole seconds minus 2); no "
+        "announcement holds a ticking value",
+        {"down, then live again": down and live and end["health"] == "live",
+         "one disconnect announcement": sum(1 for r in table if "disconnect" in r["kind"]) == 1,
+         "at least two retries started and two failed in the window":
+         sum(1 for r in table if "retry starts" in r["kind"]) >= 2
+         and sum(1 for r in table if "retry fails" in r["kind"]) >= 2,
+         "each transition said exactly its own announcement": not unexpected,
+         "exactly one recovery announcement, 'Connection restored; data current.'":
+         [x["text"] for x in said if x["text"] in (RESTORED, LIVE_RESTORED)] == [RESTORED],
+         "every #announce mutation is a transition's announcement or a clean-up": not kinds["other"],
+         "between transitions: zero #announce mutations": bool(long) and all(
+             iv["announcer_mutations"] == 0 for iv in intervals),
+         # A tick that lands next to a rounding boundary can repeat its text once: one change in an
+         # interval may be missed, never two.
+         "between transitions: the banner's visible text changes about once a second": all(
+             iv["banner_changes"] >= int(iv["length_s"]) - 2 for iv in long),
+         "the banner showed the countdown and the time since live": any(
+             re.search(r"Retrying in \d+ s", t) for t in stale_banners) and any(
+             re.search(r"\(\d+ s ago\)", t) for t in stale_banners),
+         "no announcement holds a ticking value": not any(TICKING.search(x["text"]) for x in said)},
+        {"transitions": table, "intervals": intervals, "announcements": said, "classified": kinds,
+         "banner_changes_while_down": len(stale_banners), "banner_examples": stale_banners[:3] + stale_banners[-2:],
+         "t0_ms": t0, "t_down_ms": t_down, "t_sigcont_ms": t_cont})
+
+
+async def case_announce_outages(m: M3b, sim: subprocess.Popen[bytes]) -> None:
+    """Task 51: the connection back while the data is still last known says no recovery; a disconnect
+    during a pending data fault, then full recovery, says "Connection restored; data current." once."""
+    # 1. A disconnect; the reconnect's first state is incomplete (the wrapper removes its dtcs), so
+    # the connection is back with the data last known, until the resync's valid state.
+    await asyncio.sleep(1.0)
+    t0 = (await m.state())["now"]
+    os.kill(sim.pid, signal.SIGSTOP)
+    m.run.log(f"SIGSTOP the simulator (pid {sim.pid}): the connection back with the data last known")
+    try:
+        _, down = await m.until(lambda s: s["conn"] == "down", timeout=15.0, period=0.2)
+        await m.cdp.js("window.__m3b.incompleteFirst = 1")
+    finally:
+        os.kill(sim.pid, signal.SIGCONT)
+        m.run.log("SIGCONT the simulator")
+    _, live = await m.until(lambda s: s["health"] == "live", timeout=25.0, period=0.2)
+    await asyncio.sleep(1.0)
+    rec = await m.ann()
+    t1 = (await m.state())["now"]
+    w = await m.wrapper()
+    said = ann_said(rec, t0, t1)
+    back = next((x["t"] for x in rec["trans"] if x["t"] >= t0 and x["a"] == "conn" and x["v"] == "live"), None)
+    restored = next((x["t"] for x in rec["trans"] if x["t"] >= t0 and x["a"] == "health" and x["v"] == "live"), None)
+    while_known = [x["text"] for x in said if back is not None and restored is not None
+                   and back - ANN_TOL_MS <= x["t"] < restored - ANN_TOL_MS]
+    recoveries = [x for x in said if x["text"] in (RESTORED, LIVE_RESTORED)]
+    m.cases.record(
+        "Announcements: the connection back while the data is still last known",
+        "A disconnect (SIGSTOP); the reconnect's first state is incomplete (the wrapper removes its dtcs), so the "
+        "connection is back while the data stays last known until the resync's valid state. From the connection's "
+        "return to that state: no recovery announcement (it says 'Reconnected, but the data is still last known: "
+        "...'). Then exactly one recovery announcement, 'Connection restored; data current.' (the outage included a "
+        "disconnect), written with the change to Live",
+        {"down, then live": down and live,
+         "the reconnect's first state was incomplete": any(s.get("incomplete") for s in w["socks"]),
+         "the connection came back before the data was current": back is not None and restored is not None
+         and back < restored,
+         "while the data was last known: no recovery announcement": not any(
+             t in (RESTORED, LIVE_RESTORED) for t in while_known),
+         "it said the connection is back with the data last known": any(
+             t.startswith("Reconnected, but the data is still last known: the simulator sent an incomplete state")
+             for t in while_known),
+         "exactly one recovery announcement, 'Connection restored; data current.', with the change to Live":
+         [x["text"] for x in recoveries] == [RESTORED] and restored is not None
+         and abs(recoveries[0]["t"] - restored) <= ANN_TOL_MS,
+         "no announcement holds a ticking value": not any(TICKING.search(x["text"]) for x in said),
+         "every #announce mutation is a transition's announcement or a clean-up":
+         not ann_classify(rec, t0, t1)["other"]},
+        {"announcements": said, "connection_back_ms": back, "data_current_ms": restored,
+         "said_while_last_known": while_known, "transitions": [x for x in rec["trans"] if x["t"] >= t0]})
+    # 2. A data fault (an unreadable frame), and the simulator stopped during the episode's first
+    # wait: that attempt fails as a disconnect. SIGCONT; the next attempt recovers.
+    await asyncio.sleep(1.5)
+    t2 = (await m.state())["now"]
+    await m.cdp.js("window.__m3b.bad()")
+    os.kill(sim.pid, signal.SIGSTOP)
+    m.run.log(f"SIGSTOP the simulator (pid {sim.pid}) during a pending data fault")
+    try:
+        _, down2 = await m.until(lambda s: s["conn"] == "down", timeout=15.0, period=0.2)
+    finally:
+        os.kill(sim.pid, signal.SIGCONT)
+        m.run.log("SIGCONT the simulator")
+    _, live2 = await m.until(lambda s: s["health"] == "live", timeout=25.0, period=0.2)
+    await asyncio.sleep(1.0)
+    rec = await m.ann()
+    t3 = (await m.state())["now"]
+    said2 = ann_said(rec, t2, t3)
+    restored2 = next((x["t"] for x in rec["trans"] if x["t"] >= t2 and x["a"] == "health" and x["v"] == "live"), None)
+    recoveries2 = [x for x in said2 if x["text"] in (RESTORED, LIVE_RESTORED)]
+    texts = [x["text"] for x in said2]
+    m.cases.record(
+        "Announcements: a disconnect during a pending data fault, then full recovery",
+        "An unreadable frame (a data fault, a recovery episode) and the simulator stopped during the episode's first "
+        "wait, so its attempt fails as a disconnect; SIGCONT and the next attempt recovers. It says the fault once "
+        "('Last known data: ...'), the disconnect once ('Disconnected. Reason: ...'), and on recovery exactly one "
+        "'Connection restored; data current.', written with the change to Live, and no 'Live data restored.'",
+        {"the fault, the disconnect, then live": down2 and live2,
+         "the fault said once": sum(1 for t in texts if t.startswith(
+             "Last known data: the simulator sent a message this page could not read.")) == 1,
+         "the disconnect said once": sum(1 for t in texts if t.startswith("Disconnected. Reason: ")) == 1,
+         "exactly one recovery announcement, 'Connection restored; data current.', with the change to Live":
+         [x["text"] for x in recoveries2] == [RESTORED] and restored2 is not None
+         and abs(recoveries2[0]["t"] - restored2) <= ANN_TOL_MS,
+         "no announcement holds a ticking value": not any(TICKING.search(t) for t in texts),
+         "every #announce mutation is a transition's announcement or a clean-up":
+         not ann_classify(rec, t2, t3)["other"]},
+        {"announcements": said2, "data_current_ms": restored2,
+         "transitions": [x for x in rec["trans"] if x["t"] >= t2]})
+
+
+def attempt_no(text: str) -> str | None:
+    """The attempt number of a recovery attempt's announcement, or None for any other text."""
+    found = re.fullmatch(r"Recovery attempt (\d) of 3 (?:under way\.|failed: .*)", text)
+    return found.group(1) if found else None
+
+
+def fault_announcements(rec: dict[str, Any], t0: float, t1: float,
+                        fault: str) -> tuple[dict[str, bool], dict[str, Any]]:
+    """Task 51, a data fault while connected and its recovery: the fault said once, each recovery
+    attempt by its number (data-attempts), exactly one 'Live data restored.' with the change to Live."""
+    said = ann_said(rec, t0, t1)
+    texts = [x["text"] for x in said]
+    live = next((x["t"] for x in rec["trans"] if t0 <= x["t"] <= t1 and x["a"] == "health" and x["v"] == "live"), None)
+    attempts = {x["v"] for x in rec["trans"] if t0 <= x["t"] <= t1 and x["a"] == "attempts" and x["v"] != "0"}
+    recoveries = [x for x in said if x["text"] in (RESTORED, LIVE_RESTORED)]
+    rest = [t for t in texts if not t.startswith("Last known data: ") and t not in (RESTORED, LIVE_RESTORED)]
+    conds = {
+        "the fault said once": sum(1 for t in texts if t.startswith("Last known data: " + fault)) == 1
+        and sum(1 for t in texts if t.startswith("Last known data: ")) == 1,
+        "the other announcements are recovery attempts, each named by its data-attempts number": all(
+            attempt_no(t) in attempts for t in rest),
+        "exactly one recovery announcement, 'Live data restored.', with the change to Live":
+        [x["text"] for x in recoveries] == [LIVE_RESTORED] and live is not None
+        and abs(recoveries[0]["t"] - live) <= ANN_TOL_MS,
+        "no announcement holds a ticking value": not any(TICKING.search(t) for t in texts),
+        "every #announce mutation is a transition's announcement or a clean-up": not ann_classify(rec, t0, t1)["other"],
+    }
+    return conds, {"announcements": said, "data_current_ms": live, "attempts_seen": sorted(attempts)}
 
 
 async def case_malformed_once(m: M3b) -> None:
@@ -1164,6 +1529,14 @@ async def case_malformed_once(m: M3b) -> None:
          "transitions": [slim(s) for s in samples if s is samples[0] or s is samples[-1]],
          "new_sockets": new_socks, "log_marks": lg["marks"], "seqs": lg["seqs"][-20:],
          "started_at": [before["started_at"], after["started_at"]]})
+    conds, observed = fault_announcements(await m.ann(), t_bad - 5, end["now"],
+                                          "the simulator sent a message this page could not read.")
+    m.cases.record(
+        "Announcements: an unreadable message while connected, then recovery",
+        "One unreadable frame while connected: the fault said once ('Last known data: the simulator sent a message "
+        "this page could not read. ...'); the recovery attempt announced by its number; then exactly one 'Live data "
+        "restored.' (no disconnect), written with the change to Live; every #announce mutation a transition's "
+        "announcement or a clean-up; no ticking value", conds, observed)
     await m.shot("m3b-a2-malformed-recovered.png")
 
 
@@ -1187,10 +1560,13 @@ async def case_malformed_bounded(m: M3b) -> None:
     waits = [round((a["created"] - e) / 1000, 3) for a, e in zip(attempts, ends, strict=False)]
     allsamples = samples + quiet
     changes = await m.attrs(imm["now"])
-    # Retry now, with the fault removed: a fresh budget.
+    # Retry now, with the fault removed: a fresh budget. Pressed by keyboard (Task 51): the button
+    # focused, then a real Enter key.
     await m.cdp.js("window.__m3b.badFirst = false")
     t_click = (await m.state())["now"]
-    await m.cdp.click("#btn-retry")
+    await m.cdp.js("document.getElementById('btn-retry').focus()")
+    focused = await m.cdp.js("document.activeElement && document.activeElement.id")
+    await key_enter(m.cdp)
     retry, recovered = await m.until(lambda s: s["health"] == "live", timeout=12.0)
     retry_changes = await m.attrs(t_click)
     retry_attempts = [int(x["v"]) for x in retry_changes if x["a"] == "attempts"]
@@ -1199,7 +1575,7 @@ async def case_malformed_bounded(m: M3b) -> None:
         "Exactly 3 attempts (data-attempts 3), started 1, 2 and 4 s after the previous one ended (+-0.3 s, from the "
         "wrapper's socket timestamps); then data-episode exhausted, Could not recover ... with Retry now. No further "
         "socket in the following 30 s. data-timers <= 1 at every 100 ms sample; data-health never live meanwhile. "
-        "Removing the fault and pressing Retry now recovers with a fresh budget",
+        "Removing the fault and pressing Retry now (by keyboard: focus, Enter) recovers with a fresh budget",
         {"immediately active": imm["episode"] == "active",
          "exactly 3 attempts": len(attempts) == 3 and at_exhaustion["attempts"] == 3,
          "waits 1, 2, 4 s (+-0.3)": len(waits) == 3 and all(abs(x - y) <= 0.3 for x, y in zip(waits, (1, 2, 4),
@@ -1218,7 +1594,46 @@ async def case_malformed_bounded(m: M3b) -> None:
         {"waits_s": waits, "attempt_sockets": attempts, "at_exhaustion": slim(at_exhaustion),
          "samples": len(allsamples), "max_timers": max(s["timers"] for s in allsamples),
          "sockets_at_exhaustion": at_exhaustion["socks"], "sockets_after_30s": quiet[-1]["socks"],
-         "attribute_changes": changes, "retry_attribute_changes": retry_changes, "after_retry": slim(retry[-1])})
+         "attribute_changes": changes, "retry_attribute_changes": retry_changes, "after_retry": slim(retry[-1]),
+         "focused_before_enter": focused})
+    # Task 51: what the episode said, by attempt; exhaustion once; nothing in the 30 s after it but
+    # the clean-up; Retry now by keyboard, then exactly one recovery announcement.
+    await asyncio.sleep(0.5)
+    rec = await m.ann()
+    t_end = (await m.state())["now"]
+    t_exhausted = next((x["t"] for x in rec["trans"] if x["t"] >= imm["now"] - 5 and x["a"] == "episode"
+                        and x["v"] == "exhausted"), None)
+    before = [x["text"] for x in ann_said(rec, imm["now"] - 5, t_click)]
+    after = [x["text"] for x in ann_said(rec, t_click, t_end)]
+    in_quiet = ann_classify(rec, (t_exhausted or 0) + ANN_TOL_MS, t_click) if t_exhausted else None
+    live_t = next((x["t"] for x in rec["trans"] if x["t"] >= t_click and x["a"] == "health" and x["v"] == "live"), None)
+    m.cases.record(
+        "Announcements: bounded recovery, exhaustion, and Retry now by keyboard",
+        "Each attempt as it starts ('Recovery attempt K of 3 under way.', K = 1, 2, 3) and as it fails ('Recovery "
+        "attempt K of 3 failed: ...', K = 1, 2) once; the third failure says 'Could not recover: ...' once; no "
+        "recovery announcement before Retry now; in the 30 s after exhaustion no #announce mutation but the clean-up "
+        "of the exhaustion's announcement. Retry now pressed by keyboard (focused, Enter) then recovery: exactly one "
+        "recovery announcement, 'Live data restored.' (no disconnect), written with the change to Live; no ticking "
+        "value",
+        {"the fault said once": sum(1 for t in before if t.startswith("Last known data: ")) == 1,
+         "attempts 1, 2, 3 each said once as they start": all(
+             before.count(f"Recovery attempt {k} of 3 under way.") == 1 for k in (1, 2, 3)),
+         "attempts 1, 2 each said once as they fail": all(
+             sum(1 for t in before if t.startswith(f"Recovery attempt {k} of 3 failed: ")) == 1 for k in (1, 2))
+         and not any(t.startswith("Recovery attempt 3 of 3 failed") for t in before),
+         "exhaustion said once ('Could not recover: ...')":
+         sum(1 for t in before if t.startswith("Could not recover: ")) == 1,
+         "no recovery announcement before Retry now": not any(t in (RESTORED, LIVE_RESTORED) for t in before),
+         "30 s after exhaustion: no #announce mutation but the clean-up": in_quiet is not None
+         and not in_quiet["announcement"] and not in_quiet["other"] and len(in_quiet["cleanup"]) <= 1,
+         "Retry now was focused and pressed by Enter": focused == "btn-retry",
+         "after Retry now: exactly one recovery announcement, 'Live data restored.', with the change to Live":
+         [t for t in after if t in (RESTORED, LIVE_RESTORED)] == [LIVE_RESTORED] and live_t is not None
+         and any(x["text"] == LIVE_RESTORED and abs(x["t"] - live_t) <= ANN_TOL_MS
+                 for x in ann_said(rec, t_click, t_end)),
+         "no announcement holds a ticking value": not any(TICKING.search(t) for t in before + after)},
+        {"before_retry_now": before, "after_retry_now": after, "exhausted_ms": t_exhausted,
+         "quiet_after_exhaustion": in_quiet, "retry_now_ms": t_click, "live_ms": live_t})
 
 
 # Task 41: a recognised state whose vehicle or dtcs is not an object is a data fault (the owner's
@@ -1232,6 +1647,8 @@ async def case_incomplete_state(m: M3b) -> None:
     before = await m.status()
     results: dict[str, Any] = {}
     conds: dict[str, bool] = {}
+    announced: dict[str, Any] = {}
+    announced_conds: dict[str, bool] = {}
     for drop in ("dtcs", "vehicle"):
         await asyncio.sleep(1.0)
         w0 = await m.wrapper()
@@ -1261,6 +1678,10 @@ async def case_incomplete_state(m: M3b) -> None:
         results[tag] = {"before": slim(pre), "immediately": slim(imm), "end": slim(end),
                         "live_after_s": (samples[-1]["now"] - imm["now"]) / 1000, "new_sockets": new_socks,
                         "first_new_state_t": first_new_state, "first_live_t": first_live, "attribute_changes": changes}
+        said_conds, said = fault_announcements(await m.ann(), imm["now"] - 5, end["now"],
+                                               "the simulator sent an incomplete state message.")
+        announced[tag] = said
+        announced_conds.update({f"{tag}: {k}": v for k, v in said_conds.items()})
     lg = await m.log()
     after = await m.status()
     conds["the log names the incomplete state"] = (
@@ -1277,6 +1698,12 @@ async def case_incomplete_state(m: M3b) -> None:
         "then data-episode none, data-attempts 0; the log names the incomplete state; no restart marker; "
         "started_at unchanged",
         conds, results)
+    m.cases.record(
+        "Announcements: an incomplete state while connected, then recovery",
+        "For each incomplete state (missing dtcs, then missing vehicle) while connected: the fault said once ('Last "
+        "known data: the simulator sent an incomplete state message. ...'); each recovery attempt announced by its "
+        "number; then exactly one 'Live data restored.' (no disconnect), written with the change to Live; every "
+        "#announce mutation a transition's announcement or a clean-up; no ticking value", announced_conds, announced)
     await m.shot("m3b-a2b-incomplete-recovered.png")
 
 
@@ -1545,16 +1972,21 @@ async def run_slot_cases(run: Run, m: M3b) -> None:
 
 async def part_a(run: Run, m: M3b) -> None:
     sim = await m3b_start(run, DEFAULT_PROFILE, "a-simulator.log")
+    # The announcer recorder (Task 51) for part A's pages only: part B measures the page's cost.
+    added = await m.cdp.send("Page.addScriptToEvaluateOnNewDocument", source=ANNOUNCE_REC)
     try:
         await case_no_false_invalidation(m)
+        await case_announce_disconnect(m, sim)
         await case_malformed_once(m)
         await case_incomplete_state(m)
         await case_unknown_type(m)
         await case_incomplete_in_attempt(m)
+        await case_announce_outages(m, sim)
         await case_malformed_bounded(m)
         await run_slot_cases(run, m)
     finally:
         run.stop(sim)
+        await m.cdp.send("Page.removeScriptToEvaluateOnNewDocument", identifier=added["identifier"])
 
 
 # ---- part B: the real simulator, the stepped demo, with traffic ----
@@ -3444,9 +3876,7 @@ class LogRun:
         await self.cdp.js(f"document.querySelector({json.dumps(selector)}).focus({{preventScroll: true}})")
 
     async def key_enter(self) -> None:
-        for kind in ("keyDown", "keyUp"):
-            await self.cdp.send("Input.dispatchKeyEvent", type=kind, key="Enter", code="Enter",
-                                windowsVirtualKeyCode=13, **({"text": "\r"} if kind == "keyDown" else {}))
+        await key_enter(self.cdp)
 
     async def tab_order(self, start: str, presses: int) -> list[str | None]:
         """Real Tab key presses from the focused ``start`` control: the focused element after each."""
@@ -4449,23 +4879,62 @@ async def case_log_nothing_to_pin(lg: LogRun) -> None:
          "mutations_6s": d})
 
 
-# Task 48: every live-region mechanism on the page, and whether the continuously updating parts
-# sit inside one. `live` lists each element carrying aria-live, a live role (status, alert, log,
-# marquee, timer), aria-atomic or aria-relevant; `ancestors` gives, for each continuously
-# updating element, its nearest live-region ancestor (null: none).
+# Task 48, then Task 51: every live-region mechanism on the page, and whether the continuously
+# updating parts sit inside one. `live` lists each element carrying aria-live, a live role (status,
+# alert, log, marquee, timer), aria-atomic or aria-relevant; `ancestors` gives, for each
+# continuously updating element (the banner #linkstate and the log counter among them), its
+# nearest live-region ancestor or itself (null: none); `others` lists every element outside the
+# announcer that is in, or is, a live region; `announce` describes the announcer and its ancestors.
 LIVE_AUDIT = r"""(() => {
   const any = '[aria-live], [role="status"], [role="alert"], [role="log"], [role="marquee"], [role="timer"],'
     + ' [aria-atomic], [aria-relevant]';
   const region = '[aria-live]:not([aria-live="off"]), [role="status"], [role="alert"], [role="log"], [role="marquee"],'
     + ' [role="timer"]';
-  const ids = ['log-count', 'log-below', 'btn-follow', 'btn-older', 'btn-newer', 'log-head', 'log-body', 'log-tail',
-    'log-state', 'f-ecu', 'f-service', 'f-outcome', 'status', 'conn-text', 'malformed', 'status-polled', 'vehicle',
-    'vehicle-meta', 'dtcs', 'graphs-status', 'graphs-fine', 'graphs-breaks', 'graphs-note', 'graphs-grid'];
+  const ids = ['linkstate', 'conn', 'conn-text', 'log-count', 'log-below', 'btn-follow', 'btn-older', 'btn-newer',
+    'log-head', 'log-body', 'log-tail', 'log-state', 'f-ecu', 'f-service', 'f-outcome', 'status', 'malformed',
+    'status-polled', 'vehicle', 'vehicle-meta', 'dtcs', 'graphs-status', 'graphs-fine', 'graphs-breaks', 'graphs-note',
+    'graphs-grid'];
   const ancestors = {};
   ids.forEach(id => { const e = document.getElementById(id);
     ancestors[id] = !e ? 'missing' : (a => a ? (a.id || a.tagName) : null)(e.closest(region)); });
-  return {live: [...document.querySelectorAll(any)].map(e => e.id || e.tagName), ancestors: ancestors};
+  const A = document.getElementById('announce');
+  const others = [...document.querySelectorAll('body *')]
+    .filter(e => e !== A && !(A && A.contains(e)) && e.closest(region)).map(e => e.id || e.tagName);
+  let hiddenAncestor = null;
+  for (let e = A && A.parentElement; e; e = e.parentElement) {
+    const cs = getComputedStyle(e);
+    if (e.hidden || cs.display === 'none' || cs.visibility === 'hidden' || e.getAttribute('aria-hidden') === 'true')
+      hiddenAncestor = e.id || e.tagName;
+  }
+  const ls = document.getElementById('linkstate');
+  return {live: [...document.querySelectorAll(any)].map(e => e.id || e.tagName), ancestors: ancestors, others: others,
+    announce: A ? {parent: A.parentElement.tagName, role: A.getAttribute('role'), live: A.getAttribute('aria-live'),
+      atomic: A.getAttribute('aria-atomic'), hidden: A.hidden, ariaHidden: A.getAttribute('aria-hidden'),
+      display: getComputedStyle(A).display, visibility: getComputedStyle(A).visibility, cls: A.className,
+      box: [Math.round(A.getBoundingClientRect().width), Math.round(A.getBoundingClientRect().height)],
+      hiddenAncestor: hiddenAncestor} : null,
+    linkstate: {role: ls.getAttribute('role'), live: ls.getAttribute('aria-live'),
+                atomic: ls.getAttribute('aria-atomic')}};
 })()"""
+
+
+def live_markup(audit: dict[str, Any]) -> dict[str, bool]:
+    """Task 51's markup rules, from LIVE_AUDIT."""
+    a = audit["announce"] or {}
+    return {
+        "the live regions on the page are exactly #announce": audit["live"] == ["announce"],
+        "#announce: role status, aria-live polite, aria-atomic true": (a.get("role"), a.get("live"), a.get("atomic"))
+        == ("status", "polite", "true"),
+        "#announce is a child of body with no hidden ancestor, not hidden itself": a.get("parent") == "BODY"
+        and a.get("hiddenAncestor") is None and not a.get("hidden") and a.get("ariaHidden") is None
+        and a.get("display") != "none" and a.get("visibility") != "hidden",
+        "#announce is visually hidden (1 x 1 px box)": a.get("box") == [1, 1]
+        and "visually-hidden" in (a.get("cls") or ""),
+        "#linkstate has no live-region attribute": audit["linkstate"] == {"role": None, "live": None, "atomic": None},
+        "#linkstate, #log-count and every continuously updating element: no live-region ancestor": all(
+            v is None for v in audit["ancestors"].values()),
+        "no element outside #announce is in a live region": audit["others"] == [],
+    }
 
 # A harness-only MutationObserver on #linkstate: `changed` counts the records that change
 # something (a node added or removed, text or an attribute to a different value); `raw` counts
@@ -4504,51 +4973,84 @@ async def case_log_live_regions(lg: LogRun) -> None:
     await asyncio.sleep(1.0)
     await lg.cdp.js("window.__live.reset()")
     c0 = await lg.probe()
+    t_quiet = (await lg.m.state())["now"]
     await asyncio.sleep(20.0)
     quiet = await lg.cdp.js(LIVE_READ)
     c1 = await lg.probe()
-    # A disconnect: SIGSTOP the simulator until the banner says so, then SIGCONT.
+    rec = await lg.m.ann()
+    quiet_ann = [mu for mu in rec["muts"] if mu["t"] >= t_quiet]
+    # A disconnect: SIGSTOP the simulator until the banner says so and its countdown has ticked, then
+    # SIGCONT. Task 51: the banner shows the countdown; #announce says the disconnect, then the recovery.
     await lg.cdp.js("window.__live.reset()")
+    t_stop = (await lg.m.state())["now"]
     os.kill(lg.sim.pid, signal.SIGSTOP)
     lg.run.log(f"SIGSTOP the simulator (pid {lg.sim.pid})")
     try:
         await lg.cdp.wait_for("(() => { const ls = document.getElementById('linkstate');"
                               " return !ls.hidden && ls.textContent.indexOf('Disconnected.') >= 0; })()", timeout=20)
         down = await lg.cdp.js(LIVE_READ)
+        down_text = await lg.cdp.js("document.getElementById('linkstate').innerText")
+        await asyncio.sleep(2.5)
+        t_cont = (await lg.m.state())["now"]
     finally:
         os.kill(lg.sim.pid, signal.SIGCONT)
         lg.run.log("SIGCONT the simulator")
     await lg.cdp.wait_for("document.body.dataset.health === 'live' && document.getElementById('linkstate').hidden",
                           timeout=30)
+    await asyncio.sleep(0.5)
+    rec = await lg.m.ann()
+    t_up = (await lg.m.state())["now"]
+    while_down = [x["text"] for x in ann_said(rec, t_stop, t_cont)]
+    shown = [bn for bn in rec["banner"] if t_stop <= bn["t"] <= t_cont and bn["text"]]
+    restored = [x["text"] for x in ann_said(rec, t_cont, t_up) if x["text"] in (RESTORED, LIVE_RESTORED)]
     # A fault: one unreadable frame on the page's socket (the harness's wrapper), as part A's
     # malformed case does; the banner names it while the page resynchronises.
     await asyncio.sleep(1.0)
     await lg.cdp.js("window.__live.reset()")
+    t_fault = (await lg.m.state())["now"]
     await lg.cdp.js("window.__lg.bad()")
     await lg.cdp.wait_for("(() => { const ls = document.getElementById('linkstate');"
                           " return !ls.hidden && ls.textContent.indexOf('Last known data.') >= 0; })()", timeout=10)
     fault = await lg.cdp.js(LIVE_READ)
     await lg.cdp.wait_for("document.body.dataset.health === 'live' && document.getElementById('linkstate').hidden",
                           timeout=30)
+    await asyncio.sleep(0.5)
+    rec = await lg.m.ann()
+    fault_conds, fault_said = fault_announcements(rec, t_fault, (await lg.m.state())["now"],
+                                                  "the simulator sent a message this page could not read.")
     lg.record(
         11, "Live regions",
-        "The page's live regions (aria-live, role status / alert / log / marquee / timer, aria-atomic, "
-        "aria-relevant) are exactly #linkstate; #log-count and every other continuously updating element has no "
-        "live-region ancestor. Over 20 s of traffic, healthy: zero mutations of #linkstate that change anything "
-        "(nodes, text, an attribute's value), while the log counter's text does change. A disconnect (SIGSTOP) and "
-        "a fault (one unreadable frame) each change #linkstate, whose banner names them. Automation verifies "
-        "markup and mutations, not what a screen reader says",
-        {"the live regions are exactly #linkstate": audit["live"] == ["linkstate"],
-         "no continuously updating element has a live-region ancestor": all(
-             v is None for v in audit["ancestors"].values()),
+        "Task 51 markup: the only live region (aria-live, role status / alert / log / marquee / timer, aria-atomic, "
+        "aria-relevant) is #announce (role status, polite, atomic), a child of body with no hidden ancestor; "
+        "#linkstate, #log-count and every other element have no live-region attribute and no live-region ancestor. "
+        "Over 20 s of traffic, healthy: zero #announce mutations and zero #linkstate mutations that change anything, "
+        "while the log counter's text does change. A disconnect (SIGSTOP): the banner shows 'Disconnected.' with its "
+        "countdown and time since live, changing each second; #announce says the disconnect once and nothing but "
+        "retry announcements meanwhile; after SIGCONT exactly one 'Connection restored; data current.'. A fault (one "
+        "unreadable frame): the banner says 'Last known data.'; #announce says the fault once, the attempt, then "
+        "exactly one 'Live data restored.'. Automation verifies markup, mutations and announcement text and timing, "
+        "not what a screen reader says",
+        {**live_markup(audit),
+         "20 s of traffic: zero #announce mutations": quiet_ann == [],
          "20 s of traffic: #linkstate unchanged (0 changing mutations), hidden": quiet["changed"] == 0
          and quiet["banner"] is None and quiet["health"] == "live",
          "20 s of traffic: the log counter's text changed": quiet["distinct"] >= 2
          and (last_seq(c1) or 0) > (last_seq(c0) or 0),
-         "a disconnect changes #linkstate": down["changed"] > 0 and "Disconnected." in (down["banner"] or ""),
-         "a fault changes #linkstate": fault["changed"] > 0 and "Last known data." in (fault["banner"] or "")},
-        {"audit": audit, "quiet_20s": quiet, "log_count": [c0["count"], c1["count"]], "disconnect": down,
-         "fault": fault})
+         "a disconnect: the banner says Disconnected. with its countdown and time since live": down["changed"] > 0
+         and "Disconnected." in (down["banner"] or "") and re.search(r"\((\d+) s ago\)", down_text or "") is not None
+         and re.search(r"Retrying in \d+ s|Reconnecting now\.", down_text or "") is not None,
+         "a disconnect: the banner's ticking text changed each second": len(shown) >= 3,
+         "a disconnect: #announce said it once, then only retries": sum(
+             1 for t in while_down if t.startswith("Disconnected. Reason: ")) == 1 and all(
+             t.startswith(("Disconnected. Reason: ", "Reconnecting: retry ", "Retry ")) for t in while_down),
+         "after SIGCONT: exactly one 'Connection restored; data current.'": restored == [RESTORED],
+         "a fault: the banner says Last known data.": fault["changed"] > 0
+         and "Last known data." in (fault["banner"] or ""),
+         **{f"a fault: {k}": v for k, v in fault_conds.items()}},
+        {"audit": audit, "quiet_20s": quiet, "quiet_announce_mutations": quiet_ann,
+         "log_count": [c0["count"], c1["count"]], "disconnect": down, "disconnect_banner": down_text,
+         "banner_while_down": [[bn["t"] - t_stop, bn["ticks"]] for bn in shown], "said_while_down": while_down,
+         "said_after_sigcont": restored, "fault": fault, "fault_said": fault_said})
 
 
 async def log_width(lg: LogRun, label: str, size: tuple[int, int]) -> None:
@@ -4595,6 +5097,7 @@ async def m3b_log_session(run: Run, chrome: str, profile_dir: str) -> None:
         async with http.ws_connect(ws_url, max_msg_size=0) as ws:
             cdp = await m3b_cdp(run, http, ws, problems, wrapper=False)
             await cdp.send("Page.addScriptToEvaluateOnNewDocument", source=LOG_INSTR)
+            await cdp.send("Page.addScriptToEvaluateOnNewDocument", source=ANNOUNCE_REC)
             m = M3b(run, cdp, http, cases)
             lg = LogRun(run, m, await m3b_start(run, MOVING_PROFILE, "log-simulator-1.log"))
             try:
