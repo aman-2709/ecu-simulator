@@ -19,7 +19,11 @@ Live; it is now a data fault (its own section below). **Tasks 42-46** changed th
 to a bounded, navigable window of 200 matching exchanges and moved the live lamp's beat to
 compositor-only properties; on headless numbers the main-thread finding is **mitigated, and it
 stays open** until the owner confirms it in their own browser ("Tasks 42-46" below, and
-[gui-m3b-main-thread.md](gui-m3b-main-thread.md), "Outcome").
+[gui-m3b-main-thread.md](gui-m3b-main-thread.md), "Outcome"). **Tasks 47-51** (final head `25e6852`) moved
+Older / Newer / Jump to newest into the log header, fitted the filter bar on one row, made the log
+counter silent and moved every announcement into one hidden announcer; the final runs passed
+`--m3b` 36 of 36, `--m3b-log` 22 of 22 and `--m3b-slots` 3 of 3 ("Tasks 47-51" below). The
+ordered list of what the owner still has to do is "Owner checklist (ordered)".
 
 **Still open, and not touched by this record:**
 - **the M2 early-check latency `STOP`** ([gui-m2-early-check.md](gui-m2-early-check.md)).
@@ -80,6 +84,11 @@ Where the numbers come from:
   [log-run2/capture.log](gui-m3b-live-demo/log-run2/capture.log); the Task 42-46 reports
   (`.superpowers/sdd/gui-m2-implementation/task-4{2,3,4,5,6a,6b}-report.md`); and the
   screenshots of the new log and the lamp taken for this record (see "The screenshots").
+- **the final page (Tasks 47-51, head `25e6852`):** `--m3b` run `m3b-51b` (36 of 36), `--m3b-log`
+  run `log51b` (22 of 22) and `--m3b-slots` run `slots-51b` (3 of 3), copied unchanged into
+  [m3b-51b/](gui-m3b-live-demo/m3b-51b/), [log51b/](gui-m3b-live-demo/log51b/) and
+  [slots-51b/](gui-m3b-live-demo/slots-51b/) (results JSON and `capture.log`); they supersede the
+  earlier tallies for every case they run. The Task 47-51 reports are local and untracked too.
   **Those reports are local and untracked** (`.superpowers/` is in the repository's
   `.git/info/exclude`). In the repository the log cases can be checked against the two
   committed `log-run*/` files, and the measurements only as
@@ -146,6 +155,14 @@ The fault server's seams are public only (controller ruling, below). Nothing und
 changed for it, and no profile file holds a non-finite value.
 
 ## Result: 27 of 27 cases passed (run 13, plus the long run)
+
+**Final tally (Task 51b, head `25e6852`): `--m3b` 36 of 36** in run `m3b-51b`
+([m3b-51b/m3b-results.json](gui-m3b-live-demo/m3b-51b/m3b-results.json) `tally`:
+`{"passed": 36, "total": 36}`): the 26 cases below, which all passed again, plus 9 announcement
+cases and the layout-by-state case ("Tasks 47-51" below), **plus** the bounded-history case of
+`m3b-long3` (not rerun: its case reads only the graphs' `data-*` attributes). The table below keeps
+the numbers of the runs it cites; where Tasks 47-51 changed what a case reads (the log rows cases,
+the banner, the count line), `m3b-51b` is the run of record.
 
 26 cases in run 13 (`run13/m3b-results.json` `tally`: `{"passed": 26, "total": 26}`), plus the
 bounded-history case of `m3b-long3`. Run 13 adds Task 41's three cases (24, 25 and 26 below)
@@ -361,7 +378,7 @@ latency change. The design, every measurement and what they do not show are in
 [gui-m3b-main-thread.md](gui-m3b-main-thread.md), "Outcome". This section is what a reader of
 the page sees, and the committed browser cases.
 
-### How the log behaves now
+### How the log behaved at `3593be7` (the controls and focus changed in Tasks 47-51; see "Tasks 47-51" below)
 
 - **A window of 200 matching exchanges** (`LOG_WINDOW`), chosen after the ECU, service and outcome
   filters are applied to all 2,000 retained. While **following**, it ends at the newest and slides.
@@ -402,7 +419,7 @@ WebSocket wrapper that can keep N events from the page (for a real seq gap). Con
 by real clicks, wheel scrolls and Enter on a focused button; the service `<select>` by value and a
 `change` event (task-46a-report, "The mode").
 
-**The final runs: 20 of 20 each** (Task 46a fix round 1, `c18c132`; served `app.js`
+**The runs at `3593be7`: 20 of 20 each** (superseded by the final run `log51b`, 22 of 22, in "Tasks 47-51" below; Task 46a fix round 1, `c18c132`; served `app.js`
 `4c2419ca…`, the shipped page): run 1 started 2026-10-01T22:56:24Z, run 2 23:05:35Z; both exit 0;
 tally `{"1440x900": 9/9, "390x844": 9/9, "page": 2/2}`. The two earlier runs of the same cases
 (`d0e4ba7`) also passed 20 of 20 (task-46a-report).
@@ -441,6 +458,147 @@ local and untracked, so this comparison rests on them only). Task 45 compared sh
 
 The cost it removed and the one-frame click-presentation increase at 1440 it brought (headless) are
 in [gui-m3b-main-thread.md](gui-m3b-main-thread.md), "Outcome".
+
+## Tasks 47-51: the log header, the filter bar and the announcements (final page, `25e6852`)
+
+The owner's follow-ups of 2026-10-03/04 (plan: "M3b follow-ups after the log-fix review", Tasks
+47, 47b, 48, 49, 51; the reports `task-47-49-report.md` and `task-51-report.md` are local and
+untracked). The page's `app.js` last changed in `de52666`; the final runs below served it
+(SHA-256 `528dbdda…`) at head `25e6852`.
+
+### How the log behaves now
+
+- **The window, the follow / pin rule and the four absent-row kinds are as above.** The step rule
+  is unchanged: Older / Newer move by up to 100 matching exchanges in overlapping steps; the step
+  shrinks so the reader's anchor row stays in the window, and a press with the window's far end
+  already on screen scrolls the box there instead of moving the window.
+- **Older, Newer and Jump to newest are together in the log header** (Task 47), in that order, with
+  the count beside Jump as plain text (`#log-below`, for example "10 rows below + 29 beyond this
+  window"). Visible texts "Older", "Newer", "Jump to newest"; accessible names "Older exchanges",
+  "Newer exchanges", "Jump to newest exchange and follow new ones" (the last described by the
+  count). An unavailable direction is `aria-disabled="true"`, never `disabled`, and a press on it
+  does nothing. The rows at the window's edges are plain text that points at the header ("1,800
+  older exchanges match your filters. Use Older in the log header to show them.").
+- **Focus** (replaces the earlier rule): after Older or Newer the focus **stays on the pressed
+  header button**, however often it is pressed; after Jump to newest, which hides itself when the
+  log follows again, the focus goes to the log box (`#logwrap`). After Retry now, when the button
+  hides or is disabled, the focus goes to the banner text (`#linkstate-text`), else to the log box
+  (Task 51b). Focus is never left on `body` by these actions.
+- **The count line is shorter**: "200 of 2,000 shown, last seq 2116"; filtered "200 of 250
+  matching, last seq N"; after Clear "13 exchanges, last seq N". It no longer names the window's
+  seq range, the retained count or "(live)": the rows show their seqs, the ECU and service filters
+  show "All ECUs (2000)", the Connection readout shows "Live" (the Stale tag otherwise), and a
+  restart stays visible as the log's "Simulator restarted." marker row and the graphs' restart
+  note. `#log-count` is no longer a live region (Task 48).
+- **The filter bar fits one row at 1440 × 900** (75 px, was 125; Task 47b) with the visible texts
+  "Pause" / "Resume" / "Clear"; their accessible names stay "Pause view" / "Resume view" /
+  "Clear view". Tab order follows the visual order: Older, Newer, (Jump to newest), ECU, Service,
+  the four outcome chips, Pause, Clear, the log box.
+- **Expansions leave with their rows** (Task 49): an expanded payload's state is dropped when its
+  exchange leaves the 2,000 cap. With no exchange shown, a scroll no longer leaves the log "not
+  following, not pinned": it stays following.
+- **Announcements** (Task 51, 51b): one visually hidden `#announce` (`role="status"`,
+  `aria-live="polite"`, `aria-atomic="true"`, a child of `body`) carries every transition; each
+  announcement replaces the previous one and is cleared 10 s later. The banner `#linkstate` is no
+  longer a live region; its retry countdown and "N s ago" still tick visibly, outside any live
+  region. The exact strings (task-51-report "Exact announcement strings", 51b numbering):
+  "Disconnected. Reason: …", "Reconnecting: attempt N.", "Attempt N failed: …", "Last known
+  data: …", "Recovery attempt K of 3 under way.", "Could not recover: …", "Retrying: a new recovery
+  of 3 attempts starts.", and on recovery "Connection restored; data current." (after an outage
+  that included a disconnect) or "Live data restored." (a data fault without one). Nothing is said
+  while the data stays last known, nor on a healthy first load or a healthy poll.
+
+### The final runs (head `25e6852`)
+
+| Run | Started (UTC) | Result | Files |
+|---|---|---|---|
+| `--m3b` | 2026-10-04T10:32:00Z | exit 0, **36 of 36** (26 earlier cases, 9 announcement cases, the layout-by-state case); the 4 log entries are the expected variant C 503 handshakes | [m3b-51b/m3b-results.json](gui-m3b-live-demo/m3b-51b/m3b-results.json), [capture.log](gui-m3b-live-demo/m3b-51b/capture.log), [overflow-check.txt](gui-m3b-live-demo/m3b-51b/overflow-check.txt) |
+| `--m3b-log` | 2026-10-04T10:45:59Z | exit 0, **22 of 22** (1440: 11 of 11, adding case 10 "No exchange shown: nothing to pin" and case 11 "Live regions"; 390: 9 of 9; page 2 of 2); 0 problems | [log51b/m3b-log-results.json](gui-m3b-live-demo/log51b/m3b-log-results.json), [capture.log](gui-m3b-live-demo/log51b/capture.log) |
+| `--m3b-slots` | 2026-10-04T10:45:09Z | exit 0, **3 of 3** (B start gaps 2.006 / 4.006 s; C 2.006 s) | [slots-51b/m3b-slots-results.json](gui-m3b-live-demo/slots-51b/m3b-slots-results.json), [capture.log](gui-m3b-live-demo/slots-51b/capture.log) |
+| M3a | 2026-10-04T10:56:11Z | exit 0; overflow ok at 390, 2000 and 1440; the 2 expected `ERR_CONNECTION_REFUSED` while its simulator is stopped | scratchpad `m3a-51b/` (not committed) |
+| Full suite (namespace, `-rfE`, once) | — | 1339 passed, 69 skipped, 2 xfailed | scratchpad `suite-51b.out` (not committed) |
+
+Task 51b reports these as the final matrix (`task-51-report.md`, "Task 51b"). `--moving` was last
+run at `f9ca7cd` (exit 0, `moving-51/`), before Task 51b's page change.
+
+### Layout by state at 1440 × 900 (the committed case)
+
+`--m3b` case "Layout by state at 1440 x 900 (Task 51, final measurement)",
+[m3b-51b/m3b-results.json](gui-m3b-live-demo/m3b-51b/m3b-results.json). Graphs open; the fewest
+full rows of each state's readings; clearance = the rows region minus the 5 newest full rows.
+Part B's buffer is under 2,000 exchanges (count lines "200 of 747 shown" …).
+
+| State | Header px | Full rows (exchange) | Rows region px | Clearance px |
+|---|---|---|---|---|
+| Steady following | 42.2 | 6 (6) | 359 | +96 |
+| Pinned, "beyond this window" count | 42.2 | 6 (6) | 359 | +97 |
+| Disconnect-gap note | 42.2 | 6 (6) | 343 | +79 |
+| Encoding-gap note (fault server) | 42.2 | 6 (6) | 337 | +74 |
+| Restart + gap notes | 42.2 | 6 (6) | 337 | +73 |
+| Wrapped three-notice line | 42.2 | 6 (6) | 321 | +57 |
+| Filtered + pinned | 42.2 | 6 (5; one hidden-run row) | 359 | +94 |
+| Filtered, following | 42.2 | 6 (6) | 359 | +96 |
+| Paused (held line, 58 px) | 42.2 | 5 (5) | 301 | +37 |
+| Stale (banner, 64 px) | 42.2 | 5 (5) | 295 | **+30** |
+| Last known (banner, 64 px) | 42.2 | 5 (5) | 295 | +33 |
+
+**Every listed state shows at least 5 full exchange rows; the minimum clearance is +30 px
+(stale).** Recorded, not required (combinations): "Could not recover" banner 5 rows (+17); stale
+with a recent gap note 5 (+16); last known with a recent gap note 5 (+15); and two that fall short:
+
+- **REMAINING DEFICIT, for the owner to rule on (no layout change was made):**
+  - **paused while stale: 4 full rows** (banner 64 px + held line; rows region 237 px, about
+    27 px short of five);
+  - **stale while pinned: 4 full rows**: the log header wraps to two lines (72.1 px, the Stale
+    tag beside "13 rows below + 1 beyond this window"); the region (265 px) holds five, but only
+    four were fully visible at the pinned offset.
+- **The instant of a fault:** a "Last known" reading taken in the same task as the fault, before
+  the box re-scrolls, shows 4 rows with partial rows at both ends; the case reads every 250 ms
+  through a whole episode and keeps the fewest (26 readings), which was 5 (task-47-49-report,
+  Task 47b notes; task-51-report).
+- **1200 px:** the log table scrolls sideways inside its box (`#logwrap` 895 / 773). This is
+  pre-existing: the baseline tree before Task 47 shows the same (task-47-49-report). The page
+  itself has no horizontal overflow at 1200, 1440, 2000 or 390.
+
+### Findings resolved (plain lines, not ticked boxes)
+
+Automation verifies markup, DOM mutations, focus owners and the text and timing of each
+announcement. **It does not verify what a screen reader says**; the items marked below need an
+actual listen with a screen reader (for example NVDA on Windows or Orca on Linux).
+
+- **Keyboard access to Newer.** Automation verified: real Tab order pinned `btn-older, btn-newer,
+  btn-follow, f-ecu` and following `btn-older, btn-newer, f-ecu`; focus stays on the pressed
+  Older / Newer through 28-press walks each way; an aria-disabled end press changes nothing; Jump
+  to newest leaves focus on `#logwrap` (`log51b` case 4). Needs your observation: the keyboard
+  walk in a real browser; a screen-reader listen to the three button names and the count
+  beside Jump. The earlier "(WCAG 2.4.11)" code comment went with the old focus rule (no longer in
+  `app.js`).
+- **`#log-count` no longer announces.** Automation verified: the only live region on the page is
+  `#announce`; no continuously updating element (26 checked) has a live-region ancestor; over 20 s
+  of traffic the counter changed 75 times and `#announce` 0 times (`log51b` case 11). Needs a
+  screen-reader listen: silence while the log runs.
+- **`view.expanded` pruned on eviction.** Automation verified: the kept-expansions count rises by
+  one on "show all", holds while the row is out of the window, and returns to 0 once the row left
+  the cap (1 → 1 → 0 at both widths, `log51b` cases 5 and 7). Needs your observation: none.
+- **The "not following, not pinned" state.** Automation verified: with nothing matching and
+  marker rows scrolled, the log stays following (Jump hidden, Newer unavailable); after Reset
+  filters it follows, newest at the bottom, the window sliding (`log51b` case 10). Needs your
+  observation: none.
+- **The ticking countdown and "N s ago".** Automation verified: during a 24 s outage the banner's
+  ticks changed each second while `#announce` had 0 mutations between transitions
+  (`m3b-51b`, "Announcements: a disconnect, its retries and the recovery"). Needs a screen-reader
+  listen: the countdown is not read out every second.
+- **The recovery announcement.** Automation verified: exactly one "Connection restored; data
+  current." after a disconnect (also when the outage began at page load), exactly one "Live data
+  restored." after a data fault (also on a first state that was incomplete), none while data stays
+  last known, none on a healthy load or over 65 s healthy, never the same text twice in a row
+  (`m3b-51b` announcement cases). Needs a screen-reader listen: whether a quick pair ("Recovery
+  attempt 1 of 3 under way." then "Live data restored." a few ms later) is read in full or only
+  the last, and whether clearing after 10 s cuts a long message.
+- **Retry now focus.** Automation verified: after Enter on Retry now the focus owner is the banner
+  text, `linkstate-text`, not `body` (`m3b-51b`, bounded case). Needs your observation: the
+  keyboard flow in the fault check; a later recovery hides the banner with focus on its text, and
+  then focus falls to `body` (outside the requirement; review note, Task 51b).
 
 ## Open finding: the page's main-thread load (mostly M3a's log rebuild)
 
@@ -585,8 +743,8 @@ All in [gui-m3b-live-demo/](gui-m3b-live-demo/), copied unchanged and renamed. A
   and `restart-gap-invalid-wrap-1440.png`. Task 37 changed what these show (the note's
   wording and place).
 - **Run 8:** `break-note-encoding-1440.png`.
-- **Taken for this record:** `hidden-1440.png`; and, on the page after the log fix (`3593be7`),
-  the `log-*` and `lamp-*` shots in their own table below. Every other shot predates the log fix,
+- **Taken for this record:** `hidden-1440.png`; and, on the final page (`25e6852`), the `log-*`,
+  `stale-banner-*` and `lamp-*` shots in their own table below. Every other shot predates the log fix,
   so its log's count line and controls are the old ones.
 - **Run 7** (the page at `391a335`): all the others.
 
@@ -626,49 +784,52 @@ real simulator on the stepped demo, the traffic script at 4 Hz, headless Chrome 
 1440 × 900, at commit `e479769`. At as-of ≥ 30 it clicked "Hide graphs", waited 2 s and
 took the shot. It printed `HIDE PASS`, rc 0, and every process it started was stopped.
 
-### The windowed log and the lamp (taken for this record, Task 46c)
+### The windowed log, the stale banner and the lamp (retaken on the final page, Task 50)
 
-No `--m3b-log` run saves screenshots, so these were taken for this record on the shipped page
-(served `app.js` `4c2419ca…`, `app.css` `ecbea9ec…`, the files at `3593be7`), about
-23:53-23:58 UTC on 2026-10-01. A throwaway script (`<scratchpad>/shots46c.py`, not committed)
-reused `gui_demo_capture.py`'s helpers in the same kind of namespace (`unshare -r -n`, `lo` up, a
-private `vcan0`): the real simulator on the stepped demo, the log filled to 2,000 retained at 50/s,
-then the traffic script at 4 Hz; headless Chrome 151 at 1440 × 900 and 390 × 844. **No harness
-code was injected into the page.** Each state was entered by real input as in `--m3b-log` (a
+No `--m3b-log` run saves screenshots, so these were taken for this record on the **final page,
+head `25e6852`** (served `app.js` `528dbdda…`, `app.css` `993b33d3…`, the worktree files), on
+2026-10-04 at about 11:02-11:08 UTC. They **replace** the Task 46c set of 2026-10-01, which showed
+the page at `3593be7` (Older / Newer rows inside the table, "Pause view" / "Clear view" texts, the
+earlier banner). A throwaway script (`<scratchpad>/shots50.py`, not committed) reused
+`gui_demo_capture.py`'s helpers in the same kind of namespace (`unshare -r -n`, `lo` up, a private
+`vcan0`, nothing on the host network): the real simulator on the stepped demo, the log filled to
+2,000 retained at 50/s, then the traffic script at 4 Hz; headless Chrome 151 at 1440 × 900 and
+390 × 844. **No harness code was injected into the page.** States were entered by real input (a
 click on Pause, a real wheel scroll to pin, a burst past the cap), except two harness scrolls of
 the log box to its top, made more than 1 s after any input so the page takes them as layout
-scrolls, which do not change pinning. The connection note comes from a real SIGSTOP / SIGCONT
-of the simulator, with the traffic stopped so the note stays at the window's end. The last-known
-lamp comes from the fault server (`--state-fault 15:300` on the stepped demo): a real
-"Connected, last known data". The live lamp's beat was paused at 0 ms by the Web Animations API,
-so the crop is repeatable. The page's text was read straight after each shot
-([log-shots-facts.json](gui-m3b-live-demo/log-shots-facts.json), with the step log
+scrolls. The stale banner and the connection note come from a real SIGSTOP / SIGCONT of the
+simulator (traffic stopped, so the note stays at the window's end); the last-known lamp from the
+fault server (`--state-fault 15:300`). The live lamp's beat was paused at 0 ms by the Web
+Animations API. The page's text was read straight after each shot
+([log-shots-facts.json](gui-m3b-live-demo/log-shots-facts.json); step log
 [log-shots-capture.log](gui-m3b-live-demo/log-shots-capture.log)); no exception or console
 message. Every process the script started was stopped by its PID, and the namespace closed.
 
-The 1440 shots are clipped to the log panel down to the log box's bottom; the 390 shots are the
-viewport, scrolled to the log panel. The 390 marker shot was dropped: the note sat below the
-fold.
+The 1440 log shots are clipped to the log panel down to the log box's bottom; the 390 shots are
+the viewport. The 390 "top of the window" shot was taken but not committed, to keep the set under
+about 1.2 MB (it is in the facts file).
 
 | File | Size | What it shows |
 |---|---|---|
-| [log-following-1440.png](gui-m3b-live-demo/log-following-1440.png) | 96,766 B | **Following** at the cap: "200 of 2,000 shown (seq 1,835–2,034), last seq 2034 (live)", the newest row at the bottom, the header control hidden |
-| [log-following-390.png](gui-m3b-live-demo/log-following-390.png) | 75,183 B | Following at 390: "200 of 2,000 shown (seq 3,989–4,188), last seq 4188 (live)" |
-| [log-paused-1440.png](gui-m3b-live-demo/log-paused-1440.png) | 88,109 B | **Paused:** "View paused. 33 new exchanges are held; they appear when you resume. The simulator keeps running.", "Resume view", the count line "200 of 1,967 shown (seq 1,837–2,036; 2,000 retained), last seq 2069 (live)" |
-| [log-paused-390.png](gui-m3b-live-demo/log-paused-390.png) | 72,097 B | Paused at 390: 33 held, "200 of 1,967 shown (seq 3,990–4,189; 2,000 retained), last seq 4222 (live)" |
-| [log-marker-1440.png](gui-m3b-live-demo/log-marker-1440.png) | 92,806 B | **A marker row in the window:** "Connection lost, then resumed. Last live 23:55:00 UTC, resumed 23:55:07 UTC after seq 2076." drawn right after seq 2076, following |
-| [log-pinned-1440.png](gui-m3b-live-demo/log-pinned-1440.png) | 89,563 B | **Pinned** by a wheel scroll: the window held at seq 1,887–2,086 while arrivals went on ("last seq 2115"), the header control "10 rows below + 29 beyond this window, jump to newest" |
-| [log-pinned-390.png](gui-m3b-live-demo/log-pinned-390.png) | 80,320 B | Pinned at 390: seq 4,040–4,239, "5 rows below + 28 beyond this window, jump to newest" |
-| [log-older-row-1440.png](gui-m3b-live-demo/log-older-row-1440.png) | 96,764 B | **The top of a pinned window:** the trimmed note "124 older rows left this view. …", the Older row "1,762 older exchanges match your filters." with "Show older exchanges", then seq 1887; header "195 rows below + 38 beyond this window, jump to newest" |
-| [log-older-row-390.png](gui-m3b-live-demo/log-older-row-390.png) | 78,917 B | The same at 390: "1,762 older exchanges match your filters.", "Show older exchanges", seq 4040 first |
-| [log-evicted-repin-1440.png](gui-m3b-live-demo/log-evicted-repin-1440.png) | 94,950 B | **Eviction while pinned:** after a burst carried the reader's whole window past the cap, "2,149 older rows and 1 connection note left this view. The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap. Rows this view was showing left too, so it moved to the oldest exchanges kept."; no Older row (the oldest kept, seq 2,150–2,349, 200 rows); "196 rows below + 1,800 beyond this window, jump to newest" |
-| [log-evicted-repin-390.png](gui-m3b-live-demo/log-evicted-repin-390.png) | 83,929 B | The same at 390: "4,301 older rows and 2 connection notes left this view. … so it moved to the oldest exchanges kept.", seq 4,302–4,501, "195 rows below + 1,800 beyond this window" |
+| [log-following-1440.png](gui-m3b-live-demo/log-following-1440.png) | 103,740 B | **Following** at the cap: the header "Exchange log", "200 of 2,000 shown, last seq 2036", Older and Newer (Newer unavailable, dashed); the one-row filter bar with "Pause" and "Clear"; the newest row at the bottom |
+| [log-following-390.png](gui-m3b-live-demo/log-following-390.png) | 75,061 B | Following at 390: "200 of 2,000 shown, last seq 4190" |
+| [log-paused-1440.png](gui-m3b-live-demo/log-paused-1440.png) | 95,104 B | **Paused:** "View paused. 33 new exchanges are held; they appear when you resume. The simulator keeps running.", the button reading "Resume" (name "Resume view"), "200 of 1,967 shown, last seq 2070" |
+| [log-paused-390.png](gui-m3b-live-demo/log-paused-390.png) | 73,667 B | Paused at 390: 33 held, "Resume", "200 of 1,967 shown, last seq 4224" |
+| [log-marker-1440.png](gui-m3b-live-demo/log-marker-1440.png) | 97,791 B | **A marker row in the window:** "Connection lost, then resumed. Last live 11:03:55 UTC, resumed 11:04:03 UTC after seq 2077." right after seq 2077, following |
+| [log-marker-390.png](gui-m3b-live-demo/log-marker-390.png) | 82,378 B | The same at 390: "… resumed 11:05:45 UTC after seq 4231." below seq 4231 (the page scrolled to the log box's end) |
+| [log-pinned-1440.png](gui-m3b-live-demo/log-pinned-1440.png) | 97,502 B | **Pinned** by a wheel scroll, **the header controls**: "200 of 2,000 shown, last seq 2116", Older, Newer, "10 rows below + 29 beyond this window" and Jump to newest, all on one header line |
+| [log-pinned-390.png](gui-m3b-live-demo/log-pinned-390.png) | 77,314 B | Pinned at 390: "5 rows below + 28 beyond this window" beside Jump to newest (the header wraps at this width) |
+| [log-older-row-1440.png](gui-m3b-live-demo/log-older-row-1440.png) | 101,534 B | **The top of a pinned window:** "125 older rows left this view. …", then the plain-text edge row "1,762 older exchanges match your filters. Use Older in the log header to show them.", then seq 1888; header "194 rows below + 38 beyond this window" |
+| [log-evicted-repin-1440.png](gui-m3b-live-demo/log-evicted-repin-1440.png) | 112,336 B | **Eviction while pinned:** "2,151 older rows and 1 connection note left this view. The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap. Rows this view was showing left too, so it moved to the oldest exchanges kept."; Older unavailable (the oldest kept); "194 rows below + 1,800 beyond this window" |
+| [log-evicted-repin-390.png](gui-m3b-live-demo/log-evicted-repin-390.png) | 83,585 B | The same at 390: "… left this view. … so it moved to the oldest exchanges kept.", "195 rows below + 1,800 beyond this window" |
+| [stale-banner-1440.png](gui-m3b-live-demo/stale-banner-1440.png) | 45,458 B | **Stale:** the top of the page during a SIGSTOP: Connection "Disconnected, reconnecting" (amber outline lamp), the struck-through polled readouts, and the banner "Disconnected. Last live 11:03:55 UTC (8 s ago). The views below show data as of then. Reason: status request failed: no answer within 5 s. Reconnecting now." with "Retrying"; the banner is not a live region (`aria-live` null); the announcer then held "Reconnecting: attempt 2." |
+| [stale-banner-390.png](gui-m3b-live-demo/stale-banner-390.png) | 43,493 B | The same at 390 ("… (9 s ago) …") |
 | [lamp-live-1440.png](gui-m3b-live-demo/lamp-live-1440.png) | 5,519 B | **The live lamp** (crop of `#conn`, ×3): the filled lamp with its resting ring glow, "Live"; the beat paused at 0 ms |
 | [lamp-live-390.png](gui-m3b-live-demo/lamp-live-390.png) | 5,444 B | The same at 390 |
 | [lamp-last-known-1440.png](gui-m3b-live-demo/lamp-last-known-1440.png) | 13,333 B | **Last known** (crop, ×3): the amber outline lamp, no beat (0 `beat` animations), "Connected, last known data" (`conn conn--known`) |
 | [lamp-last-known-390.png](gui-m3b-live-demo/lamp-last-known-390.png) | 13,107 B | The same at 390 |
 
-Total: 15 files, 986,807 B. They show the page as it is; they do not tick the owner's visual
+Total: 17 files, 1,126,366 B. They show the page as it is; they do not tick the owner's visual
 review.
 
 ## Remaining acceptance items
@@ -709,53 +870,64 @@ Findings and untested paths:
       10 % at 1440 × 900 and 6 % at 390 × 844, headless `--disable-gpu`. It stays open until
       the owner confirms it in their own browser.
 - [ ] **The owner's visual review of the windowed log and the lamp**: following, scroll-to-pin,
-      Older / Newer / Jump to newest, the count line and the four absent-row wordings, Pause,
-      the eviction note; the lamp live, last known, down and refused. See "Running the live GUI
-      for visual review" and the screenshots. The screenshots do not tick it.
+      the header's Older / Newer / Jump to newest with the count beside it, the shortened count line
+      and the four absent-row wordings, Pause / Resume / Clear, the eviction note, the stale banner
+      with its ticking countdown; the lamp live, last known, down and refused. See "Owner
+      checklist (ordered)" and the screenshots. The screenshots do not tick it.
 - [ ] **The visible-browser measurement: BLOCKED**, it needs an unlocked desktop. Task 46b's
       visible GPU run was invalid because the desktop was locked with the monitor off. Re-run
       `GUI_PERF_VISIBLE=1 GUI_PERF_REPEATS=1 scripts/run_gui_demo.sh --m3b-perf-log <outdir>` at
       an unlocked desktop, or follow the five DevTools steps in
       [gui-m3b-main-thread.md](gui-m3b-main-thread.md), "What the numbers do not show".
-- [ ] **The 1440 click-latency question.** Since the lamp change, a click at 1440 × 900 takes one
-      frame longer to present in headless Chrome (Task 45: p50 48 ms against 32 over 20 pooled
-      clicks; Task 46b: p95 48 ms against Task 44's 32-40). Input delay and processing are
-      unchanged, and 390 is unchanged. With a GPU it is
-      unknown. An owner decision if it shows in a real browser; the alternative, a pulse only on a
-      state change, is a visible behaviour change and was not made.
-- [ ] **Owner decision before M3b acceptance: keyboard access to Newer** (whole-work review of
-      `3cfefec..b0b1250`). After any Older / Newer press focus goes to the log box (ruling e), and
-      Tab then passes every per-row "show all" button in the window before it reaches the Newer
-      row, while Older is one Tab away. Options: compact Older / Newer controls in the log header
-      beside the jump control; or return focus to the pressed nav button, with `preventScroll`,
-      when it is still visible. Note: the code comment's "(WCAG 2.4.11)" beside that focus move
-      (`app.js`, the nav click handler) is a stretch: a control scrolled out of a scroll box is not
-      "obscured by author content". The code is not edited here.
-- [ ] **Owner decision, recommended before M3b acceptance: `#log-count`'s `aria-live="polite"`.**
-      The pre-existing attribute makes a screen reader announce the count line, with its
-      "last seq N", about 4-5 times a second while live (the review; task-43-report, Concerns).
-      The reviewer recommends fixing it before acceptance; it is one attribute; the owner's call.
+- [ ] **The 1440 click-latency question.** Headless Chrome 151 with the GPU disabled, 1440 × 900,
+      full buffer, about 3.8 requests/s, p95 of a scripted click's Event Timing, two runs per
+      width: 32 ms with the old `box-shadow` beat (`782140e`) against 48 ms with the ring
+      (`3593be7`); 390 did not grow. The extra time is presentation; input delay and processing are
+      unchanged. **In a visible, GPU-composited browser it remains UNVERIFIED** (blocked by the
+      locked desktop). An owner decision if it shows in a real browser; the alternative, a pulse
+      only on a state change, is a visible behaviour change and was not made
+      ([gui-m3b-main-thread.md](gui-m3b-main-thread.md), "What the numbers do not show").
+- [ ] **Owner ruling: the remaining layout deficit at 1440 × 900** (recorded, not required; no
+      layout change made): paused while stale shows 4 full rows (rows region 237 px, about 27 px
+      short of five); stale while pinned shows 4 (the log header wraps to 72.1 px). See "Layout
+      by state" above.
+- [ ] **Owner decision: announcement chattiness.** Every retry start and failure is announced. A
+      60 s outage produces about **11 announcements with a hung simulator** (SIGSTOP: 1 disconnect,
+      5 attempt starts, 5 failures) and **about 15 with a closed port**, plus one on recovery; at
+      the 15 s backoff cap, 2 every 15 s (task-51-report, Task 51b, from the backoff in the code;
+      the harness observed the same sequence for the first 36 s).
+- [ ] **Owner decision: Pause's `aria-pressed` with a changing label.** "Pause" / "Resume" (and
+      the graphs' "Pause graphs" / "Resume graphs") change their visible text and also carry
+      `aria-pressed`: two signals for one state (a toggle is usually either a pressed state with a
+      fixed label, or a changing label). Pre-existing; the design spec §6.9 specifies
+      `aria-pressed`; not changed (Task 51 review). What a screen reader says here is unverified.
+- [ ] **Owner decision: the visible "Clear" next to the filters.** Since Task 47b the button reads
+      "Clear" (accessible name "Clear view"); beside the filter chips it may read as "clear the
+      filters". A visual call (Task 51 review; decision j above).
 - [ ] **Owner decision: repository size before `gui` merges into `modernization`.**
       `docs/validation/gui-m3b-perf/` is 24 MB, almost all from Task 39 (already pushed). The range
       `3cfefec..b0b1250` adds about 1.8 MB of traces, 1.0 MB of PNGs and 0.4 MB of JSON. The gzip
       traces do not delta-compress, so they stay in the packed history (about 3.9 MB). Decide
-      Git LFS or an external store before the merge; add no more traces meanwhile.
-- [ ] **Deferred findings, reported and not changed** (page work was out of scope):
-      - a rare "not following, not pinned" state: `setFollow(false)` with no matching exchange
-        shown (`view.lastId` null) leaves `follow = false` and `endId = null`, so the window keeps
-        sliding while the page treats the reader as pinned. It is reachable when a filter matches
-        no exchange but marker rows are drawn and the reader scrolls them (the review). Deferred;
-      - `view.expanded` keys are never pruned when their rows leave the cap: a small, pre-existing
-        leak (the review);
+      Git LFS or an external store before the merge; add no more traces meanwhile. (Task 50 adds no
+      trace; it replaces the log / lamp PNGs and adds about 0.6 MB of results JSON and logs.)
+- [ ] **The unidentified single full-suite failure** (Task 44's first run; the failing test's name
+      was not captured). By the owner's instruction it is **not chased by repeated runs**: every
+      required validation since then saves its complete output (`-rfE`), and a recurrence is to be
+      investigated by its identified test. Complete outputs saved (session scratchpad, not
+      committed): `suite-47-49.out`, `suite-47-49b.out`, `suite-47b.out`, `suite-51.out`,
+      `suite-51b.out` (each 1339 passed, 69 skipped, 2 xfailed, 0 failed).
+- [ ] **Deferred findings, reported and not changed:**
       - the "No exchanges match these filters." state line prints its count unformatted
-        ("2000 are hidden by the ECU, service or outcome filter."), while every other number on
-        the page reads "2,000"; the paused line's held count is likewise unformatted, which would
-        show at 1,000 or more (task-46a-report, Page findings);
-      - with nothing matching, the count line reads "0 of 0 matching shown (2,000 retained)":
-        accurate, and the state line explains it, but awkward (the same);
-      - one unidentified single failure in one full-suite run (Task 44's first run; the failing
-        test's name was not captured), not reproduced in six later full runs (three in Task 44, one
-        each in Tasks 45, 46a and 46b, all 1339 passed, 69 skipped, 2 xfailed).
+        ("2000 are hidden by the ECU, service or outcome filter.", still so in `log51b`), while
+        every other number on the page reads "2,000"; the paused line's held count is likewise
+        unformatted, which would show at 1,000 or more (task-46a-report, Page findings);
+      - with nothing matching, the count line reads "0 of 0 matching, last seq N" (`log51b`):
+        accurate, and the state line explains it, but awkward.
+- Resolved, not an acceptance item (Tasks 47-51): keyboard access to Newer; `#log-count`'s
+      live region; `view.expanded` pruning; the "not following, not pinned" state; the ticking
+      countdown and "N s ago"; the recovery announcement; Retry now focus. Each is listed with
+      what automation verified and what still needs your observation under "Findings resolved"
+      in "Tasks 47-51" above.
 - Resolved, not an acceptance item (Task 37): **case 21**, 4 full log rows while the restart
       note and a gap note showed together at 1440 × 900 (run 9). The fix was the owner's
       wording on the shared notice line, no notice bottom margin, and a 4.5rem plot cap. Run 12
@@ -775,22 +947,106 @@ Gates that stay open whatever happens to M3b:
 - [ ] **The Phase 8b gate.**
 - [ ] **The V1.0 branch rule:** `gui` is not merged into `modernization` until V1.0 is tagged.
 
-## Rulings made during the log fix (for the owner to confirm or reverse)
+## Rulings made during the log fix (owner approvals, and decisions for the owner to confirm or reverse)
 
-Each of these was decided by the controller during Tasks 42-46. They are not spec, and none is
-owner-accepted. Sources: the task reports (local, untracked) and the code at `3593be7`.
+### Approved by the owner (2026-10-03)
 
-| # | Ruling | What it means for a reader | What reversing costs |
+The owner approved these behaviours as built (plan, "M3b follow-ups after the log-fix review").
+They were controller rulings during Tasks 42-46 and are now owner approvals:
+- **Leaving follow pins the window.** The reader's own scroll (or Older) pins it at the newest row
+  shown; arrivals are counted ("… beyond this window", the Newer row), not appended below.
+- **Reaching the bottom of an older window does not jump to live data.** Scrolling back to the
+  bottom of a pinned window does not re-follow while newer matching exchanges wait; Newer or Jump
+  to newest brings them in.
+- **Clear view resumes following.**
+- **Older / Newer move by overlapping 100-row steps, preserving the reading position**
+  (`LOG_STEP` = 100 over a `LOG_WINDOW` of 200). The nuance, as built: the step shrinks when needed
+  to keep the anchor row (the topmost visible for Older, the bottom-most for Newer) in the window,
+  and a press with the window's far end already on screen scrolls the log box to that end instead
+  of moving the window.
+
+### Controller decisions, for the owner to confirm or reverse
+
+Not spec and not owner-accepted. Sources: the task reports (local, untracked) and the code at
+`25e6852`.
+
+| # | Decision | What it means for a reader | What reversing costs |
 |---|---|---|---|
-| a | **Scrolling back to the bottom of a pinned window does not re-follow while newer matching exchanges wait.** Only Newer or Jump to newest brings them in (task-43-report, decision 1) | After any scroll-up at live rates, a later scroll down stays pinned; the reader uses the header control or the Newer row's Jump to newest. A reader at the bottom of an Older-navigated window is not yanked to the live end | A one-line change in `readerScroll` (re-follow on any scroll to the end), and the `--m3b-log` pinned cases' expectations |
-| b | **Leaving follow by the reader's own input pins the window**, so arrivals are counted ("… beyond this window", the Newer row) rather than appended below. This applies the plan's central design rule | Rows never move under a reader inspecting history; new rows appear only on Newer or Jump to newest | Appending below while pinned would let the window grow or slide under the reader; the selection logic, the row key and cases 4, 5 and 7 would change |
-| c | **Clear view resumes following** (decision 2) | After Clear, new rows are drawn at the bottom as they come | Without it, a pin left over from before the Clear re-pins at the first arrival and draws one row with every later one counted as newer; a different Clear rule is needed instead |
-| d | **`LOG_WINDOW` = 200, `LOG_STEP` = 100; the step is reduced so the reader's anchor row (the topmost visible for Older, the bottom-most for Newer) stays in the window; when the window's far end is already on screen, a press scrolls the log box to that end instead of doing nothing** (task-43-report, fix round 2) | A press always does something visible. Repeated presses without scrolling go full step, reduced step, then a scroll to the end (case 4's walks: 19 moves and 9 scrolls each way) | The constants are two lines in `app.js` and the harness's copies; other sizes need the measurements re-run. Dropping the anchor rule lets rows in view leave the window on a press |
-| e | **After an Older / Newer / in-row Jump press, focus goes to the log box** (`#logwrap`), never to an off-screen button | Keyboard users land in the log box; see the keyboard finding under "Remaining acceptance items" | Returning focus to the pressed button (with `preventScroll`) when it is still visible is a small change in the click handler |
-| f | **The jump control keeps the owner-ruled "N rows below" meaning and adds "+ M beyond this window"** ("11 rows below + 35 beyond this window, jump to newest"; task-43-report "Strings") | The Task 21 count is unchanged; exchanges outside the window are named separately | Wording only (`renderFollow`) and the M3a jump check |
+| e | **Focus rule (replaces the earlier "focus goes to the log box after any press").** After Older / Newer the focus stays on the pressed header button; after Jump to newest, which hides itself, it goes to the log box; after Retry now, when the button hides or is disabled, to the banner text (`#linkstate-text`), else the log box (Tasks 47, 51b) | Keyboard users can press Older or Newer repeatedly; Newer is one Tab after Older | One focus rule per control in the click handlers |
+| f | **The jump control keeps the owner-ruled "N rows below" meaning and adds "+ M beyond this window", now as plain text beside the button** (`#log-below`, "10 rows below + 29 beyond this window"), while the button reads "Jump to newest" with the accessible name "Jump to newest exchange and follow new ones", described by the count (Task 47, deviation 1) | No number inside a button label; the count is visible next to it and read as the button's description | One `setText` target, if the count should go back into the label |
 | g | **The re-pin after eviction shows the oldest full window** (200 exchanges) **with a one-sentence note**, "Rows this view was showing left too, so it moved to the oldest exchanges kept." (task-43-report, fix round 1) | A pinned reader whose rows left the 2,000 cap sees a full window at the oldest kept, never a shrunken one | Task 43's first version re-pinned to a 1-row window; reversing removes `logFullEnd`'s use in `renderLog` and the sentence |
 | h | **The lamp's beat moved to a ring animated by `transform` / `opacity`**, the same 2 s rhythm, only under `prefers-reduced-motion: no-preference` (task-45-report Part B) | The same look; pixel differences only at the ring's edge (see "The lamp") | Restoring the `box-shadow` beat in `app.css`. Headless it brings back about 21 points of busy time at 1440 and 13 at 390 (diagnostic B against A). The other candidate, a pulse only on a state change, is a visible behaviour change |
 | i | **The diagnostic threshold:** an animation counted as a measurable share if turning it off alone removed more than about 10 % of busy time at both widths, beyond the run-to-run spread (task-45-report "Threshold used") | The lamp (66-71 % of busy time) was changed; the change flash (inside the noise) was not | A lower threshold would still not separate the flash from the run-to-run spread with two runs per width; more runs would be needed before changing it |
+| j | **Visible texts "Pause" / "Resume" / "Clear"**; accessible names unchanged ("Pause view" / "Resume view" / "Clear view") (Task 47b) | The filter bar fits one row at 1440 × 900 (79 px of slack); the footer still says "Filters, pause and clear change this view only" | Restoring the longer texts leaves the bar on one row with about 15 px to spare, which is fragile |
+| k | **The shortened count line** (Task 47 deviation 2, follow-up `6d84b0d`): no seq range, no "(2,000 retained)", no "(live)", and "matching" without "shown" ("200 of 2,000 shown, last seq 2116"). The facts are shown elsewhere: the filters' "All ECUs (2000)", the Connection readout, the rows' own seqs; restart information stays in the log's restart marker row and the graphs' restart note | The log header stays one line at 1440, filtered and pinned too | Any of the removed parts made the pinned header wrap at 1440 (72.1 px), costing a log row |
+| l | **One hidden announcer** (`#announce`): the banner is no longer a live region; each announcement replaces the previous one (with `aria-atomic`, old messages would otherwise be re-read) and is cleared after 10 s (Task 51) | One announcement per transition; ticks are never announced | Re-adding live semantics to the banner's stable message, keeping the announcer for recovery only |
+| m | **The recovery wording and "silent on a healthy first load"**: "Connection restored; data current." after an outage that included a disconnect, "Live data restored." after a data fault without one, nothing while the data stays last known, nothing on a healthy load or poll; an outage that began at page load is announced when it ends (Task 51b). The retry and attempt wordings are the controller's (task-51-report, deviation 2) | Each recovery is said once | Wording only (`annText`) |
+| n | **The Jump button's accessible name and the count text beside it** (see f) | — | As f |
+
+## Owner checklist (ordered)
+
+Everything here is the owner's alone except what is marked automation verified; automation never
+ticks a box. Run from the gui worktree,
+`cd /home/aman/dev/personal-projects/ecu-simulator/.claude/worktrees/gui`.
+
+1. **Start the host simulator and traffic** [needs your observation]. Terminal 1:
+   `.venv/bin/ecu-simulator --profile docs/examples/ice_drive_cycle_stepped.yaml --interface vcan0 --api 127.0.0.1:8765`;
+   terminal 2: `.venv/bin/python scripts/gui_demo_traffic.py --interface vcan0 --rate 4`
+   (optionally `--rate 50` until "All ECUs (2000)", then `--rate 4`); open
+   `http://127.0.0.1:8765/`. Stop with Ctrl-C in terminal 2, then terminal 1 (details: "Running
+   the live GUI for visual review").
+2. **Visual review** [needs your observation; automation verified the behaviour, not the look:
+   `log51b` 22 of 22, `m3b-51b` 36 of 36]. Look at:
+   - the windowed log: following; a scroll up pins it and the header shows "N rows below + M beyond
+     this window" beside Jump to newest; Older / Newer in the header (unavailable ones dashed);
+     the plain-text edge rows; the short count line; Pause / Resume / Clear; Clear and Jump to
+     newest resume following; the eviction note after a burst;
+   - the lamp: live (the ring's 2 s beat), last known (amber outline), disconnected;
+   - the stale banner with its ticking countdown and "N s ago";
+   - the graphs and the visual §13 view items: five graphs with units, the rpm row, the VIN as
+     text; steps not ramps and the coolant staircase; the 90 s boundary; at least 5 log rows at
+     1440 × 900 and Hide graphs; the three windows; Pause graphs against Pause; 390 px and
+     2000 px; the uPlot licence link (the full list: "The owner's manual checklist" below).
+3. **Chrome CSP check** [needs your observation]: open the page in Chrome, DevTools > Console,
+   watch one full 90 s cycle: no Content-Security-Policy error, and the graphs draw. The
+   automation's console log is not this check.
+4. **Firefox CSP check** [needs your observation]: the same in Firefox (a snap on this host;
+   manual only); record the Firefox version.
+5. **The isolated fault checks** [needs your observation; automation verified the same faults
+   headless: `m3b-51b` "Non-finite values" and "Encoding failure …"]. From a terminal in your
+   desktop session (it needs `DISPLAY` and an unlocked desktop); each opens a **visible Chrome in a
+   private user and network namespace** with its own `lo` and `vcan0`, and the page on that
+   namespace's `http://127.0.0.1:8080/` (it does not touch the host's network, `vcan0`, port 8765
+   or your Chrome profile). The options, from the script's own usage text:
+   - `scripts/gui_fault_session.sh nonfinite` — `engine.coolant_temp` is nan for scenario t in
+     [40, 60); no traffic. Watch: from the printed open time the coolant row and graph read
+     "invalid value" and the line stops, the header stays "Live"; after the close time the line
+     resumes with a gap.
+   - `scripts/gui_fault_session.sh state-fault` — the snapshot raises for t in [40, 50); the
+     traffic script runs. Watch: "Last known, <time> UTC" on the vehicle, DTC and graphs panels
+     (not "Stale"), the header "Connected, last known data", the log still adding rows; after the
+     close time "Live" again and a gap in the graphs.
+   - Options: `--window START:END` (repeatable), `--signal PATH` (nonfinite), `--part
+     vehicle|dtcs` (state-fault), `--profile PATH`, `--port N` (default 8080), `--no-traffic`
+     (state-fault), `--devtools-port N`, `--duration S`, `--keep-logs DIR`, `-h` / `--help`.
+   - Stop: close the Chrome window or press Ctrl-C in the terminal; the launcher stops what it
+     started and removes its temp dir.
+6. **Optional: the visible-browser performance run** [needs your observation; the headless numbers
+   are automation's]: at an unlocked desktop,
+   `GUI_PERF_VISIBLE=1 GUI_PERF_REPEATS=1 scripts/run_gui_demo.sh --m3b-perf-log <dir>` (about
+   4 min; a Chrome window appears), or the five DevTools steps in
+   [gui-m3b-main-thread.md](gui-m3b-main-thread.md), "What the numbers do not show".
+7. **A screen-reader listen** [needs your observation; automation verified only the announcer's
+   markup and the text and timing of each announcement, `m3b-51b` and `log51b` case 11]. With NVDA
+   or Orca, on the page from step 1: nothing while the log runs; on `kill -STOP <simulator pid>`,
+   "Disconnected. Reason: …" once, then "Reconnecting: attempt N." and "Attempt N failed: …" per
+   retry (the countdown is not read each second); on `kill -CONT`, "Connection restored; data
+   current." once. With the `state-fault` session of step 5: "Last known data: …" once when the
+   fault opens (any further attempt or polling wording is the controller's; task-51-report lists
+   every string), and one recovery announcement after it closes (by the design, "Live data
+   restored." for a data fault without a disconnect; this exact session was not automated). An
+   exhausted episode ("Could not recover: …") occurs only in the automated bounded case; after it,
+   Enter on Retry now should leave focus on the banner text.
 
 ## Running the live GUI for visual review
 

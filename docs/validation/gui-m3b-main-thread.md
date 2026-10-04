@@ -7,6 +7,14 @@ their own browser. M3b stays **implemented, not accepted**. **The M2 early-check
 separate and unaffected** ([gui-m2-early-check.md](gui-m2-early-check.md)): nothing in Tasks 42-46
 measures or changes the simulator's answer latency, the API rate or the diagnostic path.
 
+**Later page changes (Tasks 47-51, 2026-10-03/04, head `25e6852`), not re-measured here.** Older,
+Newer and Jump to newest moved into the log header (focus now stays on a pressed Older / Newer),
+the count line was shortened, the filter bar fits one row at 1440, `#log-count` is no longer a live
+region, and announcements go through one hidden announcer
+([gui-m3b-live-demo.md](gui-m3b-live-demo.md), "Tasks 47-51"). The main-thread numbers below were
+measured on `3593be7` and were not repeated on the final page; the descriptions of the controls
+below are the `3593be7` page's.
+
 The owner's instruction (2026-10-01; [plan](../plans/gui-m2-implementation.md), "M3b main-thread fix:
 a bounded, navigable exchange log") set the design and the measurement protocol. Everything below
 was measured in **headless Chrome 151 with `--disable-gpu`**, in a private network namespace, on a
@@ -221,12 +229,24 @@ runs**: Part A's following runs had no MutationObserver.
      Each click's duration splits into input delay / processing / presentation, which compares
      with the tables above. Note chrome://gpu's "GPU compositing" line. Repeat with the window
      about 390 px wide, or the narrowest Chrome allows.
-- **That the lamp change is free for clicks at 1440.** After Task 45 a click's next paint at
-  1440 × 900 lands about one frame later: duration p50 48 ms against 32 before the change
-  (task-45-report, both sessions and a no-`will-change` variant; reproduced in Task 46b, p95 48).
-  Input delay and processing are unchanged; it is presentation. At 390 it is unchanged. A likely
-  cause, not proven, is software compositing of the beat under `--disable-gpu`. **With a GPU it is
-  unknown** (the visible run above was blocked).
+- **That the lamp change is free for clicks at 1440 — the "48 ms against 32 ms" figures and their
+  conditions.** Both sides were measured the same way: headless Chrome 151 with the GPU disabled
+  (`--disable-gpu`, software compositing), 1440 × 900, the log at its full 2,000-exchange buffer,
+  the traffic script at about 3.8 requests/s, two 60 s runs per width, and the figure is the
+  **p95 of the Event Timing duration of a scripted (real CDP) click** (Chrome rounds durations to
+  8 ms; n = 4 Pause, 8 filter-chip clicks per width):
+  - **32 ms**: the page with the old `box-shadow` beat, `782140e` (Task 44, Pause and filter change
+    p95 32; Older and Jump p95 40; `perf44-after-1/`, local);
+  - **48 ms**: the page with the ring animated on `transform` / `opacity`, `3593be7` (Task 46b Part A,
+    Pause, filter change, Older and Jump p95 48;
+    [results/perf46b-A-following.json](gui-m3b-perf/results/perf46b-A-following.json), committed).
+
+  Task 45's own comparison agrees (20 clicks pooled per width: p50 32 / p95 40 with the old beat at
+  `84c0637`, p50 48 / p95 48 with the ring; local). The extra time is presentation (the next paint);
+  input delay and processing are unchanged. **At 390 × 844 it did not grow** (p95 24-40 ms against
+  32-40). A likely cause, not proven, is software compositing of the beat under `--disable-gpu`.
+  **In a visible, GPU-composited browser the result remains UNVERIFIED**: that run was blocked by
+  the locked desktop; the command and the five DevTools steps are above.
 - **That paused and pinned cost nothing.** `renderLog` still runs on every arrival (227-228 times a
   minute) to update the counters: about 0.6 s a minute at 1440 (0.58-0.62 s) and 0.26-0.27 s at
   390. The rows are untouched; the cost is the counter text writes and the layout they cause.

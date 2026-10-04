@@ -302,7 +302,9 @@ short restart note on the shared notice line, no notice bottom margin and a 4.5r
 record lists the page's main-thread load as an open finding under "Remaining acceptance
 items". (Status, 2026-10-01: after Tasks 42-46, a windowed exchange log and a compositor-only
 lamp, the finding is mitigated on headless numbers and stays open until the owner confirms it in
-their own browser; `docs/validation/gui-m3b-main-thread.md`, "Outcome".) **M3b is not accepted** until the owner's manual checklist (design §13) passes, including the CSP check in both
+their own browser; `docs/validation/gui-m3b-main-thread.md`, "Outcome". Status, 2026-10-04: Tasks 47-51 moved the log's navigation into its header, silenced the log
+counter and moved announcements into one hidden announcer; the M3b record lists the owner's
+remaining items under "Owner checklist (ordered)".) **M3b is not accepted** until the owner's manual checklist (design §13) passes, including the CSP check in both
 Chrome and Firefox, which nobody has run. The record lists the rulings the controller made
 during checkpoint 2, for the owner to confirm or reverse: the Agreement check covers
 unpaused live screenshots only; break and gap notes sit on one shared line under the
