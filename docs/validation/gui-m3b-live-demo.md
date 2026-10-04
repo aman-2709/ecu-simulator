@@ -514,7 +514,7 @@ untracked). The page's `app.js` last changed in `de52666`; the final runs below 
 |---|---|---|---|
 | `--m3b` | 2026-10-04T10:32:00Z | exit 0, **36 of 36** (26 earlier cases, 9 announcement cases, the layout-by-state case); the 4 log entries are the expected variant C 503 handshakes | [m3b-51b/m3b-results.json](gui-m3b-live-demo/m3b-51b/m3b-results.json), [capture.log](gui-m3b-live-demo/m3b-51b/capture.log), [overflow-check.txt](gui-m3b-live-demo/m3b-51b/overflow-check.txt) |
 | `--m3b-log` | 2026-10-04T10:45:59Z | exit 0, **22 of 22** (1440: 11 of 11, adding case 10 "No exchange shown: nothing to pin" and case 11 "Live regions"; 390: 9 of 9; page 2 of 2); 0 problems | [log51b/m3b-log-results.json](gui-m3b-live-demo/log51b/m3b-log-results.json), [capture.log](gui-m3b-live-demo/log51b/capture.log) |
-| `--m3b-slots` | 2026-10-04T10:45:09Z | exit 0, **3 of 3** (B start gaps 2.006 / 4.006 s; C 2.006 s) | [slots-51b/m3b-slots-results.json](gui-m3b-live-demo/slots-51b/m3b-slots-results.json), [capture.log](gui-m3b-live-demo/slots-51b/capture.log) |
+| `--m3b-slots` | 2026-10-04T10:45:09Z | exit 0, **3 of 3** (B start gaps 2.007 / 4.006 s; C start gap 2.005 s, wait after the refusal 2.004 s; read from the results JSON, `start_gaps_s` and `wait_after_refusal_s`) | [slots-51b/m3b-slots-results.json](gui-m3b-live-demo/slots-51b/m3b-slots-results.json), [capture.log](gui-m3b-live-demo/slots-51b/capture.log) |
 | M3a | 2026-10-04T10:56:11Z | exit 0; overflow ok at 390, 2000 and 1440; the 2 expected `ERR_CONNECTION_REFUSED` while its simulator is stopped | scratchpad `m3a-51b/` (not committed) |
 | Full suite (namespace, `-rfE`, once) | — | 1339 passed, 69 skipped, 2 xfailed | scratchpad `suite-51b.out` (not committed) |
 
@@ -772,7 +772,9 @@ they match the current page; none of them shows a restart note.
 | [no-scenario-1440.png](gui-m3b-live-demo/no-scenario-1440.png) | 150,769 B | run 7 `m3b-a1-no-scenario-65s.png` | **No scenario:** `ice_default.yaml` after 65 s alone: "No scenario: the values are constant, as configured. Graphs follow scenario time.", no plots, "Live" |
 
 Total: 16 screenshots, 3,309,868 B. The directory, with runs 7, 8, 9 and 12's results and
-logs, both long runs' results and run 9's two traces, is 6,773,999 B. Every other run-7,
+logs, both long runs' results and run 9's two traces, was 6,773,999 B at run 12; with the later
+results (runs 13 and 14, the `--m3b-log` runs, the final 51b results) and the Task 50 screenshots,
+`du -sb` gives 9,151,695 B on 2026-10-04. Every other run-7,
 run-8, run-9 and run-12 shot, and the 10 min shots of `m3b-long1` and `m3b-long3`, stay in the
 scratchpad (not durable). The record's numbers are all in the committed results files, except
 the 2000 × 1100 plot height (a separate measurement, "Task 37" above).
@@ -989,7 +991,9 @@ Everything here is the owner's alone except what is marked automation verified; 
 ticks a box. Run from the gui worktree,
 `cd /home/aman/dev/personal-projects/ecu-simulator/.claude/worktrees/gui`.
 
-1. **Start the host simulator and traffic** [needs your observation]. Terminal 1:
+1. **Start the host simulator and traffic** [needs your observation]. These commands use the
+   host's `vcan0` (never `can0`), and port 8765 on the host must be free (stop any simulator
+   already listening there first). Terminal 1:
    `.venv/bin/ecu-simulator --profile docs/examples/ice_drive_cycle_stepped.yaml --interface vcan0 --api 127.0.0.1:8765`;
    terminal 2: `.venv/bin/python scripts/gui_demo_traffic.py --interface vcan0 --rate 4`
    (optionally `--rate 50` until "All ECUs (2000)", then `--rate 4`); open
@@ -1007,14 +1011,24 @@ ticks a box. Run from the gui worktree,
      text; steps not ramps and the coolant staircase; the 90 s boundary; at least 5 log rows at
      1440 × 900 and Hide graphs; the three windows; Pause graphs against Pause; 390 px and
      2000 px; the uPlot licence link (the full list: "The owner's manual checklist" below).
-3. **Chrome CSP check** [needs your observation]: open the page in Chrome, DevTools > Console,
-   watch one full 90 s cycle: no Content-Security-Policy error, and the graphs draw. The
-   automation's console log is not this check.
-4. **Firefox CSP check** [needs your observation]: the same in Firefox (a snap on this host;
-   manual only); record the Firefox version.
+3. **Chrome CSP check** [needs your observation]. With the simulator and the traffic script of
+   step 1 running (the traffic, `.venv/bin/python scripts/gui_demo_traffic.py --interface vcan0
+   --rate 4`, exercises the log), open `http://127.0.0.1:8765/` in Chrome and open DevTools >
+   Console (F12). Watch one full 90 s drive cycle of the stepped demo. A CSP violation shows as a
+   red (or yellow) console message such as "Refused to load / apply / execute … because it
+   violates the following Content Security Policy directive: …". **Pass: no CSP message in the
+   console over the cycle, and the graphs draw.** The automation's console log is not this check.
+   This checklist uses port 8765 throughout; §13's older wording ("Owner startup commands" and
+   the manual checklist below) says `--api 127.0.0.1:8080`, which is equivalent; use one port
+   for the whole session.
+4. **Firefox CSP check** [needs your observation]. The same page, traffic and 90 s cycle in
+   Firefox (a snap on this host; manual only), with Web Developer Tools > Console
+   (Ctrl+Shift+K). The same pass condition. Record the version from `firefox --version`.
 5. **The isolated fault checks** [needs your observation; automation verified the same faults
    headless: `m3b-51b` "Non-finite values" and "Encoding failure …"]. From a terminal in your
-   desktop session (it needs `DISPLAY` and an unlocked desktop); each opens a **visible Chrome in a
+   desktop session: it needs `DISPLAY` (and passes your `DISPLAY` and `XAUTHORITY` through
+   unchanged, with no `xhost` change) and an **unlocked desktop** (a locked screen draws no
+   frames); each opens a **visible Chrome in a
    private user and network namespace** with its own `lo` and `vcan0`, and the page on that
    namespace's `http://127.0.0.1:8080/` (it does not touch the host's network, `vcan0`, port 8765
    or your Chrome profile). The options, from the script's own usage text:
@@ -1038,9 +1052,12 @@ ticks a box. Run from the gui worktree,
    [gui-m3b-main-thread.md](gui-m3b-main-thread.md), "What the numbers do not show".
 7. **A screen-reader listen** [needs your observation; automation verified only the announcer's
    markup and the text and timing of each announcement, `m3b-51b` and `log51b` case 11]. With NVDA
-   or Orca, on the page from step 1: nothing while the log runs; on `kill -STOP <simulator pid>`,
+   or Orca, on the page from step 1: nothing while the log runs. Then find the simulator's PID
+   with `pgrep -f 'ecu-simulator --profile docs/examples/ice_drive_cycle_stepped.yaml'` (check it
+   prints exactly one PID, the step-1 simulator), run `kill -STOP <pid>`, and later
+   `kill -CONT <pid>`. Stop nothing but that process, and do not use `pkill -f`. Expect
    "Disconnected. Reason: …" once, then "Reconnecting: attempt N." and "Attempt N failed: …" per
-   retry (the countdown is not read each second); on `kill -CONT`, "Connection restored; data
+   retry (the countdown is not read each second); after `kill -CONT`, "Connection restored; data
    current." once. With the `state-fault` session of step 5: "Last known data: …" once when the
    fault opens (any further attempt or polling wording is the controller's; task-51-report lists
    every string), and one recovery announcement after it closes (by the design, "Live data
