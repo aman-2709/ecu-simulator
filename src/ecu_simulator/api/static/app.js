@@ -873,7 +873,9 @@
       b.setAttribute("aria-pressed", String(Number(b.dataset.window) === G.win));
     });
     var pause = $("btn-graphs-pause");
-    pause.setAttribute("aria-pressed", String(G.paused));
+    // A plain button whose label changes (Pause/Resume), not a toggle: no aria-pressed. The
+    // paused look keys on data-paused (Task 53); the window selectors keep aria-pressed.
+    pause.dataset.paused = String(G.paused);
     pause.textContent = G.paused ? "Resume graphs" : "Pause graphs";
     var toggle = $("btn-graphs-toggle");
     toggle.setAttribute("aria-expanded", String(G.open));
@@ -2298,7 +2300,8 @@
   }
   function syncControls() {
     var pause = $("btn-pause");
-    pause.setAttribute("aria-pressed", String(view.paused));
+    // Label-changing button, not a toggle: no aria-pressed (Task 53); data-paused keys the look.
+    pause.dataset.paused = String(view.paused);
     // Short visible text so the log's filter bar is one row at 1440; the name starts with it
     // and says what it acts on (this view only, as the footer says).
     pause.textContent = view.paused ? "Resume" : "Pause";

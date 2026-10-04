@@ -2144,6 +2144,15 @@ async def case_held_left(m: M3b) -> None:
         {"speed": sp})
 
 
+# Task 53: the two Pause buttons (graphs, log) and the time-window selectors' aria-pressed.
+PAUSE_BUTTONS = """(() => {
+  const b = id => { const e = document.getElementById(id);
+    return {pressed: e.getAttribute('aria-pressed'), paused: e.dataset.paused || null, text: e.textContent}; };
+  return {graphs: b('btn-graphs-pause'), log: b('btn-pause'),
+    windows: [...document.querySelectorAll('#graphs-panel [data-window]')].map(e => e.getAttribute('aria-pressed'))};
+})()"""
+
+
 async def case_pause(m: M3b) -> None:
     before_log = await m.log()
     await m.cdp.click("#btn-graphs-pause")
@@ -2154,10 +2163,13 @@ async def case_pause(m: M3b) -> None:
         await asyncio.sleep(0.5)
     during_log = await m.log()
     meta = await m.cdp.js("document.getElementById('graphs-meta').textContent")
+    btn_paused = await m.cdp.js(PAUSE_BUTTONS)
     await m.shot("m3b-b-paused.png")
     await m.cdp.click("#btn-graphs-pause")
     await asyncio.sleep(0.8)
     after = await m.state()
+    btn_after = await m.cdp.js(PAUSE_BUTTONS)
+    gp, ga = btn_paused["graphs"], btn_after["graphs"]
     paths = [p for p, g in samples[0]["graphs"].items() if not g["hidden"]]
 
     def seq(key: str, p: str) -> list[str]:
@@ -2178,8 +2190,19 @@ async def case_pause(m: M3b) -> None:
          "after: drawn-to = as-of, paused false": all(after["graphs"][p]["drawnTo"] == after["graphs"][p]["asOf"]
                                                       and after["graphs"][p]["paused"] == "false" for p in paths),
          "the log kept running": len(during_log["seqs"]) > len(before_log["seqs"])
-         or (during_log["seqs"][-1:] != before_log["seqs"][-1:])},
-        {"meta": meta, "first": {p: samples[0]["graphs"][p] for p in paths},
+         or (during_log["seqs"][-1:] != before_log["seqs"][-1:]),
+         # Task 53: both Pause buttons are label-changing buttons without aria-pressed; the
+         # time-window selectors keep it (exactly one true).
+         "Pause buttons have no aria-pressed, paused or not": all(
+             b[k]["pressed"] is None for b in (btn_paused, btn_after) for k in ("graphs", "log")),
+         "graphs Pause: data-paused true, Resume graphs; after: false, Pause graphs":
+             gp["paused"] == "true" and gp["text"] == "Resume graphs"
+             and ga["paused"] == "false" and ga["text"] == "Pause graphs",
+         "window selectors keep aria-pressed, one true": all(
+             len(b["windows"]) == 3 and None not in b["windows"] and b["windows"].count("true") == 1
+             for b in (btn_paused, btn_after))},
+        {"buttons_paused": btn_paused, "buttons_after": btn_after,
+         "meta": meta, "first": {p: samples[0]["graphs"][p] for p in paths},
          "last": {p: samples[-1]["graphs"][p] for p in paths}, "after": {p: after["graphs"][p] for p in paths},
          "log_last_seq": [before_log["seqs"][-1:], during_log["seqs"][-1:]]})
 
@@ -3222,7 +3245,8 @@ PERF_CATEGORIES = ["toplevel", "devtools.timeline", "v8"]
 # animation off (the live lamp's endless beat and the signal table's change flash).
 PERF_CONDITIONS = ("baseline-a", "log-paused", "graphs-hidden", "no-traffic", "no-traffic-reduced-motion",
                    "baseline-b", "log-cleared", "log-cleared-reduced-motion")
-PAUSED = "document.getElementById('btn-pause').getAttribute('aria-pressed') === 'true'"
+# Task 53: the Pause buttons carry data-paused, not aria-pressed (labels change instead).
+PAUSED = "document.getElementById('btn-pause').dataset.paused === 'true'"
 GRAPHS_HIDDEN = "document.getElementById('graphs').hidden"
 # The log as the page holds it: retained exchanges (the ECU filter's "All ECUs (N)", which is
 # the page's S.exCount), the table's rows, the exchange rows among them, and the last seq.
@@ -3234,7 +3258,7 @@ PERF_LOG = """(() => {
           exchange_rows: document.querySelectorAll('#log-body > tr.ex').length,
           last_seq: m ? Number(m[1]) : null, health: document.body.dataset.health,
           graphs_hidden: document.getElementById('graphs').hidden,
-          log_paused: document.getElementById('btn-pause').getAttribute('aria-pressed') === 'true',
+          log_paused: document.getElementById('btn-pause').dataset.paused === 'true',
           following: document.getElementById('btn-follow').disabled,
           log_count: document.getElementById('log-count').textContent};
 })()"""
@@ -4008,7 +4032,7 @@ LOG_PROBE = r"""(() => {
     follow: {text: document.getElementById('log-below').textContent, label: fb.textContent, disabled: fb.disabled},
     state: st.hidden ? null : st.textContent,
     retained: Number((/\((\d+)\)/.exec(document.getElementById('f-ecu').options[0].textContent) || [0, -1])[1]),
-    paused: pb.getAttribute('aria-pressed') === 'true', pauseText: pb.textContent,
+    paused: pb.dataset.paused === 'true', pausePressed: pb.hasAttribute('aria-pressed'), pauseText: pb.textContent,
     pauseName: pb.getAttribute('aria-label'),
     active: a ? (a.id || a.getAttribute('data-lognav') || a.getAttribute('data-expand') || a.tagName) : null,
     scrollTop: Math.round(w.scrollTop), atBottom: w.scrollHeight - w.scrollTop - w.clientHeight < 4,
@@ -4441,7 +4465,8 @@ async def case_log_pause(lg: LogRun) -> None:
     k4 = await lg.probe()
     lg.record(
         2, "Pause / resume, Clear view",
-        "Full buffer, standard traffic. Pause view: aria-pressed true, the button reads Resume (named Resume view; "
+        "Full buffer, standard traffic. Pause view: data-paused true and no aria-pressed (Task 53), the button reads "
+        "Resume (named Resume view; "
         "Task 47b shortened the visible text). Paused 20 s: "
         "zero row-list and in-row mutations, the same rows and the same log text, the held counter rising at every "
         "5 s sample. Resume: the first row-list batch brings every held exchange at once (one rebuild: its adds >= "
@@ -4450,8 +4475,9 @@ async def case_log_pause(lg: LogRun) -> None:
         "and cleared: No exchanges since you cleared the view. with Show cleared rows, which brings back the "
         "200-row window; resume follows again",
         {"full buffer at the start": p_start["retained"] == PERF_ROWS,
-         "paused: aria-pressed true, Resume (named Resume view)": a["paused"] and a["pauseText"] == "Resume"
+         "paused: data-paused true, Resume (named Resume view)": a["paused"] and a["pauseText"] == "Resume"
          and a["pauseName"] == "Resume view",
+         "no aria-pressed on Pause, paused or not (Task 53)": not a["pausePressed"] and not c["pausePressed"],
          "paused 20 s: zero mutations": d["add"] == d["rem"] == d["nb"] == d["inRows"] == 0,
          "paused: same rows and the log text frozen": a["keys"] == b["keys"] and text_a == text_b,
          "paused: the held counter rises at every sample": None not in held

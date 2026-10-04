@@ -288,7 +288,7 @@ table { border-collapse: collapse; width: 100%; }
 }
 button { cursor: pointer; font-weight: 600; }
 button:hover, .field select:hover { border-color: var(--ink); }
-button[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+button[aria-pressed="true"], button[data-paused="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
 fieldset.outcomes { border: 0; padding: 0; margin: 0; flex-direction: row; flex-wrap: wrap; gap: 0.214rem; }
 /* The legend sits above the chips as the fieldset's own legend (not a float, which would add
    its width to the row's and keep the bar from fitting one row at 1440). */
