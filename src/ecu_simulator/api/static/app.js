@@ -1246,22 +1246,38 @@
       (S.dataAt ? ", at " + utc(S.dataAt) : "") + ".";
   }
 
-  // ---------- announcements (Task 51) ----------
-  // One visually hidden live region, #announce (role status, polite, atomic), says every
-  // transition: a disconnect or refusal, a data fault, each retry or recovery attempt as it starts
-  // and as it fails, exhaustion, and a recovery. Nothing else on the page is a live region, so the
-  // banner's countdown and "N s ago", which change every second, are never announced. A transition
-  // is a change of annState(), which holds no ticking value; renderLink() calls announceState()
-  // on every render, and only a changed state can speak. Each announcement replaces the region's
-  // content with a fresh element, so a repeated message is announced again and an earlier one is
-  // never read with it (the region is atomic); the element is removed ANNOUNCE_CLEAR_MS later.
-  // Recovery (S.conn live and S.data current again) is said once: "Connection restored; data
-  // current." when the outage included a disconnect (S.conn left live), "Live data restored." for a
-  // data fault without one. What decides is what this page announced: the flags are set only by a
-  // trouble state, so a healthy first load says nothing, and a load that began in an outage (the
-  // simulator down, refusing, or in a data fault) says its recovery like any other.
+  // ---------- announcements (Task 51; policy Task 54) ----------
+  // One visually hidden live region, #announce (role status, polite, atomic), says what a listener
+  // must know, once each: the start of an outage (a disconnect or refusal, or a data fault), a
+  // materially different fault during it, recovery exhaustion ("Could not recover: ..."), and the
+  // confirmed recovery. Routine automatic retries are silent: an attempt starting, an attempt
+  // failing again for the same kind of fault, a manual Retry now starting a new episode, and the
+  // connection coming back while an attempt's state is still to come stay visible in the banner
+  // and say nothing. Nothing else on the page is a live region, so the banner's countdown and
+  // "N s ago", which change every second, are never announced.
+  //
+  // A materially different fault (Task 54) is a change of the fault's signature, faultSig(): its
+  // class and cause. The classes are the connection (stale) and the data (connected, data last
+  // known). The connection's causes are a disconnect ("down") and a refusal ("refused"); a new
+  // reason text for the same one (a timeout, then "no answer") is not a different cause. The
+  // data's causes are what is pending: an unreadable message, an incomplete state message, the
+  // simulator unable to build its state, or a combination; one added or removed is a different
+  // cause. So disconnect -> data fault, data fault -> disconnect, disconnect <-> refusal and
+  // unreadable -> unreadable and incomplete are each announced; a retry that fails like the one
+  // before it is not. The signature last announced is ann.sig; it is cleared by a recovery only.
+  //
+  // A transition is a change of annState(), which holds no ticking value; renderLink() calls
+  // announceState() on every render, and only a changed state can speak. Each announcement replaces
+  // the region's content with a fresh element, so a repeated message is announced again and an
+  // earlier one is never read with it (the region is atomic); the element is removed
+  // ANNOUNCE_CLEAR_MS later. Recovery (S.conn live and S.data current again) is said once:
+  // "Connection restored; data current." when the outage included a disconnect (S.conn left
+  // live), "Live data restored." for a data fault without one; nothing while the data stays last
+  // known. What decides is what this page announced: the flags are set only by a trouble state, so
+  // a healthy first load says nothing, and a load that began in an outage (the simulator down,
+  // refusing, or in a data fault) says its recovery like any other.
   var ANNOUNCE_CLEAR_MS = 10000;
-  var ann = { key: null, last: null, hadDisconnect: false, hadFault: false, timer: null };
+  var ann = { key: null, hadDisconnect: false, hadFault: false, sig: null, exhausted: false, timer: null };
 
   function annState() {
     if (S.conn === "loading") return { kind: "loading" };
@@ -1269,13 +1285,11 @@
     // Connected, the first state not here yet: no announcement until it is (or a fault comes).
     if (S.conn === "live" && !hasFault() && !S.ep) return { kind: "connecting" };
     var stale = isStale(), r = S.req || {};
-    // While stale the data's reason is not said (only the connection is), so it is not in the key:
-    // a requirement restarted or an encoding read during a retry would otherwise repeat that retry's
-    // announcement.
+    // While stale the data's reason is not said (only the connection is), so it is not in the key.
+    // The attempt counters stay in it so annText() sees each attempt (it says nothing for one).
     return { kind: "trouble", conn: S.conn,
       why: stale ? "" : reasonOf() + (r.unreadable ? " unreadable" : "") + (r.incomplete ? " incomplete" : ""),
-      ep: S.ep ? S.ep.state : "none", attempts: S.ep ? S.ep.attempts : 0, inFlight: !!S.ep && S.ep.inFlight,
-      tries: stale && !S.ep ? S.attempt : 0, connecting: stale && !S.ep && S.connecting, reason: stale ? S.reason : null };
+      ep: S.ep ? S.ep.state : "none", attempts: S.ep ? S.ep.attempts : 0, inFlight: !!S.ep && S.ep.inFlight };
   }
 
   function sentence(s) { return /[.!?]$/.test(s) ? s : s + "."; }
@@ -1288,53 +1302,56 @@
       .filter(Boolean).join(", and ");
   }
 
-  // What the change from state p to state c says, or null.
-  function annText(p, c) {
+  // The fault's signature (class and cause, see above) of trouble state c; null when there is no fault.
+  function faultSig(c) {
+    if (c.kind !== "trouble") return null;
+    if (c.conn !== "live") return "connection " + c.conn;
+    return hasFault() ? "data " + c.why : null;
+  }
+
+  // What state c says, or null (Task 54: only the start of an outage, a materially different
+  // fault, exhaustion and the recovery speak).
+  function annText(c) {
     if (c.kind === "live") {
       var said = ann.hadDisconnect ? "Connection restored; data current." : ann.hadFault ? "Live data restored." : null;
-      ann.hadDisconnect = false; ann.hadFault = false;
+      ann.hadDisconnect = false; ann.hadFault = false; ann.sig = null; ann.exhausted = false;
       return said;
     }
     if (c.kind !== "trouble") return null;
-    var stale = c.conn !== "live", was = p && p.kind === "trouble" ? p : null, wasStale = !!was && was.conn !== "live";
-    var entering = stale && !wasStale, cause = faultCause(), out = [];
-    // An attempt whose socket has opened goes on: its state decides, so the connection's return
-    // alone says nothing (the data is still last known until that state qualifies).
-    if (c.ep === "active" && c.inFlight && was && was.ep === "active" && was.inFlight && was.attempts === c.attempts) return null;
+    if (c.ep !== "exhausted") ann.exhausted = false;
+    var stale = c.conn !== "live", sig = faultSig(c), cause = faultCause(), out = [];
+    // An attempt whose socket has opened after a disconnect goes on: its state decides, so the
+    // connection's return alone says nothing (the data is still last known until that state
+    // qualifies, and an attempt that ends without it is then the data fault, said as such).
+    if (!stale && c.ep === "active" && c.inFlight && ann.sig && ann.sig.indexOf("connection ") === 0) return null;
     if (stale) ann.hadDisconnect = true;
     if (cause) ann.hadFault = true;
-    if (entering) out.push((c.conn === "refused" ? "Connection refused." : "Disconnected.") + " Reason: " + sentence(S.cause || S.reason || "unknown"));
+    var changed = sig != null && sig !== ann.sig;
+    if (changed) {
+      if (stale) {
+        // The first drop's reason (S.cause) after a data fault or at the start; the latest
+        // reason when the connection's cause changed (disconnect <-> refusal).
+        var why = ann.sig && ann.sig.indexOf("connection ") === 0 ? S.reason : S.cause || S.reason;
+        out.push((c.conn === "refused" ? "Connection refused." : "Disconnected.") + " Reason: " + sentence(why || "unknown"));
+      } else {
+        out.push((ann.hadDisconnect ? "Reconnected, but the data is still last known: " : "Last known data: ") + cause + ".");
+      }
+      ann.sig = sig;
+    }
     if (c.ep === "exhausted") {
-      if (!was || was.ep !== "exhausted") {
+      if (!ann.exhausted) {
+        ann.exhausted = true;
         out.push("Could not recover: " + (cause || "the page could not get a complete state") + ". The page made " + EPISODE_ATTEMPTS +
           " attempts and does not try again by itself; use Retry now to try again.");
-      } else if (entering) out.push("The page does not try again by itself; use Retry now to try again.");
-      return out.length ? out.join(" ") : null;
-    }
-    // A data fault entering (or a second cause added) while connected; after a disconnect this is
-    // the connection back with the data still last known, never a recovery.
-    if (!stale && cause && (!was || wasStale || was.why !== c.why)) {
-      out.push((ann.hadDisconnect ? "Reconnected, but the data is still last known: " : "Last known data: ") + cause + ".");
-    }
-    if (c.ep === "active") {
-      var n = " " + c.attempts + " of " + EPISODE_ATTEMPTS;
-      if (c.inFlight) out.push("Recovery attempt" + n + " under way.");
-      else if (c.attempts > 0) {
-        if (!(was && was.ep === "active" && was.attempts === c.attempts && !was.inFlight)) {
-          out.push("Recovery attempt" + n + " failed" + (entering ? "." : ": " + sentence(S.ep.last || "unknown")));
-        }
-      } else {
-        out.push(was && was.ep === "exhausted" ? "Retrying: a new recovery of " + EPISODE_ATTEMPTS + " attempts starts." :
-          "The page reconnects to get a complete state.");
+      } else if (changed) out.push("The page does not try again by itself; use Retry now to try again.");
+    } else if (changed) {
+      // What happens next, said with the fault only (the attempts themselves are silent).
+      if (stale) out.push("The page retries on its own.");
+      else if (c.ep === "active") {
+        if (!c.inFlight && c.attempts === 0) out.push("The page reconnects to get a complete state.");
+      } else if (S.req && S.req.encoding) {
+        out.push("The page keeps polling and reconnects once the simulator reports that it can build its state again.");
       }
-    } else if (stale) {
-      // Numbered as the banner counts failed attempts (the drop itself is the first): the attempt
-      // under way is S.attempt + 1, and when it fails S.attempt is its number.
-      if (c.connecting) out.push("Reconnecting: attempt " + (c.tries + 1) + ".");
-      else if (!entering) out.push("Attempt " + c.tries + " failed: " + sentence(S.reason || "unknown") + " The page retries on its own.");
-      else out.push("The page retries on its own.");
-    } else if (S.req && S.req.encoding && !(was && was.why === c.why)) {
-      out.push("The page keeps polling and reconnects once the simulator reports that it can build its state again.");
     }
     return out.length ? out.join(" ") : null;
   }
@@ -1342,8 +1359,8 @@
   function announceState() {
     var c = annState(), key = JSON.stringify(c);
     if (key === ann.key) return;
-    var text = annText(ann.last, c);
-    ann.key = key; ann.last = c;
+    var text = annText(c);
+    ann.key = key;
     if (!text) return;
     var box = $("announce");
     box.replaceChildren(el("p", { text: text }));
