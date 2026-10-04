@@ -975,6 +975,13 @@ LOG_ROWS = """(() => {
           plotH: plot ? plot.getBoundingClientRect().height : null,
           cardH: card ? card.getBoundingClientRect().height : null,
           banner: !document.getElementById('linkstate').hidden,
+          // Task 51's layout by state: the banner's and the log's state line's heights, the banner's
+          // lead, the state line's text and whether the log's Stale tag shows.
+          bannerH: Math.round(document.getElementById('linkstate').getBoundingClientRect().height),
+          bannerLead: (b => b ? b.textContent : '')(document.querySelector('#linkstate:not([hidden]) b')),
+          stateH: Math.round(document.getElementById('log-state').getBoundingClientRect().height),
+          logState: (s => s.hidden ? '' : s.textContent)(document.getElementById('log-state')),
+          staleTag: !document.querySelector('#log-panel .stale-tag').hidden,
           line2: [...document.querySelectorAll('figure.graph:not([hidden]) .graph__line2')].map(e => e.textContent),
           breaks: (b => b && !b.hidden ? b.textContent : '')(document.getElementById('graphs-breaks')),
           statusH: Math.round(document.querySelector('header').getBoundingClientRect().height),
@@ -2184,6 +2191,7 @@ async def _restart_and_gap(m: M3b, sim: subprocess.Popen[bytes]) -> None:
     await m.cdp.wait_for("[...document.querySelectorAll('#log-body > tr')].slice(-6)"
                          ".every(r => r.querySelector('td.c-seq'))", timeout=15)
     rows = await _rows_readings(m, "m3b-b-restart-and-gap-1440.png")
+    layout_keep(m, "restart + gap notes", rows)
     m.cases.record(
         "Log rows at 1440 x 900, restart note and a gap note together (measured)",
         "At 1440 x 900 with the graphs open, the restart note and a gap note visible together: at least 5 full "
@@ -2204,6 +2212,7 @@ async def _restart_and_gap(m: M3b, sim: subprocess.Popen[bytes]) -> None:
         await m.cdp.wait_for("[...document.querySelectorAll('#log-body > tr')].slice(-6)"
                              ".every(r => r.querySelector('td.c-seq'))", timeout=15)
         wrapped = await _rows_readings(m, "m3b-b-restart-gap-invalid-1440.png")
+        layout_keep(m, "wrapped three-notice line", wrapped)
     finally:
         await m.cdp.js("window.__m3b.invalidPath = null")
     m.cases.record(
@@ -2236,6 +2245,223 @@ async def _rows_readings(m: M3b, shot: str) -> dict[str, Any]:
     rows = dict(min(readings, key=lambda r: (r["full"], r["rowsRegion"])))
     rows["readings"] = readings
     return rows
+
+
+# ---- Task 51: the log's rows at 1440 x 900 in every state, after the announcer change ----
+# The states the owner listed, in the order the summary prints them. Each is read by the fewest of
+# its readings (LOG_ROWS, taken with the newest log rows being exchange rows where new rows arrive).
+LAYOUT_STATES = ("steady following", "pinned, 'beyond this window' count", "disconnect-gap note",
+                 "encoding-gap note", "restart + gap notes", "wrapped three-notice line", "filtered + pinned",
+                 "filtered, following", "paused (held line)", "stale (banner)", "last known (banner)")
+NEWEST_EXCHANGES = "[...document.querySelectorAll('#log-body > tr')].slice(-6).every(r => r.querySelector('td.c-seq'))"
+HELD = r"[\d,]+ new exchanges? (?:are|is) held"
+
+
+def layout_keep(m: M3b, state: str, rows: dict[str, Any]) -> None:
+    m.cases.extra.setdefault("layout", {})[state] = rows
+
+
+async def layout_click(m: M3b, selector: str) -> None:
+    """A real click on a control, brought into view first; then the page back at its top."""
+    await m.cdp.js(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block: 'center'}})")
+    await asyncio.sleep(0.3)
+    await m.cdp.click(selector)
+    await asyncio.sleep(0.5)
+    await m.cdp.js("window.scrollTo(0, 0)")
+
+
+async def layout_follow(m: M3b) -> None:
+    """Following again, once the log has drawn its latest rows (it re-renders at most every 200 ms)
+    and the newest of them are exchange rows."""
+    if not await m.cdp.js("document.getElementById('btn-follow').disabled"):
+        await layout_click(m, "#btn-follow")
+    await asyncio.sleep(0.6)
+    await m.cdp.wait_for(NEWEST_EXCHANGES, timeout=15)
+
+
+async def layout_pin(m: M3b) -> None:
+    """A real wheel scroll up over the log box (which pins the window); arrivals then count beyond it."""
+    await m.cdp.js("window.scrollTo(0, 0)")
+    await asyncio.sleep(0.3)
+    await m.cdp.wheel("#logwrap", -600)
+    await m.cdp.wait_for("document.getElementById('log-below').textContent.indexOf('beyond this window') >= 0",
+                         timeout=15)
+
+
+async def layout_known(m: M3b, shot: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Last known: every new socket's first frame unreadable, so the episode runs its 1, 2 and 4 s
+    waits with the banner's "Last known data." text in each of its forms; read every 250 ms, the
+    fewest rows kept. Then exhausted ("Could not recover", returned apart), and Retry now by
+    keyboard with the fault removed."""
+    await m.cdp.js("window.scrollTo(0, 0)")
+    await m.cdp.js("window.__m3b.badFirst = true")
+    await m.cdp.js("window.__m3b.bad()")
+    known: list[dict[str, Any]] = []
+    exhausted: dict[str, Any] | None = None
+    deadline = time.monotonic() + 15.0
+    while time.monotonic() < deadline:
+        await m.settled()
+        r = await m.cdp.js(LOG_ROWS)
+        if (await m.state())["episode"] == "exhausted":
+            exhausted = r
+            break
+        if r["bannerLead"] == "Last known data.":
+            known.append(r)
+            if len(known) == 2:
+                await m.shot(shot)
+        await asyncio.sleep(0.25)
+    await m.cdp.js("window.__m3b.badFirst = false")
+    await m.cdp.js("document.getElementById('btn-retry').focus()")
+    await key_enter(m.cdp)
+    await m.until(lambda s: s["health"] == "live", timeout=15.0)
+    await layout_follow(m)
+    if not known:
+        return None, exhausted
+    worst = dict(min(known, key=lambda r: (r["fullExchange"], r["rowsRegion"], r["clearance5"] or 0)))
+    worst["readings"] = known
+    return worst, exhausted
+
+
+async def layout_stale(m: M3b, sim: subprocess.Popen[bytes], shot: str) -> dict[str, Any]:
+    """Stale: the simulator stopped and the banner up, read as the banner's text changes; then
+    SIGCONT and live again."""
+    os.kill(sim.pid, signal.SIGSTOP)
+    m.run.log(f"SIGSTOP the simulator (pid {sim.pid}) for a stale layout reading")
+    try:
+        await m.until(lambda s: s["conn"] == "down", timeout=15.0, period=0.2)
+        rows = await _rows_readings(m, shot)
+    finally:
+        os.kill(sim.pid, signal.SIGCONT)
+        m.run.log("SIGCONT the simulator")
+    await m.until(lambda s: s["health"] == "live", timeout=25.0, period=0.2)
+    return rows
+
+
+async def case_layout_states(m: M3b, sim: subprocess.Popen[bytes]) -> None:
+    """Part B, traffic running, 1440 x 900: the states the existing cases do not set up (pinned,
+    filtered, paused, last known, stale, a disconnect gap), each on its own, and two combinations
+    recorded apart (stale, and last known, with a recent gap note). The summary is layout_summary()."""
+    extra = m.cases.extra.setdefault("layout_extra", {})
+    await m.cdp.viewport(*WIDE)
+    await asyncio.sleep(1.0)
+    await layout_follow(m)
+    layout_keep(m, "steady following", await _rows_readings(m, "m3b-b-layout-steady.png"))
+    await layout_pin(m)
+    layout_keep(m, "pinned, 'beyond this window' count", await _rows_readings(m, "m3b-b-layout-pinned.png"))
+    await layout_follow(m)
+    # Filtered: "no response" hidden, following and then pinned.
+    await layout_click(m, 'label[for="o-no_response"]')
+    await layout_follow(m)
+    layout_keep(m, "filtered, following", await _rows_readings(m, "m3b-b-layout-filtered.png"))
+    await layout_pin(m)
+    layout_keep(m, "filtered + pinned", await _rows_readings(m, "m3b-b-layout-filtered-pinned.png"))
+    await layout_follow(m)
+    await layout_click(m, 'label[for="o-no_response"]')
+    await layout_follow(m)
+    # Paused, with arrivals held (the held-exchange line shown).
+    await layout_click(m, "#btn-pause")
+    await m.cdp.wait_for(f"(s => !s.hidden && new RegExp({json.dumps(HELD)}).test(s.textContent))"
+                         "(document.getElementById('log-state'))", timeout=15)
+    layout_keep(m, "paused (held line)", await _rows_readings(m, "m3b-b-layout-paused.png"))
+    await layout_click(m, "#btn-pause")
+    await layout_follow(m)
+    # Last known, with no gap note in the drawn window yet.
+    known, exhausted = await layout_known(m, "m3b-b-layout-last-known.png")
+    if known:
+        layout_keep(m, "last known (banner)", known)
+    extra["could not recover (banner)"] = exhausted
+    # (extra) Stale with the last known episode's gap note still showing; then the disconnect's own
+    # gap note once live; then (extra) last known with that gap note showing.
+    await m.until(lambda s: re.search(GAP_NOTE, s["breaks"]) is not None, timeout=6.0)
+    await layout_follow(m)
+    extra["stale (banner) with a gap note"] = await layout_stale(m, sim, "m3b-b-layout-stale-gap.png")
+    await m.until(lambda s: re.search(GAP_NOTE, s["breaks"]) is not None, timeout=6.0)
+    await layout_follow(m)
+    layout_keep(m, "disconnect-gap note", await _rows_readings(m, "m3b-b-layout-disconnect-gap.png"))
+    extra["last known (banner) with a gap note"], _ = await layout_known(m, "m3b-b-layout-last-known-gap.png")
+    # Stale on its own: the 30 s window, until no gap is inside it; then the 2 min window again.
+    await m.click_window(30)
+    await m.until(lambda s: not s["breaks"], timeout=45.0, period=0.5)
+    await layout_follow(m)
+    layout_keep(m, "stale (banner)", await layout_stale(m, sim, "m3b-b-layout-stale.png"))
+    await m.click_window(120)
+    await layout_follow(m)
+
+
+def layout_summary(m: M3b) -> None:
+    """Task 51: the log's rows at 1440 x 900 in each listed state, on one table: the log header's
+    height, the full rows (exchange rows), the rows region and the clearance (the region minus the 5
+    newest full rows), and the minimum clearance. Each state must show at least 5 full exchange rows."""
+    lay: dict[str, dict[str, Any]] = m.cases.extra.get("layout", {})
+    table = []
+    for state in LAYOUT_STATES:
+        r = lay.get(state)
+        if r is None:
+            table.append({"state": state, "measured": False})
+            continue
+        row = {"state": state, "measured": True, "header_px": r["logHead"]["h"],
+               "header_one_line": not r["logHead"]["wrapped"], "full_rows": r["full"],
+               "exchange_rows": r["fullExchange"],
+               "rows_region_px": r["rowsRegion"], "clearance_px": r["clearance5"], "banner_px": r["bannerH"],
+               "banner_lead": r["bannerLead"], "log_state_px": r["stateH"], "status_bar_px": r["statusH"],
+               "notice_line": r["breaks"], "notice_lines": r["breaksLines"], "count": r["logHead"]["count"],
+               "below": r["logHead"]["below"], "log_state": r["logState"][:90], "stale_tag": r["staleTag"],
+               "readings": len(r.get("readings", [])) or 1}
+        table.append(row)
+        m.run.log(f"layout {state}: header {row['header_px']} px, {row['full_rows']} full rows "
+                  f"({row['exchange_rows']} exchange), rows region {row['rows_region_px']} px, "
+                  f"clearance {row['clearance_px']} px")
+    measured = [t for t in table if t["measured"]]
+    worst = min(measured, key=lambda t: t["clearance_px"] if t["clearance_px"] is not None else -999, default=None)
+    if worst is not None:
+        m.run.log(f"layout minimum clearance: {worst['clearance_px']} px ({worst['state']})")
+    by = {t["state"]: t for t in measured}
+
+    def has(state: str, test: Callable[[dict[str, Any]], bool]) -> bool:
+        return state in by and test(by[state])
+
+    conds = {f"{t['state']}: at least 5 full exchange rows": t["measured"] and t["exchange_rows"] >= 5
+             and t["clearance_px"] is not None and t["clearance_px"] >= 0 for t in table}
+    conds.update({
+        "the pinned states show the 'beyond this window' count": has(
+            "pinned, 'beyond this window' count", lambda t: W_BEYOND in t["below"])
+        and has("filtered + pinned", lambda t: W_BEYOND in t["below"]),
+        "the filtered states count matching exchanges": has("filtered, following", lambda t: "matching" in t["count"])
+        and has("filtered + pinned", lambda t: "matching" in t["count"]),
+        "the gap-note states show a gap note": all(has(s, lambda t: re.search(GAP_NOTE, t["notice_line"]) is not None)
+                                                   for s in ("disconnect-gap note", "encoding-gap note",
+                                                             "restart + gap notes", "wrapped three-notice line")),
+        "the disconnect gap is named disconnected": has(
+            "disconnect-gap note", lambda t: "(disconnected)" in t["notice_line"]),
+        "the wrapped state's notice line wraps": has("wrapped three-notice line", lambda t: t["notice_lines"] >= 2),
+        "paused: the held-exchange line shown": has(
+            "paused (held line)", lambda t: t["log_state_px"] > 0 and re.search(HELD, t["log_state"]) is not None),
+        "stale: the banner says Disconnected. and the log carries Stale": has(
+            "stale (banner)", lambda t: t["banner_lead"] == "Disconnected." and t["stale_tag"]),
+        "last known: the banner says Last known data.": has(
+            "last known (banner)", lambda t: t["banner_lead"] == "Last known data."),
+    })
+    extras = []
+    for name, r in m.cases.extra.get("layout_extra", {}).items():
+        if r is None:
+            continue
+        extras.append({"state": "(extra) " + name, "header_px": r["logHead"]["h"], "full_rows": r["full"],
+                       "exchange_rows": r["fullExchange"], "rows_region_px": r["rowsRegion"],
+                       "clearance_px": r["clearance5"], "banner_px": r["bannerH"], "banner_lead": r["bannerLead"],
+                       "notice_line": r["breaks"]})
+        m.run.log(f"layout (extra) {name}: header {r['logHead']['h']} px, {r['full']} full rows "
+                  f"({r['fullExchange']} exchange), rows region {r['rowsRegion']} px, clearance {r['clearance5']} px")
+    m.cases.record(
+        "Layout by state at 1440 x 900 (Task 51, final measurement)",
+        "At 1440 x 900 with the graphs open, in each state the owner listed (steady following; pinned with the "
+        "'beyond this window' count; disconnect-gap note; encoding-gap note; restart + gap notes; the wrapped "
+        "three-notice line; filtered + pinned; filtered, following; paused with the held line; stale with the "
+        "banner; last known with the banner): at least 5 fully visible exchange rows in #logwrap (the fewest of "
+        "the state's readings). Printed per state: the log header's height, the full rows, the rows region, the "
+        "clearance (the region minus the 5 newest full rows), and the minimum clearance. No other pixel target. "
+        "Recorded apart, not required: the 'Could not recover' banner, and stale and last known each with a recent "
+        "gap note on the graphs' notice line",
+        conds, {"table": table, "minimum": worst, "extra_not_required": extras})
 
 
 async def case_restart(m: M3b, run: Run, sim: subprocess.Popen[bytes], logname: str) -> subprocess.Popen[bytes]:
@@ -2439,6 +2665,7 @@ async def part_b(run: Run, m: M3b) -> None:
         await m.cdp.viewport(*WIDE)
         await asyncio.sleep(1.0)
         await m.shot("m3b-b-live-1440.png")
+        await case_layout_states(m, sim)
         run.log("stop traffic")
         run.stop(traffic)
         traffic = None
@@ -2622,6 +2849,9 @@ async def part_d_encoding(run: Run, m: M3b) -> None:
         rows = await m.cdp.js(LOG_ROWS)
         await m.shot("m3b-d-log-rows-with-break-note.png")
         noted = re.search(GAP_NOTE, rows["breaks"])
+        # Task 51's layout by state: the encoding gap's reading, with the newest rows exchange rows.
+        await m.cdp.wait_for(NEWEST_EXCHANGES, timeout=15)
+        layout_keep(m, "encoding-gap note", await _rows_readings(m, "m3b-d-layout-encoding-gap.png"))
         m.cases.record(
             "Log rows at 1440 x 900, graphs open, a break note showing (extra, encoding break)",
             "At least 5 full log rows inside #logwrap at 1440 x 900 with the graphs open and a break note showing "
@@ -2755,6 +2985,7 @@ async def m3b_session(run: Run, chrome: str, profile_dir: str) -> None:
                 await part_c_nonfinite(run, m)
                 await part_d_encoding(run, m)
                 await part_e_same_value(run, m)
+                layout_summary(m)
             finally:
                 cases.extra["problems"] = problems
                 cases.write(version)
