@@ -2479,6 +2479,18 @@ async def case_layout_states(m: M3b, sim: subprocess.Popen[bytes]) -> None:
     await m.until(lambda s: not s["breaks"], timeout=45.0, period=0.5)
     await layout_follow(m)
     layout_keep(m, "stale (banner)", await layout_stale(m, sim, "m3b-b-layout-stale.png"))
+    # (extra, Task 51b) Paused while stale, and stale while pinned, each with no gap in the window.
+    await m.until(lambda s: not s["breaks"], timeout=45.0, period=0.5)
+    await layout_follow(m)
+    await layout_click(m, "#btn-pause")
+    await m.cdp.wait_for(f"(s => !s.hidden && new RegExp({json.dumps(HELD)}).test(s.textContent))"
+                         "(document.getElementById('log-state'))", timeout=15)
+    extra["paused while stale"] = await layout_stale(m, sim, "m3b-b-layout-paused-stale.png")
+    await layout_click(m, "#btn-pause")
+    await m.until(lambda s: not s["breaks"], timeout=45.0, period=0.5)
+    await layout_follow(m)
+    await layout_pin(m)
+    extra["stale while pinned"] = await layout_stale(m, sim, "m3b-b-layout-stale-pinned.png")
     await m.click_window(120)
     await layout_follow(m)
 
@@ -2540,11 +2552,13 @@ def layout_summary(m: M3b) -> None:
     for name, r in m.cases.extra.get("layout_extra", {}).items():
         if r is None:
             continue
-        extras.append({"state": "(extra) " + name, "header_px": r["logHead"]["h"], "full_rows": r["full"],
+        extras.append({"state": "(extra) " + name, "header_px": r["logHead"]["h"],
+                       "header_one_line": not r["logHead"]["wrapped"], "full_rows": r["full"],
                        "exchange_rows": r["fullExchange"], "rows_region_px": r["rowsRegion"],
                        "clearance_px": r["clearance5"], "banner_px": r["bannerH"], "banner_lead": r["bannerLead"],
                        "notice_line": r["breaks"]})
-        m.run.log(f"layout (extra) {name}: header {r['logHead']['h']} px, {r['full']} full rows "
+        m.run.log(f"layout (extra) {name}: header {r['logHead']['h']} px "
+                  f"({'one line' if not r['logHead']['wrapped'] else 'wrapped'}), {r['full']} full rows "
                   f"({r['fullExchange']} exchange), rows region {r['rowsRegion']} px, clearance {r['clearance5']} px")
     m.cases.record(
         "Layout by state at 1440 x 900 (Task 51, final measurement)",
@@ -2554,8 +2568,8 @@ def layout_summary(m: M3b) -> None:
         "banner; last known with the banner): at least 5 fully visible exchange rows in #logwrap (the fewest of "
         "the state's readings). Printed per state: the log header's height, the full rows, the rows region, the "
         "clearance (the region minus the 5 newest full rows), and the minimum clearance. No other pixel target. "
-        "Recorded apart, not required: the 'Could not recover' banner, and stale and last known each with a recent "
-        "gap note on the graphs' notice line",
+        "Recorded apart, not required: the 'Could not recover' banner, stale and last known each with a recent gap "
+        "note on the graphs' notice line, paused while stale, and stale while pinned (Task 51b)",
         conds, {"table": table, "minimum": worst, "extra_not_required": extras})
 
 
