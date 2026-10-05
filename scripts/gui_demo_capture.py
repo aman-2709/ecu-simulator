@@ -2249,9 +2249,29 @@ async def case_pause(m: M3b) -> None:
 async def case_sigstop(m: M3b, sim: subprocess.Popen[bytes]) -> None:
     # The gap counts are per window, so a gap the layout cases left could age out of it during this
     # case and cancel the new one (Task 52's stale readings take longer). The case runs in the 30 s
-    # window with no gap in it, and the 2 min window comes back after.
+    # window with no gap in it, a checked precondition of its own: if the window does not clear, that
+    # check fails here and the SIGSTOP cases are not run. The 2 min window comes back on every path.
     await m.click_window(30)
-    await m.until(lambda s: not s["breaks"], timeout=45.0, period=0.5)
+    try:
+        samples, clear = await m.until(lambda s: not s["breaks"], timeout=45.0, period=0.5)
+        m.cases.record(
+            "SIGSTOP precondition: no gap in the 30 s window",
+            "Before the SIGSTOP case, in the 30 s window: within 45 s the graphs' shared gap line is empty (no gap in "
+            "the window, so none can age out during the case and cancel the new one); otherwise the SIGSTOP cases "
+            "are not run",
+            {"no gap in the 30 s window within 45 s": clear},
+            {"waited_s": (samples[-1]["now"] - samples[0]["now"]) / 1000, "breaks": samples[-1]["breaks"]})
+        if not clear:
+            m.run.log("SIGSTOP cases not run: the 30 s window still shows a gap after 45 s "
+                      f"({samples[-1]['breaks']!r})")
+            return
+        await _sigstop(m, sim)
+    finally:
+        await m.click_window(120)
+
+
+async def _sigstop(m: M3b, sim: subprocess.Popen[bytes]) -> None:
+    """The SIGSTOP / SIGCONT cases, in the 30 s window case_sigstop selected."""
     await asyncio.sleep(1.0)
     st = await m.status()
     before = await m.state()
@@ -2329,7 +2349,6 @@ async def case_sigstop(m: M3b, sim: subprocess.Popen[bytes]) -> None:
          "after": {p: {k: after["graphs"][p][k] for k in ("gaps", "segments", "run", "line2")} for p in paths},
          "breaks_line": after["breaks"],
          "seqs": [len(lg["seqs"]), lg["seqs"][:3], lg["seqs"][-3:]], "log_count": lg["count"]})
-    await m.click_window(120)
 
 
 async def case_restart_and_gap(m: M3b, sim: subprocess.Popen[bytes]) -> None:
