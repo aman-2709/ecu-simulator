@@ -908,7 +908,8 @@ PAGE_STATE = """(() => {
   return {now: Date.now(), conn: d.conn, data: d.data, reason: d.reason, health: d.health, episode: d.episode,
     attempts: Number(d.attempts), timers: Number(d.timers), polls: Number(d.polls), malformed: Number(d.malformedTotal),
     text: document.getElementById('conn-text').textContent, banner: ls.hidden ? null : ls.innerText,
-    retry: !ls.hidden && b && !b.hidden ? b.textContent : null, known: vis('.known-tag'), stale: vis('.stale-tag'),
+    retry: !ls.hidden && b && !b.hidden ? b.textContent : null, known: vis('.known-tag'),
+    stale: vis('.panel--data .stale-tag'), logStale: vis('#log-panel .stale-tag'),
     socks: T.socks.length, states: T.states.length, graphs: graphs, cells: cells,
     note: note.hidden ? '' : note.textContent, breaks: brk && !brk.hidden ? brk.textContent : ''};
 })()"""
@@ -982,6 +983,12 @@ LOG_ROWS = """(() => {
           // lead, the state line's text and whether the log's Stale tag shows.
           bannerH: Math.round(document.getElementById('linkstate').getBoundingClientRect().height),
           bannerLead: (b => b ? b.textContent : '')(document.querySelector('#linkstate:not([hidden]) b')),
+          // Task 52: the banner's text and its lines (the stale banner is one line, or two during the
+          // retry countdown, "Retrying in N s (...)").
+          bannerText: (b => b.hidden ? '' : b.textContent)(document.getElementById('linkstate')),
+          bannerLines: (p => p && p.getClientRects().length ? Math.round(p.getBoundingClientRect().height /
+            parseFloat(getComputedStyle(p).lineHeight)) : 0)(document.querySelector('#linkstate:not([hidden]) p')),
+          aboutOpen: document.getElementById('log-about').open,
           stateH: Math.round(document.getElementById('log-state').getBoundingClientRect().height),
           logState: (s => s.hidden ? '' : s.textContent)(document.getElementById('log-state')),
           staleTag: !document.querySelector('#log-panel .stale-tag').hidden,
@@ -1231,8 +1238,8 @@ async def case_no_false_invalidation(m: M3b) -> None:
 
     def healthy(s: dict[str, Any]) -> bool:
         return (s["text"] == "Live" and s["conn"] == "live" and s["data"] == "current" and s["health"] == "live"
-                and not s["known"] and not s["stale"] and s["banner"] is None and s["malformed"] == 0
-                and s["episode"] == "none")
+                and not s["known"] and not s["stale"] and not s["logStale"] and s["banner"] is None
+                and s["malformed"] == 0 and s["episode"] == "none")
 
     rose = samples[-1]["polls"] - start["polls"]
     span = (samples[-1]["now"] - start["now"]) / 1000
@@ -2254,12 +2261,16 @@ async def case_sigstop(m: M3b, sim: subprocess.Popen[bytes]) -> None:
     m.cases.record(
         "Disconnect without restart (SIGSTOP)",
         "Within 8 s: conn text starts Disconnected; data-conn down, data-health stale, data-episode none; the "
-        "banner is shown; the panels carry Stale, as of",
+        "banner is shown; the data panels (trouble codes, vehicle signals, graphs) carry Stale, as of; the log's "
+        "tag reads Stale (Task 52: the time is in the banner)",
         {"down within 8 s": down and (d["now"] - t0) / 1000 <= 8.0,
          "conn text starts Disconnected": d2["text"].startswith("Disconnected"),
          "down, stale, episode none": (d2["conn"], d2["health"], d2["episode"]) == ("down", "stale", "none"),
          "banner shown": bool(d2["banner"]),
-         "panels carry Stale, as of": len(d2["stale"]) >= 3 and all(t.startswith("Stale, as of") for t in d2["stale"])},
+         "data panels carry Stale, as of": len(d2["stale"]) == 3
+         and all(t.startswith("Stale, as of") for t in d2["stale"]),
+         "the log's tag reads Stale": d2["logStale"] == ["Stale"],
+         "the banner names the time (Last live)": "Last live " in (d2["banner"] or "")},
         {"down_after_s": (d["now"] - t0) / 1000, "state": slim(d2)})
     os.kill(sim.pid, signal.SIGCONT)
     m.run.log("SIGCONT the simulator")
@@ -2402,7 +2413,12 @@ async def _rows_readings(m: M3b, shot: str) -> dict[str, Any]:
 # its readings (LOG_ROWS, taken with the newest log rows being exchange rows where new rows arrive).
 LAYOUT_STATES = ("steady following", "pinned, 'beyond this window' count", "disconnect-gap note",
                  "encoding-gap note", "restart + gap notes", "wrapped three-notice line", "filtered + pinned",
-                 "filtered, following", "paused (held line)", "stale (banner)", "last known (banner)")
+                 "filtered, following", "paused (held line)", "stale (banner)", "last known (banner)",
+                 "paused while stale", "stale while pinned")
+# The stale states are judged with the banner in its two-line form too (Task 52): it is one line
+# while an attempt is under way and two during the retry countdown ("Retrying in N s (...)").
+STALE_STATES = ("stale (banner)", "paused while stale", "stale while pinned")
+COUNTDOWN = "Retrying in "
 NEWEST_EXCHANGES = "[...document.querySelectorAll('#log-body > tr')].slice(-6).every(r => r.querySelector('td.c-seq'))"
 HELD = r"[\d,]+ new exchanges? (?:are|is) held"
 
@@ -2472,14 +2488,42 @@ async def layout_known(m: M3b, shot: str) -> tuple[dict[str, Any] | None, dict[s
     return worst, exhausted
 
 
+async def _stale_readings(m: M3b, shot: str) -> dict[str, Any]:
+    """Stale: readings every 0.5 s until at least 3 were taken and 2 of them had the banner's
+    two-line retry countdown (at most 25 s); the screenshot at the first countdown reading. The
+    result is the fewest rows (the worst moment), with every reading recorded and ``countdown``
+    saying whether the two-line banner was read."""
+    await m.cdp.js("window.scrollTo(0, 0)")
+    readings: list[dict[str, Any]] = []
+    shot_taken = False
+    deadline = time.monotonic() + 25.0
+    while time.monotonic() < deadline:
+        await m.settled()
+        r = await m.cdp.js(LOG_ROWS)
+        readings.append(r)
+        if COUNTDOWN in r["bannerText"] and not shot_taken:
+            await m.shot(shot)
+            shot_taken = True
+        if len(readings) >= 3 and sum(COUNTDOWN in x["bannerText"] for x in readings) >= 2:
+            break
+        await asyncio.sleep(0.5)
+    if not shot_taken:
+        await m.shot(shot)
+    rows = dict(min(readings, key=lambda r: (r["fullExchange"], r["rowsRegion"], r["clearance5"] or 0)))
+    rows["countdown"] = any(COUNTDOWN in x["bannerText"] for x in readings)
+    rows["bannerHs"] = sorted({x["bannerH"] for x in readings})
+    rows["readings"] = readings
+    return rows
+
+
 async def layout_stale(m: M3b, sim: subprocess.Popen[bytes], shot: str) -> dict[str, Any]:
-    """Stale: the simulator stopped and the banner up, read as the banner's text changes; then
-    SIGCONT and live again."""
+    """Stale: the simulator stopped and the banner up, read through the banner's one-line and
+    two-line forms (_stale_readings); then SIGCONT and live again."""
     os.kill(sim.pid, signal.SIGSTOP)
     m.run.log(f"SIGSTOP the simulator (pid {sim.pid}) for a stale layout reading")
     try:
         await m.until(lambda s: s["conn"] == "down", timeout=15.0, period=0.2)
-        rows = await _rows_readings(m, shot)
+        rows = await _stale_readings(m, shot)
     finally:
         os.kill(sim.pid, signal.SIGCONT)
         m.run.log("SIGCONT the simulator")
@@ -2489,8 +2533,9 @@ async def layout_stale(m: M3b, sim: subprocess.Popen[bytes], shot: str) -> dict[
 
 async def case_layout_states(m: M3b, sim: subprocess.Popen[bytes]) -> None:
     """Part B, traffic running, 1440 x 900: the states the existing cases do not set up (pinned,
-    filtered, paused, last known, stale, a disconnect gap), each on its own, and two combinations
-    recorded apart (stale, and last known, with a recent gap note). The summary is layout_summary()."""
+    filtered, paused, last known, stale, a disconnect gap), each on its own, paused while stale and
+    stale while pinned (Task 52), and three further readings outside the listed states (could not
+    recover; stale, and last known, with a recent gap note). The summary is layout_summary()."""
     extra = m.cases.extra.setdefault("layout_extra", {})
     await m.cdp.viewport(*WIDE)
     await asyncio.sleep(1.0)
@@ -2534,20 +2579,80 @@ async def case_layout_states(m: M3b, sim: subprocess.Popen[bytes]) -> None:
     await m.until(lambda s: not s["breaks"], timeout=45.0, period=0.5)
     await layout_follow(m)
     layout_keep(m, "stale (banner)", await layout_stale(m, sim, "m3b-b-layout-stale.png"))
-    # (extra, Task 51b) Paused while stale, and stale while pinned, each with no gap in the window.
+    # Paused while stale, and stale while pinned (Task 52: listed states), each with no gap in the window.
     await m.until(lambda s: not s["breaks"], timeout=45.0, period=0.5)
     await layout_follow(m)
     await layout_click(m, "#btn-pause")
     await m.cdp.wait_for(f"(s => !s.hidden && new RegExp({json.dumps(HELD)}).test(s.textContent))"
                          "(document.getElementById('log-state'))", timeout=15)
-    extra["paused while stale"] = await layout_stale(m, sim, "m3b-b-layout-paused-stale.png")
+    layout_keep(m, "paused while stale", await layout_stale(m, sim, "m3b-b-layout-paused-stale.png"))
     await layout_click(m, "#btn-pause")
     await m.until(lambda s: not s["breaks"], timeout=45.0, period=0.5)
     await layout_follow(m)
     await layout_pin(m)
-    extra["stale while pinned"] = await layout_stale(m, sim, "m3b-b-layout-stale-pinned.png")
+    layout_keep(m, "stale while pinned", await layout_stale(m, sim, "m3b-b-layout-stale-pinned.png"))
     await m.click_window(120)
     await layout_follow(m)
+    await case_about(m)
+
+
+ABOUT = """(() => {
+  const d = document.getElementById('log-about'), sm = d.querySelector('summary');
+  const b = d.querySelector('.logfoot__body');
+  // checkVisibility: a closed details' content keeps its boxes but is hidden (content-visibility).
+  const vis = e => e.checkVisibility({contentVisibilityAuto: true, visibilityProperty: true});
+  const se = document.scrollingElement;
+  return {open: d.open, focused: document.activeElement === sm, summary: sm.textContent,
+    summaryH: Math.round(d.getBoundingClientRect().height), bodyVisible: vis(b), text: vis(b) ? b.innerText : '',
+    link: vis(d.querySelector('a[href="uPlot-LICENSE.txt"]')),
+    pageScroll: {w: se.scrollWidth, cw: se.clientWidth, h: se.scrollHeight, ch: se.clientHeight}};
+})()"""
+ABOUT_TEXTS = ("Dispatch µs is dispatcher time only: how long the dispatcher call took. It is not wire latency; "
+               "wire timing belongs to candump.", "Filters, pause and clear change this view only",
+               "Graphs: uPlot 1.6.32, MIT licence.")
+
+
+async def case_about(m: M3b) -> None:
+    """Task 52: the log's fine print is a collapsed "About this log" (details/summary). At 1440 x 900,
+    following: collapsed at load; Enter on the focused summary opens it with every text shown, the
+    page still without a scroll; Enter again closes it, the focus kept. The rows while open are
+    printed (the rows box gives way while the text is open)."""
+    await layout_follow(m)
+    closed = await m.cdp.js(ABOUT)
+    await m.cdp.js("document.querySelector('#log-about summary').focus()")
+    await key_enter(m.cdp)
+    await asyncio.sleep(0.4)
+    await m.settled()
+    opened = await m.cdp.js(ABOUT)
+    rows_open = await m.cdp.js(LOG_ROWS)
+    await m.shot("m3b-b-about-open.png")
+    await key_enter(m.cdp)
+    await asyncio.sleep(0.4)
+    await m.settled()
+    again = await m.cdp.js(ABOUT)
+    rows_closed = await m.cdp.js(LOG_ROWS)
+
+    def no_scroll(a: dict[str, Any]) -> bool:
+        ps = a["pageScroll"]
+        return bool(ps["w"] <= ps["cw"] and ps["h"] <= ps["ch"])
+
+    m.cases.record(
+        "About this log (Task 52)",
+        "At 1440 x 900: the log's fine print is a details element, collapsed at load (one line, its texts not "
+        "shown); Enter on the focused summary opens it with the Dispatch µs, view-only and uPlot licence texts and "
+        "the licence link shown, and no page scroll; Enter again closes it with the focus kept on the summary and "
+        "the log back to at least 5 full exchange rows. The rows while it is open are printed",
+        {"collapsed at load, texts not shown": not closed["open"] and not closed["bodyVisible"],
+         "the summary reads About this log": closed["summary"].strip() == "About this log",
+         "Enter opens it": opened["open"] and opened["bodyVisible"],
+         "every text shown when open": all(t in opened["text"] for t in ABOUT_TEXTS),
+         "the licence link shown when open": opened["link"],
+         "no page scroll when open": no_scroll(opened),
+         "Enter closes it, the focus kept": not again["open"] and again["focused"],
+         "closed again: at least 5 full exchange rows": rows_closed["fullExchange"] >= 5},
+        {"closed": closed, "opened": opened, "again": again,
+         "rows_open": {k: rows_open[k] for k in ("full", "fullExchange", "rowsRegion", "clearance5")},
+         "rows_closed": {k: rows_closed[k] for k in ("full", "fullExchange", "rowsRegion", "clearance5")}})
 
 
 def layout_summary(m: M3b) -> None:
@@ -2568,7 +2673,8 @@ def layout_summary(m: M3b) -> None:
                "banner_lead": r["bannerLead"], "log_state_px": r["stateH"], "status_bar_px": r["statusH"],
                "notice_line": r["breaks"], "notice_lines": r["breaksLines"], "count": r["logHead"]["count"],
                "below": r["logHead"]["below"], "log_state": r["logState"][:90], "stale_tag": r["staleTag"],
-               "readings": len(r.get("readings", [])) or 1}
+               "banner_lines": r["bannerLines"], "countdown": r.get("countdown"), "banner_heights": r.get("bannerHs"),
+               "about_open": r["aboutOpen"], "readings": len(r.get("readings", [])) or 1}
         table.append(row)
         m.run.log(f"layout {state}: header {row['header_px']} px, {row['full_rows']} full rows "
                   f"({row['exchange_rows']} exchange), rows region {row['rows_region_px']} px, "
@@ -2602,6 +2708,14 @@ def layout_summary(m: M3b) -> None:
             "stale (banner)", lambda t: t["banner_lead"] == "Disconnected." and t["stale_tag"]),
         "last known: the banner says Last known data.": has(
             "last known (banner)", lambda t: t["banner_lead"] == "Last known data."),
+        "paused while stale: the held line and the Disconnected. banner": has(
+            "paused while stale", lambda t: t["log_state_px"] > 0 and re.search(HELD, t["log_state"]) is not None
+            and t["banner_lead"] == "Disconnected." and t["stale_tag"]),
+        "stale while pinned: the 'beyond this window' count, the Stale tag, the log header one line": has(
+            "stale while pinned", lambda t: W_BEYOND in t["below"] and t["stale_tag"] and t["header_one_line"]),
+        "the stale states were read with the two-line retry countdown banner": all(
+            has(st, lambda t: bool(t["countdown"])) for st in STALE_STATES),
+        "About this log collapsed in every state": all(not t["about_open"] for t in measured),
     })
     extras = []
     for name, r in m.cases.extra.get("layout_extra", {}).items():
@@ -2612,20 +2726,22 @@ def layout_summary(m: M3b) -> None:
                        "exchange_rows": r["fullExchange"], "rows_region_px": r["rowsRegion"],
                        "clearance_px": r["clearance5"], "banner_px": r["bannerH"], "banner_lead": r["bannerLead"],
                        "notice_line": r["breaks"]})
-        m.run.log(f"layout (extra) {name}: header {r['logHead']['h']} px "
+        m.run.log(f"layout (outside the listed states) {name}: header {r['logHead']['h']} px "
                   f"({'one line' if not r['logHead']['wrapped'] else 'wrapped'}), {r['full']} full rows "
                   f"({r['fullExchange']} exchange), rows region {r['rowsRegion']} px, clearance {r['clearance5']} px")
     m.cases.record(
-        "Layout by state at 1440 x 900 (Task 51, final measurement)",
-        "At 1440 x 900 with the graphs open, in each state the owner listed (steady following; pinned with the "
-        "'beyond this window' count; disconnect-gap note; encoding-gap note; restart + gap notes; the wrapped "
-        "three-notice line; filtered + pinned; filtered, following; paused with the held line; stale with the "
-        "banner; last known with the banner): at least 5 fully visible exchange rows in #logwrap (the fewest of "
-        "the state's readings). Printed per state: the log header's height, the full rows, the rows region, the "
+        "Layout by state at 1440 x 900 (Tasks 51-52, final measurement)",
+        "At 1440 x 900 with the graphs open and About this log collapsed, in each state the owner listed (steady "
+        "following; pinned with the 'beyond this window' count; disconnect-gap note; encoding-gap note; restart + "
+        "gap notes; the wrapped three-notice line; filtered + pinned; filtered, following; paused with the held "
+        "line; stale with the banner; last known with the banner; paused while stale; stale while pinned, Task 52): "
+        "at least 5 fully visible exchange rows in #logwrap (the fewest of the state's readings; the stale states "
+        "read through the banner's one-line and two-line retry-countdown forms; the pinned states at the wheel "
+        "scroll's position). Printed per state: the log header's height, the full rows, the rows region, the "
         "clearance (the region minus the 5 newest full rows), and the minimum clearance. No other pixel target. "
-        "Recorded apart, not required: the 'Could not recover' banner, stale and last known each with a recent gap "
-        "note on the graphs' notice line, paused while stale, and stale while pinned (Task 51b)",
-        conds, {"table": table, "minimum": worst, "extra_not_required": extras})
+        "Also printed, outside the listed states: the 'Could not recover' banner, and stale and last known each "
+        "with a recent gap note on the graphs' notice line",
+        conds, {"table": table, "minimum": worst, "outside_listed_states": extras})
 
 
 async def case_restart(m: M3b, run: Run, sim: subprocess.Popen[bytes], logname: str) -> subprocess.Popen[bytes]:
