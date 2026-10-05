@@ -2247,6 +2247,11 @@ async def case_pause(m: M3b) -> None:
 
 
 async def case_sigstop(m: M3b, sim: subprocess.Popen[bytes]) -> None:
+    # The gap counts are per window, so a gap the layout cases left could age out of it during this
+    # case and cancel the new one (Task 52's stale readings take longer). The case runs in the 30 s
+    # window with no gap in it, and the 2 min window comes back after.
+    await m.click_window(30)
+    await m.until(lambda s: not s["breaks"], timeout=45.0, period=0.5)
     await asyncio.sleep(1.0)
     st = await m.status()
     before = await m.state()
@@ -2324,6 +2329,7 @@ async def case_sigstop(m: M3b, sim: subprocess.Popen[bytes]) -> None:
          "after": {p: {k: after["graphs"][p][k] for k in ("gaps", "segments", "run", "line2")} for p in paths},
          "breaks_line": after["breaks"],
          "seqs": [len(lg["seqs"]), lg["seqs"][:3], lg["seqs"][-3:]], "log_count": lg["count"]})
+    await m.click_window(120)
 
 
 async def case_restart_and_gap(m: M3b, sim: subprocess.Popen[bytes]) -> None:
