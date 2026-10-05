@@ -22,8 +22,11 @@ stays open** until the owner confirms it in their own browser ("Tasks 42-46" bel
 [gui-m3b-main-thread.md](gui-m3b-main-thread.md), "Outcome"). **Tasks 47-51** (final head `25e6852`) moved
 Older / Newer / Jump to newest into the log header, fitted the filter bar on one row, made the log
 counter silent and moved every announcement into one hidden announcer; the final runs passed
-`--m3b` 36 of 36, `--m3b-log` 22 of 22 and `--m3b-slots` 3 of 3 ("Tasks 47-51" below). The
-ordered list of what the owner still has to do is "Owner checklist (ordered)".
+`--m3b` 36 of 36, `--m3b-log` 22 of 22 and `--m3b-slots` 3 of 3 ("Tasks 47-51" below).
+**Tasks 52-54** (final head `f7b4966`) folded the log's fine print under a collapsed "About this
+log" so paused while stale and stale while pinned keep 5 full log rows, removed `aria-pressed` from
+the two Pause buttons, and made routine retries silent; `--m3b` passed 37 of 37 ("Tasks 52-54"
+below). The ordered list of what the owner still has to do is "Owner checklist (ordered)".
 
 **Still open, and not touched by this record:**
 - **the M2 early-check latency `STOP`** ([gui-m2-early-check.md](gui-m2-early-check.md)).
@@ -89,6 +92,13 @@ Where the numbers come from:
   [m3b-51b/](gui-m3b-live-demo/m3b-51b/), [log51b/](gui-m3b-live-demo/log51b/) and
   [slots-51b/](gui-m3b-live-demo/slots-51b/) (results JSON and `capture.log`); they supersede the
   earlier tallies for every case they run. The Task 47-51 reports are local and untracked too.
+- **the final page (Tasks 52-54, head `f7b4966`):** `--m3b` run `r52-m3b-2` at `f7b4966` (37 of
+  37), `--m3b-log` run `r52-m3b-log` (22 of 22) and `--m3b-slots` run `r52-m3b-slots` (3 of 3),
+  both at `52f1e90`, whose page and `--m3b-log` / `--m3b-slots` paths are the same as `f7b4966`'s
+  (`f7b4966` changes only the harness's SIGSTOP case). Copied unchanged into
+  [m3b-52/](gui-m3b-live-demo/m3b-52/), [log52/](gui-m3b-live-demo/log52/) and
+  [slots-52/](gui-m3b-live-demo/slots-52/); they supersede the 51b tallies. The reports
+  (`task-52-report.md`, `task-53-54-report.md`) are local and untracked.
   **Those reports are local and untracked** (`.superpowers/` is in the repository's
   `.git/info/exclude`). In the repository the log cases can be checked against the two
   committed `log-run*/` files, and the measurements only as
@@ -163,6 +173,12 @@ cases and the layout-by-state case ("Tasks 47-51" below), **plus** the bounded-h
 `m3b-long3` (not rerun: its case reads only the graphs' `data-*` attributes). The table below keeps
 the numbers of the runs it cites; where Tasks 47-51 changed what a case reads (the log rows cases,
 the banner, the count line), `m3b-51b` is the run of record.
+
+**Superseded at the final head (Tasks 52-54, `f7b4966`): `--m3b` 37 of 37** in run `m3b-52`
+([m3b-52/m3b-results.json](gui-m3b-live-demo/m3b-52/m3b-results.json) `tally`:
+`{"passed": 37, "total": 37}`): the 36 cases above plus "About this log (Task 52)". Where Tasks
+52-54 changed what a case reads (the layout by state, the announcement cases, Pause), `m3b-52` is
+the run of record ("Tasks 52-54" below).
 
 26 cases in run 13 (`run13/m3b-results.json` `tally`: `{"passed": 26, "total": 26}`), plus the
 bounded-history case of `m3b-long3`. Run 13 adds Task 41's three cases (24, 25 and 26 below)
@@ -497,11 +513,13 @@ untracked). The page's `app.js` last changed in `de52666`; the final runs below 
 - **Expansions leave with their rows** (Task 49): an expanded payload's state is dropped when its
   exchange leaves the 2,000 cap. With no exchange shown, a scroll no longer leaves the log "not
   following, not pinned": it stays following.
-- **Announcements** (Task 51, 51b): one visually hidden `#announce` (`role="status"`,
+- **Announcements** (Task 51, 51b; **what is said was changed by Task 54**, see "Tasks 52-54"
+  below): one visually hidden `#announce` (`role="status"`,
   `aria-live="polite"`, `aria-atomic="true"`, a child of `body`) carries every transition; each
   announcement replaces the previous one and is cleared 10 s later. The banner `#linkstate` is no
   longer a live region; its retry countdown and "N s ago" still tick visibly, outside any live
-  region. The exact strings (task-51-report "Exact announcement strings", 51b numbering):
+  region. The exact strings at `25e6852`, before Task 54 (task-51-report "Exact announcement
+  strings", 51b numbering; the attempt and retry strings are no longer said):
   "Disconnected. Reason: …", "Reconnecting: attempt N.", "Attempt N failed: …", "Last known
   data: …", "Recovery attempt K of 3 under way.", "Could not recover: …", "Retrying: a new recovery
   of 3 attempts starts.", and on recovery "Connection restored; data current." (after an outage
@@ -521,7 +539,7 @@ untracked). The page's `app.js` last changed in `de52666`; the final runs below 
 Task 51b reports these as the final matrix (`task-51-report.md`, "Task 51b"). `--moving` was last
 run at `f9ca7cd` (exit 0, `moving-51/`), before Task 51b's page change.
 
-### Layout by state at 1440 × 900 (the committed case)
+### Layout by state at 1440 × 900 (at `25e6852`; superseded by "Tasks 52-54")
 
 `--m3b` case "Layout by state at 1440 x 900 (Task 51, final measurement)",
 [m3b-51b/m3b-results.json](gui-m3b-live-demo/m3b-51b/m3b-results.json). Graphs open; the fewest
@@ -542,16 +560,13 @@ Part B's buffer is under 2,000 exchanges (count lines "200 of 747 shown" …).
 | Stale (banner, 64 px) | 42.2 | 5 (5) | 295 | **+30** |
 | Last known (banner, 64 px) | 42.2 | 5 (5) | 295 | +33 |
 
-**Every listed state shows at least 5 full exchange rows; the minimum clearance is +30 px
-(stale).** Recorded, not required (combinations): "Could not recover" banner 5 rows (+17); stale
-with a recent gap note 5 (+16); last known with a recent gap note 5 (+15); and two that fall short:
+**Every state listed then showed at least 5 full exchange rows; the minimum clearance was +30 px
+(stale).** Outside the listed states: "Could not recover" banner 5 rows (+17); stale with a recent
+gap note 5 (+16); last known with a recent gap note 5 (+15). Two combinations had 4 full rows at
+`25e6852`: paused while stale (rows region 237 px) and stale while pinned (the log header wrapped
+to 72.1 px; region 265 px). The owner made both supported states; Task 52 fixed them, and both are
+now required in the case ("Tasks 52-54", "Layout by state").
 
-- **REMAINING DEFICIT, for the owner to rule on (no layout change was made):**
-  - **paused while stale: 4 full rows** (banner 64 px + held line; rows region 237 px, about
-    27 px short of five);
-  - **stale while pinned: 4 full rows**: the log header wraps to two lines (72.1 px, the Stale
-    tag beside "13 rows below + 1 beyond this window"); the region (265 px) holds five, but only
-    four were fully visible at the pinned offset.
 - **The instant of a fault:** a "Last known" reading taken in the same task as the fault, before
   the box re-scrolls, shows 4 rows with partial rows at both ends; the case reads every 250 ms
   through a whole episode and keeps the fewest (26 readings), which was 5 (task-47-49-report,
@@ -592,13 +607,185 @@ actual listen with a screen reader (for example NVDA on Windows or Orca on Linux
   current." after a disconnect (also when the outage began at page load), exactly one "Live data
   restored." after a data fault (also on a first state that was incomplete), none while data stays
   last known, none on a healthy load or over 65 s healthy, never the same text twice in a row
-  (`m3b-51b` announcement cases). Needs a screen-reader listen: whether a quick pair ("Recovery
-  attempt 1 of 3 under way." then "Live data restored." a few ms later) is read in full or only
-  the last, and whether clearing after 10 s cuts a long message.
+  (`m3b-51b` announcement cases; again in `m3b-52`). Needs a screen-reader listen: whether
+  clearing after 10 s cuts a long message. (The quick pair this item named at `25e6852`, "Recovery
+  attempt 1 of 3 under way." then "Live data restored." a few ms later, no longer occurs: since
+  Task 54 the attempt is silent.)
 - **Retry now focus.** Automation verified: after Enter on Retry now the focus owner is the banner
   text, `linkstate-text`, not `body` (`m3b-51b`, bounded case). Needs your observation: the
   keyboard flow in the fault check; a later recovery hides the banner with focus on its text, and
   then focus falls to `body` (outside the requirement; review note, Task 51b).
+
+## Tasks 52-54: the log's fine print, the Pause buttons and the announcement policy (final page, `f7b4966`)
+
+The owner's final correction of 2026-10-04 (plan: Tasks 52-55; the reports `task-52-report.md`
+and `task-53-54-report.md` are local and untracked). The served `app.js` at the final head has
+SHA-256 `277e9fd8…` (the `--m3b-log` run read it from the page; the worktree file matches).
+
+### Task 52: five full log rows while paused and stale, and while stale and pinned
+
+The owner approved layout B after the measurements (task-52-report, first part):
+- **The log's two fine-print paragraphs fold under a collapsed "About this log"** (a native
+  `<details id="log-about">` in the log panel; its summary is focusable and Enter or Space toggles
+  it). The text is unchanged: the Dispatch µs paragraph, `#foot-limits` and the uPlot licence link.
+  Closed it is one line, 27 px, where the footer was 79.8 px on three lines. Open, the text sits in
+  the panel's flow and the rows box gives way: no overlay, no page scroll.
+- **The log's own stale tag reads "Stale"**, without the time. The time stays on the page twice:
+  the banner's "Last live HH:MM:SS UTC" (the same `S.downAt`) and the other three panels' "Stale,
+  as of HH:MM:SS UTC" tags. With no live data yet every tag still reads "No data received".
+- **`#log-count` may wrap inside itself** (`flex: 1 1 8rem; min-width: 0`), a guard for long counts.
+- **The graphs were not shrunk** (166-172 px, task-52-report; the plot cap is unchanged).
+
+The `--m3b` case is now "Layout by state at 1440 x 900 (Tasks 51-52, final measurement)"
+([m3b-52/m3b-results.json](gui-m3b-live-demo/m3b-52/m3b-results.json)). It requires 5 full exchange
+rows in 13 listed states, About this log collapsed in every state, and each stale state read
+through the banner's two-line retry countdown (it reads every 0.5 s until 2 readings have the
+countdown, and keeps the worst). The three readings that are not listed states are printed under
+`outside_listed_states`.
+
+| State | Before (`m3b-51b`, `25e6852`): full exchange rows / region px / clearance px | Now (`m3b-52`, `f7b4966`): header px / full rows (exchange) / region px / clearance px |
+|---|---|---|
+| Steady following | 6 / 359 / +96 | 42.2 / 7 (7) / 412 / +149 |
+| Pinned, "beyond this window" count | 6 / 359 / +97 | 42.2 / 7 (7) / 412 / +150 |
+| Disconnect-gap note | 6 / 343 / +79 | 42.2 / 7 (7) / 396 / +133 |
+| Encoding-gap note (fault server) | 6 / 337 / +74 | 42.2 / 7 (7) / 390 / +127 |
+| Restart + gap notes | 6 / 337 / +73 | 42.2 / 7 (7) / 390 / +127 |
+| Wrapped three-notice line | 6 / 321 / +57 | 42.2 / 7 (7) / 374 / +109 |
+| Filtered + pinned | 5 / 359 / +94 | 42.2 / 7 (6) / 412 / +147 |
+| Filtered, following | 6 / 359 / +96 | 42.2 / 7 (7) / 412 / +150 |
+| Paused (held line, 58 px) | 5 / 301 / +37 | 42.2 / 6 (6) / 354 / +90 |
+| Stale (banner 54 / 64 px) | 5 / 295 / +30 | 42.2 / 6 (6) / 348 / +84 |
+| Last known (banner 64 px) | 5 / 295 / +33 | 42.2 / 6 (6) / 348 / +86 |
+| **Paused while stale** (banner 54 / 64 px + held line) | **4 / 237 / short** | 42.2 / **5 (5) / 290 / +27** |
+| **Stale while pinned** | **4 / 265 / short; header 72.1 px, two lines** | **42.2, one line** / 6 (6) / 348 / +86 |
+| Outside the listed states: "Could not recover" banner | 5 / 279 / +17 | 42.2 / 6 (6) / 333 / +71 |
+| Outside: stale with a gap note | 5 / 279 / +16 | 42.2 / 6 (6) / 333 / +70 |
+| Outside: last known with a gap note | 5 / 279 / +15 | 42.2 / 6 (6) / 333 / +69 |
+
+- **All 13 listed states show at least 5 full exchange rows with About this log collapsed. The
+  minimum clearance is +27 px, paused while stale**, read with the two-line countdown banner
+  (banner heights 54 and 64 px across its readings).
+- **The pinned states are read at the harness's wheel position.** Five full rows at any pinned
+  scroll position need about 317 px of rows region (6 × 53 − 1, task-52-report); every pinned
+  state has at least 348 px.
+- **About this log open** ([m3b-52](gui-m3b-live-demo/m3b-52/m3b-results.json), case "About this log
+  (Task 52)", at 1440 following): Enter on the summary opens it (27 → 98 px) with every text and the
+  licence link shown and no page scroll; the rows region goes from 396 to 325 px, 6 full exchange
+  rows (+62); Enter closes it with the focus kept on the summary, back to 7 rows (+133).
+  **Open in the tightest state it was not measured. Estimate:** paused while stale with it open
+  would be about 290 − 71 = 219 px, about 4 full rows. **The five-row requirement is met with About
+  this log collapsed** (the default at every load); while a reader holds it open in that state,
+  about 4 rows show.
+- **Long counts** (a measurement aid outside the harness, counts injected; task-52-report): with
+  "200 of 12,345 shown, last seq 12345" and "12 rows below + 20 beyond this window" while stale and
+  pinned, the header stays 42.2 px on one line; longer text wraps inside the count (about +10 px).
+- **Harness side effect, `f7b4966`:** the longer stale readings let an earlier layout gap age out of
+  the 2 min window during the SIGSTOP case, so its "gaps +1 and segments +1" check failed once at
+  `52f1e90`. The case now runs in the 30 s window with no gap in it; the 2 min window comes back
+  after. No page change.
+
+### Task 53: the Pause buttons carry no pressed state
+
+- **`aria-pressed` is removed from both Pause buttons**, the log's (`#btn-pause`) and the graphs'
+  (`#btn-graphs-pause`). They carry `data-paused="true"` / `"false"` instead. Labels, accessible
+  names ("Pause view" / "Resume view"; "Pause graphs" / "Resume graphs"), behaviour and focus are
+  unchanged.
+- **The time-window selectors (30 s / 2 min / 10 min) keep `aria-pressed`**, exactly one true.
+- The dark paused look is unchanged: `button[aria-pressed="true"], button[data-paused="true"]` in
+  `app.css`. The harness's pause checks read `data-paused`.
+- Verified in `m3b-52` "Pause while buffering" (neither Pause button has `aria-pressed`, paused or
+  not; the graphs' button `data-paused` true with "Resume graphs", then false with "Pause graphs";
+  the window selectors keep `aria-pressed`, one true) and in `log52` case 2 at both widths ("no
+  aria-pressed on Pause, paused or not").
+- **The open decision on Pause's `aria-pressed` with a changing label is resolved** by this change.
+
+### Task 54: the announcement policy
+
+**Said once each:**
+1. **The start of an outage:** "Disconnected. Reason: … The page retries on its own." (or
+   "Connection refused. Reason: …"), or for a data fault "Last known data: <cause>." with its next
+   step ("The page reconnects to get a complete state." or the encoding polling sentence).
+2. **A materially different fault** (defined below): "Disconnected. Reason: …" / "Connection refused.
+   Reason: …" / "Reconnected, but the data is still last known: <cause>." / "Last known data:
+   <cause>."; after exhaustion, "The page does not try again by itself; use Retry now to try again."
+   is added.
+3. **Exhaustion:** "Could not recover: … use Retry now to try again."
+4. **Confirmed recovery:** "Connection restored; data current." or "Live data restored."; nothing
+   while the data stays last known.
+
+**Silent, and still visible in the banner:** an automatic attempt starting; an attempt failing the
+same way as before; a manual Retry now starting a new episode (its focus moves to the banner's
+text, Task 51b); the connection coming back while an attempt's state is still to come; countdowns
+and "N s ago". Retry timing and budgets are unchanged.
+
+**A materially different fault** is a change of the fault's signature (`faultSig()` in `app.js`):
+its **class** and its **cause**.
+- Classes: the **connection** (stale: down or refused) and the **data** (connected, data last known).
+- Connection causes: a **disconnect** or a **refusal**. A new reason text for the same cause (a
+  timeout, then "no answer") is not a different fault.
+- Data causes: the set pending, of an unreadable message, an incomplete state message, and the
+  simulator unable to build its state. One added or removed is a different fault.
+- So each of these is announced: disconnect → data fault, data fault → disconnect, disconnect ↔
+  refusal, unreadable → unreadable and incomplete. A retry that fails like the one before is not.
+- The last announced signature is cleared only by a recovery.
+
+**Announcements in a 60 s outage: now 1, plus 1 on recovery** (before Task 54: about 11 with a hung
+simulator and about 15 with a closed port, plus 1). **This figure is derived from the code** (retries
+never speak, and the signature does not change while the cause stays the same) **and from the
+measured 24 s case; no 60 s outage was run.** Measured in `m3b-52`, "Announcements: a disconnect,
+its retries and the recovery (SIGSTOP 24 s, then SIGCONT)": 4 attempt starts and 3 failures, each
+with a visible banner change and no announcement; exactly 1 announcement while down, 2 in all:
+- "Disconnected. Reason: status request failed: no answer within 5 s. The page retries on its own."
+- "Connection restored; data current."
+
+The other announcement cases in `m3b-52` (exact lists in the results file):
+
+| Case | Said |
+|---|---|
+| None on load or over 65 s healthy | nothing |
+| An unreadable message, then recovery | "Last known data: the simulator sent a message this page could not read. The page reconnects to get a complete state.", "Live data restored." |
+| An incomplete state (missing `dtcs`, then missing `vehicle`) | each: "Last known data: the simulator sent an incomplete state message. …", "Live data restored." |
+| The connection back while the data is still last known | "Disconnected. …", "Reconnected, but the data is still last known: the simulator sent an incomplete state message. …", "Connection restored; data current." |
+| A disconnect during a pending data fault | "Last known data: …", "Disconnected. …", "Connection restored; data current." |
+| The simulator stopped at page load, then back | "Disconnected. …", "Connection restored; data current." |
+| A page load whose first state is incomplete | "Last known data: …", "Live data restored." |
+| Bounded recovery, exhaustion, Retry now by keyboard | before Retry now exactly "Last known data: …" and "Could not recover: … The page made 3 attempts …"; attempts 1-3 shown in the banner only; in the 30 s after exhaustion one clean-up (9,999 ms after it, within the harness's 5 ms tolerance) and nothing else; after Retry now exactly "Live data restored."; focus on `linkstate-text` |
+
+`log52` case 11 ("Live regions") repeats it at the page level: `#announce` said the disconnect once
+and nothing else while down, and the data fault once with silent recovery attempts.
+
+**The open decision on announcement chattiness is resolved** by this policy.
+
+**Intended exceptions to "said once"** (controller rulings after review, for the owner to confirm):
+- **"Could not recover" is said again, identically, after the user presses Retry now and that new
+  episode is exhausted again with the same cause.** A user-initiated retry that fails is fresh
+  feedback to that user. No harness case covers it (known minors below).
+- **A flip between disconnect and refusal counts as a different fault**, so a deployment that
+  alternates between the two on every retry would announce each flip. In the tested cases a
+  refusal repeats as a refusal and is silent. The owner may collapse disconnect and refusal into one
+  class.
+
+### The final runs (Tasks 52-54)
+
+| Run | Commit | Started (UTC) | Result | Files |
+|---|---|---|---|---|
+| `--m3b` | `f7b4966` | 2026-10-05T06:28:34Z | exit 0, **37 of 37** (36 earlier cases and "About this log (Task 52)"); the 4 log entries are the expected variant C 503 handshakes | [m3b-52/m3b-results.json](gui-m3b-live-demo/m3b-52/m3b-results.json), [capture.log](gui-m3b-live-demo/m3b-52/capture.log), [overflow-check.txt](gui-m3b-live-demo/m3b-52/overflow-check.txt) |
+| `--m3b-log` | `52f1e90` | 2026-10-05T06:15:27Z | exit 0, **22 of 22** (1440: 11 of 11; 390: 9 of 9; page 2 of 2); 0 problems | [log52/m3b-log-results.json](gui-m3b-live-demo/log52/m3b-log-results.json), [capture.log](gui-m3b-live-demo/log52/capture.log) |
+| `--m3b-slots` | `52f1e90` | 2026-10-05T06:25:42Z | exit 0, **3 of 3** (B start gaps 2.007 / 4.006 s; C start gap 2.006 s, wait after the refusal 2.005 s) | [slots-52/m3b-slots-results.json](gui-m3b-live-demo/slots-52/m3b-slots-results.json), [capture.log](gui-m3b-live-demo/slots-52/capture.log) |
+| M3a | `52f1e90` | 2026-10-05T06:26:33Z | exit 0; overflow ok at 390, 2000 and 1440; the 2 expected `ERR_CONNECTION_REFUSED` | scratchpad `t52/r52-m3a/` (not committed) |
+| Full suite (namespace, `-rfE`, once each) | `22bcb4e`; `52f1e90` | — | 1339 passed, 69 skipped, 2 xfailed, both times | `suite-53-54.out`, `suite-52.out` (local, not committed) |
+
+Earlier runs in this batch, not of record: `--m3b` at `22bcb4e` 35 of 36 (the bounded case read a
+clean-up at 9,999 ms; harness tolerance added in `c7aed02`), at `c7aed02` 36 of 36, and at
+`52f1e90` 36 of 37 (the SIGSTOP gap count, fixed in `f7b4966`). `--moving` was not rerun.
+
+### Known minors (Tasks 53-54; reported, not changed)
+
+- `annText` tells a connection signature from a data one by its string prefix (`"connection "`);
+  a structured class field would be sturdier.
+- No harness case covers the Retry now re-exhaustion exception above.
+- Commit `c7aed02`'s message says the clean-up is "now" reached; the bounded case reached it before
+  Task 54 too, and only the 1 ms early reading was new.
 
 ## Open finding: the page's main-thread load (mostly M3a's log rebuild)
 
@@ -743,10 +930,15 @@ All in [gui-m3b-live-demo/](gui-m3b-live-demo/), copied unchanged and renamed. A
   and `restart-gap-invalid-wrap-1440.png`. Task 37 changed what these show (the note's
   wording and place).
 - **Run 8:** `break-note-encoding-1440.png`.
+- **`m3b-52`** (the final page, `f7b4966`; Tasks 52-54): `paused-1440.png` and
+  `stale-sigstop-1440.png` were retaken there, because Tasks 52-53 changed what they show (About
+  this log, the log's "Stale" tag); and `paused-stale-1440.png`, `stale-pinned-1440.png` and
+  `about-open-1440.png` were added (their own table below).
 - **Taken for this record:** `hidden-1440.png`; and, on the final page (`25e6852`), the `log-*`,
   `stale-banner-*` and `lamp-*` shots in their own table below. Every other shot predates the log fix,
   so its log's count line and controls are the old ones.
-- **Run 7** (the page at `391a335`): all the others.
+- **Run 7** (the page at `391a335`): all the others. Every shot not from `m3b-52` shows the log's
+  old three-line footer instead of the collapsed "About this log".
 
 **Shots from runs 7 and 8, and the hidden shot, show the earlier plot-height cap** (4.75rem: a
 72.6 px plot at 1440, against 68.75 px now) and the notice line's old bottom margin. Otherwise
@@ -759,8 +951,8 @@ they match the current page; none of them shows a restart note.
 | [normal-2000.png](gui-m3b-live-demo/normal-2000.png) | 332,238 B | run 7 `m3b-b-graphs-2000.png` | **2000 × 1100:** one row of five; the head on one line. 30 s window, t ≈ 29 s |
 | [normal-390.png](gui-m3b-live-demo/normal-390.png) | 44,606 B | run 7 `m3b-b-graphs-390.png` | **390 × 844**, scrolled to the graphs: one graph per row; the head on two rows plus the "history starts at t = 0.6 s" line |
 | [hidden-1440.png](gui-m3b-live-demo/hidden-1440.png) | 231,004 B | taken for this record | **Hidden:** "Signal graphs — hidden, still recording" and "Show graphs"; the log takes the space. Read at the shot: `#graphs` hidden, `aria-expanded` false, as-of 32.65 rising while drawn-to stayed 30.14, `data-health` live, no page exception ([hidden-capture.log](gui-m3b-live-demo/hidden-capture.log)) |
-| [paused-1440.png](gui-m3b-live-demo/paused-1440.png) | 228,305 B | run 7 `m3b-b-paused.png` | **Paused:** "Paused at t = 55.2 s", "Resume graphs"; the graphs frozen (speed line 1 80) while the table moved on (speed 48) and the log runs to seq 248. Not in the Agreement check (ruling 1) |
-| [stale-sigstop-1440.png](gui-m3b-live-demo/stale-sigstop-1440.png) | 227,313 B | run 7 `m3b-b-sigstop-stale.png` | **Stale:** after SIGSTOP, "Disconnected, retry in 1 s", the banner with "Retry now", "Stale, as of 03:40:19 UTC" on the trouble codes, vehicle, graphs and log panels; the graphs stay drawn |
+| [paused-1440.png](gui-m3b-live-demo/paused-1440.png) | 230,889 B | **`m3b-52`** `m3b-b-paused.png` | **Paused:** "Paused at t = 55.0 s", "Resume graphs" in the dark paused look (`data-paused`, no `aria-pressed`, Task 53); the graphs frozen (speed line 1 80) while the table moved on (speed 48) and the log runs to seq 248; "About this log" collapsed. Not in the Agreement check (ruling 1) |
+| [stale-sigstop-1440.png](gui-m3b-live-demo/stale-sigstop-1440.png) | 230,275 B | **`m3b-52`** `m3b-b-sigstop-stale.png` | **Stale:** after SIGSTOP, "Disconnected, retry in 1 s", the two-line countdown banner with "Retry now", "Stale, as of 06:38:58 UTC" on the trouble codes, vehicle and graphs panels and "Stale" on the log (Task 52); the graphs stay drawn |
 | [gap-after-sigcont-1440.png](gui-m3b-live-demo/gap-after-sigcont-1440.png) | 229,440 B | run 7 `m3b-b-sigcont-break.png` | **After SIGCONT:** Live; the shared line "No data from t = 200.0 to t = 208.0 s (disconnected)"; a break in every graph; "Connection lost, then resumed." in the log; no restart marker |
 | [last-known-encoding-1440.png](gui-m3b-live-demo/last-known-encoding-1440.png) | 171,846 B | run 7 `m3b-e-loaded-during-fault.png` | **Last known:** a page loaded during an encoding fault (part E, no scenario). "Connected, last known data" with an amber outline lamp, the banner naming `state_encode_failed 52`, "State encode failed 52" in the status bar, "Last known, 03:42:20 UTC" on the trouble codes, vehicle and graphs panels, distinct from "Stale"; the no-scenario note in the graphs |
 | [last-known-exhausted-1440.png](gui-m3b-live-demo/last-known-exhausted-1440.png) | 192,161 B | run 7 `m3b-a3-malformed-exhausted.png` | **Last known, budget exhausted:** "Could not recover: … The page made 3 attempts …" with "Retry now"; "Malformed messages 5, last 03:35:45 UTC" under Connection |
@@ -771,10 +963,12 @@ they match the current page; none of them shows a restart note.
 | [restart-gap-invalid-wrap-1440.png](gui-m3b-live-demo/restart-gap-invalid-wrap-1440.png) | 229,381 B | **run 12** `m3b-b-restart-gap-invalid-1440.png` | **A notice line that wraps (case 22):** the restart note, the gap and "Throttle: invalid value from t = 12.4 to t = 15.4 s (still invalid)" on two lines, every notice complete; throttle reads "invalid value" in its card and the table; 5 full log rows (the open invalid run comes from the test-only wrapper, see case 22) |
 | [no-scenario-1440.png](gui-m3b-live-demo/no-scenario-1440.png) | 150,769 B | run 7 `m3b-a1-no-scenario-65s.png` | **No scenario:** `ice_default.yaml` after 65 s alone: "No scenario: the values are constant, as configured. Graphs follow scenario time.", no plots, "Live" |
 
-Total: 16 screenshots, 3,309,868 B. The directory, with runs 7, 8, 9 and 12's results and
+Total: 16 screenshots, 3,315,414 B (3,309,868 B before the two `m3b-52` retakes). The directory,
+with runs 7, 8, 9 and 12's results and
 logs, both long runs' results and run 9's two traces, was 6,773,999 B at run 12; with the later
 results (runs 13 and 14, the `--m3b-log` runs, the final 51b results) and the Task 50 screenshots,
-`du -sb` gives 9,151,695 B on 2026-10-04. Every other run-7,
+`du -sb` gave 9,151,695 B on 2026-10-04; with the Tasks 52-54 results (`m3b-52/`, `log52/`,
+`slots-52/`) and screenshots, 10,469,912 B. Every other run-7,
 run-8, run-9 and run-12 shot, and the 10 min shots of `m3b-long1` and `m3b-long3`, stay in the
 scratchpad (not durable). The record's numbers are all in the committed results files, except
 the 2000 × 1100 plot height (a separate measurement, "Task 37" above).
@@ -824,7 +1018,7 @@ about 1.2 MB (it is in the facts file).
 | [log-older-row-1440.png](gui-m3b-live-demo/log-older-row-1440.png) | 101,534 B | **The top of a pinned window:** "125 older rows left this view. …", then the plain-text edge row "1,762 older exchanges match your filters. Use Older in the log header to show them.", then seq 1888; header "194 rows below + 38 beyond this window" |
 | [log-evicted-repin-1440.png](gui-m3b-live-demo/log-evicted-repin-1440.png) | 112,336 B | **Eviction while pinned:** "2,151 older rows and 1 connection note left this view. The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap. Rows this view was showing left too, so it moved to the oldest exchanges kept."; Older unavailable (the oldest kept); "194 rows below + 1,800 beyond this window" |
 | [log-evicted-repin-390.png](gui-m3b-live-demo/log-evicted-repin-390.png) | 83,585 B | The same at 390: "… left this view. … so it moved to the oldest exchanges kept.", "195 rows below + 1,800 beyond this window" |
-| [stale-banner-1440.png](gui-m3b-live-demo/stale-banner-1440.png) | 45,458 B | **Stale:** the top of the page during a SIGSTOP: Connection "Disconnected, reconnecting" (amber outline lamp), the struck-through polled readouts, and the banner "Disconnected. Last live 11:03:55 UTC (8 s ago). The views below show data as of then. Reason: status request failed: no answer within 5 s. Reconnecting now." with "Retrying"; the banner is not a live region (`aria-live` null); the announcer then held "Reconnecting: attempt 2." |
+| [stale-banner-1440.png](gui-m3b-live-demo/stale-banner-1440.png) | 45,458 B | **Stale:** the top of the page during a SIGSTOP: Connection "Disconnected, reconnecting" (amber outline lamp), the struck-through polled readouts, and the banner "Disconnected. Last live 11:03:55 UTC (8 s ago). The views below show data as of then. Reason: status request failed: no answer within 5 s. Reconnecting now." with "Retrying"; the banner is not a live region (`aria-live` null); the announcer then held "Reconnecting: attempt 2." (at `25e6852`; since Task 54 an attempt says nothing, and the banner looks the same) |
 | [stale-banner-390.png](gui-m3b-live-demo/stale-banner-390.png) | 43,493 B | The same at 390 ("… (9 s ago) …") |
 | [lamp-live-1440.png](gui-m3b-live-demo/lamp-live-1440.png) | 5,519 B | **The live lamp** (crop of `#conn`, ×3): the filled lamp with its resting ring glow, "Live"; the beat paused at 0 ms |
 | [lamp-live-390.png](gui-m3b-live-demo/lamp-live-390.png) | 5,444 B | The same at 390 |
@@ -832,7 +1026,22 @@ about 1.2 MB (it is in the facts file).
 | [lamp-last-known-390.png](gui-m3b-live-demo/lamp-last-known-390.png) | 13,107 B | The same at 390 |
 
 Total: 17 files, 1,126,366 B. They show the page as it is; they do not tick the owner's visual
-review.
+review. Tasks 52-54 left them as they are: the 1440 log shots are clipped above the log's fine
+print, none shows a stale log, the Pause button's look did not change, and the banner shots show
+only the page's top.
+
+### Paused while stale, stale while pinned, About this log (`m3b-52`, Tasks 52-54)
+
+From the `--m3b` run of record at `f7b4966` (`m3b-52`), copied unchanged and renamed; full page,
+1440 × 900. The stale shots are taken at the first reading with the two-line countdown banner.
+
+| File | Size | Source | What it shows |
+|---|---|---|---|
+| [paused-stale-1440.png](gui-m3b-live-demo/paused-stale-1440.png) | 228,858 B | `m3b-b-layout-paused-stale.png` | **Paused while stale:** the two-line "Disconnected. … Retrying in 1 s (1 failed attempt; …)" banner, "Stale" on the log, "Resume" with "View paused. 2 new exchanges are held; …", 5 full exchange rows above the collapsed "About this log" |
+| [stale-pinned-1440.png](gui-m3b-live-demo/stale-pinned-1440.png) | 238,512 B | `m3b-b-layout-stale-pinned.png` | **Stale while pinned:** the log header on one line: "Exchange log", "Stale", "200 of 1,306 shown, last seq 1306", Older, Newer, "12 rows below + 1 beyond this window", Jump to newest |
+| [about-open-1440.png](gui-m3b-live-demo/about-open-1440.png) | 236,368 B | `m3b-b-about-open.png` | **About this log open** (Live, following): the focused summary and both paragraphs with the MIT licence link; 6 full exchange rows above it |
+
+Total: 3 files, 703,738 B.
 
 ## Remaining acceptance items
 
@@ -861,7 +1070,7 @@ checklist" below:
       `scripts/gui_fault_session.sh state-fault` (the same section). The screenshots do not tick it.
 - [ ] 390 px.
 - [ ] 2000 px.
-- [ ] The uPlot licence link.
+- [ ] The uPlot licence link (inside "About this log" since Task 52).
 - [ ] The measured cost against the estimates. The graphs come in under them; the page's
       main-thread load is the open finding below.
 
@@ -874,8 +1083,9 @@ Findings and untested paths:
 - [ ] **The owner's visual review of the windowed log and the lamp**: following, scroll-to-pin,
       the header's Older / Newer / Jump to newest with the count beside it, the shortened count line
       and the four absent-row wordings, Pause / Resume / Clear, the eviction note, the stale banner
-      with its ticking countdown; the lamp live, last known, down and refused. See "Owner
-      checklist (ordered)" and the screenshots. The screenshots do not tick it.
+      with its ticking countdown; the lamp live, last known, down and refused; "About this log"
+      closed and open (Task 52). See "Owner checklist (ordered)" and the screenshots. The
+      screenshots do not tick it.
 - [ ] **The visible-browser measurement: BLOCKED**, it needs an unlocked desktop. Task 46b's
       visible GPU run was invalid because the desktop was locked with the monitor off. Re-run
       `GUI_PERF_VISIBLE=1 GUI_PERF_REPEATS=1 scripts/run_gui_demo.sh --m3b-perf-log <outdir>` at
@@ -889,20 +1099,9 @@ Findings and untested paths:
       locked desktop). An owner decision if it shows in a real browser; the alternative, a pulse
       only on a state change, is a visible behaviour change and was not made
       ([gui-m3b-main-thread.md](gui-m3b-main-thread.md), "What the numbers do not show").
-- [ ] **Owner ruling: the remaining layout deficit at 1440 × 900** (recorded, not required; no
-      layout change made): paused while stale shows 4 full rows (rows region 237 px, about 27 px
-      short of five); stale while pinned shows 4 (the log header wraps to 72.1 px). See "Layout
-      by state" above.
-- [ ] **Owner decision: announcement chattiness.** Every retry start and failure is announced. A
-      60 s outage produces about **11 announcements with a hung simulator** (SIGSTOP: 1 disconnect,
-      5 attempt starts, 5 failures) and **about 15 with a closed port**, plus one on recovery; at
-      the 15 s backoff cap, 2 every 15 s (task-51-report, Task 51b, from the backoff in the code;
-      the harness observed the same sequence for the first 36 s).
-- [ ] **Owner decision: Pause's `aria-pressed` with a changing label.** "Pause" / "Resume" (and
-      the graphs' "Pause graphs" / "Resume graphs") change their visible text and also carry
-      `aria-pressed`: two signals for one state (a toggle is usually either a pressed state with a
-      fixed label, or a changing label). Pre-existing; the design spec §6.9 specifies
-      `aria-pressed`; not changed (Task 51 review). What a screen reader says here is unverified.
+- [ ] **Owner confirmation: the two intended exceptions to "said once"** (Task 54): an identical
+      "Could not recover" after Retry now exhausts again, and a disconnect ↔ refusal flip counted
+      as a different fault (the owner may collapse the two into one class). See "Tasks 52-54".
 - [ ] **Owner decision: the visible "Clear" next to the filters.** Since Task 47b the button reads
       "Clear" (accessible name "Clear view"); beside the filter chips it may read as "clear the
       filters". A visual call (Task 51 review; decision j above).
@@ -917,14 +1116,25 @@ Findings and untested paths:
       required validation since then saves its complete output (`-rfE`), and a recurrence is to be
       investigated by its identified test. Complete outputs saved (session scratchpad, not
       committed): `suite-47-49.out`, `suite-47-49b.out`, `suite-47b.out`, `suite-51.out`,
-      `suite-51b.out` (each 1339 passed, 69 skipped, 2 xfailed, 0 failed).
+      `suite-51b.out`, `suite-53-54.out`, `suite-52.out` (each 1339 passed, 69 skipped, 2 xfailed,
+      0 failed).
 - [ ] **Deferred findings, reported and not changed:**
       - the "No exchanges match these filters." state line prints its count unformatted
         ("2000 are hidden by the ECU, service or outcome filter.", still so in `log51b`), while
         every other number on the page reads "2,000"; the paused line's held count is likewise
         unformatted, which would show at 1,000 or more (task-46a-report, Page findings);
       - with nothing matching, the count line reads "0 of 0 matching, last seq N" (`log51b`):
-        accurate, and the state line explains it, but awkward.
+        accurate, and the state line explains it, but awkward;
+      - the three known minors of Tasks 53-54 ("Tasks 52-54", "Known minors").
+- Resolved, not an acceptance item (Tasks 52-54):
+      - **the layout of paused while stale and stale while pinned** at 1440 × 900: both are now
+        required states with 5 full rows (5 rows, +27 px, and 6 rows, +86 px; `m3b-52`), with About
+        this log collapsed. While it is open in paused while stale, about 4 rows would show (an
+        estimate, not measured);
+      - **announcement chattiness**: routine retries are silent; a 60 s outage says 1, plus 1 on
+        recovery (derived from the code and the measured 24 s case);
+      - **Pause's `aria-pressed` with a changing label**: removed from both Pause buttons; the window
+        selectors keep it. What a screen reader says is still unverified.
 - Resolved, not an acceptance item (Tasks 47-51): keyboard access to Newer; `#log-count`'s
       live region; `view.expanded` pruning; the "not following, not pinned" state; the ticking
       countdown and "N s ago"; the recovery announcement; Retry now focus. Each is listed with
@@ -967,10 +1177,23 @@ They were controller rulings during Tasks 42-46 and are now owner approvals:
   and a press with the window's far end already on screen scrolls the log box to that end instead
   of moving the window.
 
+### Directed or approved by the owner (2026-10-04, Tasks 52-54)
+
+- **Paused while stale and stale while pinned are supported states** under the five-full-row
+  requirement at 1440 × 900 (plan, Task 52).
+- **Layout B** (approved after the Task 52 measurements, via the coordinator): the log's fine
+  print under a collapsed "About this log", the log's own tag "Stale" without the time, and the
+  count allowed to wrap inside itself.
+- **The Pause buttons keep their changing labels and lose `aria-pressed`; the window selectors
+  keep it** (plan, Task 53).
+- **The announcement policy:** routine retry starts and repeated failures silent but visible;
+  said once each: the outage's start, a materially different fault, exhaustion, confirmed
+  recovery (plan, Task 54).
+
 ### Controller decisions, for the owner to confirm or reverse
 
 Not spec and not owner-accepted. Sources: the task reports (local, untracked) and the code at
-`25e6852`.
+`25e6852`; rows m (amended), o, p and q at `f7b4966`.
 
 | # | Decision | What it means for a reader | What reversing costs |
 |---|---|---|---|
@@ -982,8 +1205,11 @@ Not spec and not owner-accepted. Sources: the task reports (local, untracked) an
 | j | **Visible texts "Pause" / "Resume" / "Clear"**; accessible names unchanged ("Pause view" / "Resume view" / "Clear view") (Task 47b) | The filter bar fits one row at 1440 × 900 (79 px of slack); the footer still says "Filters, pause and clear change this view only" | Restoring the longer texts leaves the bar on one row with about 15 px to spare, which is fragile |
 | k | **The shortened count line** (Task 47 deviation 2, follow-up `6d84b0d`): no seq range, no "(2,000 retained)", no "(live)", and "matching" without "shown" ("200 of 2,000 shown, last seq 2116"). The facts are shown elsewhere: the filters' "All ECUs (2000)", the Connection readout, the rows' own seqs; restart information stays in the log's restart marker row and the graphs' restart note | The log header stays one line at 1440, filtered and pinned too | Any of the removed parts made the pinned header wrap at 1440 (72.1 px), costing a log row |
 | l | **One hidden announcer** (`#announce`): the banner is no longer a live region; each announcement replaces the previous one (with `aria-atomic`, old messages would otherwise be re-read) and is cleared after 10 s (Task 51) | One announcement per transition; ticks are never announced | Re-adding live semantics to the banner's stable message, keeping the announcer for recovery only |
-| m | **The recovery wording and "silent on a healthy first load"**: "Connection restored; data current." after an outage that included a disconnect, "Live data restored." after a data fault without one, nothing while the data stays last known, nothing on a healthy load or poll; an outage that began at page load is announced when it ends (Task 51b). The retry and attempt wordings are the controller's (task-51-report, deviation 2) | Each recovery is said once | Wording only (`annText`) |
+| m | **The recovery wording and "silent on a healthy first load"**: "Connection restored; data current." after an outage that included a disconnect, "Live data restored." after a data fault without one, nothing while the data stays last known, nothing on a healthy load or poll; an outage that began at page load is announced when it ends (Task 51b). The retry and attempt wordings were the controller's (task-51-report, deviation 2); since Task 54 retries and attempts say nothing, and the wordings of a different fault ("Reconnected, but the data is still last known: …", the added "The page does not try again by itself; …") are the controller's | Each recovery is said once | Wording only (`annText`) |
 | n | **The Jump button's accessible name and the count text beside it** (see f) | — | As f |
+| o | **"Materially different fault" = a change of class (connection or data) or of cause** (disconnect or refusal; the set of pending data causes); a new reason text for the same cause is not (Task 54; the definition in "Tasks 52-54") | A disconnect that turns into a refusal, or a data fault that gains a second cause, is said; a retry failing the same way is not | One signature function, `faultSig()` |
+| p | **Two intended exceptions to "said once"**: an identical "Could not recover" after Retry now exhausts again (fresh feedback to a user action), and a disconnect ↔ refusal flip announced each time (Tasks 53-54 review rulings) | A user who presses Retry now hears the outcome; a flapping deployment could announce each flip | One dedupe condition; or one connection class in `faultSig()` |
+| q | **The stale states are read through the two-line countdown banner, and the SIGSTOP case runs in the 30 s window** (harness, Task 52, `52f1e90` and `f7b4966`) | The layout figures are the worst case the banner shows; the SIGSTOP gap count cannot be disturbed by an older gap leaving the 2 min window | Harness only; about 0.5 min longer per `--m3b` run |
 
 ## Owner checklist (ordered)
 
@@ -999,8 +1225,17 @@ ticks a box. Run from the gui worktree,
    (optionally `--rate 50` until "All ECUs (2000)", then `--rate 4`); open
    `http://127.0.0.1:8765/`. Stop with Ctrl-C in terminal 2, then terminal 1 (details: "Running
    the live GUI for visual review").
+   **If a simulator from before `f7b4966` is still running, restart it** (Ctrl-C in terminal 1,
+   then start it again): the server reads the page's static files once, at startup
+   (`server.py`, `self._frontend`), so an older process keeps serving the old page. After the
+   restart a normal reload is enough; the page is served with `Cache-Control: no-cache`.
 2. **Visual review** [needs your observation; automation verified the behaviour, not the look:
-   `log51b` 22 of 22, `m3b-51b` 36 of 36]. Look at:
+   `log52` 22 of 22, `m3b-52` 37 of 37]. Look at:
+   - **new in Tasks 52-54:** "About this log" under the log, closed by default; open it (click,
+     or Tab to it and Enter) and close it again; the Pause buttons ("Pause" / "Resume" and "Pause
+     graphs" / "Resume graphs") change their text and darken while paused, with no separate
+     pressed state; while stale the log's tag reads "Stale" and the time is in the banner;
+     paused while stale, and stale while pinned, still show 5 full log rows;
    - the windowed log: following; a scroll up pins it and the header shows "N rows below + M beyond
      this window" beside Jump to newest; Older / Newer in the header (unavailable ones dashed);
      the plain-text edge rows; the short count line; Pause / Resume / Clear; Clear and Jump to
@@ -1010,7 +1245,8 @@ ticks a box. Run from the gui worktree,
    - the graphs and the visual §13 view items: five graphs with units, the rpm row, the VIN as
      text; steps not ramps and the coolant staircase; the 90 s boundary; at least 5 log rows at
      1440 × 900 and Hide graphs; the three windows; Pause graphs against Pause; 390 px and
-     2000 px; the uPlot licence link (the full list: "The owner's manual checklist" below).
+     2000 px; the uPlot licence link, now inside "About this log", which is §13's "footer"
+     (the full list: "The owner's manual checklist" below).
 3. **Chrome CSP check** [needs your observation]. With the simulator and the traffic script of
    step 1 running (the traffic, `.venv/bin/python scripts/gui_demo_traffic.py --interface vcan0
    --rate 4`, exercises the log), open `http://127.0.0.1:8765/` in Chrome and open DevTools >
@@ -1025,7 +1261,7 @@ ticks a box. Run from the gui worktree,
    Firefox (a snap on this host; manual only), with Web Developer Tools > Console
    (Ctrl+Shift+K). The same pass condition. Record the version from `firefox --version`.
 5. **The isolated fault checks** [needs your observation; automation verified the same faults
-   headless: `m3b-51b` "Non-finite values" and "Encoding failure …"]. From a terminal in your
+   headless: `m3b-52` "Non-finite values" and "Encoding failure …"]. From a terminal in your
    desktop session: it needs `DISPLAY` (and passes your `DISPLAY` and `XAUTHORITY` through
    unchanged, with no `xhost` change) and an **unlocked desktop** (a locked screen draws no
    frames); each opens a **visible Chrome in a
@@ -1051,19 +1287,20 @@ ticks a box. Run from the gui worktree,
    4 min; a Chrome window appears), or the five DevTools steps in
    [gui-m3b-main-thread.md](gui-m3b-main-thread.md), "What the numbers do not show".
 7. **A screen-reader listen** [needs your observation; automation verified only the announcer's
-   markup and the text and timing of each announcement, `m3b-51b` and `log51b` case 11]. With NVDA
+   markup and the text and timing of each announcement, `m3b-52` and `log52` case 11]. With NVDA
    or Orca, on the page from step 1: nothing while the log runs. Then find the simulator's PID
    with `pgrep -f 'ecu-simulator --profile docs/examples/ice_drive_cycle_stepped.yaml'` (check it
    prints exactly one PID, the step-1 simulator), run `kill -STOP <pid>`, and later
    `kill -CONT <pid>`. Stop nothing but that process, and do not use `pkill -f`. Expect
-   "Disconnected. Reason: …" once, then "Reconnecting: attempt N." and "Attempt N failed: …" per
-   retry (the countdown is not read each second); after `kill -CONT`, "Connection restored; data
-   current." once. With the `state-fault` session of step 5: "Last known data: …" once when the
-   fault opens (any further attempt or polling wording is the controller's; task-51-report lists
-   every string), and one recovery announcement after it closes (by the design, "Live data
-   restored." for a data fault without a disconnect; this exact session was not automated). An
-   exhausted episode ("Could not recover: …") occurs only in the automated bounded case; after it,
-   Enter on Retry now should leave focus on the banner text.
+   "Disconnected. Reason: … The page retries on its own." **once**, and then **nothing** while it
+   stays down, however long (the retries and the countdown stay visible in the banner only);
+   after `kill -CONT`, "Connection restored; data current." once. With the `state-fault` session
+   of step 5: "Last known data: …" once when the fault opens, nothing for its recovery attempts,
+   and one recovery announcement after it closes (by the design, "Live data restored." for a data
+   fault without a disconnect; this exact session was not automated). An exhausted episode
+   ("Could not recover: …") occurs only in the automated bounded case; after it, Enter on Retry
+   now should leave focus on the banner text. Also listen to the Pause buttons: their name
+   changes ("Pause view" / "Resume view"); no "pressed" or "toggle" should be read.
 
 ## Running the live GUI for visual review
 
