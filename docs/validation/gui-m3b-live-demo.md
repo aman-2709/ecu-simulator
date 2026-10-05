@@ -756,14 +756,15 @@ and nothing else while down, and the data fault once with silent recovery attemp
 
 **The open decision on announcement chattiness is resolved** by this policy.
 
-**Intended exceptions to "said once"** (controller rulings after review, for the owner to confirm):
+**Two exceptions to "said once", approved by the owner on 2026-10-05** (controller rulings after
+review, then confirmed by the owner's direct instruction):
 - **"Could not recover" is said again, identically, after the user presses Retry now and that new
   episode is exhausted again with the same cause.** A user-initiated retry that fails is fresh
   feedback to that user. No harness case covers it (known minors below).
 - **A flip between disconnect and refusal counts as a different fault**, so a deployment that
   alternates between the two on every retry would announce each flip. In the tested cases a
-  refusal repeats as a refusal and is silent. The owner may collapse disconnect and refusal into one
-  class.
+  refusal repeats as a refusal and is silent. The owner approved announcing the change; disconnect
+  and refusal stay two causes.
 
 ### The final runs (Tasks 52-54)
 
@@ -1099,9 +1100,6 @@ Findings and untested paths:
       locked desktop). An owner decision if it shows in a real browser; the alternative, a pulse
       only on a state change, is a visible behaviour change and was not made
       ([gui-m3b-main-thread.md](gui-m3b-main-thread.md), "What the numbers do not show").
-- [ ] **Owner confirmation: the two intended exceptions to "said once"** (Task 54): an identical
-      "Could not recover" after Retry now exhausts again, and a disconnect ↔ refusal flip counted
-      as a different fault (the owner may collapse the two into one class). See "Tasks 52-54".
 - [ ] **Owner decision: the visible "Clear" next to the filters.** Since Task 47b the button reads
       "Clear" (accessible name "Clear view"); beside the filter chips it may read as "clear the
       filters". A visual call (Task 51 review; decision j above).
@@ -1137,7 +1135,10 @@ Findings and untested paths:
       - **announcement chattiness**: routine retries are silent; a 60 s outage says 1, plus 1 on
         recovery (derived from the code and the measured 24 s case);
       - **Pause's `aria-pressed` with a changing label**: removed from both Pause buttons; the window
-        selectors keep it. What a screen reader says is still unverified.
+        selectors keep it. What a screen reader says is still unverified;
+      - **the two exceptions to "said once"**, approved by the owner on 2026-10-05: a new
+        exhaustion ("Could not recover") is announced after a user-initiated Retry now, and a
+        disconnect ↔ refusal change is announced. Screen-reader speech is still unverified.
 - Resolved, not an acceptance item (Tasks 47-51): keyboard access to Newer; `#log-count`'s
       live region; `view.expanded` pruning; the "not following, not pinned" state; the ticking
       countdown and "N s ago"; the recovery announcement; Retry now focus. Each is listed with
@@ -1193,6 +1194,15 @@ They were controller rulings during Tasks 42-46 and are now owner approvals:
   said once each: the outage's start, a materially different fault, exhaustion, confirmed
   recovery (plan, Task 54).
 
+Approved by the owner on 2026-10-05 (direct instruction):
+- **A new exhaustion is announced after a user-initiated Retry now**: "Could not recover: …" is
+  said again, also when identical, when the episode Retry now started is exhausted.
+- **A disconnect ↔ refusal change is announced** as a materially different fault; the two stay
+  separate causes.
+- **Layout B and the current plot sizes stay as approved** (the graphs were not shrunk by Task 52).
+
+M3b is still not accepted; these approvals tick no box.
+
 ### Controller decisions, for the owner to confirm or reverse
 
 Not spec and not owner-accepted. Sources: the task reports (local, untracked) and the code at
@@ -1211,7 +1221,7 @@ Not spec and not owner-accepted. Sources: the task reports (local, untracked) an
 | m | **The recovery wording and "silent on a healthy first load"**: "Connection restored; data current." after an outage that included a disconnect, "Live data restored." after a data fault without one, nothing while the data stays last known, nothing on a healthy load or poll; an outage that began at page load is announced when it ends (Task 51b). The retry and attempt wordings were the controller's (task-51-report, deviation 2); since Task 54 retries and attempts say nothing, and the wordings of a different fault ("Reconnected, but the data is still last known: …", the added "The page does not try again by itself; …") are the controller's | Each recovery is said once | Wording only (`annText`) |
 | n | **The Jump button's accessible name and the count text beside it** (see f) | — | As f |
 | o | **"Materially different fault" = a change of class (connection or data) or of cause** (disconnect or refusal; the set of pending data causes); a new reason text for the same cause is not (Task 54; the definition in "Tasks 52-54") | A disconnect that turns into a refusal, or a data fault that gains a second cause, is said; a retry failing the same way is not | One signature function, `faultSig()` |
-| p | **Two intended exceptions to "said once"**: an identical "Could not recover" after Retry now exhausts again (fresh feedback to a user action), and a disconnect ↔ refusal flip announced each time (Tasks 53-54 review rulings) | A user who presses Retry now hears the outcome; a flapping deployment could announce each flip | One dedupe condition; or one connection class in `faultSig()` |
+| p | **Two exceptions to "said once"**: an identical "Could not recover" after Retry now exhausts again, and a disconnect ↔ refusal change announced (Tasks 53-54 review rulings). **Owner-approved on 2026-10-05; no longer open** (see the list above) | A user who presses Retry now hears the outcome; a flapping deployment could announce each flip | — |
 | q | **The stale states are read through the two-line countdown banner, and the SIGSTOP case runs in the 30 s window** (harness, Task 52, `52f1e90` and `f7b4966`) | The layout figures are the worst case the banner shows; the SIGSTOP gap count cannot be disturbed by an older gap leaving the 2 min window | Harness only; about 0.5 min longer per `--m3b` run |
 
 ## Owner checklist (ordered)
