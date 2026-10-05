@@ -321,6 +321,9 @@ fieldset.outcomes legend { padding: 0; margin-bottom: 0.143rem; }
    Jump to newest sits in the header, not over the rows. It always keeps its space; while
    following it is invisible, so appearing never shifts anything. */
 #log-panel > .panel__head { column-gap: 0.429rem; }
+/* The count takes the header's spare width and wraps inside it when the numbers grow, so the
+   controls stay on the heading's line (Task 52; the graphs header's meta does the same). */
+#log-count { flex: 1 1 8rem; min-width: 0; text-align: right; line-height: 1.25; }
 .lognav-ctl { display: flex; align-items: center; gap: 0.286rem; }
 .follow__n { margin-left: 0.286rem; color: var(--ink-2); font-size: 0.857rem; }
 .follow__n:empty { display: none; }
@@ -388,7 +391,11 @@ td.c-ecu { white-space: nowrap; }
 .lognav td { padding: 0.357rem 0.571rem; font-size: 0.857rem; background: var(--panel-2); border-top: 1px solid var(--rule-2); border-bottom: 1px solid var(--rule-2); }
 .lognav__text { color: var(--ink); }
 
-.logfoot { padding: 0.571rem 0.857rem 0.714rem; border-top: 1px solid var(--rule); font-size: 0.857rem; color: var(--ink-2); display: grid; gap: 0.143rem; }
+/* The log's fine print, collapsed under "About this log" (Task 52): one short line while closed, so
+   the rows keep the height; opened, the text sits in the panel's flow and the rows box gives way. */
+.logfoot { padding: 0.214rem 0.857rem; border-top: 1px solid var(--rule); font-size: 0.857rem; color: var(--ink-2); }
+.logfoot > summary { cursor: pointer; width: max-content; max-width: 100%; }
+.logfoot__body { display: grid; gap: 0.143rem; padding: 0.286rem 0 0.5rem; }
 
 /* ---------- signal graphs (M3b §5.2, §7, §9) ----------
    The main column holds the graphs above the log. Five cards in one row where they fit; the

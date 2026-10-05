@@ -176,7 +176,7 @@ def test_the_page_names_only_its_own_files_and_relative_urls():
 def test_the_page_loads_uplot_before_its_own_files_and_links_the_licence():
     """gui-m3b-graphs-design.md §10 and 0010 §9.3: uPlot's stylesheet comes before app.css, the
     deferred uPlot script before app.js (deferred scripts run in document order), and the
-    footer links the served licence."""
+    log's "About this log" (formerly the footer) links the served licence."""
     page = static_bytes("index.html").decode()
     css = page.find('<link rel="stylesheet" href="uPlot.min.css">')
     app_css = page.find('<link rel="stylesheet" href="app.css">')

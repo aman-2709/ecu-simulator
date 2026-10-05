@@ -146,11 +146,14 @@
     </div>
     </div>
 
-    <footer class="logfoot">
-      <p><strong>Dispatch µs</strong> is dispatcher time only: how long the dispatcher call took. It is not wire latency; wire timing belongs to candump.</p>
-      <p><span id="foot-limits">Filters, pause and clear change this view only. The page sends nothing to the simulator.</span>
-        Graphs: uPlot 1.6.32, <a href="uPlot-LICENSE.txt">MIT licence</a>.</p>
-    </footer>
+    <details class="logfoot" id="log-about">
+      <summary>About this log</summary>
+      <div class="logfoot__body">
+        <p><strong>Dispatch µs</strong> is dispatcher time only: how long the dispatcher call took. It is not wire latency; wire timing belongs to candump.</p>
+        <p><span id="foot-limits">Filters, pause and clear change this view only. The page sends nothing to the simulator.</span>
+          Graphs: uPlot 1.6.32, <a href="uPlot-LICENSE.txt">MIT licence</a>.</p>
+      </div>
+    </details>
   </section>
   </div>
 </main>

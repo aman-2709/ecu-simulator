@@ -1129,8 +1129,10 @@
     document.body.classList.toggle("is-stale", stale);
     document.body.classList.toggle("is-known", known);
     var tag = S.lastLive ? "Stale, as of " + utc(S.downAt || S.lastLive) : "No data received";
+    // The log's own tag says only "Stale" (Task 52), so its header stays one line; the time is in
+    // the banner ("Last live ...") and on the data panels' tags.
     Array.prototype.forEach.call(document.querySelectorAll(".stale-tag"), function (t) {
-      t.hidden = !stale; t.textContent = tag;
+      t.hidden = !stale; t.textContent = t.closest("#log-panel") && S.lastLive ? "Stale" : tag;
     });
     var knownTag = "Last known" + (S.dataAt ? ", " + utc(S.dataAt) : "");
     Array.prototype.forEach.call(document.querySelectorAll(".known-tag"), function (t) {
