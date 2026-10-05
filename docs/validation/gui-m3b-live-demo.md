@@ -1111,6 +1111,9 @@ Findings and untested paths:
       traces do not delta-compress, so they stay in the packed history (about 3.9 MB). Decide
       Git LFS or an external store before the merge; add no more traces meanwhile. (Task 50 adds no
       trace; it replaces the log / lamp PNGs and adds about 0.6 MB of results JSON and logs.)
+      Tasks 52-54 add no trace either: they add 3 PNGs, retake 2, and add the `m3b-52/`, `log52/`
+      and `slots-52/` results, about 1.3 MB in all (`du -sb` 9,151,695 -> 10,469,912 B). The item
+      stays open.
 - [ ] **The unidentified single full-suite failure** (Task 44's first run; the failing test's name
       was not captured). By the owner's instruction it is **not chased by repeated runs**: every
       required validation since then saves its complete output (`-rfE`), and a recurrence is to be
@@ -1202,7 +1205,7 @@ Not spec and not owner-accepted. Sources: the task reports (local, untracked) an
 | g | **The re-pin after eviction shows the oldest full window** (200 exchanges) **with a one-sentence note**, "Rows this view was showing left too, so it moved to the oldest exchanges kept." (task-43-report, fix round 1) | A pinned reader whose rows left the 2,000 cap sees a full window at the oldest kept, never a shrunken one | Task 43's first version re-pinned to a 1-row window; reversing removes `logFullEnd`'s use in `renderLog` and the sentence |
 | h | **The lamp's beat moved to a ring animated by `transform` / `opacity`**, the same 2 s rhythm, only under `prefers-reduced-motion: no-preference` (task-45-report Part B) | The same look; pixel differences only at the ring's edge (see "The lamp") | Restoring the `box-shadow` beat in `app.css`. Headless it brings back about 21 points of busy time at 1440 and 13 at 390 (diagnostic B against A). The other candidate, a pulse only on a state change, is a visible behaviour change |
 | i | **The diagnostic threshold:** an animation counted as a measurable share if turning it off alone removed more than about 10 % of busy time at both widths, beyond the run-to-run spread (task-45-report "Threshold used") | The lamp (66-71 % of busy time) was changed; the change flash (inside the noise) was not | A lower threshold would still not separate the flash from the run-to-run spread with two runs per width; more runs would be needed before changing it |
-| j | **Visible texts "Pause" / "Resume" / "Clear"**; accessible names unchanged ("Pause view" / "Resume view" / "Clear view") (Task 47b) | The filter bar fits one row at 1440 × 900 (79 px of slack); the footer still says "Filters, pause and clear change this view only" | Restoring the longer texts leaves the bar on one row with about 15 px to spare, which is fragile |
+| j | **Visible texts "Pause" / "Resume" / "Clear"**; accessible names unchanged ("Pause view" / "Resume view" / "Clear view") (Task 47b) | The filter bar fits one row at 1440 × 900 (79 px of slack); the text "Filters, pause and clear change this view only" is now under "About this log" (collapsed by default, Task 52), not a visible footer | Restoring the longer texts leaves the bar on one row with about 15 px to spare, which is fragile |
 | k | **The shortened count line** (Task 47 deviation 2, follow-up `6d84b0d`): no seq range, no "(2,000 retained)", no "(live)", and "matching" without "shown" ("200 of 2,000 shown, last seq 2116"). The facts are shown elsewhere: the filters' "All ECUs (2000)", the Connection readout, the rows' own seqs; restart information stays in the log's restart marker row and the graphs' restart note | The log header stays one line at 1440, filtered and pinned too | Any of the removed parts made the pinned header wrap at 1440 (72.1 px), costing a log row |
 | l | **One hidden announcer** (`#announce`): the banner is no longer a live region; each announcement replaces the previous one (with `aria-atomic`, old messages would otherwise be re-read) and is cleared after 10 s (Task 51) | One announcement per transition; ticks are never announced | Re-adding live semantics to the banner's stable message, keeping the announcer for recovery only |
 | m | **The recovery wording and "silent on a healthy first load"**: "Connection restored; data current." after an outage that included a disconnect, "Live data restored." after a data fault without one, nothing while the data stays last known, nothing on a healthy load or poll; an outage that began at page load is announced when it ends (Task 51b). The retry and attempt wordings were the controller's (task-51-report, deviation 2); since Task 54 retries and attempts say nothing, and the wordings of a different fault ("Reconnected, but the data is still last known: …", the added "The page does not try again by itself; …") are the controller's | Each recovery is said once | Wording only (`annText`) |
@@ -1225,7 +1228,8 @@ ticks a box. Run from the gui worktree,
    (optionally `--rate 50` until "All ECUs (2000)", then `--rate 4`); open
    `http://127.0.0.1:8765/`. Stop with Ctrl-C in terminal 2, then terminal 1 (details: "Running
    the live GUI for visual review").
-   **If a simulator from before `f7b4966` is still running, restart it** (Ctrl-C in terminal 1,
+   **If a simulator started before Tasks 52-54 is still running (the page last changed at
+   `16a1492` / `22bcb4e`), restart it** (Ctrl-C in terminal 1,
    then start it again): the server reads the page's static files once, at startup
    (`server.py`, `self._frontend`), so an older process keeps serving the old page. After the
    restart a normal reload is enough; the page is served with `Cache-Control: no-cache`.
@@ -1235,7 +1239,8 @@ ticks a box. Run from the gui worktree,
      or Tab to it and Enter) and close it again; the Pause buttons ("Pause" / "Resume" and "Pause
      graphs" / "Resume graphs") change their text and darken while paused, with no separate
      pressed state; while stale the log's tag reads "Stale" and the time is in the banner;
-     paused while stale, and stale while pinned, still show 5 full log rows;
+     paused while stale, and stale while pinned, now show 5 full log rows with About this log
+     closed (open, paused while stale would show about 4 rows, an estimate);
    - the windowed log: following; a scroll up pins it and the header shows "N rows below + M beyond
      this window" beside Jump to newest; Older / Newer in the header (unavailable ones dashed);
      the plain-text edge rows; the short count line; Pause / Resume / Clear; Clear and Jump to
@@ -1292,8 +1297,8 @@ ticks a box. Run from the gui worktree,
    with `pgrep -f 'ecu-simulator --profile docs/examples/ice_drive_cycle_stepped.yaml'` (check it
    prints exactly one PID, the step-1 simulator), run `kill -STOP <pid>`, and later
    `kill -CONT <pid>`. Stop nothing but that process, and do not use `pkill -f`. Expect
-   "Disconnected. Reason: … The page retries on its own." **once**, and then **nothing** while it
-   stays down, however long (the retries and the countdown stay visible in the banner only);
+   "Disconnected. Reason: … The page retries on its own." **once**, and then expected **nothing** while it
+   stays down (derived from the code; measured to 24 s) (the retries and the countdown stay visible in the banner only);
    after `kill -CONT`, "Connection restored; data current." once. With the `state-fault` session
    of step 5: "Last known data: …" once when the fault opens, nothing for its recovery attempts,
    and one recovery announcement after it closes (by the design, "Live data restored." for a data
@@ -1472,6 +1477,8 @@ before these two items are ticked:**
 - [ ] 390 px: one graph per row, the head on two rows, no horizontal scroll.
 - [ ] 2000 px: one row of five.
 - [ ] The footer's uPlot licence link opens the MIT text.
+      (Note, not part of §13: since Task 52 this footer is the collapsed "About this log"; the
+      link is inside it.)
 - [ ] The measured cost in the live-demo record (§11.3), and the server overhead from
       checkpoint 1 (§17), are in line with the estimates, or the difference is explained.
 
