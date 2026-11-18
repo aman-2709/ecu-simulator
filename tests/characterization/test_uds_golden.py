@@ -44,7 +44,8 @@ def engine_uds(hex_request):
 
 @pytest.mark.parametrize("session", ["01", "02", "03", "04"])
 def test_0x10_positive_response_with_fixed_session_parameter_record(session):
-    # DEV-17: P2 = 0x001E (30 ms), P2* = 0x0BB8 (3000 x 10 ms); no session state is kept.
+    # DEV-17: P2 = 0x001E (30 ms), P2* = 0x0BB8 (3000 x 10 ms). Phase 11 made the record
+    # configurable per session and kept these bytes as the default (ruling Q3).
     assert uds("10" + session).hex() == "50" + session + "001e0bb8"
 
 

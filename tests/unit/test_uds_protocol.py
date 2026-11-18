@@ -50,7 +50,7 @@ def test_the_protocol_also_claims_tester_present():
 
 @pytest.mark.parametrize("session", ["01", "02", "03", "04"])
 def test_0x10_answers_with_the_fixed_session_parameter_record(session):
-    # DEV-17, preserved: P2 = 0x001E, P2* = 0x0BB8, and no session state is kept.
+    # DEV-17: P2 = 0x001E, P2* = 0x0BB8, the default record Phase 11 kept (ruling Q3).
     assert ask("10" + session).hex() == "50" + session + "001e0bb8"
 
 
@@ -403,3 +403,87 @@ def test_the_status_mask_is_not_masked_on_its_way_to_the_service():
 
 def test_0x19_without_a_subfunction_is_still_a_length_error():
     assert ask("19").hex() == "7f1913"
+
+
+# --- session state machine (Phase 11) ------------------------------------------------------------
+
+
+def session_protocol(timings=None, **kwargs):
+    from ecu_simulator.protocols.uds import UdsSession
+
+    session = UdsSession(timings) if timings is not None else UdsSession()
+    store = DtcStore(DEFAULT)
+    providers = DtcRegistry()
+    providers.register(DtcStoreProvider("engine", store))
+    return UdsProtocol(dtc_providers=providers, dtcs=store, session=session, **kwargs)
+
+
+def send(proto, hex_request):
+    response = proto.handle(ServiceRequest(bytes.fromhex(hex_request)))
+    return response.hex() if response is not None else None
+
+
+def test_the_ecu_starts_in_the_default_session():
+    assert session_protocol().session.active == 0x01
+
+
+@pytest.mark.parametrize("session", [0x02, 0x03, 0x04, 0x01])
+def test_0x10_makes_the_requested_session_active(session):
+    proto = session_protocol()
+    assert send(proto, f"10{session:02x}") == f"50{session:02x}001e0bb8"
+    assert proto.session.active == session
+
+
+def test_0x10_re_entering_the_active_session_is_answered_normally():
+    proto = session_protocol()
+    send(proto, "1003")
+    assert send(proto, "1003") == "5003001e0bb8"
+    assert proto.session.active == 0x03
+
+
+@pytest.mark.parametrize("request_hex", ["1005", "10", "100300"])
+def test_a_refused_0x10_changes_no_session(request_hex):
+    proto = session_protocol()
+    send(proto, "1003")
+    assert send(proto, request_hex).startswith("7f10")
+    assert proto.session.active == 0x03
+
+
+def test_0x10_with_the_suppress_bit_changes_the_session_silently():
+    proto = session_protocol()
+    assert send(proto, "1083") is None
+    assert proto.session.active == 0x03
+
+
+def test_the_session_record_comes_from_the_configured_timing():
+    from ecu_simulator.protocols.uds import SessionTiming
+
+    proto = session_protocol({0x01: SessionTiming(30, 30000), 0x03: SessionTiming(50, 5000)})
+    # P2 50 ms = 0x0032 in 1 ms units; P2* 5000 ms = 0x01F4 in 10 ms units.
+    assert send(proto, "1003") == "5003003201f4"
+    assert send(proto, "1001") == "5001001e0bb8"
+
+
+def test_a_session_left_out_of_the_configuration_is_not_supported():
+    from ecu_simulator.protocols.uds import SessionTiming
+
+    proto = session_protocol({0x01: SessionTiming(30, 30000), 0x03: SessionTiming(30, 30000)})
+    assert send(proto, "1002") == "7f1012"
+    assert proto.session.active == 0x01
+
+
+@pytest.mark.parametrize(
+    "p2, p2_star", [(-1, 0), (0x10000, 0), (0, 5), (0, 655360)], ids=["neg", "p2-wide", "p2star-res", "p2star-wide"]
+)
+def test_a_timing_the_record_cannot_carry_is_refused(p2, p2_star):
+    from ecu_simulator.protocols.uds import SessionTiming
+
+    with pytest.raises(ValueError):
+        SessionTiming(p2, p2_star)
+
+
+def test_a_session_table_without_the_default_session_is_refused():
+    from ecu_simulator.protocols.uds import SessionTiming, UdsSession
+
+    with pytest.raises(ValueError, match="default session"):
+        UdsSession({0x03: SessionTiming(30, 30000)})

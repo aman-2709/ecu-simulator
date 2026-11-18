@@ -2,9 +2,10 @@
 
 Replaces the frozen legacy module. The services carried over from it -- 0x10
 DiagnosticSessionControl, 0x11 ECUReset and 0x19 ReadDTCInformation -- answered byte for
-byte what that module answered when it was replaced, including its known-wrong behavior: the fixed session
-parameter record (DEV-17) and the unmasked ``suppressPosRspMsgIndicationBit`` (DEV-07)
-are both out of Phase 6's scope and are preserved deliberately, each pinned by a test.
+byte what that module answered when it was replaced. Phase 7 added 0x3E and the generic
+``suppressPosRspMsgIndicationBit`` handling (DEV-07). Phase 11 added session state, S3,
+0x22 and 0x19 report types 0x01 and 0x0A; see
+docs/decisions/0011-phase-11-uds-session-handling.md.
 
 DTC data is read through the ECU's ``dtc_providers`` registry rather than owned here
 (plan rule 6); the records come from the shared
@@ -32,6 +33,7 @@ from ecu_simulator.protocols.base import (
 )
 from ecu_simulator.protocols.uds.dtc import AVAILABILITY_MASK
 from ecu_simulator.protocols.uds.providers import DtcRegistry
+from ecu_simulator.protocols.uds.session import UdsSession
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +52,6 @@ SERVICE_IDS = frozenset(
         TESTER_PRESENT,
     }
 )
-
-# DEV-17, preserved: P2 = 0x001E (30 ms), P2* = 0x0BB8. No session state is kept and no
-# timer is touched; session handling is Phase 11.
-SESSION_PARAMETER_RECORD = bytes([0x00, 0x1E, 0x0B, 0xB8])
-SESSION_TYPES = frozenset({0x01, 0x02, 0x03, 0x04})
 
 RESET_TYPES = frozenset(range(0x01, 0x06))
 RESET_ENABLE_RAPID_POWER_SHUT_DOWN = 0x04
@@ -101,11 +98,18 @@ class UdsProtocol:
     name = "uds"
     service_ids = SERVICE_IDS
 
-    def __init__(self, *, dtc_providers: DtcRegistry | None = None, dtcs: DtcStore | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        dtc_providers: DtcRegistry | None = None,
+        dtcs: DtcStore | None = None,
+        session: UdsSession | None = None,
+    ) -> None:
         # Reads go through the provider registry (plan rule 6); the clear goes straight to
         # the shared store, which is the same object OBD Mode 04 clears (plan rule 7).
         self.dtc_providers = dtc_providers if dtc_providers is not None else DtcRegistry()
         self.dtcs = dtcs if dtcs is not None else DtcStore()
+        self.session = session if session is not None else UdsSession()
 
     def handle(self, request: ServiceRequest) -> bytes | None:
         """Apply the sub-function framing rules, run the service, then decide what goes out.
@@ -162,18 +166,28 @@ class UdsProtocol:
     # -- 0x10 ------------------------------------------------------------------------------------
 
     def _session_control(self, payload: bytes) -> bytes:
-        """DEV-07 preserved: 0x80 is not masked off, so ``10 81`` is an unknown sub-function."""
+        """Answer with the requested session's timing record, then make that session active.
+
+        A session this ECU is not configured with is subFunctionNotSupported and changes
+        nothing ([SWS_Dcm_00307]). A configured one is entered even when it is already
+        active, and only after its response has been produced ([SWS_Dcm_00311] sets the new
+        session in the send confirmation). The record is P2ServerMax in 1 ms units and
+        P2*ServerMax in 10 ms units (W4); its values come from configuration and default to
+        the 00 1E 0B B8 this service has always sent (DEV-17, ruling Q3).
+        """
         if len(payload) != 2:
             return self._nrc(DIAGNOSTIC_SESSION_CONTROL, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
         session = payload[1]
-        if session not in SESSION_TYPES:
+        if session not in self.session.supported:
             return self._nrc(DIAGNOSTIC_SESSION_CONTROL, NRC_SUB_FUNCTION_NOT_SUPPORTED)
-        return bytes([positive_response_sid(DIAGNOSTIC_SESSION_CONTROL), session]) + SESSION_PARAMETER_RECORD
+        response = bytes([positive_response_sid(DIAGNOSTIC_SESSION_CONTROL), session])
+        response += self.session.timing(session).record()
+        self.session.enter(session)
+        return response
 
     # -- 0x11 ------------------------------------------------------------------------------------
 
     def _ecu_reset(self, payload: bytes) -> bytes:
-        """DEV-07 preserved here too."""
         if len(payload) != 2:
             return self._nrc(ECU_RESET, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
         reset_type = payload[1]

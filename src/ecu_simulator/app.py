@@ -25,7 +25,7 @@ from ecu_simulator.config.schema import EcuConfig, EndpointConfigModel
 from ecu_simulator.dtc import DtcState, DtcStore
 from ecu_simulator.ecu import AddressRouter, Dispatcher, Ecu
 from ecu_simulator.protocols.obd import ObdProtocol
-from ecu_simulator.protocols.uds import UdsProtocol
+from ecu_simulator.protocols.uds import SessionTiming, UdsProtocol, UdsSession
 from ecu_simulator.protocols.uds.dtc import DtcStoreProvider
 from ecu_simulator.scenario import Scenario, ScenarioRunner, ScenarioSync
 from ecu_simulator.transport import TransportError
@@ -142,6 +142,13 @@ def build_dtc_store(ecu_config: EcuConfig) -> DtcStore:
     )
 
 
+def build_uds_session(ecu_config: EcuConfig) -> UdsSession:
+    """The ECU's session state, from its validated ``uds`` configuration."""
+    return UdsSession(
+        {entry.session: SessionTiming(entry.p2_ms, entry.p2_star_ms) for entry in ecu_config.uds.sessions}
+    )
+
+
 def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None) -> list[Ecu]:
     """One Ecu per profile entry, with the protocols its endpoints reference registered.
 
@@ -158,7 +165,13 @@ def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None) -> li
             if protocol_name == ObdProtocol.name:
                 ecu.register(ObdProtocol(vehicle, ecu_name=ecu_config.name, dtcs=ecu.dtc_store))
             elif protocol_name == UdsProtocol.name:
-                ecu.register(UdsProtocol(dtc_providers=ecu.dtc_providers, dtcs=ecu.dtc_store))
+                ecu.register(
+                    UdsProtocol(
+                        dtc_providers=ecu.dtc_providers,
+                        dtcs=ecu.dtc_store,
+                        session=build_uds_session(ecu_config),
+                    )
+                )
             else:  # pragma: no cover - the schema rejects unknown protocol names
                 raise ValueError(f"no protocol implementation named {protocol_name!r}")
         ecus.append(ecu)
