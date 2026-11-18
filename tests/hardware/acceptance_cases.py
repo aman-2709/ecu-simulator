@@ -186,7 +186,8 @@ def _a_negative_response_reaches_the_tester_unaltered(tester: DiagnosticTester) 
 def _an_unclaimed_service_is_refused_with_nrc_11(tester: DiagnosticTester) -> None:
     # DEV-06, from the route's unsupported-service policy.
     tester.at("AT SH " + UDS_PHYSICAL)
-    assert tester.ask("22 F1 90") == _hex("7F2211")
+    # 0x28 is in no phase of the plan; 0x22 served as this probe until Phase 11.
+    assert tester.ask("28 01") == _hex("7F2811")
 
 
 def _clearing_over_uds_is_visible_to_obd(tester: DiagnosticTester) -> None:

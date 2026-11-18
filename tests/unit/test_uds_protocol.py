@@ -202,7 +202,7 @@ def test_0x14_on_an_empty_store_still_acknowledges():
 # --- unsupported and malformed -------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("request_hex", ["22f190", "2701", "3101"])
+@pytest.mark.parametrize("request_hex", ["2801", "2701", "3101"])
 def test_services_this_protocol_does_not_claim_are_not_answered(request_hex):
     # The ECU's route policy answers these, not the protocol; it must not claim them.
     proto, _ = protocol()

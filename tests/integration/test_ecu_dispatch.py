@@ -94,9 +94,10 @@ def test_a_negative_response_from_an_enabled_protocol_is_transmitted(uds_physica
 
 
 def test_unknown_service_on_a_physical_address_gets_nrc_0x11(uds_physical):
-    # DEV-06 corrected, from the route's unsupported-service policy.
-    uds_physical.send(b"\x22\xf1\x90")
-    assert uds_physical.recv() == b"\x7f\x22\x11"
+    # DEV-06 corrected, from the route's unsupported-service policy. 0x28 is in no
+    # phase of the plan; 0x22 served as this probe until Phase 11 claimed it.
+    uds_physical.send(b"\x28\x01")
+    assert uds_physical.recv() == b"\x7f\x28\x11"
 
 
 def test_tester_present_is_answered_on_the_wire(uds_physical):
