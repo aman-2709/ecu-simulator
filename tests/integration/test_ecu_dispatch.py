@@ -143,7 +143,8 @@ def test_the_channel_still_works_after_a_suppressed_response(uds_physical):
 
 
 @pytest.mark.parametrize("request_hex", ["1083", "1181"], ids=["session", "reset"])
-def test_a_suppressed_service_that_is_not_tester_present_is_silent_too(uds_physical, request_hex):
+def test_a_suppressed_service_that_is_not_tester_present_is_silent_too(mutating, uds_physical, request_hex):
+    # Since Phase 11 both change the session, silently, so the simulator is replaced after.
     # The rule is generic, and the wire proves it for the two services DEV-07 named.
     assert_silent(uds_physical, bytes.fromhex(request_hex), OBD_PROBE, FUEL_RESPONSE)
 
@@ -192,11 +193,11 @@ def test_tester_present_on_the_obd_broadcast_address_reaches_no_protocol(functio
 
 # --- Phase 11: session state, S3 and 0x22 on the wire -------------------------------------------
 #
-# The simulator fixture is module-scoped, so every test that leaves the default session
-# returns to it before it ends.
+# A test that changes the session takes `mutating`, so the simulator is replaced after it
+# and no later test inherits a non-default session.
 
 
-def test_the_session_is_read_back_over_0x22(uds_physical):
+def test_the_session_is_read_back_over_0x22(mutating, uds_physical):
     uds_physical.send(b"\x22\xf1\x86")
     assert uds_physical.recv() == b"\x62\xf1\x86\x01"
     uds_physical.send(b"\x10\x03")
@@ -222,21 +223,25 @@ def test_several_dids_and_an_unserved_one(uds_physical):
     assert uds_physical.recv() == b"\x7f\x22\x31"
 
 
-def test_s3_returns_to_the_default_session_and_tester_present_prevents_it(uds_physical):
+def test_s3_returns_to_the_default_session_and_tester_present_prevents_it(mutating, uds_physical):
     # Real time, so it waits out the default S3 of 5000 ms; AUTOSAR's range for S3 starts
     # at 5 s ([ECUC_Dcm_01240]), so no profile can make this shorter.
-    try:
-        uds_physical.send(b"\x10\x03")
-        uds_physical.recv()
-        for _ in range(3):
-            time.sleep(2.0)
-            uds_physical.send(b"\x3e\x00")
-            assert uds_physical.recv() == b"\x7e\x00"
-        uds_physical.send(b"\x22\xf1\x86")
-        assert uds_physical.recv() == b"\x62\xf1\x86\x03", "kept alive by TesterPresent past S3"
-        time.sleep(5.5)
-        uds_physical.send(b"\x22\xf1\x86")
-        assert uds_physical.recv() == b"\x62\xf1\x86\x01", "S3 expired"
-    finally:
-        uds_physical.send(b"\x10\x01")
-        uds_physical.recv()
+    uds_physical.send(b"\x10\x03")
+    uds_physical.recv()
+    for _ in range(3):
+        time.sleep(2.0)
+        uds_physical.send(b"\x3e\x00")
+        assert uds_physical.recv() == b"\x7e\x00"
+    uds_physical.send(b"\x22\xf1\x86")
+    assert uds_physical.recv() == b"\x62\xf1\x86\x03", "kept alive by TesterPresent past S3"
+    time.sleep(5.5)
+    uds_physical.send(b"\x22\xf1\x86")
+    assert uds_physical.recv() == b"\x62\xf1\x86\x01", "S3 expired"
+
+
+def test_dtc_count_and_supported_dtcs_on_the_wire(uds_physical):
+    # DEV-16, sub-function half, Phase 11. 19 0A is 11 bytes: multi-frame.
+    uds_physical.send(b"\x19\x01\xff")
+    assert uds_physical.recv() == bytes.fromhex("59018c040002")
+    uds_physical.send(b"\x19\x0a")
+    assert uds_physical.recv() == bytes.fromhex("590a8c" "9477010c" "0001010c")

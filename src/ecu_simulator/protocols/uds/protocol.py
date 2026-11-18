@@ -68,7 +68,21 @@ RESET_ENABLE_RAPID_POWER_SHUT_DOWN = 0x04
 RESETS_THAT_RESTART = frozenset({0x01, 0x02, 0x03})
 RESET_POWER_DOWN_TIME = 0x0F
 
+REPORT_NUMBER_OF_DTC_BY_STATUS_MASK = 0x01
 REPORT_DTC_BY_STATUS_MASK = 0x02
+REPORT_SUPPORTED_DTCS = 0x0A
+# The report types served, and the exact request length each takes: 0x01 and 0x02 carry a
+# DTCStatusMask, 0x0A carries nothing ([SWS_Dcm_01643], [SWS_Dcm_01645]).
+REPORT_REQUEST_LENGTHS = {
+    REPORT_NUMBER_OF_DTC_BY_STATUS_MASK: 3,
+    REPORT_DTC_BY_STATUS_MASK: 3,
+    REPORT_SUPPORTED_DTCS: 2,
+}
+# DTCFormatIdentifier in the 0x01 response: SAE_J2012-DA_DTCFormat_04, the three-byte J2012
+# form, whose first two bytes are what this simulator encodes (ruling Q7). AUTOSAR's
+# Dem_DTCTranslationFormatType gives the value ([SWS_Dem_00936]). The third byte is still
+# the frozen 0x01 of DEV-16, which this value makes read as a failure type.
+DTC_FORMAT_IDENTIFIER = 0x04
 
 # The only groupOfDTC this simulator serves: all of them. Anything else is answered
 # requestOutOfRange rather than guessed at, because this project has no evidence for which
@@ -272,38 +286,38 @@ class UdsProtocol:
         decides whether the service is supported at all, and only then does its own
         length rule apply. The order matters because sub-functions take different numbers
         of parameters, and checking one global length first hides an unsupported
-        sub-function behind a length error.
+        sub-function behind a length error. **The order is a project choice**, made in
+        Phase 6 and kept: no accessible source states it.
 
-        **The order is a project choice.** ISO 14229-1:2026 is licensed and unread, and no
-        accessible source states the order in which a server checks service, sub-function
-        and length. This one is chosen to keep every currently pinned negative response
-        unchanged except where correcting DEV-05 forces a change.
+        Three report types are served, each opening with the DTCStatusAvailabilityMask
+        0x8C (DEV-16):
 
-        Sub-function 0x02 takes a DTCStatusMask, so its request is exactly three bytes
-        (DEV-05). A record is reported when ``(status & DTCStatusMask) != 0``; when
-        nothing matches, the response is the header alone.
+        * **0x02** reportDTCByStatusMask (DEV-05): the records with
+          ``(status & DTCStatusMask) != 0``, or the header alone when nothing matches.
+        * **0x01** reportNumberOfDTCByStatusMask (Phase 11): the DTCFormatIdentifier and a
+          two-byte count of the records 0x02 would report for the same mask
+          ([SWS_Dcm_01642], [SWS_Dcm_01643]).
+        * **0x0A** reportSupportedDTCs (Phase 11): a record for every configured code, in
+          profile order, including those whose status is 0x00; the filter's mask is 0x00,
+          so nothing is filtered out ([SWS_Dcm_01644], [SWS_Dcm_01645]).
 
-        The DTCStatusAvailabilityMask that opens the response is the set of status bits
-        this server can actually set, which is what the AUTOSAR Dem describes that value
-        as; here it is 0x8C (DEV-16). Because every status byte only ever contains those
-        bits, filtering against the client's raw mask already restricts the comparison to
-        supported bits.
-
-        The request shape and the filter rule are corroborated by the AUTOSAR Dcm
-        specification, which states the rule in those words, and by two independent
-        open-source implementations that both treat the mask as mandatory. ISO 14229-1
-        itself is unread, so this is not standards validated.
+        Corroborated by the AUTOSAR Dcm specification and by what udsoncan and Scapy parse.
+        ISO 14229-1 is unread, so none of this is standards validated.
         """
         if len(payload) < 2:
             return self._nrc(READ_DTC_INFORMATION, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
         report_type = payload[1]
-        if report_type != REPORT_DTC_BY_STATUS_MASK:
+        required_length = REPORT_REQUEST_LENGTHS.get(report_type)
+        if required_length is None:
             return self._nrc(READ_DTC_INFORMATION, NRC_SUB_FUNCTION_NOT_SUPPORTED)
-        if len(payload) != 3:
+        if len(payload) != required_length:
             return self._nrc(READ_DTC_INFORMATION, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
-        status_mask = payload[2]
         header = bytes([positive_response_sid(READ_DTC_INFORMATION), report_type, AVAILABILITY_MASK])
-        records = self.dtc_providers.read(status_mask)
+        if report_type == REPORT_SUPPORTED_DTCS:
+            return header + b"".join(record.to_bytes() for record in self.dtc_providers.records())
+        records = self.dtc_providers.read(payload[2])
+        if report_type == REPORT_NUMBER_OF_DTC_BY_STATUS_MASK:
+            return header + bytes([DTC_FORMAT_IDENTIFIER]) + len(records).to_bytes(2, "big")
         return header + b"".join(record.to_bytes() for record in records)
 
     # -- 0x22 ------------------------------------------------------------------------------------

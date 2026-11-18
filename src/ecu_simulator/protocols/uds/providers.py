@@ -122,6 +122,10 @@ class DtcRegistry:
     def providers(self) -> tuple[DtcProvider, ...]:
         return tuple(self._providers.values())
 
+    def records(self) -> list[DtcRecord]:
+        """Every record, whatever its status, in provider order."""
+        return [record for provider in self._providers.values() for record in provider.dtc_records()]
+
     def read(self, status_mask: int) -> list[DtcRecord]:
         """Records whose status shares at least one bit with ``status_mask``, in provider order."""
         if not isinstance(status_mask, int) or not 0 <= status_mask <= 0xFF:

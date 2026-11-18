@@ -122,18 +122,21 @@ def test_0x19_02_filtering_on_pending_keeps_both():
 
 
 @pytest.mark.parametrize(
-    "request_hex, expected", [("1901", "7f1912"), ("190a", "7f1912"), ("1900", "7f1912"), ("19", "7f1913")]
+    "request_hex, expected",
+    [("1901", "7f1913"), ("190aff", "7f1913"), ("1903", "7f1912"), ("1900", "7f1912"), ("19", "7f1913")],
 )
 def test_0x19_negative_responses(request_hex, expected):
+    # 1901 and 190a were 7F 19 12 until Phase 11 served report types 0x01 and 0x0A (DEV-16):
+    # now 0x01 without its mask, and 0x0A with a trailing byte, fail their own length rules.
     assert ask(request_hex).hex() == expected
 
 
-@pytest.mark.parametrize("request_hex", ["1901", "1901ff", "190a", "190aff", "19ff00000000"])
+@pytest.mark.parametrize("request_hex", ["1903", "1903ff", "190b", "190bff", "19ff00000000"])
 def test_0x19_an_unsupported_subfunction_is_rejected_as_one_at_any_length(request_hex):
     # 1982 and 1982ff left this list in Phase 7: 0x82 is report type 0x02 with the
-    # suppressPosRspMsgIndicationBit, not an unsupported report type. Both are asserted
-    # in their own tests below. 19 FF 00 00 00 00 stays: 0xFF masks to 0x7F, which this
-    # server does not support either.
+    # suppressPosRspMsgIndicationBit, not an unsupported report type. 0x01 and 0x0A left it
+    # in Phase 11 when they were served; 0x03 and 0x0B, still unserved, took their place.
+    # 19 FF 00 00 00 00 stays: 0xFF masks to 0x7F, which this server does not support.
     assert ask(request_hex).hex() == "7f1912"
 
 
@@ -379,14 +382,14 @@ def test_0x19_82_selects_report_type_0x02_and_then_its_own_length_rule():
     assert ask("1982ff00").hex() == "7f1913"
 
 
-@pytest.mark.parametrize("report_type", ["81", "8a", "80", "ff"])
+@pytest.mark.parametrize("report_type", ["83", "8b", "80", "ff"])
 def test_0x19_with_the_suppress_bit_on_a_report_type_this_server_lacks_is_still_refused(report_type):
-    # 0x81, 0x8A, 0x80 and 0xFF mask to 0x01, 0x0A, 0x00 and 0x7F, none of which this
-    # server supports. Each keeps the 0x12 it has always had.
+    # 0x83, 0x8B, 0x80 and 0xFF mask to 0x03, 0x0B, 0x00 and 0x7F, none of which this
+    # server supports. 0x81 and 0x8A were here until Phase 11 served 0x01 and 0x0A.
     assert ask("19" + report_type).hex() == "7f1912"
 
 
-@pytest.mark.parametrize("report_type", ["01", "0a", "00", "7f"])
+@pytest.mark.parametrize("report_type", ["03", "0b", "00", "7f"])
 def test_0x19_without_the_suppress_bit_refuses_the_same_report_types(report_type):
     # The same four values with bit 7 clear, answered identically. The bit changes
     # whether a positive response is sent; it never changes which sub-function was asked
@@ -695,3 +698,51 @@ def test_0x22_restarts_s3_like_any_request():
         assert send(proto, "22f186") == "62f18603"
     clock.advance(5.5)
     assert send(proto, "22f186") == "62f18601", "S3 passed: the read itself sees the default session"
+
+
+# --- 0x19 report types 0x01 and 0x0A (Phase 11, DEV-16) ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "mask, count", [("ff", 2), ("04", 2), ("08", 1), ("0c", 2), ("80", 0), ("00", 0), ("40", 0)]
+)
+def test_0x19_01_counts_what_0x19_02_reports_for_the_same_mask(mask, count):
+    # DEFAULT: B1477 pending and confirmed (0x0C), P0001 pending only (0x04).
+    assert ask("1901" + mask).hex() == "59018c" + "04" + f"{count:04x}"
+    assert len(bytes.fromhex(ask("1902" + mask).hex())[3:]) == 4 * count
+
+
+def test_0x19_01_uses_the_j2012_da_format_04_identifier():
+    from ecu_simulator.protocols.uds.protocol import DTC_FORMAT_IDENTIFIER
+
+    assert DTC_FORMAT_IDENTIFIER == 0x04
+    assert ask("1901ff")[3] == 0x04
+
+
+def test_0x19_0a_lists_every_configured_code_including_those_with_no_status():
+    proto, _ = protocol((DtcState("B1477", pending=True, confirmed=True), DtcState("P0001")))
+    assert proto.handle(ServiceRequest(b"\x19\x0a")).hex() == "590a8c" + "9477010c" + "00010100"
+    # 0x02 with every bit set still leaves out the code with no status.
+    assert proto.handle(ServiceRequest(b"\x19\x02\xff")).hex() == "59028c" + "9477010c"
+
+
+def test_0x19_0a_and_0x01_after_a_clear():
+    proto, _ = protocol()
+    proto.handle(ServiceRequest(bytes.fromhex("14ffffff")))
+    assert proto.handle(ServiceRequest(b"\x19\x0a")).hex() == "590a8c" + "94770100" + "00010100"
+    assert proto.handle(ServiceRequest(b"\x19\x01\xff")).hex() == "59018c040000"
+
+
+def test_0x19_0a_with_no_configured_codes_is_the_header_alone():
+    proto, _ = protocol(())
+    assert proto.handle(ServiceRequest(b"\x19\x0a")).hex() == "590a8c"
+
+
+@pytest.mark.parametrize("request_hex", ["1981ff", "198a"])
+def test_0x19_01_and_0a_honour_the_suppress_bit(request_hex):
+    assert ask(request_hex) is None
+
+
+@pytest.mark.parametrize("request_hex", ["1901", "190100ff", "190aff"])
+def test_0x19_01_and_0a_each_have_their_own_length_rule(request_hex):
+    assert ask(request_hex).hex() == "7f1913"

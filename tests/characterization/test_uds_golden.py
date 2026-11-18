@@ -138,9 +138,11 @@ def test_0x19_02_with_a_mask_matching_nothing_returns_the_header_alone(mask):
 
 
 @pytest.mark.parametrize(
-    "request_hex, expected", [("1901", "7f1912"), ("190a", "7f1912"), ("1900", "7f1912"), ("19", "7f1913")]
+    "request_hex, expected", [("1901", "7f1913"), ("1903", "7f1912"), ("1900", "7f1912"), ("19", "7f1913")]
 )
 def test_0x19_negative_responses(request_hex, expected):
+    # DEV-16, Phase 11: 1901 was 7F 19 12; report type 0x01 is served now and needs its
+    # status mask. 190a left this list because it is now answered positively.
     assert uds(request_hex).hex() == expected
 
 
@@ -164,12 +166,14 @@ def test_0x19_82_without_a_status_mask_fails_report_type_0x02s_length_rule():
 def test_0x19_a_report_type_this_server_lacks_is_still_refused_with_or_without_the_bit():
     # The Phase 6 ordering rule is untouched: the sub-function is still checked before the
     # length it requires, and an unsupported one is still 0x12 at any length.
-    assert uds("1981").hex() == "7f1912"
-    assert uds("1901").hex() == "7f1912"
-    assert uds("198aff").hex() == "7f1912"
+    # Phase 11 served 0x01 and 0x0A, so the report types this server lacks are now
+    # 0x03 and 0x0B; 1981, 1901 and 198aff moved to the transition test below.
+    assert uds("1983").hex() == "7f1912"
+    assert uds("1903").hex() == "7f1912"
+    assert uds("198bff").hex() == "7f1912"
 
 
-@pytest.mark.parametrize("request_hex", ["1901ff", "190aff", "1900ff0000"])
+@pytest.mark.parametrize("request_hex", ["1903ff", "190bff", "1900ff0000"])
 def test_0x19_an_unsupported_subfunction_is_0x12_at_any_length(request_hex):
     assert uds(request_hex).hex() == "7f1912"
 
@@ -208,10 +212,17 @@ def test_0x22_is_answered_by_the_uds_protocol(request_hex, expected):
     assert engine_uds(request_hex).hex() == expected
 
 
-def test_0x19_81_is_an_unsupported_report_type_before_phase_11():
-    # Pinned before Phase 11 adds report type 0x01: 0x81 masks to 0x01, which this server
-    # does not yet support, and a negative response is never withheld.
-    assert uds("1981ff").hex() == "7f1912"
+def test_0x19_report_types_0x01_and_0x0a_are_served():
+    # DEV-16, sub-function half, Phase 11. Each of these was 7F 19 12. B1477 and P0001 are
+    # both pending and confirmed (status 0x0C); the format identifier is 0x04 (ruling Q7).
+    assert uds("1901ff").hex() == "59018c" + "04" + "0002"
+    assert uds("190a").hex() == "590a8c" + "9477010c" + "0001010c"
+    # 0x81 is 0x01 with the suppress bit: the count runs and its answer is withheld.
+    assert uds("1981ff") is None
+    # Without their own parameters, or with extra ones, they fail their own length rules.
+    assert uds("1981").hex() == "7f1913"
+    assert uds("1901").hex() == "7f1913"
+    assert uds("198aff").hex() == "7f1913"
 
 
 @pytest.mark.parametrize(
