@@ -43,6 +43,30 @@ DTC_GROUPS = ("P", "C", "B", "U")
 DTC_TYPES = ("0", "1", "2", "3")
 DTC_HEX = "0123456789ABCDEF"
 
+# UDS session timing (Phase 11). The ranges are AUTOSAR CP R25-11's configuration ranges,
+# converted from seconds to integer milliseconds: [ECUC_Dcm_01240] S3 is [5 .. INF[ s,
+# [ECUC_Dcm_00766] P2ServerMax is [0 .. 1] s, [ECUC_Dcm_00768] P2*ServerMax is [0 .. 100] s.
+# P2* travels in the 0x10 record in 10 ms units, so it must be a multiple of 10 rather than
+# be rounded on the way out. The defaults keep the record UDS 0x10 has always sent
+# (DEV-17, ruling Q3). docs/decisions/0011-phase-11-uds-session-handling.md.
+S3_DEFAULT_MS = 5000
+S3_MIN_MS = 5000
+P2_MAX_MS = 1000
+P2_STAR_MAX_MS = 100_000
+P2_STAR_RESOLUTION_MS = 10
+P2_DEFAULT_MS = 30
+P2_STAR_DEFAULT_MS = 30_000
+# [ECUC_Dcm_00765]: "0, 127 and all values above 127 are reserved by ISO".
+SESSION_MIN = 0x01
+SESSION_MAX = 0x7E
+DEFAULT_SESSION = 0x01
+DEFAULT_SESSIONS = (0x01, 0x02, 0x03, 0x04)
+
+# DIDs a profile may not declare: the two the simulator serves itself, and AUTOSAR's OBD
+# DID range, which belongs to OBDonUDS (Phase 16).
+BUILT_IN_DIDS = (0xF186, 0xF190)
+OBD_DID_RANGE = (0xF400, 0xF8FF)
+
 CanId = Annotated[int, Field(ge=0, le=CAN_SFF_MAX)]
 Byte = Annotated[int, Field(ge=0, le=0xFF)]
 Percent = Annotated[int, Field(ge=0, le=100)]
@@ -195,13 +219,58 @@ class ScenarioConfig(Base):
     signals: list[SignalScenario] = Field(default_factory=list)
 
 
+class UdsSessionConfig(Base):
+    """One diagnostic session this ECU accepts, and the timing its 0x10 response reports."""
+
+    session: Annotated[int, Field(ge=SESSION_MIN, le=SESSION_MAX)]
+    p2_ms: Annotated[int, Field(ge=0, le=P2_MAX_MS)] = P2_DEFAULT_MS
+    p2_star_ms: Annotated[int, Field(ge=0, le=P2_STAR_MAX_MS)] = P2_STAR_DEFAULT_MS
+
+    @field_validator("p2_star_ms")
+    @classmethod
+    def p2_star_fits_the_record_resolution(cls, value: int) -> int:
+        if value % P2_STAR_RESOLUTION_MS:
+            raise ValueError(
+                f"p2_star_ms {value} is not a multiple of {P2_STAR_RESOLUTION_MS}: the 0x10 response "
+                f"carries P2* in {P2_STAR_RESOLUTION_MS} ms units"
+            )
+        return value
+
+
+def _default_sessions() -> list[UdsSessionConfig]:
+    return [UdsSessionConfig(session=session) for session in DEFAULT_SESSIONS]
+
+
+class UdsConfig(Base):
+    """UDS session handling for one ECU. Absent means the defaults, which answer 0x10 exactly
+    as it was answered before Phase 11."""
+
+    s3_ms: Annotated[int, Field(ge=S3_MIN_MS)] = S3_DEFAULT_MS
+    sessions: list[UdsSessionConfig] = Field(default_factory=_default_sessions, min_length=1)
+
+    @field_validator("sessions")
+    @classmethod
+    def sessions_are_unique_and_include_the_default(cls, value: list[UdsSessionConfig]) -> list[UdsSessionConfig]:
+        numbers = [entry.session for entry in value]
+        duplicates = sorted({n for n in numbers if numbers.count(n) > 1})
+        if duplicates:
+            raise ValueError(f"duplicate session(s) {[f'0x{n:02X}' for n in duplicates]}")
+        if DEFAULT_SESSION not in numbers:
+            raise ValueError("the default session 0x01 must be listed: the ECU starts in it and returns to it")
+        return value
+
+
 class EcuConfig(Base):
     name: str = Field(min_length=1, max_length=ECU_NAME_MAX_LENGTH)
     endpoints: list[EndpointConfigModel] = Field(min_length=1)
     dtcs: list[DtcConfigModel] = Field(default_factory=list, max_length=MAX_DTCS)
     # Timed changes to this ECU's trouble-code state, beside the codes they act on.
     dtc_events: list[DtcEvent] = Field(default_factory=list)
+    # Data identifiers served by UDS 0x22: two-byte hex identifier -> hex data bytes,
+    # served verbatim (ruling Q6). Quote the identifier in YAML: an unquoted 0xF1A0 is a
+    # number, not a string.
     dids: dict[str, str] = Field(default_factory=dict)
+    uds: UdsConfig = Field(default_factory=UdsConfig)
 
     @field_validator("dtcs")
     @classmethod
@@ -222,7 +291,27 @@ class EcuConfig(Base):
                 raise ValueError(f"did {key!r} is not a hexadecimal identifier") from error
             if not 0 <= number <= 0xFFFF:
                 raise ValueError(f"did {key!r} is outside the two-byte range")
+            if number in BUILT_IN_DIDS:
+                raise ValueError(f"did {key!r} is served by the simulator itself and cannot be configured")
+            if OBD_DID_RANGE[0] <= number <= OBD_DID_RANGE[1]:
+                raise ValueError(f"did {key!r} is in the OBD range F400-F8FF, which this simulator does not serve")
+            data = value[key]
+            try:
+                decoded = bytes.fromhex(data)
+            except ValueError as error:
+                raise ValueError(f"did {key!r} data {data!r} is not hexadecimal bytes") from error
+            if not decoded:
+                raise ValueError(f"did {key!r} has no data")
+        numbers = [int(key, 16) for key in value]
+        duplicates = sorted({n for n in numbers if numbers.count(n) > 1})
+        if duplicates:
+            raise ValueError(f"duplicate did(s) {[f'0x{n:04X}' for n in duplicates]}")
         return value
+
+    @property
+    def did_data(self) -> dict[int, bytes]:
+        """The configured DIDs as numbers and bytes; validated at load, so this cannot fail."""
+        return {int(key, 16): bytes.fromhex(data) for key, data in self.dids.items()}
 
     @model_validator(mode="after")
     def endpoints_are_consistent(self) -> EcuConfig:

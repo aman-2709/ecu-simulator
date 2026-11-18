@@ -9,6 +9,8 @@ from ecu_simulator.config.schema import (
     EndpointConfigModel,
     Profile,
     TransportConfig,
+    UdsConfig,
+    UdsSessionConfig,
     VehicleConfig,
     parse_profile,
 )
@@ -28,6 +30,8 @@ __all__ = [
     "EndpointConfigModel",
     "Profile",
     "TransportConfig",
+    "UdsConfig",
+    "UdsSessionConfig",
     "VehicleConfig",
     "load_profile",
     "load_yaml",
