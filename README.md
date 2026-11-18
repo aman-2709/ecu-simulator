@@ -64,11 +64,12 @@ evidence its encoding rests on. Nothing is standards validated.
 
 | Service ID |          Name            | Supported sub-functions | Default parameters (response) |
 |:----------:|:-------------------------|:------------------------|:-----------------|
-| 0x10       | DiagnosticSessionControl | **session types** <br> <br> 0x01 default <br> 0x02 programming <br> 0x03 extended <br> 0x04 safety | |
-| 0x11       | ECUReset                 | **reset types** <br> <br> 0x01 hardReset <br> 0x02 keyOffOnReset <br> 0x03 softReset <br> 0x04 enableRapidPowerShutDown <br> 0x05 disableRapidPowerShutDown | 0x0F powerDownTime |
+| 0x10       | DiagnosticSessionControl | **session types** <br> <br> 0x01 default <br> 0x02 programming <br> 0x03 extended <br> 0x04 safety <br> (configurable per ECU) | P2 / P2* from the profile, default `00 1E 0B B8`. The ECU starts in 0x01 and returns to it after S3 (5000 ms, configurable) without a UDS request |
+| 0x11       | ECUReset                 | **reset types** <br> <br> 0x01 hardReset <br> 0x02 keyOffOnReset <br> 0x03 softReset <br> 0x04 enableRapidPowerShutDown <br> 0x05 disableRapidPowerShutDown | 0x0F powerDownTime. 0x01-0x03 return the ECU to the default session |
 | 0x14       | ClearDiagnosticInformation | groupOfDTC `FFFFFF` only; any other group gets NRC 0x31 | |
-| 0x19       | ReadDTCInformation       | **report types** <br> <br> 0x02 reportDTCByStatusMask, mask required | <br> 0x8C DTCStatusAvailabilityMask <br> statusOfDTC derived from the store: 0x04 pending, 0x08 confirmed, 0x80 indicator requested |
-| 0x3E       | TesterPresent            | 0x00 zeroSubFunction; anything else gets NRC 0x12 | `7E 00`. Stateless: no S3 timer, no session state, no ISO 14229 session-compliance claim |
+| 0x19       | ReadDTCInformation       | **report types** <br> <br> 0x01 reportNumberOfDTCByStatusMask <br> 0x02 reportDTCByStatusMask, mask required <br> 0x0A reportSupportedDTCs | <br> 0x8C DTCStatusAvailabilityMask <br> statusOfDTC derived from the store: 0x04 pending, 0x08 confirmed, 0x80 indicator requested |
+| 0x22       | ReadDataByIdentifier     | one or more DIDs per request | F186 active session, F190 VIN, plus the profile's `dids:`. Unserved DIDs are omitted; NRC 0x31 only when none is served |
+| 0x3E       | TesterPresent            | 0x00 zeroSubFunction; anything else gets NRC 0x12 | `7E 00`. Restarts S3, as every UDS request does. No ISO 14229 session-compliance claim |
 
 Every service above that has a sub-function honours the `suppressPosRspMsgIndicationBit`,
 bit 7 of the sub-function byte. It is handled once at the dispatch layer, not inside any

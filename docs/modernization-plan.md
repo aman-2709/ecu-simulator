@@ -382,11 +382,15 @@ Session state machine, S3 timeout, TesterPresent timing, 0x22 with providers, 0x
 
 Reviewed 2026-11-17 before implementation:
 [decisions/0011-phase-11-uds-session-handling.md](decisions/0011-phase-11-uds-session-handling.md).
-**Not started: nine open questions await the owner's rulings**, two of them raised by
-findings the plan did not anticipate. Landing Phase 11 on `modernization` would change two
-cases of the not-yet-run Phase 8b bench (Q1), and the shipped ECU's two physical UDS
-endpoints make session scope a decision (Q2). Which requests restart S3, and the default
-P2/P2* values, rest on ISO 14229-2:2021, which is licensed and unread (Q3, Q4).
+Rulings given 2026-11-18, all as recommended; Q4 settled from AUTOSAR `[ECUC_Dcm_01240]`.
+
+**Implemented 2026-11-18 on branch `phase-11`, not complete.** By ruling Q1 the branch is not
+merged into `modernization` until V1.0 is tagged, because it changes the Phase 8b bench's
+unclaimed-service case. Delivered: session state machine, S3, TesterPresent timing,
+configurable P2/P2*, 0x11 session effects, 0x22 with F186, F190 and profile DIDs, 0x19/01
+and /0A. Closed: **DEV-17**, and **DEV-16**'s sub-function half. **Outstanding for the
+section 10 gate:** the integration suite, whose Phase 11 tests are written but were not run
+(no `CAN_ISOTP` on the implementing machine), and CI on the branch.
 
 ### Phase 12 — UDS data and security (V1.2)
 
@@ -686,6 +690,20 @@ Phase 8b — needs a bench; not started
 58. `test(hardware): record the bench and its acceptance results`
 59. `docs: first hardware-validated conformance rows, for exercised rows only`
 60. `release: v1.0.0`
+
+Phase 11 — on branch `phase-11`
+
+61. `docs(decisions): Phase 11 evidence and design review`
+61a. `docs(decisions): record the Phase 11 rulings`
+62. `test(uds): pin 22 F1 86, 22 and 19 81 FF before they change`
+63. `test: move the unclaimed-service probe from 0x22 to 0x28`
+64. `feat(config): uds timing and session configuration, validated at load`
+65. `feat(uds): session state machine and per-session parameter record (DEV-17)`
+66. `feat(uds): S3 timeout and TesterPresent timing`
+67. `feat(uds): ECUReset returns the ECU to the default session`
+68. `feat(uds): 0x22 ReadDataByIdentifier with F186, F190 and profile DIDs`
+69. `fix(uds): 0x19 report types 0x01 and 0x0A (DEV-16)`
+70. `docs: Phase 11 conformance, deviations, plan and decision outcome`
 
 V1.1 and later commits follow the phase list above with numbering continued.
 

@@ -53,7 +53,19 @@ ecus:
     dtcs:
       - B1477
       - P0001
+    # Data identifiers UDS 0x22 serves beside the built-in F186 (active session) and F190
+    # (VIN). Quote the identifier; the value is hex bytes, served verbatim:
+    #   "F1A0": "01 02 03"
     dids: {}
+    # UDS session handling. Absent means: S3 5000 ms, sessions 0x01-0x04, each reporting
+    # P2 = 30 ms and P2* = 30 s in its 0x10 response. For example:
+    #   uds:
+    #     s3_ms: 5000
+    #     sessions:
+    #       - session: 0x01
+    #       - session: 0x03
+    #         p2_ms: 50
+    #         p2_star_ms: 5000
     endpoints:
       # ISO 15765-4 OBD broadcast. OBD only: a UDS request here reaches no protocol.
       - name: obd_functional

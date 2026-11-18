@@ -461,3 +461,20 @@ socket; this machine has no `CAN_ISOTP`.
 - **Sessions are configured as a list**, `sessions: [{session: 0x03, p2_ms: …}]`, not a
   mapping keyed by number: a YAML key like `0x01` is an integer under YAML 1.2 and a string
   under 1.1, and a list avoids depending on which.
+
+### Delivered
+
+On branch `phase-11`, in the commits of plan section 9, 62 to 70. Closed: **DEV-17**, and
+**DEV-16**'s sub-function half. Every pinned byte that moved, moved in the commit that
+changed it, with its reason: `22 F1 86` and `22` (commit 68), and the 0x19 report-type
+pins `1901`, `190a`, `1981`, `1901ff`, `190aff`, `198aff` and `1981ff` (commit 69). The
+unclaimed-service probe moved from `22 F1 90` to `28 01` in unit, integration and bench
+cases (commit 63). No default 0x10 byte changed.
+
+Not done here, and required by plan section 10 before the phase is complete:
+
+- **The integration suite was not run.** Its new Phase 11 tests (session readback over
+  0x22, multi-frame F190, several DIDs, real-time S3 with TesterPresent, 0x19/01 and /0A)
+  and the tests changed to take `mutating` need a host with `CAN_ISOTP`.
+- **CI on the branch** has not been observed.
+- The unit, characterization, `ruff` and `mypy` results are in the completion report.
