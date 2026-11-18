@@ -138,6 +138,7 @@ class UdsProtocol:
         unread; the rule above is taken from three named AUTOSAR requirements, which is
         documentary evidence and not a conformance claim. See docs/decisions/0006, row W2.
         """
+        self.session.expire_if_idle()
         payload = request.payload
         sid = payload[0]
         suppress = False
@@ -145,6 +146,9 @@ class UdsProtocol:
             suppress = bool(payload[1] & SUPPRESS_POS_RSP_MSG_INDICATION_BIT)
             payload = bytes([sid, payload[1] & SUB_FUNCTION_VALUE_MASK]) + payload[2:]
         response = self._serve(sid, payload)
+        # Every request this protocol handles restarts S3, positive, negative or suppressed:
+        # [ECUC_Dcm_01240] measures S3 "while not receiving any diagnostic request message".
+        self.session.note_request()
         if suppress and response is not None and response[0] != NEGATIVE_RESPONSE_SID:
             logger.info("UDS SID 0x%02X: positive response suppressed at the tester's request", sid)
             return None
@@ -275,13 +279,13 @@ class UdsProtocol:
     # -- 0x3E ------------------------------------------------------------------------------------
 
     def _tester_present(self, payload: bytes) -> bytes:
-        """``3E 00`` is answered ``7E 00``. Stateless: no timer, no session, no counter.
+        """``3E 00`` is answered ``7E 00``.
 
-        TesterPresent exists in ISO 14229 to keep a non-default session alive by resetting
-        the S3 timer. This simulator has no session state and no timer, so the service is
-        implemented as what it is on the wire and nothing more: the request is validated,
-        the sub-function is echoed back, and the server's state is exactly what it was
-        before. S3, session timing and Concurrent TesterPresent are Phase 11.
+        TesterPresent exists to keep a non-default session alive by restarting S3. Since
+        Phase 11 it does, but not here: every request this protocol handles restarts S3
+        (``handle``), and TesterPresent is simply the request that does nothing else. The
+        handler validates the request and echoes the sub-function. Concurrent TesterPresent,
+        functionally addressed, is not reachable: no shipped route enables UDS functionally.
 
         The sub-function is checked before the length that sub-function requires, which is
         the ordering Phase 6 chose for 0x19. A one-byte request carries no sub-function to

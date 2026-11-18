@@ -108,8 +108,8 @@ def test_tester_present_is_answered_on_the_wire(uds_physical):
 
 
 def test_tester_present_changes_nothing_a_later_request_can_see(uds_physical):
-    # Stateless on the wire, not just in the handler: the service is asked several times
-    # between two reads of the same data and the second read is byte-identical.
+    # The service is asked several times between two reads of the same data and the second
+    # read is byte-identical. Since Phase 11 it restarts S3, which changes no DTC data.
     uds_physical.send(b"\x19\x02\xff")
     before = uds_physical.recv()
     for _ in range(3):

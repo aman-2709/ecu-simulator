@@ -6,6 +6,14 @@ encoded bytes except that four-byte record, whose layout is fixed by what udsonc
 driftregion/iso14229 builds: P2ServerMax in 1 ms units, then P2*ServerMax in 10 ms units,
 both big-endian.
 
+S3: in a non-default session, if S3Server passes without a request, the ECU is back in the
+default session ([SWS_Dcm_01670]); 5000 ms unless configured ([SWS_Dcm_01679]). What counts
+as a request is "any diagnostic request message" ([ECUC_Dcm_01240], ruling Q4): the protocol
+calls :meth:`UdsSession.note_request` for every request it handles, whatever the outcome.
+Expiry is evaluated lazily, by :meth:`UdsSession.expire_if_idle` before each request: state
+is only observable through a response, so no timer task is needed and none exists. A gap of
+exactly S3Server keeps the session; any longer gap ends it.
+
 One session per ECU, shared by every endpoint that enables UDS (ruling Q2). AUTOSAR ties
 the session to the connection that opened it ([SWS_Dcm_01667], [SWS_Dcm_01669]); this
 simulator does not, deliberately.
@@ -22,10 +30,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
+from ecu_simulator.clock import Clock, MonotonicClock
+
 logger = logging.getLogger(__name__)
 
 # [SWS_Dcm_00034]: "During Dcm initialization, the session state is set to the value 0x01".
 DEFAULT_SESSION = 0x01
+# [SWS_Dcm_01679]: "Dcm shall take the value of 5000ms as the S3Server timeout."
+DEFAULT_S3_MS = 5000
 
 P2_STAR_RESOLUTION_MS = 10
 RECORD_FIELD_MAX = 0xFFFF
@@ -62,11 +74,22 @@ DEFAULT_TIMINGS: Mapping[int, SessionTiming] = MappingProxyType(
 class UdsSession:
     """The active diagnostic session of one ECU."""
 
-    def __init__(self, timings: Mapping[int, SessionTiming] = DEFAULT_TIMINGS) -> None:
+    def __init__(
+        self,
+        timings: Mapping[int, SessionTiming] = DEFAULT_TIMINGS,
+        *,
+        s3_ms: int = DEFAULT_S3_MS,
+        clock: Clock | None = None,
+    ) -> None:
         if DEFAULT_SESSION not in timings:
             raise ValueError("the default session 0x01 must be configured")
+        if s3_ms <= 0:
+            raise ValueError(f"s3_ms must be positive, got {s3_ms}")
         self._timings = MappingProxyType(dict(timings))
         self._active = DEFAULT_SESSION
+        self._s3_ms = s3_ms
+        self._clock: Clock = clock if clock is not None else MonotonicClock()
+        self._last_request: float | None = None
 
     def __repr__(self) -> str:
         return f"UdsSession(active=0x{self._active:02X})"
@@ -77,7 +100,24 @@ class UdsSession:
 
     @property
     def active(self) -> int:
+        """The active session as last evaluated; :meth:`expire_if_idle` brings it up to date."""
         return self._active
+
+    @property
+    def s3_ms(self) -> int:
+        return self._s3_ms
+
+    def expire_if_idle(self) -> None:
+        """Return to the default session if S3Server has passed since the last request."""
+        if self._active == DEFAULT_SESSION or self._last_request is None:
+            return
+        idle_ms = (self._clock.now() - self._last_request) * 1000
+        if idle_ms > self._s3_ms:
+            self.return_to_default(f"S3 timeout after {idle_ms:.0f} ms without a request")
+
+    def note_request(self) -> None:
+        """A request was handled: S3 restarts from now."""
+        self._last_request = self._clock.now()
 
     def timing(self, session: int) -> SessionTiming:
         return self._timings[session]

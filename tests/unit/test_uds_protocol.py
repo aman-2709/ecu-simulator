@@ -239,7 +239,8 @@ def test_0x3e_checks_the_subfunction_before_the_length_like_0x19():
 
 
 def test_0x3e_answers_the_same_bytes_however_often_it_is_asked():
-    # Statelessness, asserted rather than described: no counter, no session, no timer.
+    # No counter: the answer never depends on how often it was asked. Since Phase 11 each
+    # request restarts S3, which no answer to 0x3E reveals.
     proto, _ = protocol()
     answers = [proto.handle(ServiceRequest(b"\x3e\x00")) for _ in range(5)]
     assert answers == [b"\x7e\x00"] * 5
@@ -487,3 +488,91 @@ def test_a_session_table_without_the_default_session_is_refused():
 
     with pytest.raises(ValueError, match="default session"):
         UdsSession({0x03: SessionTiming(30, 30000)})
+
+
+# --- S3 and TesterPresent timing (Phase 11) ------------------------------------------------------
+
+
+def timed_protocol(s3_ms=5000):
+    from ecu_simulator.clock import SimulatedClock
+    from ecu_simulator.protocols.uds import UdsSession
+
+    clock = SimulatedClock()
+    return UdsProtocol(session=UdsSession(s3_ms=s3_ms, clock=clock)), clock
+
+
+def test_s3_keeps_the_session_for_exactly_s3_and_ends_it_after():
+    proto, clock = timed_protocol()
+    send(proto, "1003")
+    clock.advance(4.999)
+    send(proto, "3e00")
+    assert proto.session.active == 0x03, "alive 1 ms before S3"
+    clock.advance(5.0)
+    send(proto, "3e00")
+    assert proto.session.active == 0x03, "alive at exactly S3"
+    clock.advance(5.001)
+    send(proto, "3e00")
+    assert proto.session.active == 0x01, "default 1 ms after S3"
+
+
+def test_tester_present_keeps_a_session_alive_past_s3():
+    proto, clock = timed_protocol()
+    send(proto, "1003")
+    for _ in range(5):
+        clock.advance(4.0)
+        assert send(proto, "3e00") == "7e00"
+    assert proto.session.active == 0x03
+
+
+def test_a_suppressed_tester_present_keeps_the_session_alive_too():
+    proto, clock = timed_protocol()
+    send(proto, "1003")
+    for _ in range(3):
+        clock.advance(4.0)
+        assert send(proto, "3e80") is None
+    assert proto.session.active == 0x03
+
+
+@pytest.mark.parametrize("request_hex", ["1902ff", "1005", "3e01", "14ffffff", "19"])
+def test_any_request_the_protocol_handles_restarts_s3(request_hex):
+    # Ruling Q4, [ECUC_Dcm_01240]: S3 runs "while not receiving any diagnostic request
+    # message", so positive and negative answers alike keep the session.
+    proto, clock = timed_protocol()
+    send(proto, "1003")
+    clock.advance(4.0)
+    send(proto, request_hex)
+    clock.advance(4.0)
+    send(proto, "3e00")
+    assert proto.session.active == 0x03
+
+
+def test_expiry_happens_before_the_request_is_served():
+    # The request that arrives after S3 is served in the default session: here, re-entering
+    # the extended session works and starts S3 afresh.
+    proto, clock = timed_protocol()
+    send(proto, "1003")
+    clock.advance(6.0)
+    assert send(proto, "1003") == "5003001e0bb8"
+    assert proto.session.active == 0x03
+    clock.advance(5.0)
+    send(proto, "3e00")
+    assert proto.session.active == 0x03
+
+
+def test_s3_is_configurable():
+    proto, clock = timed_protocol(s3_ms=8000)
+    send(proto, "1003")
+    clock.advance(7.9)
+    send(proto, "3e00")
+    assert proto.session.active == 0x03
+    clock.advance(8.1)
+    send(proto, "3e00")
+    assert proto.session.active == 0x01
+
+
+def test_the_default_session_never_times_out():
+    proto, clock = timed_protocol()
+    send(proto, "3e00")
+    clock.advance(3600)
+    send(proto, "3e00")
+    assert proto.session.active == 0x01
