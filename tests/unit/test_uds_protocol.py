@@ -576,3 +576,43 @@ def test_the_default_session_never_times_out():
     clock.advance(3600)
     send(proto, "3e00")
     assert proto.session.active == 0x01
+
+
+# --- 0x11 effects on the session (Phase 11) ------------------------------------------------------
+
+
+@pytest.mark.parametrize("reset_type", ["01", "02", "03"])
+def test_a_reset_that_restarts_the_ecu_returns_it_to_the_default_session(reset_type):
+    proto = session_protocol()
+    send(proto, "1003")
+    assert send(proto, "11" + reset_type) == "51" + reset_type
+    assert proto.session.active == 0x01
+
+
+@pytest.mark.parametrize("reset_type, expected", [("04", "51040f"), ("05", "5105")])
+def test_rapid_power_shutdown_changes_no_session(reset_type, expected):
+    proto = session_protocol()
+    send(proto, "1003")
+    assert send(proto, "11" + reset_type) == expected
+    assert proto.session.active == 0x03
+
+
+def test_a_suppressed_reset_returns_to_the_default_session_silently():
+    proto = session_protocol()
+    send(proto, "1003")
+    assert send(proto, "1181") is None
+    assert proto.session.active == 0x01
+
+
+@pytest.mark.parametrize("request_hex", ["1106", "11", "110100"])
+def test_a_refused_reset_changes_no_session(request_hex):
+    proto = session_protocol()
+    send(proto, "1003")
+    assert send(proto, request_hex).startswith("7f11")
+    assert proto.session.active == 0x03
+
+
+def test_a_reset_leaves_the_dtc_store_alone():
+    proto = session_protocol()
+    send(proto, "1101")
+    assert send(proto, "1902ff") == "59028c" + "9477010c" + "00010104"

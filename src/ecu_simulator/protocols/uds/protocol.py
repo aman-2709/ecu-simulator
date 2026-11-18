@@ -55,6 +55,8 @@ SERVICE_IDS = frozenset(
 
 RESET_TYPES = frozenset(range(0x01, 0x06))
 RESET_ENABLE_RAPID_POWER_SHUT_DOWN = 0x04
+# hardReset, keyOffOnReset, softReset: the reset types that restart the ECU.
+RESETS_THAT_RESTART = frozenset({0x01, 0x02, 0x03})
 RESET_POWER_DOWN_TIME = 0x0F
 
 REPORT_DTC_BY_STATUS_MASK = 0x02
@@ -192,12 +194,27 @@ class UdsProtocol:
     # -- 0x11 ------------------------------------------------------------------------------------
 
     def _ecu_reset(self, payload: bytes) -> bytes:
+        """Answer the reset; for a reset that restarts the ECU, return to the default session.
+
+        hardReset, keyOffOnReset and softReset (0x01-0x03) request a reset; AUTOSAR maps
+        them to the DcmEcuReset mode and executes it after the positive response
+        ([SWS_Dcm_00373], [SWS_Dcm_00594]), and a restarted Dcm is in the default session
+        ([SWS_Dcm_00034]). enableRapidPowerShutDown and disableRapidPowerShutDown (0x04,
+        0x05) only switch a power-down mode ([SWS_Dcm_00818]) and leave the session alone.
+
+        Not modelled (ruling Q8): the period after the response in which a resetting ECU
+        ignores requests ([SWS_Dcm_00834]), for which no accessible source gives a length;
+        an unresponsive ECU is Phase 10's fault injection. The DTC store and the scenario
+        are untouched: fault memory is not volatile, and vehicle state is not the ECU's.
+        """
         if len(payload) != 2:
             return self._nrc(ECU_RESET, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
         reset_type = payload[1]
         if reset_type not in RESET_TYPES:
             return self._nrc(ECU_RESET, NRC_SUB_FUNCTION_NOT_SUPPORTED)
         response = bytes([positive_response_sid(ECU_RESET), reset_type])
+        if reset_type in RESETS_THAT_RESTART:
+            self.session.return_to_default(f"ECUReset 0x{reset_type:02X}")
         if reset_type == RESET_ENABLE_RAPID_POWER_SHUT_DOWN:
             return response + bytes([RESET_POWER_DOWN_TIME])
         return response
