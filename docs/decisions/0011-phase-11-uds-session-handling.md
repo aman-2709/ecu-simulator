@@ -1,7 +1,8 @@
 # 0011 — Phase 11 evidence and design review: UDS session handling
 
-Status: proposed 2026-11-17, before any Phase 11 code. **Awaiting the owner's rulings on the
-open questions in section 13.** Nothing in `src/` or `tests/` changes until they are given.
+Status: proposed 2026-11-17, before any Phase 11 code. **Approved with rulings 2026-11-18;
+see "Outcome of the review" at the end.** The record above that section is left as it was
+written.
 
 Produced under the documentation and standards verification gate
 ([modernization-plan.md section 11](../modernization-plan.md)). It covers only what Phase 11
@@ -388,3 +389,75 @@ Numbering continues plan section 9. One wire change per commit, each preceded by
 68. `feat(uds): 0x22 ReadDataByIdentifier with F186, F190 and profile DIDs`
 69. `fix(uds): 0x19 report types 0x01 and 0x0A (DEV-16)`
 70. `docs: Phase 11 conformance, deviations, plan and decision outcome`
+
+
+## Outcome of the review, 2026-11-18
+
+The owner approved every recommendation in section 13 and directed that any question the
+recommendations left open be settled from the latest corresponding documentation. Two were
+left open, and both were settled that way before any code was written.
+
+### The rulings
+
+| Question | Ruling |
+|---|---|
+| Q1 | **A.** Phase 11 lives on branch `phase-11` and is not merged into `modernization` until V1.0 is tagged. The bench cases it changes are changed on this branch only |
+| Q2 | **A.** One session per ECU. The difference from `[SWS_Dcm_01667]` and `[SWS_Dcm_01669]` is recorded in `conformance.md` |
+| Q3 | **A.** Default `30 ms / 30 s` for every session; no default byte changes. A profile may set any value |
+| Q4 | **A, settled from documentation.** See below |
+| Q5 | F186 and F190 built in; a short VIN is sent as configured, unpadded |
+| Q6 | **A.** `dids:` values are hex bytes served verbatim |
+| Q7 | DTCFormatIdentifier `0x04` |
+| Q8 | Confirmed as proposed |
+| Q9 | `28 01` is the unclaimed-service probe |
+
+### Q4: which requests restart S3
+
+Section 4 W3 found no accessible text on this and put it to the owner. Rereading AUTOSAR CP
+R25-11 for the ruling found one: the definition of the parameter that configures S3.
+
+> `[ECUC_Dcm_01240]` DcmS3ServerTimeoutOverwrite: "Time for the server to keep a diagnostic
+> session other than the defaultSession active while not receiving any diagnostic request
+> message. This parameter overwrites the 5s recommend value of the S3server timeout in
+> ISO 14229-2." Range `[5 .. INF[` seconds.
+
+"While not receiving any diagnostic request message" is option A: every request restarts S3,
+not only 0x3E and 0x10. It outranks driftregion's narrower behavior under section 11.2. It
+is configuration-parameter text, not a numbered behavioral requirement, and ISO 14229-2 is
+still unread, so the row is not `standards validated`.
+
+Implemented scope: **every request the UDS protocol of this ECU handles**, whatever its
+outcome, including a suppressed one. Two kinds of request do not reach that protocol and so
+do not restart S3, recorded as deliberate limits: a SID no UDS handler claims, answered
+`7F xx 11` by the route (section 5 keeps session state out of the `Ecu`), and OBD requests
+(section 5, protocol preemption not modelled).
+
+### Two documentation findings that set ranges
+
+- The same parameter's range is `[5 .. INF[` s, so **`s3_ms` must be at least 5000**. This
+  rules out the short-S3 integration profile section 11 assumed; the one real-time
+  integration test waits out the default 5 s.
+- `[ECUC_Dcm_00766]` P2ServerMax is `[0 .. 1]` s and `[ECUC_Dcm_00768]` P2*ServerMax is
+  `[0 .. 100]` s. Section 7's proposed byte-width ranges are replaced by these:
+  **`p2_ms` 0..1000, `p2_star_ms` 0..100000 and a multiple of 10.** The shipped `30 / 30000`
+  is inside both.
+
+### The 0x22 length limit, confirmed against the kernel
+
+Section 4 W6 required the 4095 limit to be confirmed before it was written. Read from
+`net/can/isotp.c` at Linux v6.8 and v6.17, the two kernels the project has observed:
+`MAX_12BIT_PDU_SIZE 4095`, `DEFAULT_MAX_PDU_SIZE 8300`. The kernel *can* send up to 8300
+bytes by default, but anything above 4095 needs the escaped first frame of ISO 15765-2:2016,
+which a 12-bit-length receiver cannot decode. can-isotp 2.0.7's socket module also reads at
+most 4095 (`isotp.tpsock.mtu`). **4095 stays the limit**: it is the largest message every
+classical ISO-TP receiver, including an ELM327, can take. Source-read, not measured on a
+socket; this machine has no `CAN_ISOTP`.
+
+### Two design changes from section 5 and 7, made during implementation
+
+- **The session lives in `UdsProtocol`, not the `Ecu`.** Only UDS reads or changes it, and
+  keeping it in the protocol keeps the `Ecu` protocol-agnostic. The consequence is the S3
+  limit above.
+- **Sessions are configured as a list**, `sessions: [{session: 0x03, p2_ms: …}]`, not a
+  mapping keyed by number: a YAML key like `0x01` is an integer under YAML 1.2 and a string
+  under 1.1, and a list avoids depending on which.
