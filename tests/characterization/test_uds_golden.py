@@ -200,11 +200,12 @@ def test_unsupported_sids_on_the_physical_address_get_nrc_0x11(request_hex, expe
     assert engine_uds(request_hex).hex() == expected
 
 
-@pytest.mark.parametrize("request_hex", ["22f186", "22"])
-def test_0x22_is_answered_by_the_route_before_phase_11(request_hex):
-    # Pinned before Phase 11 claims 0x22: no protocol serves it, so the route's DEV-06
-    # policy answers every form of the request, malformed or not.
-    assert engine_uds(request_hex).hex() == "7f2211"
+@pytest.mark.parametrize("request_hex, expected", [("22f186", "62f18601"), ("22", "7f2213")])
+def test_0x22_is_answered_by_the_uds_protocol(request_hex, expected):
+    # The transition of the pin added before Phase 11 claimed 0x22: both were 7F 22 11 from
+    # the route's DEV-06 policy. F186 now reads the active session, the default 0x01, and
+    # a request with no DID is a length error.
+    assert engine_uds(request_hex).hex() == expected
 
 
 def test_0x19_81_is_an_unsupported_report_type_before_phase_11():

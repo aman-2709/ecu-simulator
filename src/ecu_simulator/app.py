@@ -26,6 +26,7 @@ from ecu_simulator.dtc import DtcState, DtcStore
 from ecu_simulator.ecu import AddressRouter, Dispatcher, Ecu
 from ecu_simulator.protocols.obd import ObdProtocol
 from ecu_simulator.protocols.uds import SessionTiming, UdsProtocol, UdsSession
+from ecu_simulator.protocols.uds.dids import SessionDidProvider, StaticDidProvider, VinDidProvider
 from ecu_simulator.protocols.uds.dtc import DtcStoreProvider
 from ecu_simulator.scenario import Scenario, ScenarioRunner, ScenarioSync
 from ecu_simulator.transport import TransportError
@@ -169,11 +170,19 @@ def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None, clock
             if protocol_name == ObdProtocol.name:
                 ecu.register(ObdProtocol(vehicle, ecu_name=ecu_config.name, dtcs=ecu.dtc_store))
             elif protocol_name == UdsProtocol.name:
+                session = build_uds_session(ecu_config, clock)
+                # The DIDs 0x22 serves: F186 and F190 built in, then the profile's own,
+                # which the schema keeps off the built-in identifiers.
+                ecu.dids.register(SessionDidProvider(session))
+                ecu.dids.register(VinDidProvider(vehicle))
+                if ecu_config.dids:
+                    ecu.dids.register(StaticDidProvider(f"{ecu_name}.profile", ecu_config.did_data))
                 ecu.register(
                     UdsProtocol(
                         dtc_providers=ecu.dtc_providers,
                         dtcs=ecu.dtc_store,
-                        session=build_uds_session(ecu_config, clock),
+                        session=session,
+                        dids=ecu.dids,
                     )
                 )
             else:  # pragma: no cover - the schema rejects unknown protocol names

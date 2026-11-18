@@ -7,6 +7,8 @@ reaches no protocol at all and nothing is transmitted; an unknown service is sil
 too, which is the OBD convention for a broadcast.
 """
 
+import time
+
 import pytest
 
 from tests.integration.conftest import FunctionalTester, Simulator, assert_silent, open_tester_socket
@@ -186,3 +188,55 @@ def test_clearing_dtcs_is_not_mistaken_for_a_suppressed_request(mutating, uds_ph
 def test_tester_present_on_the_obd_broadcast_address_reaches_no_protocol(functional):
     # UDS is not enabled on 0x7DF, so claiming 0x3E does not make it answerable there.
     assert_silent(functional, b"\x3e\x00", OBD_PROBE, FUEL_RESPONSE)
+
+
+# --- Phase 11: session state, S3 and 0x22 on the wire -------------------------------------------
+#
+# The simulator fixture is module-scoped, so every test that leaves the default session
+# returns to it before it ends.
+
+
+def test_the_session_is_read_back_over_0x22(uds_physical):
+    uds_physical.send(b"\x22\xf1\x86")
+    assert uds_physical.recv() == b"\x62\xf1\x86\x01"
+    uds_physical.send(b"\x10\x03")
+    assert uds_physical.recv() == SESSION_RESPONSE.replace(b"\x50\x01", b"\x50\x03")
+    uds_physical.send(b"\x22\xf1\x86")
+    assert uds_physical.recv() == b"\x62\xf1\x86\x03"
+    uds_physical.send(b"\x11\x01")
+    assert uds_physical.recv() == b"\x51\x01"
+    uds_physical.send(b"\x22\xf1\x86")
+    assert uds_physical.recv() == b"\x62\xf1\x86\x01", "ECUReset returned to the default session"
+
+
+def test_the_vin_is_a_multi_frame_0x22_response(uds_physical):
+    # 3 + 17 = 20 bytes: a first frame and consecutive frames through the kernel ISO-TP path.
+    uds_physical.send(b"\x22\xf1\x90")
+    assert uds_physical.recv() == b"\x62\xf1\x90TESTVIN0123456789"
+
+
+def test_several_dids_and_an_unserved_one(uds_physical):
+    uds_physical.send(b"\x22\xf1\x86\xbe\xef\xf1\x90")
+    assert uds_physical.recv() == b"\x62\xf1\x86\x01\xf1\x90TESTVIN0123456789"
+    uds_physical.send(b"\x22\xbe\xef")
+    assert uds_physical.recv() == b"\x7f\x22\x31"
+
+
+def test_s3_returns_to_the_default_session_and_tester_present_prevents_it(uds_physical):
+    # Real time, so it waits out the default S3 of 5000 ms; AUTOSAR's range for S3 starts
+    # at 5 s ([ECUC_Dcm_01240]), so no profile can make this shorter.
+    try:
+        uds_physical.send(b"\x10\x03")
+        uds_physical.recv()
+        for _ in range(3):
+            time.sleep(2.0)
+            uds_physical.send(b"\x3e\x00")
+            assert uds_physical.recv() == b"\x7e\x00"
+        uds_physical.send(b"\x22\xf1\x86")
+        assert uds_physical.recv() == b"\x62\xf1\x86\x03", "kept alive by TesterPresent past S3"
+        time.sleep(5.5)
+        uds_physical.send(b"\x22\xf1\x86")
+        assert uds_physical.recv() == b"\x62\xf1\x86\x01", "S3 expired"
+    finally:
+        uds_physical.send(b"\x10\x01")
+        uds_physical.recv()

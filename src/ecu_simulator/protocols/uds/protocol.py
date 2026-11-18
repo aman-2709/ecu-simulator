@@ -32,7 +32,7 @@ from ecu_simulator.protocols.base import (
     positive_response_sid,
 )
 from ecu_simulator.protocols.uds.dtc import AVAILABILITY_MASK
-from ecu_simulator.protocols.uds.providers import DtcRegistry
+from ecu_simulator.protocols.uds.providers import DidRegistry, DtcRegistry
 from ecu_simulator.protocols.uds.session import UdsSession
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,7 @@ DIAGNOSTIC_SESSION_CONTROL = 0x10
 ECU_RESET = 0x11
 CLEAR_DIAGNOSTIC_INFORMATION = 0x14
 READ_DTC_INFORMATION = 0x19
+READ_DATA_BY_IDENTIFIER = 0x22
 TESTER_PRESENT = 0x3E
 
 SERVICE_IDS = frozenset(
@@ -49,9 +50,17 @@ SERVICE_IDS = frozenset(
         ECU_RESET,
         CLEAR_DIAGNOSTIC_INFORMATION,
         READ_DTC_INFORMATION,
+        READ_DATA_BY_IDENTIFIER,
         TESTER_PRESENT,
     }
 )
+
+NRC_RESPONSE_TOO_LONG = 0x14
+# The largest message a classical ISO-TP first frame's 12-bit length field expresses, and
+# so the largest every ISO-TP receiver can take. The kernel sends more only with the
+# escaped first frame of ISO 15765-2:2016. docs/decisions/0011, "The 0x22 length limit".
+MAX_RESPONSE_LENGTH = 4095
+DID_LENGTH = 2
 
 RESET_TYPES = frozenset(range(0x01, 0x06))
 RESET_ENABLE_RAPID_POWER_SHUT_DOWN = 0x04
@@ -95,7 +104,7 @@ TESTER_PRESENT_REQUEST_LENGTH = 2
 
 
 class UdsProtocol:
-    """Serves UDS 0x10, 0x11, 0x14, 0x19 and 0x3E for one ECU."""
+    """Serves UDS 0x10, 0x11, 0x14, 0x19, 0x22 and 0x3E for one ECU."""
 
     name = "uds"
     service_ids = SERVICE_IDS
@@ -106,12 +115,14 @@ class UdsProtocol:
         dtc_providers: DtcRegistry | None = None,
         dtcs: DtcStore | None = None,
         session: UdsSession | None = None,
+        dids: DidRegistry | None = None,
     ) -> None:
         # Reads go through the provider registry (plan rule 6); the clear goes straight to
         # the shared store, which is the same object OBD Mode 04 clears (plan rule 7).
         self.dtc_providers = dtc_providers if dtc_providers is not None else DtcRegistry()
         self.dtcs = dtcs if dtcs is not None else DtcStore()
         self.session = session if session is not None else UdsSession()
+        self.dids = dids if dids is not None else DidRegistry()
 
     def handle(self, request: ServiceRequest) -> bytes | None:
         """Apply the sub-function framing rules, run the service, then decide what goes out.
@@ -165,6 +176,8 @@ class UdsProtocol:
             return self._clear_diagnostic_information(payload)
         if sid == READ_DTC_INFORMATION:
             return self._read_dtc_information(payload)
+        if sid == READ_DATA_BY_IDENTIFIER:
+            return self._read_data_by_identifier(payload)
         if sid == TESTER_PRESENT:
             return self._tester_present(payload)
         return None  # pragma: no cover - the ECU only routes claimed SIDs here
@@ -292,6 +305,41 @@ class UdsProtocol:
         header = bytes([positive_response_sid(READ_DTC_INFORMATION), report_type, AVAILABILITY_MASK])
         records = self.dtc_providers.read(status_mask)
         return header + b"".join(record.to_bytes() for record in records)
+
+    # -- 0x22 ------------------------------------------------------------------------------------
+
+    def _read_data_by_identifier(self, payload: bytes) -> bytes:
+        """``22`` and one or more two-byte DIDs; ``62`` and each supported DID with its data.
+
+        A request that is not the service identifier and a whole number of at least one DID
+        is a length error ([SWS_Dcm_00696], [SWS_Dcm_00272]). DIDs are answered in request
+        order, each echoed before its data, which is what udsoncan parses and
+        driftregion/iso14229 builds; a DID asked twice is answered twice.
+
+        A DID this ECU does not serve is left out of the response, and only when none of
+        them is served is the request refused with requestOutOfRange: "If none of the
+        requested DIDs is supported, the Dcm module shall send NRC 0x31" ([SWS_Dcm_00438]).
+        driftregion refuses the whole request instead; the AUTOSAR text ranks higher
+        (docs/decisions/0011, W7). A response longer than :data:`MAX_RESPONSE_LENGTH` is
+        responseTooLong ([SWS_Dcm_01059]). No DID is session-gated until Phase 12.
+        """
+        if len(payload) < 1 + DID_LENGTH or (len(payload) - 1) % DID_LENGTH:
+            return self._nrc(READ_DATA_BY_IDENTIFIER, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
+        response = bytearray([positive_response_sid(READ_DATA_BY_IDENTIFIER)])
+        answered = False
+        for offset in range(1, len(payload), DID_LENGTH):
+            did_bytes = payload[offset : offset + DID_LENGTH]
+            data = self.dids.read(int.from_bytes(did_bytes, "big"))
+            if data is None:
+                logger.info("UDS 0x22: DID 0x%s is not served; omitted", did_bytes.hex().upper())
+                continue
+            response += did_bytes + data
+            answered = True
+        if not answered:
+            return self._nrc(READ_DATA_BY_IDENTIFIER, NRC_REQUEST_OUT_OF_RANGE)
+        if len(response) > MAX_RESPONSE_LENGTH:
+            return self._nrc(READ_DATA_BY_IDENTIFIER, NRC_RESPONSE_TOO_LONG)
+        return bytes(response)
 
     # -- 0x3E ------------------------------------------------------------------------------------
 

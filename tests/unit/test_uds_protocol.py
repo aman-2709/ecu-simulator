@@ -40,9 +40,9 @@ def test_the_protocol_claims_the_services_the_legacy_table_claimed():
 
 def test_the_protocol_also_claims_tester_present():
     # Phase 7, DEV-23: 0x3E was answered by the route's unsupported-service policy until
-    # this phase. Nothing else was added, and nothing the legacy table claimed was dropped.
+    # that phase; Phase 11 added 0x22. Nothing the legacy table claimed was dropped.
     proto, _ = protocol()
-    assert proto.service_ids == frozenset({0x10, 0x11, 0x14, 0x19, 0x3E})
+    assert proto.service_ids == frozenset({0x10, 0x11, 0x14, 0x19, 0x22, 0x3E})
 
 
 # --- 0x10 DiagnosticSessionControl ------------------------------------------------------------
@@ -357,8 +357,9 @@ def test_0x19_is_declared_as_a_subfunction_service():
     from ecu_simulator.protocols.uds.protocol import SERVICE_IDS, SUB_FUNCTION_SERVICES
 
     assert READ_DTC_INFORMATION in SUB_FUNCTION_SERVICES
-    # 0x14 is the only service this protocol serves that has no sub-function.
-    assert SERVICE_IDS - SUB_FUNCTION_SERVICES == frozenset({0x14})
+    # 0x22 joined 0x14 in Phase 11: ReadDataByIdentifier has no sub-function, and a DID's
+    # high byte, such as the F1 of F190, has bit 7 set exactly where the bit would be.
+    assert SERVICE_IDS - SUB_FUNCTION_SERVICES == frozenset({0x14, 0x22})
 
 
 def test_0x19_02_is_unchanged_by_any_of_this():
@@ -616,3 +617,81 @@ def test_a_reset_leaves_the_dtc_store_alone():
     proto = session_protocol()
     send(proto, "1101")
     assert send(proto, "1902ff") == "59028c" + "9477010c" + "00010104"
+
+
+# --- 0x22 ReadDataByIdentifier (Phase 11) --------------------------------------------------------
+
+
+def did_protocol(data=None):
+    from ecu_simulator.protocols.uds import DidRegistry, UdsSession
+    from ecu_simulator.protocols.uds.dids import SessionDidProvider, StaticDidProvider
+
+    session = UdsSession()
+    dids = DidRegistry()
+    dids.register(SessionDidProvider(session))
+    dids.register(StaticDidProvider("profile", data if data is not None else {0xF1A0: b"\x01\x02", 0x0100: b"\xff"}))
+    return UdsProtocol(session=session, dids=dids)
+
+
+def test_0x22_f186_reads_the_active_session():
+    proto = did_protocol()
+    assert send(proto, "22f186") == "62f18601"
+    send(proto, "1003")
+    assert send(proto, "22f186") == "62f18603"
+
+
+def test_0x22_reads_a_profile_did_verbatim():
+    assert send(did_protocol(), "22f1a0") == "62f1a00102"
+
+
+def test_0x22_answers_several_dids_in_request_order():
+    assert send(did_protocol(), "220100f1a0f186") == "620100ff" + "f1a00102" + "f18601"
+
+
+def test_0x22_a_did_asked_twice_is_answered_twice():
+    assert send(did_protocol(), "22f186f186") == "62f18601f18601"
+
+
+def test_0x22_an_unserved_did_is_left_out_when_another_is_served():
+    # [SWS_Dcm_00438]: only when none is supported is the request refused.
+    assert send(did_protocol(), "22f1a0beef") == "62f1a00102"
+
+
+@pytest.mark.parametrize("request_hex", ["22beef", "22beefcafe"])
+def test_0x22_with_no_served_did_is_out_of_range(request_hex):
+    assert send(did_protocol(), request_hex) == "7f2231"
+
+
+@pytest.mark.parametrize("request_hex", ["22", "22f1", "22f186f1"])
+def test_0x22_a_request_that_is_not_whole_dids_is_a_length_error(request_hex):
+    assert send(did_protocol(), request_hex) == "7f2213"
+
+
+def test_0x22_the_did_high_byte_is_not_read_as_a_suppress_bit():
+    # F186's first byte has bit 7 set; 0x22 has no sub-function, so it is not masked and
+    # the response is not withheld.
+    assert send(did_protocol(), "22f186") == "62f18601"
+
+
+def test_0x22_a_response_up_to_4095_bytes_is_sent_and_a_longer_one_is_too_long():
+    # 1 + 2 + 4092 = 4095 bytes; one more data byte makes 4096.
+    assert len(bytes.fromhex(send(did_protocol({0x0100: bytes(4092)}), "220100"))) == 4095
+    assert send(did_protocol({0x0100: bytes(4093)}), "220100") == "7f2214"
+
+
+def test_0x22_restarts_s3_like_any_request():
+    from ecu_simulator.clock import SimulatedClock
+    from ecu_simulator.protocols.uds import DidRegistry, UdsSession
+    from ecu_simulator.protocols.uds.dids import SessionDidProvider
+
+    clock = SimulatedClock()
+    session = UdsSession(clock=clock)
+    dids = DidRegistry()
+    dids.register(SessionDidProvider(session))
+    proto = UdsProtocol(session=session, dids=dids)
+    send(proto, "1003")
+    for _ in range(3):
+        clock.advance(4.0)
+        assert send(proto, "22f186") == "62f18603"
+    clock.advance(5.5)
+    assert send(proto, "22f186") == "62f18601", "S3 passed: the read itself sees the default session"
