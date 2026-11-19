@@ -213,12 +213,55 @@ async def test_busy_socket_queues_response_until_writable():
 
 
 @pytest.mark.asyncio
-async def test_nonzero_delay_is_rejected_as_reserved():
+async def test_delayed_and_follow_up_responses_use_loop_timers_in_order():
     transport = IsoTpTransport("vcan0", [PHYSICAL], socket_factory=factory(), check_environment=False)
-    await transport.start(lambda request: DiagnosticResponse(b"\x7e\x00", delay=0.5))
+    await transport.start(
+        lambda request: DiagnosticResponse(
+            b"\x7f\x10\x78", delay=0.01, follow_ups=(DiagnosticResponse(b"\x50\x03", delay=0.02),)
+        )
+    )
     fake = fake_by_rx(0x7E0)
     fake.feed.send(b"\x3e\x00")
-    with pytest.raises(NotImplementedError):
-        # the callback runs inside the loop; surface it by running the callback directly
-        transport._on_readable(transport._endpoints[0])
+    await settle()
+    assert fake.sent == []
+    await asyncio.sleep(0.015)
+    assert fake.sent == [b"\x7f\x10\x78"]
+    await asyncio.sleep(0.015)
+    assert fake.sent == [b"\x7f\x10\x78", b"\x50\x03"]
     await transport.stop()
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_delayed_responses():
+    transport = IsoTpTransport("vcan0", [PHYSICAL], socket_factory=factory(), check_environment=False)
+    await transport.start(lambda request: DiagnosticResponse(b"\x7e\x00", delay=0.02))
+    fake = fake_by_rx(0x7E0)
+    fake.feed.send(b"\x3e\x00")
+    await settle()
+    await transport.stop()
+    await asyncio.sleep(0.03)
+    assert fake.sent == []
+
+
+@pytest.mark.asyncio
+async def test_silence_and_ignored_flow_control_have_observation_hooks():
+    silence = []
+    flow_control = []
+    transport = IsoTpTransport(
+        "vcan0",
+        [PHYSICAL],
+        socket_factory=factory(),
+        check_environment=False,
+        on_silence=lambda endpoint, request: silence.append((endpoint.name, request.payload)),
+        on_ignored_flow_control=lambda endpoint, error: flow_control.append((endpoint.name, str(error))),
+    )
+    await transport.start(lambda request: None)
+    fake = fake_by_rx(0x7E0)
+    fake.feed.send(b"\x01\x0d")
+    await settle()
+    fake.recv_error = OSError(errno.ECOMM, "Communication error on send")
+    fake.feed.send(b"x")
+    await settle()
+    await transport.stop()
+    assert silence == [("obd_physical", b"\x01\x0d")]
+    assert flow_control[0][0] == "obd_physical" and "flow control" in flow_control[0][1]

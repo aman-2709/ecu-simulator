@@ -13,6 +13,7 @@ from types import MappingProxyType
 
 from ecu_simulator.dtc import DtcStore
 from ecu_simulator.ecu.router import Route
+from ecu_simulator.faults import FaultPolicy
 from ecu_simulator.logging import log_context
 from ecu_simulator.protocols.base import (
     NRC_SERVICE_NOT_SUPPORTED,
@@ -38,6 +39,7 @@ class Ecu:
         dids: DidRegistry | None = None,
         dtc_providers: DtcRegistry | None = None,
         dtc_store: DtcStore | None = None,
+        fault_policy: FaultPolicy | None = None,
     ) -> None:
         if not isinstance(name, str) or not name:
             raise ValueError(f"ECU name must be a non-empty string, got {name!r}")
@@ -50,6 +52,7 @@ class Ecu:
         # UDS-side registry that encodes a view of it; the two are deliberately distinct,
         # and the store holds no encoded bytes (plan rule 7).
         self.dtc_store = dtc_store if dtc_store is not None else DtcStore()
+        self.fault_policy = fault_policy if fault_policy is not None else FaultPolicy()
         self._protocols: dict[str, DiagnosticProtocol] = {}
         self._by_sid: dict[int, DiagnosticProtocol] = {}
 
@@ -107,7 +110,7 @@ class Ecu:
         if route.ecu != self.name:
             raise ValueError(f"{self.name}: route belongs to ECU {route.ecu!r}")
         with log_context(self.name):
-            return self._handle(request, route)
+            return self.fault_policy.apply(request, lambda: self._handle(request, route))
 
     def _handle(self, request: DiagnosticRequest, route: Route) -> DiagnosticResponse | None:
         if not request.payload:

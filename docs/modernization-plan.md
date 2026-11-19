@@ -386,6 +386,17 @@ Ruff, mypy, and all four PR CI jobs passed. See
 truncate, corrupt, ECU offline; transport hooks for ignored flow control and silence.
 Off by default, deterministic triggers.
 
+Reviewed 2026-11-18 before implementation:
+[decisions/0013-phase-10-fault-injection.md](decisions/0013-phase-10-fault-injection.md).
+Rules trigger on deterministic request occurrences; the synchronous ECU pipeline decides
+effects and the asyncio transport only schedules responses and reports silence/FC timeout.
+
+**Completed 2026-11-18 on branch `phase-10`.** All seven effects,
+ignored-flow-control recovery, and delayed-response shutdown pass locally and on the
+hosted `vcan`/kernel `CAN_ISOTP` runner. The full local suite, 84 isolated integration
+tests, Ruff, mypy, and all four PR CI jobs passed. See
+[the Phase 10 completion report](validation/phase-10-completion.md).
+
 ### Phase 11 — UDS session handling (V1.1)
 
 Session state machine, S3 timeout, TesterPresent timing, 0x22 with providers, 0x19/01 and

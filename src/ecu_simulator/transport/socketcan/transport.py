@@ -20,7 +20,7 @@ from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
-from ecu_simulator.transport.errors import AddressError, TransportError, TransportIOError
+from ecu_simulator.transport.errors import AddressError, FlowControlTimeoutError, TransportError, TransportIOError
 from ecu_simulator.transport.messages import DiagnosticRequest, DiagnosticResponse
 from ecu_simulator.transport.socketcan.interface import check_interface, check_isotp_support
 from ecu_simulator.transport.socketcan.isotp import IsoTpAddress, IsoTpOptions, IsoTpSocket, SocketFactory
@@ -55,6 +55,10 @@ class EndpointConfig:
     receive: bool = True
 
 
+SilenceHook = Callable[[EndpointConfig, DiagnosticRequest], None]
+IgnoredFlowControlHook = Callable[[EndpointConfig, FlowControlTimeoutError], None]
+
+
 @dataclass(slots=True)
 class _Endpoint:
     config: EndpointConfig
@@ -73,6 +77,8 @@ class IsoTpTransport:
         *,
         socket_factory: SocketFactory | None = None,
         check_environment: bool = True,
+        on_silence: SilenceHook | None = None,
+        on_ignored_flow_control: IgnoredFlowControlHook | None = None,
     ) -> None:
         if not endpoints:
             raise AddressError("at least one endpoint is required")
@@ -95,6 +101,9 @@ class IsoTpTransport:
         self._endpoints: list[_Endpoint] = []
         self._loop: asyncio.AbstractEventLoop | None = None
         self._handler: RequestHandler | None = None
+        self._timers: set[asyncio.TimerHandle] = set()
+        self._on_silence = on_silence
+        self._on_ignored_flow_control = on_ignored_flow_control
 
     @property
     def endpoints(self) -> tuple[EndpointConfig, ...]:
@@ -147,6 +156,9 @@ class IsoTpTransport:
         loop, self._loop = self._loop, None
         if loop is None:
             return
+        for timer in self._timers:
+            timer.cancel()
+        self._timers.clear()
         for endpoint in self._endpoints:
             fd = endpoint.socket.fileno()
             loop.remove_reader(fd)
@@ -163,8 +175,12 @@ class IsoTpTransport:
     def _on_readable(self, endpoint: _Endpoint) -> None:
         try:
             payload = endpoint.socket.recv()
+        except FlowControlTimeoutError as error:
+            if self._on_ignored_flow_control is not None:
+                self._call_hook(self._on_ignored_flow_control, endpoint.config, error)
+            logger.warning("%s: %s", endpoint.config.name, error)
+            return
         except TransportIOError as error:
-            # e.g. FlowControlTimeoutError: our earlier multi-frame send was abandoned.
             logger.warning("%s: %s", endpoint.config.name, error)
             return
         if payload is None:
@@ -185,11 +201,38 @@ class IsoTpTransport:
             logger.exception("%s: handler failed for request %s", config.name, payload.hex())
             return
         if response is None:
+            if self._on_silence is not None:
+                self._call_hook(self._on_silence, config, request)
             return
-        if response.delay:
-            raise NotImplementedError("DiagnosticResponse.delay is reserved for fault injection")
         via = self._by_name[config.reply_via] if config.reply_via is not None else endpoint
-        self._send(via, response.payload)
+        self._schedule(via, response)
+        for follow_up in response.follow_ups:
+            self._schedule(via, follow_up)
+
+    def _schedule(self, endpoint: _Endpoint, response: DiagnosticResponse) -> None:
+        if response.delay == 0:
+            self._send(endpoint, response.payload)
+            return
+        loop = self._loop
+        if loop is None:
+            return
+        timer: asyncio.TimerHandle | None = None
+
+        def deliver() -> None:
+            if timer is not None:
+                self._timers.discard(timer)
+            if self._loop is not None:
+                self._send(endpoint, response.payload)
+
+        timer = loop.call_later(response.delay, deliver)
+        self._timers.add(timer)
+
+    @staticmethod
+    def _call_hook(hook: Callable[..., None], *args: object) -> None:
+        try:
+            hook(*args)
+        except Exception:  # noqa: BLE001 - observation hooks cannot stop diagnostic service
+            logger.exception("transport observation hook failed")
 
     def _send(self, endpoint: _Endpoint, payload: bytes) -> None:
         if not endpoint.pending:

@@ -52,12 +52,14 @@ class DiagnosticRequest:
 class DiagnosticResponse:
     """A diagnostic payload to transmit.
 
-    ``delay`` is reserved for later fault injection (delayed responses) and must be
-    zero in this release; transports reject anything else rather than ignore it.
+    ``delay`` is the number of seconds from handler completion before this payload is
+    sent. ``follow_ups`` are additional responses on the same endpoint; each carries its
+    own absolute delay from that same instant.
     """
 
     payload: bytes
     delay: float = 0.0
+    follow_ups: tuple[DiagnosticResponse, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.payload, bytes | bytearray):
@@ -67,3 +69,7 @@ class DiagnosticResponse:
             raise ValueError("payload must not be empty")
         if self.delay < 0:
             raise ValueError("delay must be non-negative")
+        if not isinstance(self.follow_ups, tuple) or any(
+            not isinstance(response, DiagnosticResponse) for response in self.follow_ups
+        ):
+            raise TypeError("follow_ups must be a tuple of DiagnosticResponse records")
