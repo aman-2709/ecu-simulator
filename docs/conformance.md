@@ -138,24 +138,24 @@ nothing varies over time until the Phase 7 scenario engine.
 
 | Service | Sub-function | Description | Implemented | Unit tested | Integration tested | Hardware validated | Standards validated |
 |---|---|---|---|---|---|---|---|
-| 0x10 | 0x01-0x04 | DiagnosticSessionControl; session state, per-session P2/P2* record (configurable) | yes | yes | yes, bytes only | no | no |
-| 0x11 | 0x01-0x05 | ECUReset; 0x01-0x03 return to the default session | yes | yes | yes, bytes only | no | no |
+| 0x10 | 0x01-0x04 | DiagnosticSessionControl; session state, per-session P2/P2* record (configurable) | yes | yes | **yes** | no | no |
+| 0x11 | 0x01-0x05 | ECUReset; 0x01-0x03 return to the default session | yes | yes | **yes** | no | no |
 | 0x14 | - | ClearDiagnosticInformation, groupOfDTC `FFFFFF` only | **yes** | yes | **yes** | no | no |
 | 0x19 | 0x02 | reportDTCByStatusMask, mask required and applied | yes | yes | **yes** | no | no |
-| 0x19 | 0x01 | reportNumberOfDTCByStatusMask, DTCFormatIdentifier `0x04` | **yes** | yes | no | no | no |
-| 0x19 | 0x0A | reportSupportedDTCs | **yes** | yes | no | no | no |
-| 0x22 | - | ReadDataByIdentifier, one or more DIDs; F186 active session, F190 VIN, profile DIDs | **yes** | yes | no | no | no |
-| - | - | S3 timeout returns a non-default session to the default; any UDS request restarts it | **yes** | yes | no | no | no |
+| 0x19 | 0x01 | reportNumberOfDTCByStatusMask, DTCFormatIdentifier `0x04` | **yes** | yes | **yes** | no | no |
+| 0x19 | 0x0A | reportSupportedDTCs | **yes** | yes | **yes** | no | no |
+| 0x22 | - | ReadDataByIdentifier, one or more DIDs; F186 active session, F190 VIN, profile DIDs | **yes** | yes | **yes** | no | no |
+| - | - | S3 timeout returns a non-default session to the default; any UDS request restarts it | **yes** | yes | **yes** | no | no |
 | 0x3E | 0x00 | TesterPresent, stateless | **yes** | yes | **yes** | no | no |
 | 0x3E | other | subFunctionNotSupported, `7F 3E 12` | **yes** | yes | **yes** | no | no |
 | - | - | NRC 0x11 for a service no enabled protocol serves | yes | yes | yes | no | no |
 | - | - | `suppressPosRspMsgIndicationBit` honoured for every sub-function service | **yes** | yes | **yes** | no | no |
 
 Phase 11 added session handling, on branch `phase-11` (not merged into `modernization`
-until V1.0 is tagged, ruling Q1). **Its integration tests are written and have not been
-run**: the implementing machine has no `CAN_ISOTP`. Until a vcan host runs them, the new
-rows say `no`, and the 0x10 and 0x11 rows are integration tested for their bytes only,
-which Phase 11 did not change.
+until V1.0 is tagged, ruling Q1). Its integration tests passed on the kernel ISO-TP path:
+session entry and reset readback through F186, real-time S3 expiry and TesterPresent,
+single- and multi-frame 0x22, and 0x19/01 and /0A. The complete result is in
+[the Phase 11 completion report](validation/phase-11-completion.md).
 
 - One session per ECU, `0x01` at start, shared by both physical UDS endpoints of the
   shipped profile. AUTOSAR ties the session to the connection that opened it

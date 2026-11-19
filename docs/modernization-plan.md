@@ -384,13 +384,13 @@ Reviewed 2026-11-17 before implementation:
 [decisions/0011-phase-11-uds-session-handling.md](decisions/0011-phase-11-uds-session-handling.md).
 Rulings given 2026-11-18, all as recommended; Q4 settled from AUTOSAR `[ECUC_Dcm_01240]`.
 
-**Implemented 2026-11-18 on branch `phase-11`, not complete.** By ruling Q1 the branch is not
+**Completed 2026-11-18 on branch `phase-11`.** By ruling Q1 the completed branch is not
 merged into `modernization` until V1.0 is tagged, because it changes the Phase 8b bench's
 unclaimed-service case. Delivered: session state machine, S3, TesterPresent timing,
 configurable P2/P2*, 0x11 session effects, 0x22 with F186, F190 and profile DIDs, 0x19/01
-and /0A. Closed: **DEV-17**, and **DEV-16**'s sub-function half. **Outstanding for the
-section 10 gate:** the integration suite, whose Phase 11 tests are written but were not run
-(no `CAN_ISOTP` on the implementing machine), and CI on the branch.
+and /0A. Closed: **DEV-17**, and **DEV-16**'s sub-function half. The full local suite,
+all 73 vcan/ISO-TP integration tests, `ruff`, `mypy`, and all four PR CI jobs passed. See
+[the Phase 11 completion report](validation/phase-11-completion.md).
 
 ### Phase 12 — UDS data and security (V1.2)
 
@@ -704,6 +704,7 @@ Phase 11 — on branch `phase-11`
 68. `feat(uds): 0x22 ReadDataByIdentifier with F186, F190 and profile DIDs`
 69. `fix(uds): 0x19 report types 0x01 and 0x0A (DEV-16)`
 70. `docs: Phase 11 conformance, deviations, plan and decision outcome`
+71. `docs(validation): complete Phase 11 with vcan and CI evidence`
 
 V1.1 and later commits follow the phase list above with numbering continued.
 

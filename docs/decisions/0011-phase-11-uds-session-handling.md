@@ -471,10 +471,9 @@ pins `1901`, `190a`, `1981`, `1901ff`, `190aff`, `198aff` and `1981ff` (commit 6
 unclaimed-service probe moved from `22 F1 90` to `28 01` in unit, integration and bench
 cases (commit 63). No default 0x10 byte changed.
 
-Not done here, and required by plan section 10 before the phase is complete:
-
-- **The integration suite was not run.** Its new Phase 11 tests (session readback over
-  0x22, multi-frame F190, several DIDs, real-time S3 with TesterPresent, 0x19/01 and /0A)
-  and the tests changed to take `mutating` need a host with `CAN_ISOTP`.
-- **CI on the branch** has not been observed.
-- The unit, characterization, `ruff` and `mypy` results are in the completion report.
+The plan section 10 gate was completed on 2026-11-18. The full local suite, all 73 tests
+in the isolated vcan/ISO-TP integration run, `ruff`, and `mypy` passed. PR CI run
+`44413364570` passed all four jobs on the implementation revision, including all 73
+integration tests on its CAN_ISOTP-capable runner. Results, skipped-test accounting, and
+acceptance-criterion traceability are in
+[the Phase 11 completion report](../validation/phase-11-completion.md).
