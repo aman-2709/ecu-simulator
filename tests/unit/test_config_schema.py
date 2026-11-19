@@ -387,6 +387,51 @@ def test_unknown_keys_are_rejected_rather_than_ignored():
     assert "transport" in message
 
 
+# --- deterministic fault rules (Phase 10) -------------------------------------------------
+
+
+def test_faults_are_off_by_default():
+    assert parse_profile(VALID).ecus["engine"].faults == []
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        {"effect": "drop", "sid": 0x01, "occurrences": [1, 3]},
+        {"effect": "delay", "delay_ms": 25, "addressing": "physical"},
+        {"effect": "nrc", "nrc": 0x22},
+        {"effect": "response_pending", "final_delay_ms": 50},
+        {"effect": "truncate", "remove": 3},
+        {"effect": "corrupt", "offset": 2, "xor": 0xFF},
+        {"effect": "offline", "occurrences": "always"},
+    ],
+)
+def test_each_fault_effect_has_a_valid_typed_profile_shape(fault):
+    config = parse_profile(profile(**{"ecus.engine.faults": [fault]}))
+    assert config.ecus["engine"].faults[0].effect == fault["effect"]
+
+
+@pytest.mark.parametrize(
+    "fault,match",
+    [
+        ({"effect": "random"}, "effect"),
+        ({"effect": "drop", "occurrences": []}, "occurrences"),
+        ({"effect": "drop", "occurrences": [1, 1]}, "duplicate"),
+        ({"effect": "drop", "occurrences": [0]}, "occurrences"),
+        ({"effect": "drop", "delay_ms": 1}, "delay_ms"),
+        ({"effect": "delay", "delay_ms": 0}, "delay_ms"),
+        ({"effect": "nrc", "nrc": 256}, "nrc"),
+        ({"effect": "response_pending", "final_delay_ms": 0}, "final_delay_ms"),
+        ({"effect": "truncate", "remove": 0}, "remove"),
+        ({"effect": "corrupt", "offset": -1, "xor": 1}, "offset"),
+        ({"effect": "corrupt", "offset": 0, "xor": 0}, "xor"),
+        ({"effect": "offline", "addressing": "broadcast"}, "addressing"),
+    ],
+)
+def test_invalid_fault_configuration_is_rejected_at_load(fault, match):
+    rejects(match, **{"ecus.engine.faults": [fault]})
+
+
 def test_an_unsupported_schema_version_is_rejected():
     rejects("version", version=2)
 

@@ -10,6 +10,7 @@ import logging
 import pytest
 
 from ecu_simulator.ecu import Ecu, Route, ServiceConflictError
+from ecu_simulator.faults import Drop, FaultPolicy, FaultRule, Offline
 from ecu_simulator.protocols.base import ServiceRequest
 from ecu_simulator.transport import DiagnosticRequest, DiagnosticResponse
 
@@ -100,6 +101,20 @@ def test_request_is_dispatched_by_sid_within_the_routes_protocols():
     assert ecu.handle(functional(b"\x01\x00"), functional_obd) == DiagnosticResponse(b"\x41\x00")
     assert [r.payload for r in uds.seen] == [b"\x10\x03"]
     assert obd.seen[0].functional is True and uds.seen[0].functional is False
+
+
+def test_drop_runs_the_protocol_but_offline_bypasses_it_in_the_ecu_pipeline():
+    dropped_protocol = FakeProtocol("obd", {0x01})
+    dropped = Ecu("engine", fault_policy=FaultPolicy([FaultRule(Drop())]))
+    dropped.register(dropped_protocol)
+    assert dropped.handle(physical(b"\x01\x0d"), route("obd")) is None
+    assert len(dropped_protocol.seen) == 1
+
+    offline_protocol = FakeProtocol("obd", {0x01})
+    offline = Ecu("engine", fault_policy=FaultPolicy([FaultRule(Offline())]))
+    offline.register(offline_protocol)
+    assert offline.handle(physical(b"\x01\x0d"), route("obd")) is None
+    assert offline_protocol.seen == []
 
 
 def test_a_protocol_the_route_does_not_enable_is_never_invoked():

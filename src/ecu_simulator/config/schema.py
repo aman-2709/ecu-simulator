@@ -294,6 +294,90 @@ class UdsConfig(Base):
         return value
 
 
+PositiveOccurrence = Annotated[int, Field(gt=0)]
+PositiveMilliseconds = Annotated[int, Field(gt=0)]
+PositiveCount = Annotated[int, Field(gt=0)]
+
+
+class FaultRuleBase(Base):
+    effect: str
+    sid: Byte | None = None
+    addressing: Literal["any", "physical", "functional"] = "any"
+    occurrences: list[PositiveOccurrence] | Literal["always"] = Field(default_factory=lambda: [1])
+
+    @field_validator("occurrences")
+    @classmethod
+    def occurrences_are_unique(cls, value: list[int] | str) -> list[int] | str:
+        if isinstance(value, list):
+            if not value:
+                raise ValueError("occurrences must not be empty")
+            duplicates = sorted({number for number in value if value.count(number) > 1})
+            if duplicates:
+                raise ValueError(f"duplicate occurrences {duplicates}")
+        return value
+
+    @property
+    def functional_filter(self) -> bool | None:
+        return {"any": None, "physical": False, "functional": True}[self.addressing]
+
+    @property
+    def occurrence_set(self) -> frozenset[int] | None:
+        return None if self.occurrences == "always" else frozenset(self.occurrences)
+
+
+class DropFaultConfig(FaultRuleBase):
+    effect: Literal["drop"]
+
+
+class DelayFaultConfig(FaultRuleBase):
+    effect: Literal["delay"]
+    delay_ms: PositiveMilliseconds
+
+
+class NrcFaultConfig(FaultRuleBase):
+    effect: Literal["nrc"]
+    nrc: Byte
+
+
+class ResponsePendingFaultConfig(FaultRuleBase):
+    effect: Literal["response_pending"]
+    final_delay_ms: PositiveMilliseconds
+
+
+class TruncateFaultConfig(FaultRuleBase):
+    effect: Literal["truncate"]
+    remove: PositiveCount
+
+
+class CorruptFaultConfig(FaultRuleBase):
+    effect: Literal["corrupt"]
+    offset: Annotated[int, Field(ge=0)]
+    xor: Byte
+
+    @field_validator("xor")
+    @classmethod
+    def xor_changes_a_byte(cls, value: int) -> int:
+        if value == 0:
+            raise ValueError("xor must be non-zero")
+        return value
+
+
+class OfflineFaultConfig(FaultRuleBase):
+    effect: Literal["offline"]
+
+
+FaultRuleConfig = Annotated[
+    DropFaultConfig
+    | DelayFaultConfig
+    | NrcFaultConfig
+    | ResponsePendingFaultConfig
+    | TruncateFaultConfig
+    | CorruptFaultConfig
+    | OfflineFaultConfig,
+    Field(discriminator="effect"),
+]
+
+
 class EcuConfig(Base):
     name: str = Field(min_length=1, max_length=ECU_NAME_MAX_LENGTH)
     endpoints: list[EndpointConfigModel] = Field(min_length=1)
@@ -305,6 +389,7 @@ class EcuConfig(Base):
     # number, not a string.
     dids: dict[str, str] = Field(default_factory=dict)
     uds: UdsConfig = Field(default_factory=UdsConfig)
+    faults: list[FaultRuleConfig] = Field(default_factory=list)
 
     @field_validator("dtcs")
     @classmethod

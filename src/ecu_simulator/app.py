@@ -21,9 +21,32 @@ from dataclasses import dataclass
 
 from ecu_simulator.clock import Clock, MonotonicClock
 from ecu_simulator.config import Profile
-from ecu_simulator.config.schema import EcuConfig, EndpointConfigModel
+from ecu_simulator.config.schema import (
+    CorruptFaultConfig,
+    DelayFaultConfig,
+    DropFaultConfig,
+    EcuConfig,
+    EndpointConfigModel,
+    FaultRuleConfig,
+    NrcFaultConfig,
+    OfflineFaultConfig,
+    ResponsePendingFaultConfig,
+    TruncateFaultConfig,
+)
 from ecu_simulator.dtc import DtcState, DtcStore
 from ecu_simulator.ecu import AddressRouter, Dispatcher, Ecu
+from ecu_simulator.faults import (
+    Corrupt,
+    Delay,
+    Drop,
+    FaultAction,
+    FaultPolicy,
+    FaultRule,
+    NrcOverride,
+    Offline,
+    ResponsePending,
+    Truncate,
+)
 from ecu_simulator.protocols.obd import ObdProtocol
 from ecu_simulator.protocols.uds import SessionTiming, UdsProtocol, UdsSession
 from ecu_simulator.protocols.uds.dids import SessionDidProvider, StaticDidProvider, VinDidProvider
@@ -154,6 +177,40 @@ def build_uds_session(ecu_config: EcuConfig, clock: Clock) -> UdsSession:
     )
 
 
+def build_fault_policy(ecu_config: EcuConfig) -> FaultPolicy:
+    """Build this ECU's ordered deterministic fault rules; absent means exact pass-through."""
+    rules: list[FaultRule] = []
+    for config in ecu_config.faults:
+        action = _fault_action(config)
+        rules.append(
+            FaultRule(
+                action,
+                sid=config.sid,
+                functional=config.functional_filter,
+                occurrences=config.occurrence_set,
+            )
+        )
+    return FaultPolicy(rules)
+
+
+def _fault_action(config: FaultRuleConfig) -> FaultAction:
+    if isinstance(config, DropFaultConfig):
+        return Drop()
+    if isinstance(config, DelayFaultConfig):
+        return Delay(config.delay_ms / 1000)
+    if isinstance(config, NrcFaultConfig):
+        return NrcOverride(config.nrc)
+    if isinstance(config, ResponsePendingFaultConfig):
+        return ResponsePending(config.final_delay_ms / 1000)
+    if isinstance(config, TruncateFaultConfig):
+        return Truncate(config.remove)
+    if isinstance(config, CorruptFaultConfig):
+        return Corrupt(config.offset, config.xor)
+    if isinstance(config, OfflineFaultConfig):
+        return Offline()
+    raise AssertionError(f"unhandled fault config {config!r}")
+
+
 def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None, clock: Clock | None = None) -> list[Ecu]:
     """One Ecu per profile entry, with the protocols its endpoints reference registered.
 
@@ -164,7 +221,11 @@ def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None, clock
     clock = MonotonicClock() if clock is None else clock
     ecus: list[Ecu] = []
     for ecu_name, ecu_config in config.profile.ecus.items():
-        ecu = Ecu(ecu_name, dtc_store=build_dtc_store(ecu_config))
+        ecu = Ecu(
+            ecu_name,
+            dtc_store=build_dtc_store(ecu_config),
+            fault_policy=build_fault_policy(ecu_config),
+        )
         # The UDS view of this ECU's DTC state, registered on the provider registry UDS
         # data services read through (plan rule 6). OBD reads the same store directly.
         ecu.dtc_providers.register(DtcStoreProvider(ecu_name, ecu.dtc_store))

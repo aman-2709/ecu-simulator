@@ -150,6 +150,25 @@ def test_each_profile_ecu_becomes_an_ecu_with_the_protocols_its_endpoints_refere
     assert engine.name == "engine"
     assert sorted(p.name for p in engine.protocols) == ["obd", "uds"]
     assert engine.service_ids[0x01] == "obd" and engine.service_ids[0x10] == "uds"
+    assert engine.fault_policy.rules == ()
+
+
+def test_profile_fault_rules_build_a_policy_on_only_their_ecu(tmp_path):
+    text = cli.default_profile_path().read_text().replace(
+        "    endpoints:\n",
+        "    faults:\n"
+        "      - effect: nrc\n"
+        "        sid: 0x22\n"
+        "        occurrences: [1]\n"
+        "        nrc: 0x22\n"
+        "    endpoints:\n",
+        1,
+    )
+    path = tmp_path / "fault.yaml"
+    path.write_text(text)
+    (engine,) = app.build_ecus(app.RuntimeConfig.build(load_profile(path)))
+    rule = engine.fault_policy.rules[0]
+    assert rule.sid == 0x22 and rule.occurrences == frozenset({1})
 
 
 def test_an_ecu_registers_only_the_protocols_its_endpoints_enable(tmp_path):

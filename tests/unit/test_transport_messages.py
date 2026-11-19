@@ -45,6 +45,14 @@ def test_response_validation():
         DiagnosticResponse(payload="7e00")  # type: ignore[arg-type]
 
 
+def test_response_can_carry_absolute_time_follow_ups():
+    final = DiagnosticResponse(b"\x50\x03", delay=0.05)
+    pending = DiagnosticResponse(b"\x7f\x10\x78", follow_ups=(final,))
+    assert pending.follow_ups == (final,)
+    with pytest.raises(TypeError, match="follow_ups"):
+        DiagnosticResponse(b"\x7e\x00", follow_ups=[final])  # type: ignore[arg-type]
+
+
 def test_addressing_mode_values_are_stable_strings():
     assert AddressingMode("normal_11bit") is AddressingMode.NORMAL_11BIT
     assert AddressingMode("normal_fixed_29bit") is AddressingMode.NORMAL_FIXED_29BIT
