@@ -433,6 +433,7 @@ async def run(
     transport_factory: Callable[..., IsoTpTransport] = IsoTpTransport,
     clock: Clock | None = None,
     api: ApiOptions | None = None,
+    ready: Callable[[], None] | None = None,
 ) -> None:
     """Start the transport, wait for ``stop`` (or SIGINT/SIGTERM), then shut down.
 
@@ -462,6 +463,8 @@ async def run(
                 installed.append(sig)
         logger.info("ecu-simulator ready on %s", config.interface)
         async with scenario_tick(runtime.sync, config.profile.scenario.tick):
+            if ready is not None:
+                ready()
             await stop.wait()
     finally:
         for sig in installed:
