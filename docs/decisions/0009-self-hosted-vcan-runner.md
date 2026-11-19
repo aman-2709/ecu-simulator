@@ -1,10 +1,12 @@
 # 0009 — A self-hosted runner for the vcan integration suite
 
-Status: **Proposed.** The owner agreed the direction on 2026-09-25: a separate private
-repository, a disposable VM for each run, and no result reporting and no required check to
-begin with (§4). The cloud provider and the budget are **still to be decided** (§7).
+Status: **Superseded without implementation, 2026-11-18.** The owner agreed the direction
+on 2026-09-25, but GitHub's hosted runner later gained CAN_ISOTP. PR run **44451201752**
+created vcan0, bound CAN_ISOTP, and passed all 68 integration tests, including the
+fake-ELM327 path. A self-hosted runner would add cost and credentials without closing any
+remaining requirement, so this proposal is no longer pursued.
 
-**Nothing in this record has been executed.** No runner is registered, no VM or cloud
+**Nothing in this record was executed.** No runner is registered, no VM or cloud
 account exists, no workflow file has changed, no repository has been created and no
 credential has been issued. The owner performs or approves every step in §5.
 

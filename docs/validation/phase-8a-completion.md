@@ -1,19 +1,13 @@
 # Phase 8a — Completion Report
 
-> **Revalidation in progress, 2026-11-18.** GitHub's current hosted runner now exposes
-> CAN_ISOTP, unlike the runner recorded below. On branch `phase-8a-ci-closure`, the full
-> local suite passed with 1029 passed and 3 expected failures, the isolated vcan suite
-> passed all 68 tests (including the fake-ELM327 acceptance path), and Ruff and mypy were
-> clean. The conditional status remains until this branch's PR CI run confirms the same
-> end-to-end path on the hosted runner.
-
-**Result: accepted conditionally by the owner on 2026-09-25, with one Definition-of-Done
-requirement outstanding: the fake-ELM327 end-to-end harness has not executed in an
-ordinary CI run (§4.2).** That requirement is **not** a passed criterion. It stays open
-until the harness executes in CI. Every acceptance criterion assigned to Phase 8a (1–7,
-14, 15 of [decisions/0007 §9](../decisions/0007-phase-8-hardware-validation.md)) is met
-and verified without hardware. The harness's evidence is local only: **1026 passed, 2
-xfailed** in the full suite and **68 integration passed**, on this host. CI skipped it.
+**Result: complete 2026-11-18.** The owner accepted Phase 8a conditionally on 2026-09-25
+with one Definition-of-Done line open: the fake-ELM327 end-to-end harness had not run in
+CI. GitHub's hosted runner later moved to a kernel with CAN_ISOTP. PR run
+**44451201752** on `fb4d823` bound CAN_ISOTP and passed all **68 integration tests**, which
+include the 15 fake-ELM327 acceptance cases. The same tree passed locally with **1029
+passed, 3 expected failures**, all 68 isolated integration tests, Ruff, and mypy. The
+conditional line is closed; the original 2026-09-25 evidence and limitation remain below
+as the historical record.
 
 > **Criteria 8 to 13 are not verified. No Phase 8b bench run has taken place. No
 > conformance row gained `hardware validated`. Phase 8b is open and V1.0 is not tagged.**
@@ -26,6 +20,7 @@ xfailed** in the full suite and **68 integration passed**, on this host. CI skip
 | Phase 8a commits | `f607d73` … `8f17b9e` (§8) |
 | Automated result, this host | **1026 passed, 2 xfailed**, 0 XPASS; integration **68 passed**; ruff and mypy clean |
 | CI | run **36191480055** on `8f17b9e`, **success**, 4/4 jobs |
+| Closure CI | run **44451201752** on `fb4d823`, **success**, 4/4 jobs; **68 integration passed** |
 | What CI actually executed | **937** of the 1028 tests in the default collection. **89 were skipped** (§5) |
 | `hardware validated` after this phase | **no row reads `yes`**. 71 status rows: 48 `no`, 23 `n/a` (§6) |
 | `standards validated` after this phase | **no row reads `yes`**. 51 `no`, 20 `n/a` |
@@ -119,7 +114,7 @@ both strict.
 | A default `pytest` collects the same number as before | **Met in substance**: `tests/hardware` contributes 0; every change in the count is a new test in the ordinary suites |
 | `tests/hardware` refuses without an explicit opt-in naming both devices, and refuses `vcan*` | **Met** (criterion 4) |
 | ELM327 parser tested byte for byte against ELM327DSJ exchanges | **Met**: 27 tests, including both worked CAN captures on page 45 |
-| **ELM327 harness exercised end to end against a fake dongle on vcan in an ordinary CI run** | **Not met as written.** See §4.2 |
+| **ELM327 harness exercised end to end against a fake dongle on vcan in an ordinary CI run** | **Met 2026-11-18.** Hosted run 44451201752 passed all 68 integration tests, including the 15 fake-ELM327 cases (§4.2) |
 | Completion report states no row gained `hardware validated` and V1.0 is not tagged | **Met** (this document) |
 
 ### 4.1 CI
@@ -134,7 +129,7 @@ Run **36191480055**, `head_sha` `8f17b9e9c4a804f26180691cb7d31e0b54e551f4`, conc
 | Unit and characterization tests (Python 3.13) | success | same |
 | Probe vcan and can_isotp on the runner | success | `vcan integration tests: 1 passed, 67 skipped \| skip reason: kernel cannot create CAN_ISOTP sockets`; runner kernel `6.17.0-1022-azure`; ISO-TP experiments skipped, socket cannot bind |
 
-### 4.2 The DoD line CI cannot meet
+### 4.2 The original CI limitation, closed 2026-11-18
 
 The harness runs end to end against a fake dongle on vcan **on this host**: 15 simulated
 cases and 17 physical-backend cases, §2. **It does not run in CI**, and a green CI run is
@@ -150,7 +145,18 @@ this line recorded as unmet, or waits for 0009.
 explicitly outstanding. The runner proposal in 0009 stays a separate matter. Accepting the
 phase does not verify any Phase 8b criterion and does not tag V1.0.
 
-## 5. Tests CI does not execute, and why
+**Closure, 2026-11-18:** GitHub's `ubuntu-latest` runner had moved to Ubuntu 26.04.1 with
+kernel `7.0.0-1019-azure`, where `CONFIG_CAN_ISOTP=m` and `can-isotp.ko` are present. Run
+**44451201752** created vcan0, bound a CAN_ISOTP socket, and reported `68 passed in 30.49s`.
+The 15 simulated-ELM327 cases were collected because the probe job installs
+`.[dev,hardware]`. The self-hosted proposal in decision 0009 is therefore unnecessary.
+This closes only Phase 8a; Phase 8b still requires the physical bench.
+
+## 5. Tests the original CI run did not execute
+
+This table records run 36191480055. Closure run 44451201752 executed every integration
+test in its dedicated probe job; the ordinary Python-version jobs continue to skip the
+kernel- and hardware-extra-dependent modules by design.
 
 | Job | Tests | Reason |
 |---|---|---|
