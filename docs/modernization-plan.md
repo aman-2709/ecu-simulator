@@ -369,6 +369,11 @@ hardware-validation status. **V1.0 is not tagged without 8b's evidence.**
 `profiles/multi_ecu.yaml`, functional fan-out integration test, `list-ecus`, 29-bit
 normal fixed addressing with its functional test.
 
+Reviewed 2026-11-18 before implementation:
+[decisions/0012-phase-9-multi-ecu.md](decisions/0012-phase-9-multi-ecu.md). Functional
+fan-out uses one kernel socket delivery per endpoint and keeps the dispatcher callback
+single-response; normal-fixed identifiers are validated from their canonical layout.
+
 ### Phase 10 — Fault injection (V1.1)
 
 `FaultPolicy` in the ECU pipeline: drop, delay, NRC override, response pending then final,
