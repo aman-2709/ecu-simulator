@@ -336,18 +336,14 @@ to end against a fake dongle on vcan in an ordinary CI run, so no part of it fir
 on bench day; and the completion report states plainly that **no conformance row gained
 `hardware validated` and V1.0 is not tagged.**
 
-**Accepted conditionally 2026-09-25**, at `8f17b9e`, with **one DoD requirement
-outstanding**: the fake-ELM327 end-to-end harness has not executed in an ordinary CI run.
-It is recorded as outstanding, not as passed. Report:
-[validation/phase-8a-completion.md](validation/phase-8a-completion.md). Criteria 1–7, 14
-and 15 are met without hardware. **The fake-dongle harness runs end to end on a vcan host
-but not in an ordinary CI run.** GitHub-hosted runners boot the `linux-azure` kernel,
-which has no `can_isotp`, so CI skips it. That is the unmet line, and
-[decisions/0009](decisions/0009-self-hosted-vcan-runner.md) proposes the runner that would
-meet it. During Task 12 acceptance the physical backend was found unable to pass on
-hardware and was fixed (`6fd5132`). The phone-driven LX Bluetooth evidence of 2026-09-23
-and 2026-09-25 is interoperability evidence, not acceptance. Criteria 8–13 remain Phase
-8b.
+**Completed 2026-11-18.** The owner accepted Phase 8a conditionally on 2026-09-25 at
+`8f17b9e`; its one open DoD line was the fake-ELM327 end-to-end harness not running in CI.
+GitHub's hosted runner later gained CAN_ISOTP. PR run **44451201752** created vcan0, bound
+CAN_ISOTP, and passed all 68 integration tests, including the fake-ELM327 cases. Report:
+[validation/phase-8a-completion.md](validation/phase-8a-completion.md). The self-hosted
+runner proposal in [decision 0009](decisions/0009-self-hosted-vcan-runner.md) is no longer
+needed. No physical evidence follows from this: criteria 8–13 remain Phase 8b, no row
+gained `hardware validated`, and V1.0 is not tagged.
 
 #### Phase 8b — Physical CAN and ELM327 acceptance (V1.0 gate)
 

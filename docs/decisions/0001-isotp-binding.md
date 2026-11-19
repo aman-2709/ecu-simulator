@@ -160,6 +160,12 @@ GitHub-hosted runners with this kernel; they run locally, and in CI they skip wi
 recorded reason until a runner kernel ships `can_isotp` or a self-hosted runner exists.
 Kernel-dependent tests are not made required.
 
+**Hosted-runner update, 2026-11-18.** The evidence above remains true for kernel
+`6.17.0-1022-azure`, but `ubuntu-latest` later moved to Ubuntu 26.04.1 with kernel
+`7.0.0-1019-azure`, where `CONFIG_CAN_ISOTP=m` and `can-isotp.ko` are present. PR run
+`44451201752` created vcan0, bound CAN_ISOTP, and passed all 68 integration tests. Decision
+0009's self-hosted runner is therefore superseded without implementation.
+
 ## Decision
 
 Use Candidate B, `can-isotp` 2.x `isotp.socket`, to drive the kernel `CAN_ISOTP`
