@@ -33,7 +33,8 @@ from ecu_simulator.protocols.base import (
 )
 from ecu_simulator.protocols.uds.dtc import AVAILABILITY_MASK
 from ecu_simulator.protocols.uds.providers import DidRegistry, DtcRegistry
-from ecu_simulator.protocols.uds.session import UdsSession
+from ecu_simulator.protocols.uds.security import MOCK_KEY, UdsSecurity
+from ecu_simulator.protocols.uds.session import DEFAULT_SESSION, UdsSession
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,8 @@ ECU_RESET = 0x11
 CLEAR_DIAGNOSTIC_INFORMATION = 0x14
 READ_DTC_INFORMATION = 0x19
 READ_DATA_BY_IDENTIFIER = 0x22
+SECURITY_ACCESS = 0x27
+WRITE_DATA_BY_IDENTIFIER = 0x2E
 TESTER_PRESENT = 0x3E
 
 SERVICE_IDS = frozenset(
@@ -51,11 +54,18 @@ SERVICE_IDS = frozenset(
         CLEAR_DIAGNOSTIC_INFORMATION,
         READ_DTC_INFORMATION,
         READ_DATA_BY_IDENTIFIER,
+        SECURITY_ACCESS,
+        WRITE_DATA_BY_IDENTIFIER,
         TESTER_PRESENT,
     }
 )
 
 NRC_RESPONSE_TOO_LONG = 0x14
+NRC_REQUEST_SEQUENCE_ERROR = 0x24
+NRC_SECURITY_ACCESS_DENIED = 0x33
+NRC_INVALID_KEY = 0x35
+NRC_SUB_FUNCTION_NOT_SUPPORTED_IN_ACTIVE_SESSION = 0x7E
+NRC_SERVICE_NOT_SUPPORTED_IN_ACTIVE_SESSION = 0x7F
 # The largest message a classical ISO-TP first frame's 12-bit length field expresses, and
 # so the largest every ISO-TP receiver can take. The kernel sends more only with the
 # escaped first frame of ISO 15765-2:2016. docs/decisions/0011, "The 0x22 length limit".
@@ -102,7 +112,7 @@ CLEAR_REQUEST_LENGTH = 4
 # for 19 82 FF before this rule existed; declaring it otherwise would keep those bytes by
 # recording something untrue about the service.
 SUB_FUNCTION_SERVICES = frozenset(
-    {DIAGNOSTIC_SESSION_CONTROL, ECU_RESET, READ_DTC_INFORMATION, TESTER_PRESENT}
+    {DIAGNOSTIC_SESSION_CONTROL, ECU_RESET, READ_DTC_INFORMATION, SECURITY_ACCESS, TESTER_PRESENT}
 )
 
 # Bit 7 of the sub-function byte: "do not send me a positive response".
@@ -118,7 +128,7 @@ TESTER_PRESENT_REQUEST_LENGTH = 2
 
 
 class UdsProtocol:
-    """Serves UDS 0x10, 0x11, 0x14, 0x19, 0x22 and 0x3E for one ECU."""
+    """Serves this simulator's UDS application-layer subset for one ECU."""
 
     name = "uds"
     service_ids = SERVICE_IDS
@@ -129,6 +139,7 @@ class UdsProtocol:
         dtc_providers: DtcRegistry | None = None,
         dtcs: DtcStore | None = None,
         session: UdsSession | None = None,
+        security: UdsSecurity | None = None,
         dids: DidRegistry | None = None,
     ) -> None:
         # Reads go through the provider registry (plan rule 6); the clear goes straight to
@@ -136,6 +147,7 @@ class UdsProtocol:
         self.dtc_providers = dtc_providers if dtc_providers is not None else DtcRegistry()
         self.dtcs = dtcs if dtcs is not None else DtcStore()
         self.session = session if session is not None else UdsSession()
+        self.security = security if security is not None else UdsSecurity()
         self.dids = dids if dids is not None else DidRegistry()
 
     def handle(self, request: ServiceRequest) -> bytes | None:
@@ -165,7 +177,10 @@ class UdsProtocol:
         unread; the rule above is taken from three named AUTOSAR requirements, which is
         documentary evidence and not a conformance claim. See docs/decisions/0006, row W2.
         """
+        active_before_expiry = self.session.active
         self.session.expire_if_idle()
+        if active_before_expiry != self.session.active:
+            self.security.lock("S3 returned the ECU to the default session")
         payload = request.payload
         sid = payload[0]
         suppress = False
@@ -182,6 +197,8 @@ class UdsProtocol:
         return response
 
     def _serve(self, sid: int, payload: bytes) -> bytes | None:
+        if sid in {SECURITY_ACCESS, WRITE_DATA_BY_IDENTIFIER} and self.session.active == DEFAULT_SESSION:
+            return self._nrc(sid, NRC_SERVICE_NOT_SUPPORTED_IN_ACTIVE_SESSION)
         if sid == DIAGNOSTIC_SESSION_CONTROL:
             return self._session_control(payload)
         if sid == ECU_RESET:
@@ -192,6 +209,10 @@ class UdsProtocol:
             return self._read_dtc_information(payload)
         if sid == READ_DATA_BY_IDENTIFIER:
             return self._read_data_by_identifier(payload)
+        if sid == SECURITY_ACCESS:
+            return self._security_access(payload)
+        if sid == WRITE_DATA_BY_IDENTIFIER:
+            return self._write_data_by_identifier(payload)
         if sid == TESTER_PRESENT:
             return self._tester_present(payload)
         return None  # pragma: no cover - the ECU only routes claimed SIDs here
@@ -215,7 +236,12 @@ class UdsProtocol:
             return self._nrc(DIAGNOSTIC_SESSION_CONTROL, NRC_SUB_FUNCTION_NOT_SUPPORTED)
         response = bytes([positive_response_sid(DIAGNOSTIC_SESSION_CONTROL), session])
         response += self.session.timing(session).record()
+        previous_session = self.session.active
         self.session.enter(session)
+        if previous_session != DEFAULT_SESSION:
+            self.security.lock(
+                f"diagnostic session transition 0x{previous_session:02X} -> 0x{session:02X}"
+            )
         return response
 
     # -- 0x11 ------------------------------------------------------------------------------------
@@ -242,6 +268,7 @@ class UdsProtocol:
         response = bytes([positive_response_sid(ECU_RESET), reset_type])
         if reset_type in RESETS_THAT_RESTART:
             self.session.return_to_default(f"ECUReset 0x{reset_type:02X}")
+            self.security.lock(f"ECUReset 0x{reset_type:02X}")
         if reset_type == RESET_ENABLE_RAPID_POWER_SHUT_DOWN:
             return response + bytes([RESET_POWER_DOWN_TIME])
         return response
@@ -354,6 +381,50 @@ class UdsProtocol:
         if len(response) > MAX_RESPONSE_LENGTH:
             return self._nrc(READ_DATA_BY_IDENTIFIER, NRC_RESPONSE_TOO_LONG)
         return bytes(response)
+
+    # -- 0x27 ------------------------------------------------------------------------------------
+
+    def _security_access(self, payload: bytes) -> bytes:
+        """Run the public fixed-XOR mock handshake documented in Decision 0014."""
+        if len(payload) < 2:
+            return self._nrc(SECURITY_ACCESS, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
+        subfunction = payload[1]
+        level = self.security.level_for_subfunction(subfunction)
+        if level is None:
+            return self._nrc(SECURITY_ACCESS, NRC_SUB_FUNCTION_NOT_SUPPORTED)
+        if self.session.active not in self.security.sessions:
+            return self._nrc(SECURITY_ACCESS, NRC_SUB_FUNCTION_NOT_SUPPORTED_IN_ACTIVE_SESSION)
+        if subfunction == self.security.seed_subfunction:
+            if len(payload) != 2:
+                return self._nrc(SECURITY_ACCESS, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
+            return bytes([positive_response_sid(SECURITY_ACCESS), subfunction]) + self.security.request_seed(level)
+        if len(payload) != 2 + len(MOCK_KEY):
+            return self._nrc(SECURITY_ACCESS, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
+        accepted = self.security.submit_key(level, payload[2:])
+        if accepted is None:
+            return self._nrc(SECURITY_ACCESS, NRC_REQUEST_SEQUENCE_ERROR)
+        if not accepted:
+            return self._nrc(SECURITY_ACCESS, NRC_INVALID_KEY)
+        return bytes([positive_response_sid(SECURITY_ACCESS), subfunction])
+
+    # -- 0x2E ------------------------------------------------------------------------------------
+
+    def _write_data_by_identifier(self, payload: bytes) -> bytes:
+        """Write one configured fixed-length DID after its session and security checks."""
+        if len(payload) < 4:
+            return self._nrc(WRITE_DATA_BY_IDENTIFIER, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
+        did_bytes = payload[1:3]
+        did = int.from_bytes(did_bytes, "big")
+        access = self.dids.write_access(did)
+        if access is None or self.session.active not in access.sessions:
+            return self._nrc(WRITE_DATA_BY_IDENTIFIER, NRC_REQUEST_OUT_OF_RANGE)
+        data = payload[3:]
+        if len(data) != access.length:
+            return self._nrc(WRITE_DATA_BY_IDENTIFIER, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
+        if access.security_level is not None and self.security.active_level != access.security_level:
+            return self._nrc(WRITE_DATA_BY_IDENTIFIER, NRC_SECURITY_ACCESS_DENIED)
+        self.dids.write(did, data)
+        return bytes([positive_response_sid(WRITE_DATA_BY_IDENTIFIER)]) + did_bytes
 
     # -- 0x3E ------------------------------------------------------------------------------------
 

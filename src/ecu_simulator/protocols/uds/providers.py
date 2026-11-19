@@ -55,6 +55,39 @@ class DidProvider(Protocol):
     def read(self, did: int) -> bytes | None: ...
 
 
+@dataclass(frozen=True, slots=True)
+class DidWriteAccess:
+    """Fixed-length write permission attached to one DID."""
+
+    sessions: frozenset[int]
+    security_level: int | None
+    length: int
+
+    def __post_init__(self) -> None:
+        if not self.sessions:
+            raise ValueError("writable DID sessions must not be empty")
+        if any(not isinstance(session, int) or not 1 <= session <= 0x7E for session in self.sessions):
+            raise ValueError(f"writable DID sessions must contain session bytes, got {sorted(self.sessions)!r}")
+        if self.security_level is not None and (
+            not isinstance(self.security_level, int) or not 1 <= self.security_level <= 0x3F
+        ):
+            raise ValueError(f"security_level must be null or in 1..63, got {self.security_level!r}")
+        if not isinstance(self.length, int) or self.length <= 0:
+            raise ValueError(f"writable DID length must be positive, got {self.length!r}")
+
+
+@runtime_checkable
+class WritableDidProvider(Protocol):
+    """The optional write half of a DID provider."""
+
+    @property
+    def writable_data_identifiers(self) -> frozenset[int]: ...
+
+    def write_access(self, did: int) -> DidWriteAccess | None: ...
+
+    def write(self, did: int, data: bytes) -> None: ...
+
+
 @runtime_checkable
 class DtcProvider(Protocol):
     """Contributes DTC records; several providers may coexist on one ECU."""
@@ -105,6 +138,18 @@ class DidRegistry:
     def read(self, did: int) -> bytes | None:
         provider = self._by_did.get(did)
         return provider.read(did) if provider is not None else None
+
+    def write_access(self, did: int) -> DidWriteAccess | None:
+        provider = self._by_did.get(did)
+        if provider is None or not isinstance(provider, WritableDidProvider):
+            return None
+        return provider.write_access(did)
+
+    def write(self, did: int, data: bytes) -> None:
+        provider = self._by_did.get(did)
+        if provider is None or not isinstance(provider, WritableDidProvider):
+            raise KeyError(f"DID 0x{did:04X} is not writable")
+        provider.write(did, data)
 
 
 class DtcRegistry:

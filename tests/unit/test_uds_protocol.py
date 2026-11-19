@@ -39,10 +39,10 @@ def test_the_protocol_claims_the_services_the_legacy_table_claimed():
 
 
 def test_the_protocol_also_claims_tester_present():
-    # Phase 7, DEV-23: 0x3E was answered by the route's unsupported-service policy until
-    # that phase; Phase 11 added 0x22. Nothing the legacy table claimed was dropped.
+    # Phase 7 added 0x3E, Phase 11 added 0x22, and Phase 12 added 0x27/0x2E. Nothing the
+    # legacy table claimed was dropped.
     proto, _ = protocol()
-    assert proto.service_ids == frozenset({0x10, 0x11, 0x14, 0x19, 0x22, 0x3E})
+    assert proto.service_ids == frozenset({0x10, 0x11, 0x14, 0x19, 0x22, 0x27, 0x2E, 0x3E})
 
 
 # --- 0x10 DiagnosticSessionControl ------------------------------------------------------------
@@ -205,7 +205,7 @@ def test_0x14_on_an_empty_store_still_acknowledges():
 # --- unsupported and malformed -------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("request_hex", ["2801", "2701", "3101"])
+@pytest.mark.parametrize("request_hex", ["2801", "8301", "3101"])
 def test_services_this_protocol_does_not_claim_are_not_answered(request_hex):
     # The ECU's route policy answers these, not the protocol; it must not claim them.
     proto, _ = protocol()
@@ -273,7 +273,7 @@ def test_0x3e_does_not_disturb_the_dtc_store():
 def test_the_services_declared_to_have_a_subfunction_are_listed_explicitly():
     from ecu_simulator.protocols.uds.protocol import SUB_FUNCTION_SERVICES
 
-    assert SUB_FUNCTION_SERVICES == frozenset({0x10, 0x11, 0x19, 0x3E})
+    assert SUB_FUNCTION_SERVICES == frozenset({0x10, 0x11, 0x19, 0x27, 0x3E})
 
 
 @pytest.mark.parametrize("session", ["01", "02", "03", "04"])
@@ -362,7 +362,7 @@ def test_0x19_is_declared_as_a_subfunction_service():
     assert READ_DTC_INFORMATION in SUB_FUNCTION_SERVICES
     # 0x22 joined 0x14 in Phase 11: ReadDataByIdentifier has no sub-function, and a DID's
     # high byte, such as the F1 of F190, has bit 7 set exactly where the bit would be.
-    assert SERVICE_IDS - SUB_FUNCTION_SERVICES == frozenset({0x14, 0x22})
+    assert SERVICE_IDS - SUB_FUNCTION_SERVICES == frozenset({0x14, 0x22, 0x2E})
 
 
 def test_0x19_02_is_unchanged_by_any_of_this():
@@ -698,6 +698,154 @@ def test_0x22_restarts_s3_like_any_request():
         assert send(proto, "22f186") == "62f18603"
     clock.advance(5.5)
     assert send(proto, "22f186") == "62f18601", "S3 passed: the read itself sees the default session"
+
+
+# --- 0x27 SecurityAccess and 0x2E WriteDataByIdentifier (Phase 12) -------------------------------
+
+
+def data_security_protocol():
+    from ecu_simulator.protocols.uds import DidRegistry, UdsSecurity, UdsSession
+    from ecu_simulator.protocols.uds.dids import StaticDidProvider
+    from ecu_simulator.protocols.uds.providers import DidWriteAccess
+
+    session = UdsSession()
+    security = UdsSecurity(level=1, sessions={0x03})
+    dids = DidRegistry()
+    dids.register(
+        StaticDidProvider(
+            "profile",
+            {0xF1A0: b"\x01\x02", 0xF1A2: b"\xff"},
+            writable={
+                0xF1A0: DidWriteAccess(frozenset({0x03}), 1, 2),
+                0xF1A2: DidWriteAccess(frozenset({0x03}), None, 1),
+            },
+        )
+    )
+    return UdsProtocol(session=session, security=security, dids=dids)
+
+
+def unlock(proto):
+    assert send(proto, "2701") == "670112345678"
+    assert send(proto, "2702b791f3dd") == "6702"
+
+
+@pytest.mark.parametrize("request_hex, expected", [("2701", "7f277f"), ("2ef1a00102", "7f2e7f")])
+def test_data_and_security_services_are_not_available_in_the_default_session(request_hex, expected):
+    assert send(data_security_protocol(), request_hex) == expected
+
+
+def test_the_security_service_and_its_level_have_separate_session_gates():
+    proto = data_security_protocol()
+    send(proto, "1002")
+    assert send(proto, "2701") == "7f277e"
+    assert send(proto, "2ef1a00102") == "7f2e31", "the DID is not writable in programming session"
+
+
+def test_security_access_seed_key_sequence_and_active_zero_seed():
+    proto = data_security_protocol()
+    send(proto, "1003")
+    assert send(proto, "2702b791f3dd") == "7f2724"
+    assert send(proto, "2701") == "670112345678"
+    assert send(proto, "270200000000") == "7f2735"
+    assert send(proto, "2702b791f3dd") == "6702"
+    assert proto.security.active_level == 1
+    assert send(proto, "2701") == "670100000000"
+
+
+@pytest.mark.parametrize(
+    "request_hex, expected",
+    [
+        ("27", "7f2713"),
+        ("2703", "7f2712"),
+        ("270100", "7f2713"),
+        ("2702", "7f2713"),
+        ("2702b791f3", "7f2713"),
+        ("2702b791f3dd00", "7f2713"),
+    ],
+)
+def test_security_access_refuses_unsupported_subfunctions_and_bad_lengths(request_hex, expected):
+    proto = data_security_protocol()
+    send(proto, "1003")
+    assert send(proto, request_hex) == expected
+
+
+def test_security_access_honours_positive_response_suppression():
+    proto = data_security_protocol()
+    send(proto, "1003")
+    assert send(proto, "2781") is None
+    assert send(proto, "2702b791f3dd") == "6702", "the suppressed seed request still established the challenge"
+
+
+def test_write_requires_security_then_reads_back_the_new_fixed_length_value():
+    proto = data_security_protocol()
+    send(proto, "1003")
+    assert send(proto, "2ef1a00a0b") == "7f2e33"
+    unlock(proto)
+    assert send(proto, "2ef1a00a0b") == "6ef1a0"
+    assert send(proto, "22f1a0") == "62f1a00a0b"
+
+
+def test_a_did_may_be_explicitly_writable_without_a_security_level():
+    proto = data_security_protocol()
+    send(proto, "1003")
+    assert send(proto, "2ef1a20a") == "6ef1a2"
+    assert send(proto, "22f1a2") == "62f1a20a"
+
+
+@pytest.mark.parametrize(
+    "request_hex, expected",
+    [
+        ("2e", "7f2e13"),
+        ("2ef1", "7f2e13"),
+        ("2ef1a0", "7f2e13"),
+        ("2ef1a000", "7f2e13"),
+        ("2ef1a0000102", "7f2e13"),
+        ("2ebeef01", "7f2e31"),
+    ],
+)
+def test_write_refuses_bad_lengths_and_unserved_dids(request_hex, expected):
+    proto = data_security_protocol()
+    send(proto, "1003")
+    assert send(proto, request_hex) == expected
+
+
+def test_session_transition_and_restart_reset_security_but_not_the_written_data():
+    proto = data_security_protocol()
+    send(proto, "1003")
+    unlock(proto)
+    assert send(proto, "2ef1a00a0b") == "6ef1a0"
+    assert send(proto, "1003") == "5003001e0bb8", "re-entering a non-default session locks security"
+    assert send(proto, "2ef1a00102") == "7f2e33"
+    unlock(proto)
+    assert send(proto, "1101") == "5101"
+    assert proto.security.active_level == 0
+    send(proto, "1003")
+    assert send(proto, "22f1a0") == "62f1a00a0b"
+
+
+def test_s3_expiry_locks_security_before_the_expiring_request_is_served():
+    from ecu_simulator.clock import SimulatedClock
+    from ecu_simulator.protocols.uds import DidRegistry, UdsSecurity, UdsSession
+    from ecu_simulator.protocols.uds.dids import StaticDidProvider
+    from ecu_simulator.protocols.uds.providers import DidWriteAccess
+
+    clock = SimulatedClock()
+    session = UdsSession(clock=clock)
+    security = UdsSecurity(level=1, sessions={3})
+    dids = DidRegistry()
+    dids.register(
+        StaticDidProvider(
+            "profile",
+            {0xF1A0: b"\x01"},
+            writable={0xF1A0: DidWriteAccess(frozenset({3}), 1, 1)},
+        )
+    )
+    proto = UdsProtocol(session=session, security=security, dids=dids)
+    send(proto, "1003")
+    unlock(proto)
+    clock.advance(5.001)
+    assert send(proto, "2701") == "7f277f"
+    assert security.active_level == 0
 
 
 # --- 0x19 report types 0x01 and 0x0A (Phase 11, DEV-16) ------------------------------------------

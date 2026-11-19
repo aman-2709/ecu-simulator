@@ -6,10 +6,12 @@ from ecu_simulator.ecu import Ecu
 from ecu_simulator.protocols.uds.providers import (
     DidProvider,
     DidRegistry,
+    DidWriteAccess,
     DtcProvider,
     DtcRecord,
     DtcRegistry,
     ProviderConflictError,
+    WritableDidProvider,
 )
 
 
@@ -86,6 +88,70 @@ def test_structural_provider_checks():
     assert isinstance(StaticDids("a", {1: b""}), DidProvider)
     assert isinstance(StaticDtcs("d", []), DtcProvider)
     assert not isinstance(object(), DidProvider)
+
+
+def test_registry_writes_only_through_a_provider_that_explicitly_claims_write_access():
+    from ecu_simulator.protocols.uds.dids import StaticDidProvider
+
+    access = DidWriteAccess(sessions=frozenset({0x03}), security_level=1, length=2)
+    provider = StaticDidProvider("coding", {0xF1A0: b"\x01\x02"}, writable={0xF1A0: access})
+    registry = DidRegistry()
+    registry.register(provider)
+    assert isinstance(provider, WritableDidProvider)
+    assert registry.write_access(0xF1A0) == access
+    registry.write(0xF1A0, b"\x03\x04")
+    assert registry.read(0xF1A0) == b"\x03\x04"
+    assert registry.write_access(0xF190) is None
+
+
+def test_a_writable_provider_may_not_claim_an_unowned_or_wrong_length_did():
+    from ecu_simulator.protocols.uds.dids import StaticDidProvider
+
+    with pytest.raises(ValueError, match="not in its data identifiers"):
+        StaticDidProvider(
+            "coding",
+            {0xF1A0: b"\x01\x02"},
+            writable={0xF1A1: DidWriteAccess(frozenset({3}), 1, 2)},
+        )
+    with pytest.raises(ValueError, match="length"):
+        StaticDidProvider(
+            "coding",
+            {0xF1A0: b"\x01\x02"},
+            writable={0xF1A0: DidWriteAccess(frozenset({3}), 1, 1)},
+        )
+
+
+@pytest.mark.parametrize(
+    "encoding, value, expected",
+    [
+        ("boolean", True, "01"),
+        ("uint8", 42, "2a"),
+        ("uint16_be", 800, "0320"),
+        ("uint32_be", 100_000, "000186a0"),
+        ("int16_be", -250, "ff06"),
+        ("float32_be", 80.0, "42a00000"),
+    ],
+)
+def test_signal_did_provider_uses_the_declared_wire_encoding(encoding, value, expected):
+    from ecu_simulator.protocols.uds.dids import SignalDid, SignalDidProvider
+    from ecu_simulator.vehicle import CommonState, IcePowertrain, VehicleState
+
+    vehicle = VehicleState(CommonState(vin="VIN", speed=42), IcePowertrain())
+    vehicle.set("vehicle.speed", value)
+    provider = SignalDidProvider("signals", vehicle, {0xF1A1: SignalDid("vehicle.speed", encoding)})
+    assert provider.read(0xF1A1).hex() == expected
+
+
+def test_signal_dids_are_read_only():
+    from ecu_simulator.protocols.uds.dids import SignalDid, SignalDidProvider
+    from ecu_simulator.vehicle import CommonState, IcePowertrain, VehicleState
+
+    vehicle = VehicleState(CommonState(vin="VIN"), IcePowertrain())
+    provider = SignalDidProvider("signals", vehicle, {0xF1A1: SignalDid("engine.rpm", "uint16_be")})
+    registry = DidRegistry()
+    registry.register(provider)
+    assert not isinstance(provider, WritableDidProvider)
+    assert registry.write_access(0xF1A1) is None
 
 
 # --- DtcRegistry ----------------------------------------------------------------------------
