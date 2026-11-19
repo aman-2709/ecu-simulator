@@ -4,7 +4,7 @@
 - Branch: `phase-9` (stacked on `phase-11`)
 - Date: 2026-11-18
 - Hardware required: no
-- Status: implementation and local acceptance complete; final PR CI pending
+- Status: complete
 
 ## Delivered
 
@@ -40,7 +40,7 @@ All commands below ran on the implementation commit on 2026-11-18.
 | `validate-config` against packaged multi-ECU profile | Valid, two ECUs, eight endpoints; exit 0 |
 | Ruff | Passed |
 | mypy | Passed in 47 source files |
-| Pull-request CI | Pending final branch run |
+| Pull-request CI | Run [44453296819](https://github.com/aman-2709/ecu-simulator/actions/runs/44453296819): all four jobs passed; hosted kernel job ran **75 integration tests** |
 
 The three strict expected failures are unchanged and explicitly tied to DEV-26, DEV-11,
 and DEV-03. Phase 9 neither hides nor broadens them.
@@ -54,7 +54,10 @@ and DEV-03. Phase 9 neither hides nor broadens them.
 | `list-ecus` | Public CLI acceptance test and direct command | Met |
 | 29-bit normal-fixed addressing | Schema, socket, app assembly, and real functional wire test | Met |
 | Full regression suite | 1,148 passed; only the same three strict xfails | Met |
-| Required PR CI | Final run pending | Pending |
+| Required PR CI | Python 3.12, Python 3.13, lint/type, and hosted kernel ISO-TP jobs passed | Met |
+
+The closing documentation commit was then rechecked by the final branch CI run recorded
+in the pull request. No acceptance result depends on physical CAN hardware.
 
 ## Boundary kept
 

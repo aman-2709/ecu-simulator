@@ -374,9 +374,10 @@ Reviewed 2026-11-18 before implementation:
 fan-out uses one kernel socket delivery per endpoint and keeps the dispatcher callback
 single-response; normal-fixed identifiers are validated from their canonical layout.
 
-Implementation and local acceptance completed 2026-11-18 on branch `phase-9`; final PR
-CI is pending. The packaged two-ECU profile, `list-ecus`, 11-bit fan-out, and normal-fixed
-29-bit fan-out all pass locally through real `vcan`/kernel `CAN_ISOTP`. See
+**Completed 2026-11-18 on branch `phase-9`.** The packaged two-ECU profile, `list-ecus`,
+11-bit fan-out, and normal-fixed 29-bit fan-out pass locally and on the hosted
+`vcan`/kernel `CAN_ISOTP` runner. The full local suite, 75 isolated integration tests,
+Ruff, mypy, and all four PR CI jobs passed. See
 [the Phase 9 completion report](validation/phase-9-completion.md).
 
 ### Phase 10 — Fault injection (V1.1)
