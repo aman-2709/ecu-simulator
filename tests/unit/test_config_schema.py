@@ -124,6 +124,20 @@ def test_the_shipped_multi_ecu_profile_loads():
     assert len(config.ecus["transmission"].endpoints) == 4
 
 
+def test_the_shipped_fault_demo_profile_loads_all_effects():
+    path = default_profile_path().with_name("faults_demo.yaml")
+    config = load_profile(path)
+    assert [fault.effect for fault in config.ecus["engine"].faults] == [
+        "drop",
+        "delay",
+        "nrc",
+        "response_pending",
+        "truncate",
+        "corrupt",
+        "offline",
+    ]
+
+
 # --- vehicle ---------------------------------------------------------------------------------
 
 

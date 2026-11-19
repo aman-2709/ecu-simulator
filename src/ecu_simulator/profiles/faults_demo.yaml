@@ -1,0 +1,85 @@
+# Phase 10 demonstration profile. Every rule fires once on the first matching physical
+# request; a second request follows the ordinary ECU path. Release-default profiles have
+# no `faults` section and therefore no fault behavior.
+
+version: 1
+
+transport:
+  interface: vcan0
+
+vehicle:
+  vin: TESTVIN0123456789
+  type: ice
+  speed: 42
+  ambient_temp: 20
+  battery_voltage: 14.1
+  obd_standard: 1
+  engine:
+    rpm: 800
+    coolant_temp: 90
+    intake_temp: 25
+    engine_load: 22.0
+    throttle: 14.0
+    maf: 3.5
+    map: 33
+    timing_advance: 10.0
+    short_fuel_trim: 0.0
+    long_fuel_trim: 1.5
+    runtime: 600
+    fuel_level: 50
+    fuel_type: 1
+
+ecus:
+  engine:
+    name: FAULT_DEMO_ECU
+    dtcs: [B1477, P0001]
+    faults:
+      - effect: drop
+        sid: 0x01
+        addressing: physical
+        occurrences: [1]
+      - effect: delay
+        sid: 0x3E
+        addressing: physical
+        occurrences: [1]
+        delay_ms: 150
+      - effect: nrc
+        sid: 0x14
+        addressing: physical
+        occurrences: [1]
+        nrc: 0x22
+      - effect: response_pending
+        sid: 0x10
+        addressing: physical
+        occurrences: [1]
+        final_delay_ms: 100
+      - effect: truncate
+        sid: 0x09
+        addressing: physical
+        occurrences: [1]
+        remove: 5
+      - effect: corrupt
+        sid: 0x03
+        addressing: physical
+        occurrences: [1]
+        offset: 0
+        xor: 0x01
+      - effect: offline
+        sid: 0x11
+        addressing: physical
+        occurrences: [1]
+    endpoints:
+      - name: functional
+        rx: 0x7DF
+        tx: 0x7E8
+        addressing: functional
+        protocols: [obd]
+        answer_unsupported: false
+        tx_padding: true
+        reply_via: physical
+      - name: physical
+        rx: 0x7E0
+        tx: 0x7E8
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: true
