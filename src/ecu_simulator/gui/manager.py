@@ -11,6 +11,9 @@ from ecu_simulator.app import endpoint_name
 from ecu_simulator.config import EndpointConfigModel, load_profile_text
 
 
+from ecu_simulator.gui.tester import exchange
+
+
 class RunConflict(ValueError):
     """The requested operation conflicts with the active run."""
 
@@ -29,6 +32,7 @@ class Manager:
         self.endpoints: dict[str, EndpointConfigModel] = {}
         self.process: asyncio.subprocess.Process | None = None
         self.watcher: asyncio.Task[None] | None = None
+        self.exchange: asyncio.Task[dict[str, Any]] | None = None
         self.cleanup: asyncio.Task[None] | None = None
 
     def status(self) -> dict[str, Any]:
@@ -90,6 +94,8 @@ class Manager:
             reason = str(error) or type(error).__name__
         await self._terminate(proc)
         if self.id == run_id and self.state != "Stopping":
+            self.state = "Stopping"
+            await self._cancel_exchange()
             self.state, self.error = "Failed", reason
 
     def _require_current(self, run_id: str) -> None:
@@ -108,8 +114,42 @@ class Manager:
         await asyncio.shield(self.cleanup)
         return self.status()
 
+    async def send(self, run_id: str, endpoint: str, hex_text: str) -> dict[str, Any]:
+        async with self.lock:
+            self._require_current(run_id)
+            if self.state != "Running":
+                raise RunConflict("The ECU must be running")
+            if self.exchange is not None:
+                raise RunConflict("Another tester exchange is in progress")
+            if endpoint not in self.endpoints:
+                raise ValueError("Select a physical UDS endpoint from the running profile")
+            try:
+                payload = bytes.fromhex(hex_text)
+            except ValueError:
+                raise ValueError("Enter complete hexadecimal byte pairs") from None
+            if not payload:
+                raise ValueError("Enter request bytes")
+            task = asyncio.create_task(exchange(self.interface, self.endpoints[endpoint], payload))
+            self.exchange = task
+        try:
+            result = await task
+            return {**result, "id": run_id, "request": payload.hex(" ").upper()}
+        except asyncio.CancelledError:
+            if task.cancelled():
+                raise RunConflict("Exchange cancelled") from None
+            raise
+        finally:
+            if self.exchange is task:
+                self.exchange = None
+
+    async def _cancel_exchange(self) -> None:
+        if self.exchange is not None:
+            self.exchange.cancel()
+            await asyncio.gather(self.exchange, return_exceptions=True)
+
     async def _stop(self) -> None:
         assert self.process and self.watcher
+        await self._cancel_exchange()
         await self._terminate(self.process)
         await self.watcher
         self.state = "Stopped"

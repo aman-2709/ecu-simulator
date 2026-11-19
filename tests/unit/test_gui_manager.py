@@ -52,3 +52,32 @@ async def test_failed_bind_names_interface_then_allows_retry():
     second = await manager.start(text)
     assert second["id"] != first["id"]
     await manager.stop(second["id"])
+
+
+@pytest.mark.asyncio
+async def test_one_exchange_and_stale_actions_leave_current_child_alone(monkeypatch):
+    started = asyncio.Event()
+    calls = []
+    async def exchange(interface, endpoint, payload):
+        calls.append(payload)
+        started.set()
+        await asyncio.Event().wait()
+    monkeypatch.setattr("ecu_simulator.gui.manager.exchange", exchange)
+    manager = Manager(child_command=(sys.executable, "-c", "import time; print('{\u0022ready\u0022:true}',flush=True); time.sleep(30)"))
+    text = default_profile_path().read_text()
+    first = await manager.start(text)
+    await manager.stop(first["id"])
+    current = await manager.start(text)
+    await until(manager, "Running")
+    send = asyncio.create_task(manager.send(current["id"], "engine.uds_physical", "3E 80"))
+    await started.wait()
+    with pytest.raises(RunConflict, match="progress"):
+        await manager.send(current["id"], "engine.uds_physical", "19 02 FF")
+    with pytest.raises(RunConflict, match="stale"):
+        await manager.send(first["id"], "engine.uds_physical", "19 02 FF")
+    with pytest.raises(RunConflict, match="stale"):
+        await manager.stop(first["id"])
+    assert not send.done() and calls == [bytes.fromhex("3E 80")]
+    await manager.stop(current["id"])
+    with pytest.raises(RunConflict, match="cancelled"):
+        await send
