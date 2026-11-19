@@ -1,0 +1,60 @@
+{
+  "engine": {
+    "endpoints": [
+      {
+        "name": "engine.obd_functional",
+        "rx_id": "0x7df",
+        "tx_id": "0x7e8",
+        "functional": true,
+        "receive": true,
+        "reply_via": "engine.obd_physical",
+        "padding": true
+      },
+      {
+        "name": "engine.obd_physical",
+        "rx_id": "0x7e0",
+        "tx_id": "0x7e8",
+        "functional": false,
+        "receive": true,
+        "reply_via": null,
+        "padding": true
+      },
+      {
+        "name": "engine.uds_physical",
+        "rx_id": "0x7e1",
+        "tx_id": "0x7e9",
+        "functional": false,
+        "receive": true,
+        "reply_via": null,
+        "padding": false
+      }
+    ],
+    "protocols": [
+      {
+        "name": "obd",
+        "sids": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "name": "uds",
+        "sids": [
+          16,
+          17,
+          20,
+          25,
+          62
+        ]
+      }
+    ]
+  }
+}

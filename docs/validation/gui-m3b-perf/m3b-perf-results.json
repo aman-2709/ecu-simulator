@@ -1,0 +1,2416 @@
+{
+ "chrome": "Chrome/151.0.7922.173",
+ "categories": [
+  "toplevel",
+  "devtools.timeline",
+  "v8"
+ ],
+ "seconds": 60.0,
+ "rows_cap": 2000,
+ "traffic_rate": "4",
+ "profile": "docs/examples/ice_drive_cycle_stepped.yaml",
+ "runs": [
+  {
+   "label": "1440x900-baseline-a",
+   "viewport": [
+    1440,
+    900
+   ],
+   "condition": "baseline-a",
+   "seconds": 60.08,
+   "traffic": {
+    "on": true,
+    "sent_start": 40,
+    "sent_end": 269,
+    "requests_per_s": 3.81
+   },
+   "exchanges_per_s": 3.81,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 2068,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 2068 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 2297,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 2297 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 60.063,
+    "ScriptDuration": 6.347,
+    "LayoutDuration": 32.286,
+    "RecalcStyleDuration": 9.254
+   },
+   "trace_file": "perf-1440x900-baseline-a.json.gz",
+   "trace_bytes": 5879468,
+   "trace_sha256": "59cf25a09f149ac16a3c9237ccb58bee79aac625b553b300af923c07706e20fc",
+   "breakdown": {
+    "trace": "perf-1440x900-baseline-a.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.08,
+    "measured_s": 60.08055301592685,
+    "top_level": "RunTask",
+    "top_level_count": 13349,
+    "busy_ms": 59989.3,
+    "busy_percent": 99.8,
+    "split_ms": {
+     "js": 8679.0,
+     "style": 9254.5,
+     "layout": 29938.5,
+     "paint": 11059.9,
+     "composite": 101.6,
+     "other": 955.9
+    },
+    "split_sum_ms": 59989.3,
+    "gc_ms": 2502.5,
+    "prepaint_ms": 8952.6,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 876.6,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 25.2,
+     "Receive mojo message": 25.2,
+     "HitTest": 17.2,
+     "SimpleWatcher::OnHandleReady": 9.3,
+     "Major concurrent marking rescheduled": 1.4
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 59698.2,
+     "Layout": 203.5,
+     "UpdateLayoutTree": 62.4,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 25.2
+    },
+    "frames": 186,
+    "paint_events": 372,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 135,
+      "sum_ms": 45770.0,
+      "mean_ms": 339.04,
+      "median_ms": 325.11,
+      "max_ms": 570.45,
+      "split_ms": {
+       "js": 8312.5,
+       "style": 9116.0,
+       "layout": 28336.9,
+       "paint": 0.0,
+       "composite": 2.2,
+       "other": 2.3
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 126,
+      "sum_ms": 90.5,
+      "mean_ms": 0.72,
+      "median_ms": 0.66,
+      "max_ms": 1.2,
+      "split_ms": {
+       "js": 90.0,
+       "style": 0.5,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 696,
+      "sum_ms": 970.1,
+      "mean_ms": 1.39,
+      "median_ms": 0.15,
+      "max_ms": 11.56,
+      "split_ms": {
+       "js": 257.8,
+       "style": 44.3,
+       "layout": 667.5,
+       "paint": 0.0,
+       "composite": 0.6,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 84,
+      "sum_ms": 2.4,
+      "mean_ms": 0.03,
+      "median_ms": 0.03,
+      "max_ms": 0.05,
+      "split_ms": {
+       "js": 2.4,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "1440x900-log-paused",
+   "viewport": [
+    1440,
+    900
+   ],
+   "condition": "log-paused",
+   "seconds": 60.19,
+   "traffic": {
+    "on": true,
+    "sent_start": 319,
+    "sent_end": 546,
+    "requests_per_s": 3.77
+   },
+   "exchanges_per_s": 3.8,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 1983,
+    "exchange_rows": 1982,
+    "last_seq": 2346,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": true,
+    "log_count": "1982 exchanges, last seq 2346 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 1754,
+    "exchange_rows": 1753,
+    "last_seq": 2575,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": true,
+    "log_count": "1753 exchanges, last seq 2575 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 60.177,
+    "ScriptDuration": 6.443,
+    "LayoutDuration": 31.675,
+    "RecalcStyleDuration": 9.105
+   },
+   "trace_file": "perf-1440x900-log-paused.json.gz",
+   "trace_bytes": 5843694,
+   "trace_sha256": "ccc047a08e108d81d0b98724d704a73a8a853d0faf0dee1f0cf2de4d3ccf7f27",
+   "breakdown": {
+    "trace": "perf-1440x900-log-paused.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.2,
+    "measured_s": 60.19434136408381,
+    "top_level": "RunTask",
+    "top_level_count": 13857,
+    "busy_ms": 60150.8,
+    "busy_percent": 99.9,
+    "split_ms": {
+     "js": 8916.6,
+     "style": 9105.7,
+     "layout": 29244.4,
+     "paint": 11743.5,
+     "composite": 71.7,
+     "other": 1068.9
+    },
+    "split_sum_ms": 60150.8,
+    "gc_ms": 2632.8,
+    "prepaint_ms": 9592.6,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 988.6,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 25.2,
+     "Receive mojo message": 24.9,
+     "HitTest": 18.3,
+     "SimpleWatcher::OnHandleReady": 9.4,
+     "Major concurrent marking rescheduled": 1.4
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 60125.2,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 25.2,
+     "UpdateLayoutTree": 0.4
+    },
+    "frames": 197,
+    "paint_events": 394,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 139,
+      "sum_ms": 45403.4,
+      "mean_ms": 326.64,
+      "median_ms": 309.25,
+      "max_ms": 531.18,
+      "split_ms": {
+       "js": 8541.2,
+       "style": 8999.6,
+       "layout": 27855.7,
+       "paint": 0.0,
+       "composite": 4.5,
+       "other": 2.4
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 126,
+      "sum_ms": 93.1,
+      "mean_ms": 0.74,
+      "median_ms": 0.67,
+      "max_ms": 1.19,
+      "split_ms": {
+       "js": 92.7,
+       "style": 0.4,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 699,
+      "sum_ms": 942.5,
+      "mean_ms": 1.35,
+      "median_ms": 0.15,
+      "max_ms": 10.81,
+      "split_ms": {
+       "js": 257.6,
+       "style": 77.9,
+       "layout": 607.1,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 138,
+      "sum_ms": 4.1,
+      "mean_ms": 0.03,
+      "median_ms": 0.03,
+      "max_ms": 0.06,
+      "split_ms": {
+       "js": 4.1,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "1440x900-graphs-hidden",
+   "viewport": [
+    1440,
+    900
+   ],
+   "condition": "graphs-hidden",
+   "seconds": 60.13,
+   "traffic": {
+    "on": true,
+    "sent_start": 603,
+    "sent_end": 831,
+    "requests_per_s": 3.79
+   },
+   "exchanges_per_s": 3.81,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 2630,
+    "health": "live",
+    "graphs_hidden": true,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 2630 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 2859,
+    "health": "live",
+    "graphs_hidden": true,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 2859 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 60.115,
+    "ScriptDuration": 6.154,
+    "LayoutDuration": 31.915,
+    "RecalcStyleDuration": 9.309
+   },
+   "trace_file": "perf-1440x900-graphs-hidden.json.gz",
+   "trace_bytes": 4388078,
+   "trace_sha256": "a877976c529e3b5fc28e259aa2e9302ee2ed93b0fa3bb1fb2b2e0e711b37f39b",
+   "breakdown": {
+    "trace": "perf-1440x900-graphs-hidden.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.13,
+    "measured_s": 60.128427643096074,
+    "top_level": "RunTask",
+    "top_level_count": 9666,
+    "busy_ms": 60090.5,
+    "busy_percent": 99.9,
+    "split_ms": {
+     "js": 8587.2,
+     "style": 9310.0,
+     "layout": 29506.9,
+     "paint": 11646.1,
+     "composite": 121.6,
+     "other": 918.8
+    },
+    "split_sum_ms": 60090.5,
+    "gc_ms": 2594.4,
+    "prepaint_ms": 9211.2,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 844.8,
+     "Receive mojo message": 24.5,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 24.4,
+     "HitTest": 13.3,
+     "SimpleWatcher::OnHandleReady": 9.3,
+     "Major concurrent marking rescheduled": 1.5
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 60066.1,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 24.4,
+     "UpdateLayoutTree": 0.1
+    },
+    "frames": 254,
+    "paint_events": 508,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 138,
+      "sum_ms": 46311.3,
+      "mean_ms": 335.59,
+      "median_ms": 320.4,
+      "max_ms": 553.74,
+      "split_ms": {
+       "js": 8326.2,
+       "style": 9244.0,
+       "layout": 28736.8,
+       "paint": 0.0,
+       "composite": 1.9,
+       "other": 2.5
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 0,
+      "sum_ms": 0.0,
+      "mean_ms": null,
+      "median_ms": null,
+      "max_ms": null,
+      "split_ms": {
+       "js": 0.0,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 702,
+      "sum_ms": 376.9,
+      "mean_ms": 0.54,
+      "median_ms": 0.14,
+      "max_ms": 13.18,
+      "split_ms": {
+       "js": 244.2,
+       "style": 37.6,
+       "layout": 95.1,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 75,
+      "sum_ms": 2.7,
+      "mean_ms": 0.04,
+      "median_ms": 0.03,
+      "max_ms": 0.07,
+      "split_ms": {
+       "js": 2.7,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "1440x900-no-traffic",
+   "viewport": [
+    1440,
+    900
+   ],
+   "condition": "no-traffic",
+   "seconds": 60.07,
+   "traffic": {
+    "on": false,
+    "sent_start": 855,
+    "sent_end": 855,
+    "requests_per_s": 0.0
+   },
+   "exchanges_per_s": 0.0,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 2885,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 2885 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 2885,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 2885 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 49.977,
+    "ScriptDuration": 0.204,
+    "LayoutDuration": 0.821,
+    "RecalcStyleDuration": 0.387
+   },
+   "trace_file": "perf-1440x900-no-traffic.json.gz",
+   "trace_bytes": 4738905,
+   "trace_sha256": "456da9de4689ffe08c428f1fecd07f96bc46eac174a18ca5bd62df29147422ab",
+   "breakdown": {
+    "trace": "perf-1440x900-no-traffic.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.07,
+    "measured_s": 60.065356463892385,
+    "top_level": "RunTask",
+    "top_level_count": 46738,
+    "busy_ms": 49886.5,
+    "busy_percent": 83.0,
+    "split_ms": {
+     "js": 525.0,
+     "style": 378.9,
+     "layout": 816.5,
+     "paint": 46010.9,
+     "composite": 736.5,
+     "other": 1418.8
+    },
+    "split_sum_ms": 49886.5,
+    "gc_ms": 303.3,
+    "prepaint_ms": 31467.0,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 1304.5,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 57.7,
+     "HitTest": 25.1,
+     "Receive mojo message": 16.3,
+     "SimpleWatcher::OnHandleReady": 14.7,
+     "Major concurrent marking rescheduled": 0.2
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 49824.9,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 57.7,
+     "Paint": 3.7,
+     "Layerize": 0.2
+    },
+    "frames": 3518,
+    "paint_events": 7036,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 0,
+      "sum_ms": 0.0,
+      "mean_ms": null,
+      "median_ms": null,
+      "max_ms": null,
+      "split_ms": {
+       "js": 0.0,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 120,
+      "sum_ms": 76.6,
+      "mean_ms": 0.64,
+      "median_ms": 0.62,
+      "max_ms": 1.62,
+      "split_ms": {
+       "js": 64.3,
+       "style": 12.3,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 359,
+      "sum_ms": 281.1,
+      "mean_ms": 0.78,
+      "median_ms": 0.21,
+      "max_ms": 7.64,
+      "split_ms": {
+       "js": 147.0,
+       "style": 18.6,
+       "layout": 115.5,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 0,
+      "sum_ms": 0.0,
+      "mean_ms": null,
+      "median_ms": null,
+      "max_ms": null,
+      "split_ms": {
+       "js": 0.0,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "1440x900-no-traffic-reduced-motion",
+   "viewport": [
+    1440,
+    900
+   ],
+   "condition": "no-traffic-reduced-motion",
+   "seconds": 60.06,
+   "traffic": {
+    "on": false,
+    "sent_start": 19,
+    "sent_end": 19,
+    "requests_per_s": 0.0
+   },
+   "exchanges_per_s": 0.0,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 2904,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 2904 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 2904,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 2904 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 7.241,
+    "ScriptDuration": 0.21,
+    "LayoutDuration": 0.9,
+    "RecalcStyleDuration": 0.05
+   },
+   "trace_file": "perf-1440x900-no-traffic-reduced-motion.json.gz",
+   "trace_bytes": 1708648,
+   "trace_sha256": "bb155db5f293af337aa5106759e9ee89ddfa2c2c57cf99acac7dbb887e1c4d3b",
+   "breakdown": {
+    "trace": "perf-1440x900-no-traffic-reduced-motion.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.06,
+    "measured_s": 60.060521591221914,
+    "top_level": "RunTask",
+    "top_level_count": 37585,
+    "busy_ms": 7174.7,
+    "busy_percent": 11.9,
+    "split_ms": {
+     "js": 552.9,
+     "style": 50.2,
+     "layout": 895.0,
+     "paint": 5063.3,
+     "composite": 85.6,
+     "other": 527.6
+    },
+    "split_sum_ms": 7174.7,
+    "gc_ms": 319.4,
+    "prepaint_ms": 3405.2,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 417.8,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 47.7,
+     "HitTest": 27.9,
+     "Receive mojo message": 20.2,
+     "SimpleWatcher::OnHandleReady": 13.7,
+     "Major concurrent marking rescheduled": 0.1
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 7126.9,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 47.7
+    },
+    "frames": 389,
+    "paint_events": 778,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 0,
+      "sum_ms": 0.0,
+      "mean_ms": null,
+      "median_ms": null,
+      "max_ms": null,
+      "split_ms": {
+       "js": 0.0,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 120,
+      "sum_ms": 63.9,
+      "mean_ms": 0.53,
+      "median_ms": 0.5,
+      "max_ms": 0.91,
+      "split_ms": {
+       "js": 63.9,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 360,
+      "sum_ms": 248.5,
+      "mean_ms": 0.69,
+      "median_ms": 0.25,
+      "max_ms": 11.12,
+      "split_ms": {
+       "js": 158.4,
+       "style": 10.8,
+       "layout": 79.3,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 0,
+      "sum_ms": 0.0,
+      "mean_ms": null,
+      "median_ms": null,
+      "max_ms": null,
+      "split_ms": {
+       "js": 0.0,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "1440x900-baseline-b",
+   "viewport": [
+    1440,
+    900
+   ],
+   "condition": "baseline-b",
+   "seconds": 60.21,
+   "traffic": {
+    "on": true,
+    "sent_start": 31,
+    "sent_end": 260,
+    "requests_per_s": 3.8
+   },
+   "exchanges_per_s": 3.79,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 2935,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 2935 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 3163,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 3163 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 60.211,
+    "ScriptDuration": 6.215,
+    "LayoutDuration": 31.384,
+    "RecalcStyleDuration": 9.625
+   },
+   "trace_file": "perf-1440x900-baseline-b.json.gz",
+   "trace_bytes": 4507041,
+   "trace_sha256": "45d5b4a38a00c581c2d3048a5e1e87008d878a3177a1f71f3f8c0f2dc3bb3446",
+   "breakdown": {
+    "trace": "perf-1440x900-baseline-b.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.23,
+    "measured_s": 60.21384492679499,
+    "top_level": "RunTask",
+    "top_level_count": 10342,
+    "busy_ms": 60186.5,
+    "busy_percent": 99.9,
+    "split_ms": {
+     "js": 8535.5,
+     "style": 9625.9,
+     "layout": 29099.4,
+     "paint": 11810.3,
+     "composite": 111.5,
+     "other": 1004.1
+    },
+    "split_sum_ms": 60186.5,
+    "gc_ms": 2475.8,
+    "prepaint_ms": 9364.6,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 921.3,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 26.2,
+     "HitTest": 22.5,
+     "Receive mojo message": 21.6,
+     "SimpleWatcher::OnHandleReady": 9.8,
+     "Major concurrent marking rescheduled": 1.7
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 60149.4,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 26.2,
+     "Paint": 9.1,
+     "FireAnimationFrame": 0.9
+    },
+    "frames": 266,
+    "paint_events": 532,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 144,
+      "sum_ms": 46075.7,
+      "mean_ms": 319.97,
+      "median_ms": 301.04,
+      "max_ms": 575.44,
+      "split_ms": {
+       "js": 8195.4,
+       "style": 9559.3,
+       "layout": 28316.3,
+       "paint": 0.0,
+       "composite": 2.0,
+       "other": 2.6
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 157,
+      "sum_ms": 85.7,
+      "mean_ms": 0.55,
+      "median_ms": 0.5,
+      "max_ms": 0.96,
+      "split_ms": {
+       "js": 85.7,
+       "style": 0.1,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 696,
+      "sum_ms": 347.8,
+      "mean_ms": 0.5,
+      "median_ms": 0.13,
+      "max_ms": 8.46,
+      "split_ms": {
+       "js": 233.6,
+       "style": 35.7,
+       "layout": 78.5,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 94,
+      "sum_ms": 3.3,
+      "mean_ms": 0.03,
+      "median_ms": 0.03,
+      "max_ms": 0.06,
+      "split_ms": {
+       "js": 3.3,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "1440x900-log-cleared",
+   "viewport": [
+    1440,
+    900
+   ],
+   "condition": "log-cleared",
+   "seconds": 60.06,
+   "traffic": {
+    "on": true,
+    "sent_start": 295,
+    "sent_end": 522,
+    "requests_per_s": 3.78
+   },
+   "exchanges_per_s": 3.78,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 12,
+    "exchange_rows": 12,
+    "last_seq": 3199,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "12 exchanges, last seq 3199 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 239,
+    "exchange_rows": 239,
+    "last_seq": 3426,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "239 exchanges, last seq 3426 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 19.292,
+    "ScriptDuration": 0.969,
+    "LayoutDuration": 3.094,
+    "RecalcStyleDuration": 1.287
+   },
+   "trace_file": "perf-1440x900-log-cleared.json.gz",
+   "trace_bytes": 5742242,
+   "trace_sha256": "dfa8a9b6c3baf739d094983d69b63bf61c19d9946c3b2b93f6ae77b9972bbc28",
+   "breakdown": {
+    "trace": "perf-1440x900-log-cleared.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.06,
+    "measured_s": 60.06030314601958,
+    "top_level": "RunTask",
+    "top_level_count": 64057,
+    "busy_ms": 19167.9,
+    "busy_percent": 31.9,
+    "split_ms": {
+     "js": 1186.5,
+     "style": 1296.3,
+     "layout": 3011.4,
+     "paint": 11273.2,
+     "composite": 668.8,
+     "other": 1731.6
+    },
+    "split_sum_ms": 19167.9,
+    "gc_ms": 182.4,
+    "prepaint_ms": 3507.6,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 1592.1,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 52.8,
+     "HitTest": 43.0,
+     "Receive mojo message": 26.6,
+     "SimpleWatcher::OnHandleReady": 16.1,
+     "Major concurrent marking rescheduled": 0.5
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 19115.1,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 52.8
+    },
+    "frames": 3527,
+    "paint_events": 7018,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 227,
+      "sum_ms": 4440.2,
+      "mean_ms": 19.56,
+      "median_ms": 20.3,
+      "max_ms": 46.32,
+      "split_ms": {
+       "js": 808.2,
+       "style": 952.8,
+       "layout": 2675.1,
+       "paint": 0.0,
+       "composite": 3.6,
+       "other": 0.5
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 233,
+      "sum_ms": 152.7,
+      "mean_ms": 0.66,
+      "median_ms": 0.64,
+      "max_ms": 1.21,
+      "split_ms": {
+       "js": 122.0,
+       "style": 30.7,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 699,
+      "sum_ms": 159.9,
+      "mean_ms": 0.23,
+      "median_ms": 0.13,
+      "max_ms": 3.46,
+      "split_ms": {
+       "js": 130.3,
+       "style": 17.4,
+       "layout": 12.2,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 227,
+      "sum_ms": 7.5,
+      "mean_ms": 0.03,
+      "median_ms": 0.03,
+      "max_ms": 0.45,
+      "split_ms": {
+       "js": 7.5,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "1440x900-log-cleared-reduced-motion",
+   "viewport": [
+    1440,
+    900
+   ],
+   "condition": "log-cleared-reduced-motion",
+   "seconds": 60.06,
+   "traffic": {
+    "on": true,
+    "sent_start": 40,
+    "sent_end": 267,
+    "requests_per_s": 3.78
+   },
+   "exchanges_per_s": 3.78,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 14,
+    "exchange_rows": 14,
+    "last_seq": 3496,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "14 exchanges, last seq 3496 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 241,
+    "exchange_rows": 241,
+    "last_seq": 3723,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "241 exchanges, last seq 3723 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 10.394,
+    "ScriptDuration": 0.98,
+    "LayoutDuration": 3.276,
+    "RecalcStyleDuration": 1.361
+   },
+   "trace_file": "perf-1440x900-log-cleared-reduced-motion.json.gz",
+   "trace_bytes": 3474253,
+   "trace_sha256": "21862b4629a42b328804b438374c72bb0094eb7f29204ed39555801a26873499",
+   "breakdown": {
+    "trace": "perf-1440x900-log-cleared-reduced-motion.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.06,
+    "measured_s": 60.06054539815523,
+    "top_level": "RunTask",
+    "top_level_count": 51892,
+    "busy_ms": 10298.6,
+    "busy_percent": 17.1,
+    "split_ms": {
+     "js": 1228.0,
+     "style": 1362.2,
+     "layout": 3184.2,
+     "paint": 3316.0,
+     "composite": 167.1,
+     "other": 1041.1
+    },
+    "split_sum_ms": 10298.6,
+    "gc_ms": 198.5,
+    "prepaint_ms": 1372.9,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 899.0,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 45.9,
+     "HitTest": 44.9,
+     "Receive mojo message": 31.9,
+     "SimpleWatcher::OnHandleReady": 18.4,
+     "Major concurrent marking rescheduled": 0.5
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 10252.7,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 45.9
+    },
+    "frames": 883,
+    "paint_events": 1400,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 227,
+      "sum_ms": 4883.5,
+      "mean_ms": 21.51,
+      "median_ms": 20.76,
+      "max_ms": 50.25,
+      "split_ms": {
+       "js": 814.6,
+       "style": 1295.1,
+       "layout": 2769.6,
+       "paint": 0.0,
+       "composite": 3.6,
+       "other": 0.5
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 234,
+      "sum_ms": 113.7,
+      "mean_ms": 0.49,
+      "median_ms": 0.45,
+      "max_ms": 1.51,
+      "split_ms": {
+       "js": 111.7,
+       "style": 2.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 700,
+      "sum_ms": 182.4,
+      "mean_ms": 0.26,
+      "median_ms": 0.2,
+      "max_ms": 2.52,
+      "split_ms": {
+       "js": 150.1,
+       "style": 18.2,
+       "layout": 14.2,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 227,
+      "sum_ms": 7.5,
+      "mean_ms": 0.03,
+      "median_ms": 0.03,
+      "max_ms": 0.08,
+      "split_ms": {
+       "js": 7.5,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "390x844-baseline-a",
+   "viewport": [
+    390,
+    844
+   ],
+   "condition": "baseline-a",
+   "seconds": 60.29,
+   "traffic": {
+    "on": true,
+    "sent_start": 42,
+    "sent_end": 271,
+    "requests_per_s": 3.8
+   },
+   "exchanges_per_s": 3.77,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 3781,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 3781 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 4008,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 4008 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 60.274,
+    "ScriptDuration": 5.904,
+    "LayoutDuration": 33.759,
+    "RecalcStyleDuration": 10.233
+   },
+   "trace_file": "perf-390x844-baseline-a.json.gz",
+   "trace_bytes": 3296930,
+   "trace_sha256": "399351ada7fe5f75863e3294422d34ea892d90dd7055bfd828e5f47745c140fb",
+   "breakdown": {
+    "trace": "perf-390x844-baseline-a.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.29,
+    "measured_s": 60.28617291804403,
+    "top_level": "RunTask",
+    "top_level_count": 7295,
+    "busy_ms": 60255.1,
+    "busy_percent": 99.9,
+    "split_ms": {
+     "js": 7649.1,
+     "style": 10234.0,
+     "layout": 32043.5,
+     "paint": 9425.9,
+     "composite": 94.0,
+     "other": 808.7
+    },
+    "split_sum_ms": 60255.1,
+    "gc_ms": 1926.8,
+    "prepaint_ms": 8564.5,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 744.5,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 22.0,
+     "Receive mojo message": 20.4,
+     "HitTest": 10.5,
+     "SimpleWatcher::OnHandleReady": 9.0,
+     "Major concurrent marking rescheduled": 1.4
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 60228.1,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 22.0,
+     "Paint": 4.0,
+     "FireAnimationFrame": 0.7
+    },
+    "frames": 228,
+    "paint_events": 456,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 121,
+      "sum_ms": 48648.1,
+      "mean_ms": 402.05,
+      "median_ms": 390.96,
+      "max_ms": 572.99,
+      "split_ms": {
+       "js": 7291.3,
+       "style": 10171.9,
+       "layout": 31179.5,
+       "paint": 0.0,
+       "composite": 3.1,
+       "other": 2.2
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 137,
+      "sum_ms": 79.5,
+      "mean_ms": 0.58,
+      "median_ms": 0.55,
+      "max_ms": 0.98,
+      "split_ms": {
+       "js": 79.5,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 694,
+      "sum_ms": 421.6,
+      "mean_ms": 0.61,
+      "median_ms": 0.12,
+      "max_ms": 11.24,
+      "split_ms": {
+       "js": 259.1,
+       "style": 37.8,
+       "layout": 124.7,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 90,
+      "sum_ms": 3.0,
+      "mean_ms": 0.03,
+      "median_ms": 0.03,
+      "max_ms": 0.06,
+      "split_ms": {
+       "js": 3.0,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "390x844-log-paused",
+   "viewport": [
+    390,
+    844
+   ],
+   "condition": "log-paused",
+   "seconds": 60.19,
+   "traffic": {
+    "on": true,
+    "sent_start": 308,
+    "sent_end": 535,
+    "requests_per_s": 3.77
+   },
+   "exchanges_per_s": 3.8,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 1984,
+    "exchange_rows": 1983,
+    "last_seq": 4046,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": true,
+    "log_count": "1983 exchanges, last seq 4046 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 1755,
+    "exchange_rows": 1754,
+    "last_seq": 4275,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": true,
+    "log_count": "1754 exchanges, last seq 4275 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 60.172,
+    "ScriptDuration": 5.911,
+    "LayoutDuration": 33.337,
+    "RecalcStyleDuration": 10.175
+   },
+   "trace_file": "perf-390x844-log-paused.json.gz",
+   "trace_bytes": 3348074,
+   "trace_sha256": "aa281953291a5a2c8c0c325a22b5e583cf82132e4cb32e31fe4b851bcc7e8b41",
+   "breakdown": {
+    "trace": "perf-390x844-log-paused.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.19,
+    "measured_s": 60.185034200083464,
+    "top_level": "RunTask",
+    "top_level_count": 7572,
+    "busy_ms": 60152.0,
+    "busy_percent": 99.9,
+    "split_ms": {
+     "js": 7700.9,
+     "style": 10175.6,
+     "layout": 31578.0,
+     "paint": 9720.9,
+     "composite": 95.8,
+     "other": 880.8
+    },
+    "split_sum_ms": 60152.0,
+    "gc_ms": 1974.1,
+    "prepaint_ms": 8845.8,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 804.0,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 23.3,
+     "HitTest": 21.1,
+     "Receive mojo message": 20.6,
+     "SimpleWatcher::OnHandleReady": 9.8,
+     "Major concurrent marking rescheduled": 1.3
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 60124.7,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 23.3,
+     "Paint": 3.0,
+     "FireAnimationFrame": 0.6
+    },
+    "frames": 241,
+    "paint_events": 482,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 128,
+      "sum_ms": 48114.0,
+      "mean_ms": 375.89,
+      "median_ms": 367.12,
+      "max_ms": 544.9,
+      "split_ms": {
+       "js": 7343.2,
+       "style": 10111.6,
+       "layout": 30652.6,
+       "paint": 0.0,
+       "composite": 4.6,
+       "other": 2.1
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 147,
+      "sum_ms": 83.0,
+      "mean_ms": 0.56,
+      "median_ms": 0.52,
+      "max_ms": 1.06,
+      "split_ms": {
+       "js": 83.0,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 699,
+      "sum_ms": 414.1,
+      "mean_ms": 0.59,
+      "median_ms": 0.13,
+      "max_ms": 10.42,
+      "split_ms": {
+       "js": 250.4,
+       "style": 37.5,
+       "layout": 126.1,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 127,
+      "sum_ms": 4.4,
+      "mean_ms": 0.03,
+      "median_ms": 0.03,
+      "max_ms": 0.07,
+      "split_ms": {
+       "js": 4.4,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "390x844-graphs-hidden",
+   "viewport": [
+    390,
+    844
+   ],
+   "condition": "graphs-hidden",
+   "seconds": 60.06,
+   "traffic": {
+    "on": true,
+    "sent_start": 577,
+    "sent_end": 805,
+    "requests_per_s": 3.8
+   },
+   "exchanges_per_s": 3.85,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 4314,
+    "health": "live",
+    "graphs_hidden": true,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 4314 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 4545,
+    "health": "live",
+    "graphs_hidden": true,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 4545 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 60.05,
+    "ScriptDuration": 5.815,
+    "LayoutDuration": 33.611,
+    "RecalcStyleDuration": 10.077
+   },
+   "trace_file": "perf-390x844-graphs-hidden.json.gz",
+   "trace_bytes": 3150168,
+   "trace_sha256": "93d68d21f9483755b3e6ee16339e3f13e3c6ef7f27718ecd78561191bb3d1a92",
+   "breakdown": {
+    "trace": "perf-390x844-graphs-hidden.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.07,
+    "measured_s": 60.060462007066235,
+    "top_level": "RunTask",
+    "top_level_count": 7182,
+    "busy_ms": 60044.3,
+    "busy_percent": 100.0,
+    "split_ms": {
+     "js": 7550.2,
+     "style": 10077.7,
+     "layout": 31900.0,
+     "paint": 9639.4,
+     "composite": 82.0,
+     "other": 794.9
+    },
+    "split_sum_ms": 60044.3,
+    "gc_ms": 1931.9,
+    "prepaint_ms": 8720.3,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 719.7,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 22.1,
+     "HitTest": 21.6,
+     "Receive mojo message": 20.3,
+     "SimpleWatcher::OnHandleReady": 9.2,
+     "Major concurrent marking rescheduled": 1.2
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 60022.2,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 22.1,
+     "UpdateLayoutTree": 0.1
+    },
+    "frames": 252,
+    "paint_events": 504,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 119,
+      "sum_ms": 48386.3,
+      "mean_ms": 406.61,
+      "median_ms": 392.62,
+      "max_ms": 618.1,
+      "split_ms": {
+       "js": 7284.9,
+       "style": 10007.5,
+       "layout": 31090.2,
+       "paint": 0.0,
+       "composite": 1.8,
+       "other": 2.0
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 0,
+      "sum_ms": 0.0,
+      "mean_ms": null,
+      "median_ms": null,
+      "max_ms": null,
+      "split_ms": {
+       "js": 0.0,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 706,
+      "sum_ms": 356.9,
+      "mean_ms": 0.51,
+      "median_ms": 0.12,
+      "max_ms": 22.82,
+      "split_ms": {
+       "js": 248.7,
+       "style": 33.3,
+       "layout": 74.9,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 75,
+      "sum_ms": 2.6,
+      "mean_ms": 0.03,
+      "median_ms": 0.03,
+      "max_ms": 0.06,
+      "split_ms": {
+       "js": 2.6,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "390x844-no-traffic",
+   "viewport": [
+    390,
+    844
+   ],
+   "condition": "no-traffic",
+   "seconds": 60.07,
+   "traffic": {
+    "on": false,
+    "sent_start": 826,
+    "sent_end": 826,
+    "requests_per_s": 0.0
+   },
+   "exchanges_per_s": 0.0,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 4566,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 4566 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 4566,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 4566 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 47.651,
+    "ScriptDuration": 0.213,
+    "LayoutDuration": 0.984,
+    "RecalcStyleDuration": 0.329
+   },
+   "trace_file": "perf-390x844-no-traffic.json.gz",
+   "trace_bytes": 3049026,
+   "trace_sha256": "0a9f4c7bdfec68c9df6838754163f83e05389edc42a7b7ba6f6a05aa41623d92",
+   "breakdown": {
+    "trace": "perf-390x844-no-traffic.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.07,
+    "measured_s": 60.06774128694087,
+    "top_level": "RunTask",
+    "top_level_count": 66131,
+    "busy_ms": 47530.9,
+    "busy_percent": 79.1,
+    "split_ms": {
+     "js": 577.5,
+     "style": 330.1,
+     "layout": 974.5,
+     "paint": 43940.2,
+     "composite": 242.7,
+     "other": 1466.0
+    },
+    "split_sum_ms": 47530.9,
+    "gc_ms": 353.8,
+    "prepaint_ms": 33281.5,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 1336.4,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 72.2,
+     "HitTest": 25.2,
+     "Receive mojo message": 17.6,
+     "SimpleWatcher::OnHandleReady": 14.3,
+     "Major concurrent marking rescheduled": 0.1
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 47455.2,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 72.2,
+     "Paint": 3.4,
+     "Layerize": 0.1
+    },
+    "frames": 3527,
+    "paint_events": 7054,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 0,
+      "sum_ms": 0.0,
+      "mean_ms": null,
+      "median_ms": null,
+      "max_ms": null,
+      "split_ms": {
+       "js": 0.0,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 120,
+      "sum_ms": 75.8,
+      "mean_ms": 0.63,
+      "median_ms": 0.61,
+      "max_ms": 1.15,
+      "split_ms": {
+       "js": 65.4,
+       "style": 10.4,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 359,
+      "sum_ms": 282.4,
+      "mean_ms": 0.79,
+      "median_ms": 0.2,
+      "max_ms": 9.68,
+      "split_ms": {
+       "js": 155.5,
+       "style": 15.0,
+       "layout": 111.8,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 0,
+      "sum_ms": 0.0,
+      "mean_ms": null,
+      "median_ms": null,
+      "max_ms": null,
+      "split_ms": {
+       "js": 0.0,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "390x844-no-traffic-reduced-motion",
+   "viewport": [
+    390,
+    844
+   ],
+   "condition": "no-traffic-reduced-motion",
+   "seconds": 60.06,
+   "traffic": {
+    "on": false,
+    "sent_start": 19,
+    "sent_end": 19,
+    "requests_per_s": 0.0
+   },
+   "exchanges_per_s": 0.0,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 4585,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 4585 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 4585,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 4585 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 6.751,
+    "ScriptDuration": 0.225,
+    "LayoutDuration": 0.999,
+    "RecalcStyleDuration": 0.049
+   },
+   "trace_file": "perf-390x844-no-traffic-reduced-motion.json.gz",
+   "trace_bytes": 1442251,
+   "trace_sha256": "e845c1870e22c7ba2f1b634a3b70de416ebcaa3a9e247a863cbf8d9dbdabe9e4",
+   "breakdown": {
+    "trace": "perf-390x844-no-traffic-reduced-motion.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.06,
+    "measured_s": 60.060901251854375,
+    "top_level": "RunTask",
+    "top_level_count": 51069,
+    "busy_ms": 6671.7,
+    "busy_percent": 11.1,
+    "split_ms": {
+     "js": 516.5,
+     "style": 49.6,
+     "layout": 994.4,
+     "paint": 4555.1,
+     "composite": 30.6,
+     "other": 525.5
+    },
+    "split_sum_ms": 6671.7,
+    "gc_ms": 273.6,
+    "prepaint_ms": 3428.1,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 411.7,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 55.6,
+     "HitTest": 27.2,
+     "Receive mojo message": 17.5,
+     "SimpleWatcher::OnHandleReady": 13.3,
+     "Major concurrent marking rescheduled": 0.1
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 6616.1,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 55.6
+    },
+    "frames": 387,
+    "paint_events": 774,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 0,
+      "sum_ms": 0.0,
+      "mean_ms": null,
+      "median_ms": null,
+      "max_ms": null,
+      "split_ms": {
+       "js": 0.0,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 120,
+      "sum_ms": 68.8,
+      "mean_ms": 0.57,
+      "median_ms": 0.53,
+      "max_ms": 0.91,
+      "split_ms": {
+       "js": 68.8,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 360,
+      "sum_ms": 258.3,
+      "mean_ms": 0.72,
+      "median_ms": 0.23,
+      "max_ms": 9.55,
+      "split_ms": {
+       "js": 163.4,
+       "style": 10.6,
+       "layout": 84.3,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 0,
+      "sum_ms": 0.0,
+      "mean_ms": null,
+      "median_ms": null,
+      "max_ms": null,
+      "split_ms": {
+       "js": 0.0,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "390x844-baseline-b",
+   "viewport": [
+    390,
+    844
+   ],
+   "condition": "baseline-b",
+   "seconds": 60.11,
+   "traffic": {
+    "on": true,
+    "sent_start": 34,
+    "sent_end": 263,
+    "requests_per_s": 3.81
+   },
+   "exchanges_per_s": 3.79,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 4617,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 4617 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 2001,
+    "exchange_rows": 2000,
+    "last_seq": 4845,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "2000 exchanges, last seq 4845 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 60.103,
+    "ScriptDuration": 5.994,
+    "LayoutDuration": 33.383,
+    "RecalcStyleDuration": 10.32
+   },
+   "trace_file": "perf-390x844-baseline-b.json.gz",
+   "trace_bytes": 3405600,
+   "trace_sha256": "64dee4f86a9effce38fe7abaaf20fa6fdfac1f33c9dfa1031559668fd57e3353",
+   "breakdown": {
+    "trace": "perf-390x844-baseline-b.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.07,
+    "measured_s": 60.11478052102029,
+    "top_level": "RunTask",
+    "top_level_count": 7442,
+    "busy_ms": 60035.4,
+    "busy_percent": 99.9,
+    "split_ms": {
+     "js": 7671.3,
+     "style": 10320.8,
+     "layout": 31683.9,
+     "paint": 9407.2,
+     "composite": 87.0,
+     "other": 865.3
+    },
+    "split_sum_ms": 60035.4,
+    "gc_ms": 1913.2,
+    "prepaint_ms": 8590.2,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 794.8,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 21.4,
+     "Receive mojo message": 19.5,
+     "HitTest": 18.7,
+     "SimpleWatcher::OnHandleReady": 9.0,
+     "Major concurrent marking rescheduled": 1.1
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 59634.2,
+     "Layout": 303.1,
+     "UpdateLayoutTree": 76.6,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 21.4
+    },
+    "frames": 241,
+    "paint_events": 482,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 128,
+      "sum_ms": 48034.3,
+      "mean_ms": 375.27,
+      "median_ms": 358.58,
+      "max_ms": 564.71,
+      "split_ms": {
+       "js": 7339.2,
+       "style": 10183.7,
+       "layout": 30507.3,
+       "paint": 0.0,
+       "composite": 2.2,
+       "other": 1.8
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 147,
+      "sum_ms": 76.6,
+      "mean_ms": 0.52,
+      "median_ms": 0.51,
+      "max_ms": 0.87,
+      "split_ms": {
+       "js": 76.6,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 696,
+      "sum_ms": 420.3,
+      "mean_ms": 0.6,
+      "median_ms": 0.12,
+      "max_ms": 12.08,
+      "split_ms": {
+       "js": 238.0,
+       "style": 36.1,
+       "layout": 146.2,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 85,
+      "sum_ms": 2.7,
+      "mean_ms": 0.03,
+      "median_ms": 0.03,
+      "max_ms": 0.09,
+      "split_ms": {
+       "js": 2.7,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "390x844-log-cleared",
+   "viewport": [
+    390,
+    844
+   ],
+   "condition": "log-cleared",
+   "seconds": 60.06,
+   "traffic": {
+    "on": true,
+    "sent_start": 294,
+    "sent_end": 521,
+    "requests_per_s": 3.78
+   },
+   "exchanges_per_s": 3.78,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 11,
+    "exchange_rows": 11,
+    "last_seq": 4879,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "11 exchanges, last seq 4879 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 238,
+    "exchange_rows": 238,
+    "last_seq": 5106,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "238 exchanges, last seq 5106 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 17.252,
+    "ScriptDuration": 1.0,
+    "LayoutDuration": 3.896,
+    "RecalcStyleDuration": 1.54
+   },
+   "trace_file": "perf-390x844-log-cleared.json.gz",
+   "trace_bytes": 4444569,
+   "trace_sha256": "e02cc94fab93937ee269209f2af3fb9fcf576f9673d11b8d819728da024a4a64",
+   "breakdown": {
+    "trace": "perf-390x844-log-cleared.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.06,
+    "measured_s": 60.06005388405174,
+    "top_level": "RunTask",
+    "top_level_count": 99256,
+    "busy_ms": 17082.6,
+    "busy_percent": 28.4,
+    "split_ms": {
+     "js": 1269.6,
+     "style": 1546.8,
+     "layout": 3809.7,
+     "paint": 8383.1,
+     "composite": 321.2,
+     "other": 1752.2
+    },
+    "split_sum_ms": 17082.6,
+    "gc_ms": 226.6,
+    "prepaint_ms": 3494.8,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 1587.4,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 71.5,
+     "HitTest": 47.1,
+     "Receive mojo message": 29.7,
+     "SimpleWatcher::OnHandleReady": 15.6,
+     "Major concurrent marking rescheduled": 0.4
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 17011.1,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 71.5
+    },
+    "frames": 3517,
+    "paint_events": 7000,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 227,
+      "sum_ms": 5588.0,
+      "mean_ms": 24.62,
+      "median_ms": 23.59,
+      "max_ms": 93.71,
+      "split_ms": {
+       "js": 841.8,
+       "style": 1230.9,
+       "layout": 3511.2,
+       "paint": 0.0,
+       "composite": 3.6,
+       "other": 0.4
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 233,
+      "sum_ms": 154.8,
+      "mean_ms": 0.66,
+      "median_ms": 0.62,
+      "max_ms": 3.84,
+      "split_ms": {
+       "js": 128.2,
+       "style": 26.5,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 700,
+      "sum_ms": 164.4,
+      "mean_ms": 0.23,
+      "median_ms": 0.13,
+      "max_ms": 3.39,
+      "split_ms": {
+       "js": 129.7,
+       "style": 20.0,
+       "layout": 14.6,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 227,
+      "sum_ms": 6.4,
+      "mean_ms": 0.03,
+      "median_ms": 0.03,
+      "max_ms": 0.08,
+      "split_ms": {
+       "js": 6.4,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "390x844-log-cleared-reduced-motion",
+   "viewport": [
+    390,
+    844
+   ],
+   "condition": "log-cleared-reduced-motion",
+   "seconds": 60.06,
+   "traffic": {
+    "on": true,
+    "sent_start": 40,
+    "sent_end": 267,
+    "requests_per_s": 3.78
+   },
+   "exchanges_per_s": 3.78,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 13,
+    "exchange_rows": 13,
+    "last_seq": 5170,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "13 exchanges, last seq 5170 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 240,
+    "exchange_rows": 240,
+    "last_seq": 5397,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "log_count": "240 exchanges, last seq 5397 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 10.619,
+    "ScriptDuration": 1.034,
+    "LayoutDuration": 4.044,
+    "RecalcStyleDuration": 1.706
+   },
+   "trace_file": "perf-390x844-log-cleared-reduced-motion.json.gz",
+   "trace_bytes": 3061387,
+   "trace_sha256": "c8cd0b55c1884b99675882665ee94bd7499c8008815e24fc19ce34403690d52d",
+   "breakdown": {
+    "trace": "perf-390x844-log-cleared-reduced-motion.json.gz",
+    "thread": [
+     1453797,
+     1453797
+    ],
+    "window_s": 60.06,
+    "measured_s": 60.060672644060105,
+    "top_level": "RunTask",
+    "top_level_count": 75586,
+    "busy_ms": 10498.2,
+    "busy_percent": 17.5,
+    "split_ms": {
+     "js": 1306.5,
+     "style": 1707.2,
+     "layout": 3957.8,
+     "paint": 2370.2,
+     "composite": 158.0,
+     "other": 998.6
+    },
+    "split_sum_ms": 10498.2,
+    "gc_ms": 219.3,
+    "prepaint_ms": 1292.3,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 854.1,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 56.0,
+     "HitTest": 40.8,
+     "Receive mojo message": 29.9,
+     "SimpleWatcher::OnHandleReady": 16.7,
+     "Major concurrent marking rescheduled": 0.5
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 10442.2,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 56.0
+    },
+    "frames": 860,
+    "paint_events": 1362,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1434,
+      "count": 227,
+      "sum_ms": 6135.0,
+      "mean_ms": 27.03,
+      "median_ms": 25.51,
+      "max_ms": 78.86,
+      "split_ms": {
+       "js": 868.7,
+       "style": 1643.5,
+       "layout": 3618.6,
+       "paint": 0.0,
+       "composite": 3.8,
+       "other": 0.4
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 857,
+      "count": 232,
+      "sum_ms": 120.5,
+      "mean_ms": 0.52,
+      "median_ms": 0.47,
+      "max_ms": 1.74,
+      "split_ms": {
+       "js": 116.4,
+       "style": 4.1,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 246,
+      "count": 698,
+      "sum_ms": 171.5,
+      "mean_ms": 0.25,
+      "median_ms": 0.16,
+      "max_ms": 2.09,
+      "split_ms": {
+       "js": 141.1,
+       "style": 17.8,
+       "layout": 12.6,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1518,
+      "count": 227,
+      "sum_ms": 6.4,
+      "mean_ms": 0.03,
+      "median_ms": 0.03,
+      "max_ms": 0.12,
+      "split_ms": {
+       "js": 6.4,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    }
+   }
+  }
+ ],
+ "problems": []
+}

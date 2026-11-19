@@ -1,0 +1,4 @@
+moving 1440: #vehicle 378/378, html 1440/1440, body 1440/1440  ok
+moving 2000: #vehicle 498/498, html 2000/2000, body 2000/2000  ok
+moving 390: #vehicle 372/372, html 390/390, body 390/390  ok
+moving 1440, stale: #vehicle 378/378, html 1440/1440, body 1440/1440  ok

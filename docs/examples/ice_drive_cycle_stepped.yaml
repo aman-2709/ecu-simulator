@@ -1,0 +1,150 @@
+# A stepped, 90-second drive-cycle demo profile.
+#
+# See docs/plans/moving-vehicle-demo-design.md, section 4, for the full design and the
+# derivation of every value below. In short: this is the sooner path to a moving-vehicle
+# demo that needs no engine code change, because it uses only today's `stepped` and
+# `ramp` generators. `stepped` repeats every `len(values) * interval` seconds -- 90 s
+# here -- so the drive cycle loops. `engine.coolant_temp` is the one non-repeating
+# signal: an ordinary `ramp` of absolute time, warming from 20 to 90 C over 240 s and
+# then holding, indifferent to the drive-cycle loop.
+#
+# This file is not package data. Run it with:
+#
+#   ecu-simulator --profile docs/examples/ice_drive_cycle_stepped.yaml --interface vcan0
+#
+# There is no odometer signal in this profile (decision O2 in the design): the vehicle's
+# `speed` moves, but `vehicle.odometer` is left undriven.
+
+version: 1
+
+transport:
+  interface: vcan0
+
+vehicle:
+  vin: TESTVIN0123456789
+  type: ice
+  # The initial values. Any signal a scenario drives is overwritten the first time the
+  # scenario is applied; the rest stay exactly as written here, for the whole run.
+  speed: 0
+  ambient_temp: 20
+  battery_voltage: 14.1
+  obd_standard: 1
+  engine:
+    rpm: 800
+    coolant_temp: 20          # cold: the scenario warms it up
+    intake_temp: 20
+    engine_load: 15.0
+    throttle: 0.0
+    maf: 2.0
+    map: 33
+    timing_advance: 10.0
+    short_fuel_trim: 0.0
+    long_fuel_trim: 1.5
+    runtime: 0
+    fuel_level: 62
+    fuel_type: 1
+
+scenario:
+  tick: 0.5
+  signals:
+    - path: vehicle.speed
+      type: stepped
+      interval: 1
+      values: [
+          0, 0, 0, 0, 0, 0, 5, 10, 15, 20,  # 0-9 s
+          25, 30, 35, 40, 45, 50, 55, 60, 65, 70,  # 10-19 s
+          75, 80, 80, 80, 80, 80, 80, 80, 80, 80,  # 20-29 s
+          80, 80, 80, 80, 80, 80, 80, 80, 80, 80,  # 30-39 s
+          80, 80, 80, 80, 80, 80, 80, 80, 80, 80,  # 40-49 s
+          80, 80, 80, 80, 80, 80, 80, 80, 80, 80,  # 50-59 s
+          80, 74, 69, 64, 58, 53, 48, 42, 37, 32,  # 60-69 s
+          26, 21, 16, 10, 5, 0, 0, 0, 0, 0,  # 70-79 s
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  # 80-89 s
+        ]
+    - path: engine.rpm
+      type: stepped
+      interval: 1
+      values: [
+          800, 800, 800, 800, 800, 800, 880, 960, 1040, 1120,  # 0-9 s
+          1400, 1680, 1960, 2240, 2520, 2800, 1650, 1800, 1950, 2100,  # 10-19 s
+          2250, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400,  # 20-29 s
+          2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400,  # 30-39 s
+          2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400,  # 40-49 s
+          2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400,  # 50-59 s
+          2400, 2240, 2080, 1920, 1760, 1600, 1440, 1280, 1120, 960,  # 60-69 s
+          800, 800, 800, 800, 800, 800, 800, 800, 800, 800,  # 70-79 s
+          800, 800, 800, 800, 800, 800, 800, 800, 800, 800,  # 80-89 s
+        ]
+    - path: engine.throttle
+      type: stepped
+      interval: 1
+      values: [
+          0, 0, 0, 0, 0, 0, 45, 45, 45, 45,  # 0-9 s
+          45, 45, 45, 45, 45, 45, 45, 45, 45, 45,  # 10-19 s
+          45, 45, 18, 18, 18, 18, 18, 18, 18, 18,  # 20-29 s
+          18, 18, 18, 18, 18, 18, 18, 18, 18, 18,  # 30-39 s
+          18, 18, 18, 18, 18, 18, 18, 18, 18, 18,  # 40-49 s
+          18, 18, 18, 18, 18, 18, 18, 18, 18, 18,  # 50-59 s
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  # 60-69 s
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  # 70-79 s
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  # 80-89 s
+        ]
+    - path: engine.engine_load
+      type: stepped
+      interval: 1
+      values: [
+          20, 20, 20, 20, 20, 20, 75, 75, 75, 75,  # 0-9 s
+          75, 75, 75, 75, 75, 75, 75, 75, 75, 75,  # 10-19 s
+          75, 75, 35, 35, 35, 35, 35, 35, 35, 35,  # 20-29 s
+          35, 35, 35, 35, 35, 35, 35, 35, 35, 35,  # 30-39 s
+          35, 35, 35, 35, 35, 35, 35, 35, 35, 35,  # 40-49 s
+          35, 35, 35, 35, 35, 35, 35, 35, 35, 35,  # 50-59 s
+          10, 10, 10, 10, 10, 10, 10, 10, 10, 10,  # 60-69 s
+          10, 20, 20, 20, 20, 20, 20, 20, 20, 20,  # 70-79 s
+          20, 20, 20, 20, 20, 20, 20, 20, 20, 20,  # 80-89 s
+        ]
+    # Warm-up happens once: a ramp of absolute time, not part of the cycle.
+    - path: engine.coolant_temp
+      type: ramp
+      from: 20
+      to: 90
+      over: 240
+
+ecus:
+  engine:
+    name: ECU_SIMULATOR
+    dtcs:
+      - code: P0128
+        pending: false
+        confirmed: false
+      - code: P0171
+        pending: false
+        confirmed: false
+      - code: B1477
+        pending: false
+        confirmed: false
+
+    dids: {}
+    endpoints:
+      - name: obd_functional
+        rx: 0x7DF
+        tx: 0x7E8
+        addressing: functional
+        protocols: [obd]
+        answer_unsupported: false
+        tx_padding: true
+        pad_byte: 0x00
+        reply_via: obd_physical
+      - name: obd_physical
+        rx: 0x7E0
+        tx: 0x7E8
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: true
+        pad_byte: 0x00
+      - name: uds_physical
+        rx: 0x7E1
+        tx: 0x7E9
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: false

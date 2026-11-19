@@ -1,0 +1,8 @@
+=== state-cost after run 2 2026-09-30T22:46:18Z
+ecu_simulator package: /home/aman/dev/personal-projects/ecu-simulator/.claude/worktrees/gui/src/ecu_simulator/__init__.py
+profile: /home/aman/dev/personal-projects/ecu-simulator/.claude/worktrees/gui/src/ecu_simulator/profiles/ice_scenario.yaml
+state_message (end-to-end, build+encode): median 17.596 us  p99 38.455 us  max 49.835 us  n=10000
+build alone (vehicle + dtcs): median 7.757 us  p99 18.283 us  max 26.238 us  n=10000
+encode alone (allow_nan=False): median 8.483 us  p99 21.059 us  max 35.623 us  n=10000
+encode alone (allow_nan=True): median 8.475 us  p99 18.164 us  max 58.543 us  n=10000
+exit=0

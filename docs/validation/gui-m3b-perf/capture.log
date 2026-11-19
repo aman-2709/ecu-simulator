@@ -1,0 +1,37 @@
+[   0.00 s] gui demo capture, 2026-10-01T08:16:27+00:00
+[   0.00 s] start headless Chrome: /usr/bin/google-chrome
+[   0.24 s] Chrome: Chrome/151.0.7922.173
+[   0.27 s] start simulator: --profile docs/examples/ice_drive_cycle_stepped.yaml --interface vcan0 --api 127.0.0.1:8765
+[   1.31 s] prefill: start traffic at 50/s until the log holds 2000 exchanges
+[  95.96 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[ 101.21 s] prefilled: {'retained': 2000, 'dom_rows': 2001, 'exchange_rows': 2000, 'last_seq': 2049, 'health': 'live', 'graphs_hidden': False, 'log_paused': False, 'log_count': '2000 exchanges, last seq 2049 (live)'}
+[ 174.00 s] perf 1440x900-baseline-a: busy 99.8 % (59989.3 ms), split {'js': 8679.0, 'style': 9254.5, 'layout': 29938.5, 'paint': 11059.9, 'composite': 101.6, 'other': 955.9}, renderLog 135 / 45770.0 ms, rows 2000->2000, 3.81 req/s, 3.81 exchanges/s
+[ 247.87 s] perf 1440x900-log-paused: busy 99.9 % (60150.8 ms), split {'js': 8916.6, 'style': 9105.7, 'layout': 29244.4, 'paint': 11743.5, 'composite': 71.7, 'other': 1068.9}, renderLog 139 / 45403.4 ms, rows 2000->2000, 3.77 req/s, 3.8 exchanges/s
+[ 320.36 s] perf 1440x900-graphs-hidden: busy 99.9 % (60090.5 ms), split {'js': 8587.2, 'style': 9310.0, 'layout': 29506.9, 'paint': 11646.1, 'composite': 121.6, 'other': 918.8}, renderLog 138 / 46311.3 ms, rows 2000->2000, 3.79 req/s, 3.81 exchanges/s
+[ 321.36 s] stop traffic
+[ 391.31 s] perf 1440x900-no-traffic: busy 83.0 % (49886.5 ms), split {'js': 525.0, 'style': 378.9, 'layout': 816.5, 'paint': 46010.9, 'composite': 736.5, 'other': 1418.8}, renderLog 0 / 0.0 ms, rows 2000->2000, 0.0 req/s, 0.0 exchanges/s
+[ 391.31 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[ 396.32 s] stop traffic
+[ 461.97 s] perf 1440x900-no-traffic-reduced-motion: busy 11.9 % (7174.7 ms), split {'js': 552.9, 'style': 50.2, 'layout': 895.0, 'paint': 5063.3, 'composite': 85.6, 'other': 527.6}, renderLog 0 / 0.0 ms, rows 2000->2000, 0.0 req/s, 0.0 exchanges/s
+[ 462.06 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[ 535.90 s] perf 1440x900-baseline-b: busy 99.9 % (60186.5 ms), split {'js': 8535.5, 'style': 9625.9, 'layout': 29099.4, 'paint': 11810.3, 'composite': 111.5, 'other': 1004.1}, renderLog 144 / 46075.7 ms, rows 2000->2000, 3.8 req/s, 3.79 exchanges/s
+[ 607.52 s] perf 1440x900-log-cleared: busy 31.9 % (19167.9 ms), split {'js': 1186.5, 'style': 1296.3, 'layout': 3011.4, 'paint': 11273.2, 'composite': 668.8, 'other': 1731.6}, renderLog 227 / 4440.2 ms, rows 2000->2000, 3.78 req/s, 3.78 exchanges/s
+[ 609.60 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[ 684.18 s] perf 1440x900-log-cleared-reduced-motion: busy 17.1 % (10298.6 ms), split {'js': 1228.0, 'style': 1362.2, 'layout': 3184.2, 'paint': 3316.0, 'composite': 167.1, 'other': 1041.1}, renderLog 227 / 4883.5 ms, rows 2000->2000, 3.78 req/s, 3.78 exchanges/s
+[ 686.37 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[ 761.98 s] perf 390x844-baseline-a: busy 99.9 % (60255.1 ms), split {'js': 7649.1, 'style': 10234.0, 'layout': 32043.5, 'paint': 9425.9, 'composite': 94.0, 'other': 808.7}, renderLog 121 / 48648.1 ms, rows 2000->2000, 3.8 req/s, 3.77 exchanges/s
+[ 832.33 s] perf 390x844-log-paused: busy 99.9 % (60152.0 ms), split {'js': 7700.9, 'style': 10175.6, 'layout': 31578.0, 'paint': 9720.9, 'composite': 95.8, 'other': 880.8}, renderLog 128 / 48114.0 ms, rows 2000->2000, 3.77 req/s, 3.8 exchanges/s
+[ 902.91 s] perf 390x844-graphs-hidden: busy 100.0 % (60044.3 ms), split {'js': 7550.2, 'style': 10077.7, 'layout': 31900.0, 'paint': 9639.4, 'composite': 82.0, 'other': 794.9}, renderLog 119 / 48386.3 ms, rows 2000->2000, 3.8 req/s, 3.85 exchanges/s
+[ 904.34 s] stop traffic
+[ 972.38 s] perf 390x844-no-traffic: busy 79.1 % (47530.9 ms), split {'js': 577.5, 'style': 330.1, 'layout': 974.5, 'paint': 43940.2, 'composite': 242.7, 'other': 1466.0}, renderLog 0 / 0.0 ms, rows 2000->2000, 0.0 req/s, 0.0 exchanges/s
+[ 972.38 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[ 977.39 s] stop traffic
+[1042.95 s] perf 390x844-no-traffic-reduced-motion: busy 11.1 % (6671.7 ms), split {'js': 516.5, 'style': 49.6, 'layout': 994.4, 'paint': 4555.1, 'composite': 30.6, 'other': 525.5}, renderLog 0 / 0.0 ms, rows 2000->2000, 0.0 req/s, 0.0 exchanges/s
+[1043.06 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[1116.46 s] perf 390x844-baseline-b: busy 99.9 % (60035.4 ms), split {'js': 7671.3, 'style': 10320.8, 'layout': 31683.9, 'paint': 9407.2, 'composite': 87.0, 'other': 865.3}, renderLog 128 / 48034.3 ms, rows 2000->2000, 3.81 req/s, 3.79 exchanges/s
+[1186.80 s] perf 390x844-log-cleared: busy 28.4 % (17082.6 ms), split {'js': 1269.6, 'style': 1546.8, 'layout': 3809.7, 'paint': 8383.1, 'composite': 321.2, 'other': 1752.2}, renderLog 227 / 5588.0 ms, rows 2000->2000, 3.78 req/s, 3.78 exchanges/s
+[1188.95 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[1263.61 s] perf 390x844-log-cleared-reduced-motion: busy 17.5 % (10498.2 ms), split {'js': 1306.5, 'style': 1707.2, 'layout': 3957.8, 'paint': 2370.2, 'composite': 158.0, 'other': 998.6}, renderLog 227 / 6135.0 ms, rows 2000->2000, 3.78 req/s, 3.78 exchanges/s
+[1265.90 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[1271.08 s] perf runs: 16; console messages, exceptions and log entries: 0
+[1271.08 s] done

@@ -1,0 +1,10 @@
+[   0.00 s] start simulator: --profile src/ecu_simulator/profiles/ice_default.yaml --interface vcan0 --api 127.0.0.1:8765
+[   0.31 s] start headless Chrome: /usr/bin/google-chrome
+[   1.96 s] healthy: {"conn": "live", "data": "current", "reason": "", "health": "live", "episode": "none", "attempts": 0, "timers": 0, "malformed": 0, "text": "Live", "known": [], "banner": null, "socks": 1, "states": 1}
+[   1.96 s] missing dtcs, immediately: {"conn": "live", "data": "current", "reason": "", "health": "live", "episode": "none", "attempts": 0, "timers": 0, "malformed": 0, "text": "Live", "known": [], "banner": null, "socks": 1, "states": 1}
+[   4.96 s] missing dtcs, +3 s: {"conn": "live", "data": "current", "reason": "", "health": "live", "episode": "none", "attempts": 0, "timers": 0, "malformed": 0, "text": "Live", "known": [], "banner": null, "socks": 1, "states": 1}
+[   5.97 s] missing vehicle, immediately: {"conn": "live", "data": "current", "reason": "", "health": "live", "episode": "none", "attempts": 0, "timers": 0, "malformed": 0, "text": "Live", "known": [], "banner": null, "socks": 1, "states": 1}
+[   8.97 s] missing vehicle, +3 s: {"conn": "live", "data": "current", "reason": "", "health": "live", "episode": "none", "attempts": 0, "timers": 0, "malformed": 0, "text": "Live", "known": [], "banner": null, "socks": 1, "states": 1}
+[   9.97 s] unknown type, immediately: {"conn": "live", "data": "current", "reason": "", "health": "live", "episode": "none", "attempts": 0, "timers": 0, "malformed": 0, "text": "Live", "known": [], "banner": null, "socks": 1, "states": 1}
+[   9.97 s] log marks: []
+[   9.97 s] page problems: []

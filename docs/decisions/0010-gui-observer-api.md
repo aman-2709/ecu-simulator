@@ -1,0 +1,1033 @@
+# 0010 — A browser GUI over an opt-in, read-only observer API
+
+Status: **Proposed.** On 2026-09-26 the owner approved M0 **in direction**, subject to two
+edits: bound the publisher's work per loop turn, and correct the P5 accounting. Both were
+applied in the second revision, below. The direction covers approach A (§3) and a
+read-only browser MVP. M1, the observer core, and M2 (`ApiServer`, `--api`, the `[gui]`
+extra, §6 security, §4.3 limits, the API tests and the CI job) are built on branch `gui`.
+**M2's early check is a `STOP` that remains open and is not accepted:** condition 4's
+median wire latency exceeds condition 1's median + 0.10 ms
+(`docs/validation/gui-m2-early-check.md`). **M3a, the live frontend, is built and live on
+`gui`:** it serves live data only (`docs/validation/gui-m3a-live-demo.md`). The offline
+mockup under `docs/mockups/m3a-dashboard/` is not served. **M3b, live signal graphs, is
+implemented and not accepted** (`docs/plans/gui-m3b-graphs-design.md`, tenth to fourteenth
+revisions below): checkpoint 1 (the `nonfinite` field, the state-encoding containment, the
+encoding health in `GET /status` and the first-good publish rule of §4.3 and §5) and
+checkpoint 2 (vendored uPlot, the graphs and the page's health model; 24 of 24 automated
+browser checks passed, run 12 for the cases Task 37 changed and run 9 for the rest,
+`docs/validation/gui-m3b-live-demo.md`) are **implemented**. **M3b is
+not accepted** until the owner's §13 checklist passes, including the CSP check in both
+Chrome and Firefox, which is unverified. M4 has not run. **Still open, and unchanged by any of
+this:** the M2 latency `STOP`, the hosted-CI `CAN_ISOTP` gap (§9.3), the Phase 8b gate,
+and the branch rule below.
+
+This work lives on branch `gui`, which starts from `modernization` at `a57b98f`. It is
+**not merged into `modernization` until V1.0 is tagged.** A GUI remains a V1.0 non-goal
+([modernization-plan.md §8](../modernization-plan.md)). Nothing here changes V1.0 scope,
+the Phase 8b gate, or any conformance status.
+
+Revised 2026-09-26 after owner review. The revision:
+
+- corrected the claim about when the publisher runs relative to the reply (§4.2);
+- defined exactly which exchanges the wrapper observes, from a trace of the routing path
+  (§4.4);
+- added byte limits and a sequence watermark (§4.3, §4.5);
+- fixed the outcome definition (§5);
+- made the M4 criteria explicit (§9.2).
+
+A second revision, after M0 was approved in direction:
+
+- bounded the publisher's work per loop turn (§4.2, O4, P9);
+- corrected P5's accounting for queued messages and disconnects with a per-connection
+  ledger (§5.1);
+- linked the duplicate-reply defect, DEV-25 (§4.4).
+
+A third revision, on 2026-09-26, came with the owner's review of the M1 plan. It changes no
+approved direction:
+
+- O4 must prove loop scheduling, not count turns (§4.2);
+- encoding and fan-out failures inside a publisher turn are defined, with two new counters,
+  `encode_failed` and `fanout_failed`, and close code 1011 (§5, §5.1). The identity
+  `issued_seq = published + handoff_dropped` is **unchanged**: a record whose encoding
+  fails is still published, as a fallback event;
+- P5 and P6 cover the new counters (§9.2);
+- `GET /exchanges` `limit` and `after` rules are fixed in the M1 plan, Task 4.
+
+A fourth revision, on 2026-09-27, came with the owner's instructions for the M2 plan. It
+changes no approved direction, and no V1.0 or Phase 8b gate:
+
+- the server computes the initial `state` before it accepts any connection (§4.5);
+- `GET /status` gains cumulative closed-connection accounting, so P5 reconciles any
+  number of closed connections, not only the last 64; the M4 harness also keeps durable
+  JSONL output (§5, §5.1, §9.2);
+- frontend file tests and the rendering checklist are M3's exit criteria; M2 serves one
+  placeholder page (§7, §9.3, §10);
+- `gui` becomes a CI push branch on branch `gui`, with CAN_ISOTP skips reported by name
+  (§9.3).
+
+A fifth revision, on 2026-09-27, came from the owner's review of the M2 plan, before any M2
+code:
+
+- a `send_str` cancelled while under way is recorded as a separate ledger outcome,
+  `delivery_unknown`, not as `sent`. It appears in every ledger, in `closed_totals` and in
+  the identities, and any unresolved delivery makes the benchmark result concerned
+  **inconclusive** (§5.1, §9.2 P5(h)). The M2 plan's earlier draft counted it as sent. That
+  was a guess, and it would have let P5(d) pass on an assumption;
+- the WebSocket `Origin` must equal the origin of **the same request's** validated `Host`.
+  `localhost` and `127.0.0.1` are never substituted for one another (§6).
+
+A sixth revision, on 2026-09-27, came from the owner's review of the M2 Task 1–6 checkpoint
+(`de7e431`). It changes no latency or reply-loss criterion (P1–P4 are unchanged):
+
+- **A forced or reset connection may carry at most one `delivery_unknown`, reported
+  explicitly.** The checkpoint measured it: when a stalled client is forced off (1013), or
+  a client resets its socket (1006), the frame being sent is already in the transport
+  buffer, so its delivery is genuinely unknown. Such a connection may carry at most one.
+  Every other connection, healthy clients included, must carry zero. `closed_totals`
+  reports the counts per close code (§5.1, P5(h), P6). Before this revision, any
+  `delivery_unknown` made the condition inconclusive, so M4 condition 4 could never pass;
+- **`writer_failed`** counts 1011 closes caused by a writer task that died on an open
+  socket. `fanout_failed` counts those caused by a failed offer. P5(e) reconciles 1011
+  against both (§5, §5.1);
+- **forced 1013 closes are reconciled from the server's cumulative counters**, because a
+  client that never reads can never see its 1013 frame (P5(e));
+- **a request body stalled mid-chunk gets 408 after 2 s** instead of holding a handler
+  indefinitely (§4.3).
+
+**Who approved relaxing P5(h), and why.** The project owner, on 2026-09-27, in their review
+of the Task 1–6 checkpoint `de7e431`. Their instruction was: "allow at most one explicitly
+reported delivery_unknown per forced stalled/reset connection, with zero for healthy
+clients; keep diagnostic reply loss and latency criteria unchanged". The reason is the
+measurement: a stalled or reset connection is cut off while one frame sits in the transport
+buffer, and that frame's delivery cannot be known. Under the previous rule, M4 condition 4
+could therefore never pass. Zero unknowns on forced and reset connections remains an open
+goal, not a requirement.
+
+A seventh revision, on 2026-09-28, is the owner's decision after the investigation of the
+M2 early check's `STOP` (`docs/validation/gui-m2-early-check.md`, "M4 forced 1013 closes:
+a proposal for the owner"; the owner chose a variant of its option (b)). It changes no
+threshold of P1–P9, and no V1.0 or Phase 8b gate:
+
+- **M4 adds a forced-close run in every round**, outside conditions 1–5. It passes
+  only if the server counts **three 1013 closes** and **three reconnections** are
+  accepted, all **within 60 s**. It has no minimum number of requests. It is checked
+  against **P5 and P9**. Its latency is **reported separately and not judged against P1
+  or P2** (§9.2, *Forced-close run*). M4's exit requires it to pass in every round (§10);
+- **the condition 4 row is corrected.** At 20,000 requests condition 4's stalled client is
+  expected to overflow but not to be forced off. Condition 5 and the P7 soak may reach
+  forced closes but do not require one, so the 1013 path is proven by the forced-close run
+  (§9.2);
+- `GET /status`'s `longest_turn_s`, which the server already reports, is listed in §5, and
+  P9 and P5(h) name the forced-close run (§9.2).
+
+An eighth revision, on 2026-09-28, records the owner's decisions after the M2 client-cost
+diagnostic (`docs/validation/gui-m2-early-check.md`, "Owner decisions (2026-09-28)"). It
+changes no threshold of P1–P9, and no V1.0 or Phase 8b gate:
+
+- **the status line is corrected.** It still said that no production code had been
+  written. M1 and M2 are built, and M2's early check is a `STOP` that remains open and is
+  not accepted;
+- **M4's timed conditions, 1–5, run without segment pauses.** A segmented run, the M2
+  diagnostic harness's segment-and-harvest mode, is a diagnostic only and never judges
+  P1–P9. Dispatch latency is therefore taken from the reading clients' events, or from
+  the history after the run (§9.2, *Runs* and *Measurement*);
+- **the forced-close run is also judged on** zero lost diagnostic replies, as P3 defines
+  a lost reply, and zero drops for its three reading clients: `client_dropped` = 0 and
+  `discarded_on_close` = 0 on their connections, and `handoff_dropped` = 0 over the run,
+  as P6 requires of condition 4's reading clients. The stalled client's drops are
+  reported as expected, not judged, but they must still reconcile under P5(b) and (f),
+  and P5(h)'s allowance applies to its `delivery_unknown`. Its latency is still reported and not
+  judged against P1 or P2 (§9.2, *Forced-close run*).
+
+The owner's words: "For M4, keep timed conditions free of segment pauses; use segmented
+runs only as diagnostics. The forced-close run must have zero lost diagnostic replies and
+zero drops for healthy readers, while reporting the stalled client's expected drops."
+
+A ninth revision, on 2026-09-29, is the owner's decision on option (c) of
+`docs/plans/moving-vehicle-demo-design.md` §9: an unsourced signal is shown as
+unavailable, not as a misleading stored default. It is additive. It changes no threshold of
+P1–P9, no V1.0 code (the schema, the state model and the scenario engine are read, not
+changed), and no V1.0 or Phase 8b gate. The M2 early-check `STOP` stays open:
+
+- **`GET /vehicle` and the WS `state` message gain `unavailable`:** a sorted list of the
+  dotted signal paths that have **no source** in the loaded profile. A path has no source
+  when no field of the profile schema's `vehicle` section can set it and no scenario
+  generator drives it. The list is computed once at startup, not per request or per
+  message (§5);
+- **`signals` still carries the stored value** of every path, listed or not. With the
+  shipped profiles and the stepped demo, the list is `["vehicle.odometer"]`;
+- the page shows a listed signal as "—" with the text "unavailable, no source", live and
+  stale alike.
+
+A tenth revision, on 2026-09-30, records the owner's review of the M3b design
+(`docs/plans/gui-m3b-graphs-design.md`, first version `9a69d2e`). **Its scope is design
+only: nothing in it is implemented, and implementation approval follows the owner's review
+of the revised design.** (Thirteenth revision: its server items are implemented at M3b
+checkpoint 1; the page items are not.) It changes no threshold of P1–P9, no V1.0 code, and no V1.0 or
+Phase 8b gate. The M2 early-check `STOP` and the hosted `CAN_ISOTP` gap stay open, and
+`gui` is still not merged into `modernization` before V1.0 is tagged.
+
+- **Approved as designed:**
+  - five separate live graphs (speed, rpm, throttle, load, coolant), with the VIN kept as
+    text;
+  - the 30 s / 2 min / 10 min windows;
+  - stepped rendering;
+  - bounded browser history;
+  - gaps at restart and disconnect;
+  - "rpm" as the unit in both the graph and the signal table;
+  - no sample data in the shipped page.
+- **Required and now specified in the design:**
+  - a collapsible graphs section above the log, open by default, with a pixel budget that
+    keeps at least 5 log rows visible at 1440 × 900, and a 390 px layout;
+  - "Pause graphs", separate from the log's pause, which keeps buffering within the limits
+    and resumes at the latest data;
+  - acceptance checks through visible readouts and read-only `data-*` attributes, never
+    uPlot internals;
+  - cost figures labelled as estimates until measured;
+  - the CSP check in Chrome **and Firefox** on the manual checklist. It is unverified until
+    someone runs it, and M3b is not accepted before then.
+- **The non-finite rule and state-encoding containment** (§4.3, §5), specified and **not
+  yet implemented**:
+  - a non-finite signal value is sent as JSON `null`, with its path in a new, sorted
+    `nonfinite` list;
+  - state encoding is strict, and a failure never ends the periodic state task;
+  - a new `state_encode_failed` counter;
+  - on the page, malformed messages are reported and stop the page claiming Live.
+
+  This is the observer API's rule. It is **separate from DEV-26**, which is about rejecting
+  non-finite values at profile load, on `modernization`: a different layer, recorded and
+  scheduled there, and not mixed into this work.
+- **§7, §9.3 and the §10 M3b row** are rewritten to the design. uPlot is pinned at 1.6.32
+  by SHA-256, and the CSP is unchanged.
+
+An eleventh revision, on 2026-09-30, records the owner's third-round review of the M3b
+design. **The approval covers documentation only: nothing in it is implemented.** It
+changes no threshold of P1–P9, no V1.0 code, and no V1.0 or Phase 8b gate. The M2 latency
+`STOP`, the hosted `CAN_ISOTP` gap, the Phase 8b gate and the V1.0 branch rule stay open.
+All of the following is **specified, not implemented**. (Thirteenth revision: the server
+items, encoding health and the first-good publish, are implemented at M3b checkpoint 1; the
+page items are not.)
+
+- **No silence rule.** State is delivered only on change, so the page never infers
+  anything from time without messages. Its health rests only on:
+  - connection or poll failures ("stale");
+  - malformed messages;
+  - reported state-encoding failures.
+
+  The last two mark the vehicle, DTC and graph data "last known", which is distinct from
+  "stale". A healthy session with no scenario stays "Live" indefinitely.
+- **Encoding health** in `GET /status` (§5), next to the cumulative counter:
+  `state_encoding: {ok, last_ok_at, last_failed_at}`.
+  - `ok` is set explicitly on every periodic attempt.
+  - The timestamps are for reporting only and never decide `ok`.
+  - Health covers the **complete** state snapshot, vehicle and DTCs. A successful
+    `GET /vehicle` never changes it; its own failures count in `vehicle_encode_failed`.
+- **The first good snapshot after a failure is always published**, even if its text equals
+  the last successful one, within the existing rate limit (§4.3).
+- **The browser clears "last known" only after applying a valid replacement `state` for its
+  current connection and run.**
+  - After an encoding failure, that `state` must also follow a `GET /status` that reports
+    `ok: true`.
+  - A healthy `/status` alone never clears it.
+- **Resynchronisation is a bounded reconnect.** No server change is needed: every new
+  connection already receives the current state right after `hello` (§4.5,
+  `observe/publisher.py:177-178`, `observe/writer.py:22-31`).
+  - The owner's brief said otherwise. The code was checked, and the design records the
+    contradiction and relies on the existing behaviour.
+  - During an encoding failure, that state is the last good one, so it does not count as
+    recovery.
+  - A REST re-fetch is not used, because `GET /vehicle` cannot prove the full state
+    recovered.
+- **Tests:**
+  - non-finite values and encoding failures are injected in-process: in the Python tests
+    through the runtime, and in the browser checks through a test server;
+  - no profile file is used, so none of it depends on DEV-26;
+  - the regression cases cover same-value recovery and a malformed state followed by
+    unchanged data;
+  - the SIGSTOP/SIGCONT check asserts the disconnected state and a recovery with
+    `started_at` unchanged and no restart marker.
+- **Two implementation checkpoints:**
+  - **checkpoint 1**: the observer JSON and health safeguards and their tests, with the
+    state build and encode cost and the publisher's longest turn measured before and
+    after. One rotated M2 early check may be run as a regression comparison, never as
+    acceptance. The M2 `STOP` stays unresolved unless its criteria pass;
+  - **checkpoint 2**: graph rendering and the browser checks.
+
+A twelfth revision, on 2026-09-30, records six fixes the owner approved to the M3b design.
+They are applied in `docs/plans/gui-m3b-graphs-design.md`. **The scope is documentation
+only; implementation starts in a later session, from checkpoint 1.** Nothing here changes
+a threshold of P1–P9, V1.0 code, or any V1.0 or Phase 8b gate. The M2 latency `STOP`, the
+hosted `CAN_ISOTP` gap, the Phase 8b gate and the V1.0 branch rule stay open.
+
+- **One health model** replaces two rules that contradicted each other. A recovery
+  requirement starts on connection establishment or on a fault, and clears only when its
+  required `state` is applied; after an encoding fault, only after an `ok: true` read.
+  Healthy polls never start or restart it, and `hello` alone never clears it. "Live" is
+  the connection being live and the data current (§7).
+- **Two variables:** the connection state (`live`, `down` or `refused`) drives polling
+  and reconnects; the data validity (`current` or `last-known`) is separate. So a
+  last-known page keeps polling. Today's `app.js` stops polling whenever it is not live
+  (`poll()` and `isLive()`), which the implementation changes.
+- **One retry budget per recovery episode.** It covers every way an attempt ends, uses one
+  timer at a time, is reset only by recovery, and ends in a manual "Retry now". An
+  ordinary disconnect keeps M3a's indefinite reconnect. A test covers recovery with all
+  four client slots occupied, where the close handshake (`WS_CLOSE_TIMEOUT_S`, 2 s) can
+  cause a 503.
+- **The bounded-history check** allows the one predecessor point that step-hold needs
+  before the window, plus the count cap, instead of a bound on the oldest time.
+- **The strict-encoding test** injects a non-finite value where the sanitiser does not
+  look, so only `allow_nan=False` can catch it, and asserts containment.
+- **Wording:** after a failed encode, the retained state is "last known" (§4.3), not
+  current.
+
+A thirteenth revision, on 2026-09-30, records M3b checkpoint 1 on branch `gui`. **The
+server and API items are implemented:** `nonfinite` and the non-finite rule (§5), strict
+encoding, the state-encoding containment, the `GET /vehicle` 500, the startup refusal and
+the first-good publish (§4.3), and `state_encode_failed`, `vehicle_encode_failed` and
+`state_encoding` in `GET /status` (§5), with their tests (§9.3). **The page items stay
+designed, not implemented:** the graphs and vendored uPlot (§7), and the page's health
+model, "last known" and the recovery budget. Nothing here changes a threshold of P1–P9,
+V1.0 code, or any V1.0 or Phase 8b gate. The M2 latency `STOP`, the hosted `CAN_ISOTP` gap,
+the Phase 8b gate and the V1.0 branch rule stay open.
+
+A fourteenth revision, on 2026-09-30, records M3b checkpoint 2 on branch `gui`. **The page
+items are implemented:** uPlot 1.6.32 vendored and pinned by SHA-256 (§7, §9.3), the five
+graphs, and the page's health model, "last known" and the recovery budget. The automated
+browser checks (§9.3) passed 24 of 24 on a vcan host in Chrome
+(`docs/validation/gui-m3b-live-demo.md`: run 9 and its long run at `f8a8e5f`, and run 12 at
+`5cd62fe` for the cases Task 37 changed). Run 9's one failure, 4 log rows while the restart
+note and a gap note showed together at 1440 × 900, was fixed in Task 37 with the owner's
+short restart note on the shared notice line, no notice bottom margin and a 4.5rem plot cap:
+5 rows in run 12, including when the notice line wraps (+6 px in the worst reading). The
+record lists the page's main-thread load as an open finding under "Remaining acceptance
+items". (Status, 2026-10-01: after Tasks 42-46, a windowed exchange log and a compositor-only
+lamp, the finding is mitigated on headless numbers and stays open until the owner confirms it in
+their own browser; `docs/validation/gui-m3b-main-thread.md`, "Outcome". Status, 2026-10-04: Tasks 47-51 moved the log's navigation into its header, silenced the log
+counter and moved announcements into one hidden announcer; the M3b record lists the owner's
+remaining items under "Owner checklist (ordered)".) **M3b is not accepted** until the owner's manual checklist (design §13) passes, including the CSP check in both
+Chrome and Firefox, which nobody has run. The record lists the rulings the controller made
+during checkpoint 2, for the owner to confirm or reverse: the Agreement check covers
+unpaused live screenshots only; break and gap notes sit on one shared line under the
+graphs head, not in each card (a departure from the design's §6.7 wording); a status bar
+of stable height from 1101 px wide (an M3a layout change); five cards wrapping 4 + 1
+between 1101 and about 1260 px; a malformed frame while only an encoding requirement is
+pending defers the resync to the `ok: true` poll; and the fault server's public seams.
+Nothing here changes a threshold of P1–P9, V1.0 code, or any V1.0 or Phase 8b gate. The M2
+latency `STOP`, the hosted `CAN_ISOTP` gap, the Phase 8b gate and the V1.0 branch rule stay
+open.
+
+The evidence for the routing and ordering claims is in §12.
+
+## 1. Purpose and scope
+
+**Purpose: watch first, control later.** The owner wants to see, live and in a browser,
+what the running simulator is doing: its vehicle values, its trouble-code store, and every
+diagnostic exchange it serves. This is for demonstrations and for debugging a scan tool
+against the simulator. Changing values comes later, as a separately designed step (§8).
+
+**GUI v1 is read-only, and the simulator is started from the CLI** exactly as today. The
+GUI observes a simulator that is already running. It never starts, stops or configures
+one.
+
+| In v1 | Not in v1, and where it goes |
+|---|---|
+| Status: interface, profile, uptime, scenario time, API client and drop counts | Starting or stopping the simulator from the browser: the `ControlPort` milestone (§8) |
+| Vehicle signals, live | Choosing a profile or scenario from the browser: `ControlPort` |
+| Trouble-code store per ECU (pending, confirmed, indicator) and MIL | Setting, raising or clearing trouble codes from the browser: `ControlPort`, coordinated with Phase 10 |
+| Decoded request/response log, with filters | Raw CAN frame panel, including other nodes' frames: a later optional milestone (§10) |
+| Served on loopback only | Remote access, multiple users, authentication: not planned |
+
+Users: one person, on the Linux host that runs the simulator. Remote viewing, if wanted,
+is an SSH port-forward to the loopback port.
+
+## 2. Constraints from the existing design
+
+1. **`ScenarioRunner` is the only writer** of vehicle state
+   ([0006 §5](0006-phase-7-scenario-and-testerpresent.md)). v1 writes nothing. Snapshots
+   **never call `sync()`**, because that would make the observer a trigger of scenario
+   application. They report state as last applied, together with the scenario time it was
+   applied at. The existing periodic tick (`scenario.tick`, default 1 s) keeps that current.
+2. **`Runtime` is the composition root** (`app.py`). The observer attaches there and in
+   `run()`, and nowhere else. Protocol, ECU and vehicle code gain no imports, no sockets
+   and no awareness of observation.
+3. **The dispatch call sits on the wire path.** `IsoTpTransport._on_readable` calls the
+   handler synchronously. It passes the reply to `_send` only after the handler returns
+   (§12, E1). Anything done inside the dispatch call is added directly to request-to-reply
+   latency.
+4. **One asyncio loop, one thread.** The API shares the loop with the transport. That
+   means no locks, but also that CPU spent in the API delays socket callbacks: the next
+   request's read callback, and the writable callback that drains queued replies. The
+   API's work must be bounded and must be measured (§9.2).
+5. **Phase 10 (fault injection, V1.1)** owns faults, and v1 must not implement any of it
+   by the back door.
+
+## 3. Approaches considered
+
+| | Approach | Verdict |
+|---|---|---|
+| **A** | Opt-in observer API inside the simulator process, on the same loop; the browser is a client | **Chosen.** It sees internal state that never reaches the wire, uses one process, and provides the one place a future writer can be added cleanly |
+| B | Separate process that sniffs CAN and tails the log; no simulator changes | Rejected for v1: no internal state, and control would later need A anyway. Its raw-frame view survives as a later optional panel (§10) |
+| C | Separate GUI process with a Unix-socket API into the simulator | Rejected: the most isolation, but two processes and two protocols. A's off-by-default design with a measured hot path addresses the same risk more cheaply |
+
+## 4. Architecture
+
+```
+            ┌────────────────── simulator process, one asyncio loop ──────────────────┐
+ CAN ⇄ IsoTpTransport ─► ObservedDispatcher ─► Dispatcher ─► ECUs ─► VehicleState / DtcStore
+   _on_readable: dispatch,    │ hot path: one bounded append,                ▲ read-only,
+   then _send (kernel or      │ no formatting, never awaits                  │ off the hot path
+   pending queue)             ▼                                              │
+                        HandOff (bounded) ──► Publisher task ── summarise, JSON-encode once ──┐
+                                                    │                                         │
+                                                    ├─► history ring (GET /exchanges)          │
+                                                    └─► per-client queues (bounded) ─► WebSocket clients (max 4)
+                                                                                      ▲
+                                             ApiServer (aiohttp, [gui] extra) ─ HTTP snapshots
+```
+
+### 4.1 Components
+
+| Unit | Lives in | Depends on | Purpose |
+|---|---|---|---|
+| `ObservedDispatcher` | `ecu_simulator.observe` (core) | `Dispatcher`, `HandOff` | Wraps the dispatcher: times the call and appends one raw record |
+| `HandOff` | `observe` | stdlib only | The single bounded buffer between the hot path and everything else, with a drop counter |
+| `Publisher` | `observe` | `HandOff`, `Runtime` (read-only) | An asyncio task that drains `HandOff`, builds summaries, JSON-encodes each event once and fans it out |
+| Snapshot functions | `observe` | `Runtime` (read-only) | `Runtime` → plain JSON-ready dicts for status, vehicle, DTCs and ECUs |
+| `ApiServer` | `ecu_simulator.api`, **`[gui]` extra** | aiohttp, `Publisher`, snapshots | HTTP routes, WebSocket, static files, security checks |
+| Static frontend | `ecu_simulator/api/static/` | none at runtime | HTML, CSS, plain JavaScript modules |
+
+`observe` has **no third-party dependencies**. Only `api` imports aiohttp, and only when
+`--api` is given.
+
+### 4.2 The hot path, and when the publisher runs
+
+This is what `ObservedDispatcher.__call__` does, and nothing more:
+
+1. Take the next sequence number: an integer increment, owned by the wrapper.
+2. Read `time.monotonic_ns()`.
+3. Call the wrapped dispatcher. If it raises, append an `error` record and re-raise. The
+   transport already logs the exception and sends nothing (§12, E1).
+4. Read `time.monotonic_ns()` again.
+5. `HandOff.append(record)`. The record is one tuple:
+   `(seq, t0_ns, elapsed_ns, request, response_or_None, exception_type_or_None)`.
+   `request` is the `DiagnosticRequest` itself, so its endpoint is available from its
+   `context`. Both payloads are references to bytes that already exist, with no copying
+   and no formatting.
+6. Wake the publisher by calling `asyncio.Event.set()`.
+
+**When the publisher runs (corrected).** An earlier draft said the publisher runs "after
+the reply has been sent". That was wrong. What holds is this:
+
+- `Event.set()` does not run the publisher. It resolves the waiting future, whose
+  callbacks are scheduled with `loop.call_soon` (§12, E4). The publisher therefore resumes
+  on a **later loop iteration**, after the read callback that dispatched the request has
+  returned.
+- By the time that callback returns, `_send` has done one of three things (§12, E2):
+  1. **handed the reply to the kernel**: `socket.send` returned `True`. That means the
+     kernel accepted it, not that it is on the wire. A multi-frame reply is still waiting
+     for the tester's flow control;
+  2. **queued it** in `endpoint.pending`, to be sent by a later writable callback, because
+     the socket was busy or earlier replies were queued;
+  3. **dropped it** after a `TransportIOError`, which is logged.
+- So the publisher never runs *inside* the dispatch-to-`_send` sequence. It **can** run
+  before a queued reply is transmitted, and it competes for the loop with that writable
+  callback and with the next request's read callback. That is what §9.2 measures.
+
+**Verified by** these tests, which run in ordinary CI and need no CAN (§9.3):
+
+- **O1.** A real `IsoTpTransport` built with a fake socket factory (the existing
+  `socket_factory` seam, §12, E2) and `_check_environment` off. An ordered event log shows
+  that for an immediately accepted reply the fake socket's `send` happens before the
+  publisher's first line runs for that exchange.
+- **O2.** The same setup with a fake `send` that returns `False` (busy). The log shows the
+  publisher **may** run before the queued payload is sent. The exchange is still reported
+  as `responded` (§5). The test pins the corrected claim so the wrong one cannot come back.
+- **O3.** The hot path never awaits and never calls into the publisher: a test replaces the
+  `Publisher` with one that raises if called synchronously from `__call__`.
+
+**Fan-out is not O(1).** Publication costs one queue operation per connected client. The
+hot path's cost is independent of the number of clients. The publisher's cost is
+proportional to clients × events, and it runs on the same loop.
+
+**The publisher's work per loop turn is bounded.** A full `HandOff` holds 4096 records.
+Draining it in one go would hold the loop for the whole backlog, delaying every read and
+writable callback behind it. So, each time it is scheduled, the publisher processes
+records only while **both** of these hold:
+
+- it has handled **at most 64 records** in this turn;
+- it has spent **at most 1 ms** of `time.monotonic()` in this turn, checked after each
+  record.
+
+Processing a record covers summarising it, JSON-encoding it once, appending it to the
+history ring and offering it to every client queue. As soon as either limit is reached,
+the publisher yields with `await asyncio.sleep(0)`. The loop then runs the I/O callbacks
+that are ready before the publisher continues, so draining a full `HandOff` takes at
+least 64 turns.
+
+Sending to each WebSocket runs in that client's own writer task, which awaits
+`send_str`, so no client's network I/O runs inside a publisher turn. The longest a
+publisher turn can hold the loop is therefore about 1 ms plus one record's processing.
+M1 and M4 measure it (§9.2, P9).
+
+**Verified by** test **O4**. It fills `HandOff` to 4096 records, registers a reader on a
+socketpair that always has a byte waiting, and schedules a marker callback with
+`call_soon` from inside every turn. The ordered log must show **both** the ready I/O
+callback and the marker running between **every** pair of consecutive turns, while
+`HandOff` is still non-empty, and at least ⌈4096 / 64⌉ = 64 turns. It also records every
+clock read the publisher makes and checks each turn against the 1 ms budget: no record is
+started after the budget was reached, and every turn stops at 64 records, at an empty
+`HandOff`, or at the budget. (Revised 2026-09-26: the first version of this test only
+showed one marker running somewhere before the last turn.) A second case uses a stub encoder that takes 0.3 ms per record, and asserts that
+no turn exceeds 1 ms plus one record's processing time.
+
+### 4.3 Limits, byte budgets and overflow behavior
+
+Payload sizes are bounded by ISO-TP: at most 4095 bytes each way on Classical CAN. Every
+retaining structure has both a count limit and a byte limit. Whichever is reached first
+applies.
+
+| Structure | Count limit | Byte limit | Overflow behavior |
+|---|---|---|---|
+| `HandOff` (hot path → publisher) | 4096 records | 1 MiB of payload bytes (`len(request)` plus `len(response)`, summed with an O(1) counter, no copying) | **The new record is dropped**, and `handoff_dropped` increments by one. Its sequence number is not reused, so the gap is visible to clients (§4.5). The dispatcher is unaffected |
+| Retained payload per event, after publication | — | **512 bytes per payload.** The history ring, `GET /exchanges` and WebSocket messages carry at most the first 512 bytes of each payload, as hex | The event carries `request_len` / `response_len` (full lengths) and `request_truncated` / `response_truncated` flags. Nothing is truncated on the hot path |
+| History ring (`GET /exchanges`, initial WebSocket history) | 500 events | 2 MiB of encoded JSON | The oldest event is evicted, by design; `oldest_seq` advances (§4.5). This is not counted as a drop |
+| Per-client queue | 1024 messages | 4 MiB of encoded JSON | **The new `exchange` message is dropped** and that client's `client_dropped` increments. `state` and `dropped` messages are never queued behind others: each client has a one-slot latest `state` and a one-slot latest `dropped` notice, which are **replaced** rather than queued, and sent before the next queued exchange. After 5 s of continuous overflow the client is disconnected with close code 1013 and the reason `"client too slow"`, and `forced_disconnects` increments |
+| WebSocket clients | 4 | — | A 5th connection is refused with HTTP 503 before the upgrade, and `refused_clients` increments |
+| Single encoded `state` message | — | 256 KiB | Checked once when the API starts. A profile whose state encodes larger makes `--api` refuse to start (exit 2), rather than truncating state at runtime |
+| State encoding (tenth revision; **implemented at M3b checkpoint 1**) | — | — | A non-finite signal value is sanitised to `null` and listed in `nonfinite` (§5) **before** encoding, and the state is encoded with `json.dumps(allow_nan=False)` as a guard. If building or encoding a periodic `state` still fails, **that push is skipped**, the last good state is kept as the **last known** state (it is not current, and `state_encoding.ok` says so), `state_encode_failed` increments, the failure is logged once per exception type (as `encode_failed` is), and the state task continues. A failed `GET /vehicle` encode answers 500 and increments `vehicle_encode_failed` (eleventh revision), never `state_encoding`. At startup, a failure other than the size rule makes `--api` refuse to start (exit 2). Nothing is dropped from the exchange stream |
+| State encoding health and the first-good publish (eleventh revision; **implemented at M3b checkpoint 1**) | — | — | Each periodic attempt sets `state_encoding.ok` explicitly: `true` on success, `false` on failure, with `last_ok_at` or `last_failed_at` for reporting only (never compared with a clock to decide `ok`). **After one or more failed attempts, the first successful attempt is pushed even if its text equals the last pushed text**; after that, only-when-changed applies again. The rate limit is unchanged: one attempt per 0.25 s, at most one push per attempt, into the one-slot state. A failed attempt pushes nothing, so a client that connects during a failure receives the last good state after `hello` (§4.5), which is last known, not current |
+| Publisher turn | 64 records | 1 ms of loop time | The publisher yields (`await asyncio.sleep(0)`) and continues on a later turn. Nothing is dropped. A backlog that keeps growing ends in `HandOff`'s own overflow above |
+| `state` push rate | at most 4 Hz | — | Coalesced into the one-slot latest `state`, which is not a drop |
+| Incoming HTTP body | — | 1 KiB | 413. v1 routes are GET-only, so a body is never needed. A body of undeclared length (chunked) that does not complete within **2 s** gets **408** (added 2026-09-27) |
+| Incoming WebSocket data message (text or binary) | — | — | Any data message closes the socket with 1008: v1 accepts nothing from clients. Control frames (ping/pong/close) are handled normally |
+
+**Bounded memory.** The worst case for the observer's retained data is 1 MiB (`HandOff`) +
+2 MiB (history) + 4 × 4 MiB (client queues) + small one-slot buffers, **about 19 MiB**.
+§9.2 checks RSS against that.
+
+All counters are exposed in `GET /status` and in `dropped` messages. **A drop is always
+reported, never hidden.** Values are constants in `observe`, chosen for a single user.
+They are not configuration in v1.
+
+### 4.4 What the wrapper observes, traced
+
+The wrapper sees **one exchange per call to the dispatcher**, and nothing else. §12 gives
+the evidence for each row.
+
+| Situation | Reaches the dispatcher? | What the wrapper records |
+|---|---|---|
+| A request on any receiving endpoint (physical or functional), after the kernel has reassembled it | Yes, once per receiving socket that got it | One exchange |
+| The dispatcher returns a response | Yes | `responded`, with the response payload. **At most one** response per call: fan-out to several ECUs is refused, at construction and again per request (E3) |
+| A route exists and the ECU returns no response (unsupported, suppressed, Mode 07) | Yes | `no_response` |
+| No route for the request's address and kind | Yes: the dispatcher logs *"no ECU for … request; dropped"* and returns `None` (E3) | `unrouted`, decided by the publisher (§5). **Not reachable in v1 as built**: `check_routes` refuses to start unless every receiving endpoint has a route of the same kind (E3), and nothing changes the router at runtime. It is kept so that a future router change is reported rather than misclassified |
+| The dispatcher raises | Yes | `error`, with the exception type. The transport logs it and sends nothing (E1) |
+| Frames the kernel handles alone: flow control, consecutive frames, frames on IDs no socket receives, anything a transport-only (`receive=False`) socket sees | **No** | Nothing. This is the raw-frame panel's job (§10) |
+| `recv` fails with `TransportIOError` (for example a flow-control timeout) | **No**: the transport logs and returns before dispatch (E1) | Nothing |
+| The response is not transmitted (send error, or it is still queued) | The dispatch already happened | Still `responded`. **Transmission is not observed in v1**: `responded` means "the dispatcher returned a response", not "it reached the wire" |
+| **One CAN request received by two sockets** | Yes, **twice** | **Two** exchanges with the same request payload and adjacent sequence numbers. They are not merged, because the wrapper cannot tell they came from one frame |
+
+The last row is reachable today. The schema requires physical receive IDs to be unique
+**across** ECUs, but only `(rx, tx)` pairs to be unique **within** one ECU (E5). One ECU
+may therefore declare two physical endpoints on `rx 0x7E0` with different `tx`, and
+`check_routes` accepts it (E5). Measured on vcan: two ISO-TP sockets bound to the same rx
+ID **both** receive the same single-frame and multi-frame request (E6). So such a profile
+answers one request twice, on two IDs. **That is a configuration-validation gap in the
+simulator, not a GUI matter.** It is recorded as the existing defect **DEV-25** in
+`docs/known-deviations.md` on `modernization`, and is **not fixed as part of any GUI
+milestone**.
+The GUI reports what happens and does not paper over it.
+
+### 4.5 Sequence numbers and the history/live watermark
+
+- Every exchange gets a sequence number `seq` on the hot path. It starts at 1 and
+  increases by 1 per dispatch call, including calls whose record `HandOff` then drops.
+  **A gap in `seq` at the client therefore always means a drop or an eviction,** and the
+  counters say which.
+- `last_published_seq` is the highest `seq` the publisher has put into the history ring.
+  `oldest_seq` is the lowest `seq` still in the ring.
+- **Joining a live stream without gaps or duplicates.** When a WebSocket client connects,
+  the server does the following **in one synchronous step, with no `await` between the
+  steps**, so the single-threaded loop guarantees nothing is published in between:
+  1. read `W = last_published_seq`;
+  2. copy the history ring;
+  3. register the client's queue.
+
+  The server computes `state` once at startup, after the 256 KiB check and **before the
+  listening socket is bound**, so the first client already has a current `state` to
+  receive (added 2026-09-27). Then it sends, in order:
+
+  ```json
+  {"type": "hello", "api": 1, "watermark": W, "oldest_seq": 812}
+  {"type": "state", "...": "..."}
+  {"type": "exchange", "seq": 812, "...": "..."}
+  ```
+
+  The history events all have `seq ≤ W`, oldest first. They are followed by live
+  `exchange` messages, all with `seq > W`. Every event is therefore delivered at most
+  once, and in `seq` order.
+- **Resuming.** Both `WS /events?after=S` and `GET /exchanges?after=S` return only events
+  with `seq > S`. If `S < oldest_seq − 1`, the response carries `"gap": true` and starts
+  at `oldest_seq`, so a reconnecting client knows it missed events that were evicted.
+- Clients detect every other gap from `seq` itself: the next `seq` is not the last + 1.
+  The browser shows a gap marker together with the counters that explain it.
+
+## 5. API v1
+
+Everything is under `/api/v1`. Responses are JSON, and bytes are lowercase hex strings.
+**Only `GET` and the WebSocket upgrade exist; every other method returns 405.** The
+version prefix means a future write API cannot silently change v1.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /status` | `version`, `interface`, `profile`, `started_at`, `uptime_s`, `scenario` {`enabled`, `t_last_applied`, `pending_events`}, `api` {`clients`, `issued_seq`, `published`, `last_published_seq`, `oldest_seq`, `handoff_dropped`, `refused_clients`, `forced_disconnects`, `longest_turn_s` [the longest publisher turn, in seconds, since the publisher was created: a running maximum, never reset; P9], `encode_failed`, `fanout_failed`, `writer_failed`, `state_encode_failed` [tenth revision, implemented at M3b checkpoint 1: failed periodic full-state attempts, each a skipped push, cumulative; §4.3], `vehicle_encode_failed` [eleventh revision, implemented at M3b checkpoint 1: `GET /vehicle` answers that failed to encode, cumulative], `state_encoding` {`ok`, `last_ok_at`, `last_failed_at`} [eleventh revision, implemented at M3b checkpoint 1: the result of the latest periodic full-state attempt, vehicle and DTCs; the timestamps are for reporting only; §4.3], `connections_opened`, `closed_unresolved`, `closed_totals` [cumulative, §5.1], `connections` [one **ledger** per open connection, §5.1], `closed_connections` [the ledgers of the last 64 closed connections, final values]} |
+| `GET /vehicle` | `kind`, `vin`, `signals` {dotted path → value}, `as_of` (the scenario time of the last application, equal to `t_last_applied`; `null` without a scenario), `unavailable` (ninth revision: a sorted list of the dotted paths with no source in the loaded profile, neither settable by the profile schema nor driven by its scenario, computed once at startup; `signals` still carries their stored values), `nonfinite` (tenth revision, **implemented at M3b checkpoint 1**: a sorted list, always present, of the dotted paths whose value is not a finite number in this snapshot; each is sent as `null` in `signals`) |
+| `GET /dtcs` | per ECU: `[{code, pending, confirmed, indicator_requested}]`, and `mil` |
+| `GET /ecus` | per ECU: endpoints {`name`, `rx_id`, `tx_id`, `functional`, `receive`, `reply_via`, `padding`} and protocols {`name`, `sids`} |
+| `GET /exchanges?limit=N&after=S` | up to N (default and maximum 500) exchange events with `seq > S` (default: the most recent N), oldest first, together with `watermark`, `oldest_seq` and `gap` (§4.5) |
+| `WS /events?after=S` | server → client only (§4.5 for ordering) |
+
+WebSocket messages, server → client:
+
+```json
+{"type": "hello", "api": 1, "watermark": 1041, "oldest_seq": 542}
+{"type": "exchange", "seq": 1042, "t": "2026-09-26T10:15:02.118Z", "ecu": "engine",
+ "endpoint": "engine.obd_functional", "rx_id": "0x7df", "tx_id": "0x7e8", "functional": true,
+ "request": "010c", "request_len": 2, "request_truncated": false,
+ "response": "410c0c80", "response_len": 4, "response_truncated": false,
+ "outcome": "responded", "error": null, "dispatch_us": 41,
+ "summary": "OBD 01 0C — engine speed"}
+{"type": "state", "vehicle": {"...": "as GET /vehicle, including unavailable and nonfinite"}, "dtcs": {"...": "as GET /dtcs"}}
+{"type": "dropped", "handoff_dropped": 0, "client_dropped": 12, "forced_disconnects": 0}
+```
+
+- **`outcome`** takes exactly one of four values:
+
+  | Value | Meaning |
+  |---|---|
+  | `responded` | The dispatcher returned a response. **Not** a claim that it was transmitted (§4.4) |
+  | `no_response` | The dispatcher returned `None`, and the request's address had a route |
+  | `unrouted` | The dispatcher returned `None`, and the request's address had **no** route. Decided by the publisher with a read-only `router.resolve` off the hot path. This is exact in v1 because the router is never changed at runtime. If that changes, the decision has to move into the record. Not reachable in v1 as built (§4.4) |
+  | `error` | The dispatcher raised. `error` carries the exception type name, and `response` is `null` |
+
+- `tx_id` is the ID the reply leaves on: the `reply_via` endpoint's tx when one is set,
+  which for `engine.obd_functional` is `0x7E8`.
+- `ecu` comes from the route, and is `null` for `unrouted`.
+- `summary` is built by the publisher from the existing service and PID tables. The
+  browser holds **no protocol logic**. An unknown request is summarised by its service
+  byte alone.
+- `dispatch_us` is **dispatcher time only**. It is not wire latency. Wire timing belongs
+  to candump and, later, to the raw-frame panel.
+- `client_dropped` in a `dropped` message is that client's own count. `GET /status` has
+  every connection's ledger (§5.1).
+- **A publisher turn never raises** (added 2026-09-26). If encoding a record raises, the
+  record is still published, as the fallback event
+  `{"type": "exchange", "seq": S, "outcome": O, "error": "encode_failed"}`, so `seq`
+  stays contiguous, and `encode_failed` increments. If offering an event to one
+  connection raises, that connection alone is closed with code 1011, its ledger ends at
+  the previous publication, and `fanout_failed` increments. If a connection's writer
+  task ends with an exception while the socket is still open, that connection is closed
+  with 1011 and `writer_failed` increments (added 2026-09-27). Each failure is logged once
+  per stage and exception type, and counted every time. Neither should ever happen; the
+  counters make it visible if it does.
+- **Non-finite values** (tenth revision, 2026-09-30; **implemented at M3b checkpoint 1**).
+  A float signal value that is `NaN`, `inf` or `-inf` is sent as JSON `null` in `signals`,
+  and its path is listed in `nonfinite`, in `GET /vehicle` and in every `state`
+  message; a non-finite `t_last_applied` is sent as `null` in `GET /status`, which stays
+  lenient so that it answers during an encoding failure (thirteenth revision). The API
+  therefore never emits a token that is not JSON.
+  - `unavailable` means **no source**; `nonfinite` means **an invalid reading from a
+    source**. A path is never in both. If both would apply, `unavailable` wins: a path
+    with no source has produced no reading, so it cannot have produced an invalid one.
+    Its value is still sent as `null`. Today the case cannot arise, because every
+    state-model default is finite.
+  - Encoding failures are contained as §4.3 says, counted in `state_encode_failed`, and
+    reported as current health in `state_encoding` (eleventh revision).
+  - This is the observer's rule, whatever the source. It is separate from DEV-26
+    (rejecting non-finite values at profile load, on `modernization`).
+
+### 5.1 The per-connection ledger
+
+Every WebSocket connection gets its own ledger, keyed by a connection `id`. A reconnect is
+a new connection with a new ledger. The ledger counts **live `exchange` messages only**.
+The history sent on connect is counted separately, and `state` and `dropped` messages,
+which are replaced rather than queued (§4.3), are not counted.
+
+| Field | Meaning |
+|---|---|
+| `id`, `connected_at`, `closed_at`, `close_code` | Identity and lifetime. `close_code` is 1013 for a forced disconnect, 1011 when offering it an event raised or its writer task failed (§5), and 1006 when the client reset or vanished without a close frame |
+| `watermark` | `W` at registration (§4.5) |
+| `published_at_open`, `published_at_close` | The global `published` counter when the connection was registered, and when it closed (or now, while it is open) |
+| `history_sent` | History events sent on connect, all with `seq ≤ W` |
+| `offered` | Live events published while this connection was registered, all with `seq > W` |
+| `client_dropped` | Offered events refused because the queue was full |
+| `enqueued` | Offered events accepted into the queue |
+| `sent` | Events the writer task has passed to `send_str` successfully, including one that was already being sent when the connection closed and then succeeded |
+| `queued` | Events in the queue now, plus the one handed to `send_str` and not yet confirmed. Once closed, only that unconfirmed one, and 0 once it resolves |
+| `discarded_on_close` | Events still in the queue when the connection closed, forced or not, which are discarded, not sent; plus an event the writer **knows** was never written, because the socket was already closed or closing when it tried |
+| `delivery_unknown` | Events whose `send_str` was **cancelled** while under way, for example at shutdown or after the writer's grace period, or **raised** anything other than a known non-delivery (revised 2026-09-27, at M2 approval). They may or may not have reached the client, and the ledger does not guess. Any non-zero value makes the P5 and P6 result it belongs to inconclusive (§9.2) |
+
+The server keeps these identities **exactly**, at every instant:
+`offered = published_at_close − published_at_open`, `offered = enqueued + client_dropped`,
+and `enqueued = sent + delivery_unknown + queued + discarded_on_close`.
+The ledger of a closed connection is final once a send under way at close, if any, has resolved, and it stays in `closed_connections`.
+
+**Cumulative accounting** (added 2026-09-27). `closed_connections` keeps only the last 64
+ledgers, and a soak closes many more. So `GET /status` also carries:
+- `closed_totals`: the sum over **every** connection ever closed of `history_sent`,
+  `offered`, `client_dropped`, `enqueued`, `sent`, `delivery_unknown` and `discarded_on_close`,
+  together with:
+  - `connections`, their count;
+  - `published_span`, the sum of `published_at_close − published_at_open`;
+  - `close_codes`, a count per close code;
+  - `delivery_unknown_by_close_code`, the `delivery_unknown` sum per close code (added
+    2026-09-27);
+  - `delivery_unknown_over_allowance`, the number of closed connections whose
+    `delivery_unknown` exceeded their P5(h) allowance: 1 if closed 1013 or 1006,
+    otherwise 0. It is checked **per connection**, as each ledger is added (added
+    2026-09-27, after review). The per-code sums alone cannot show the rule: two
+    connections closed 1013, one carrying two unknowns and one carrying none, sum to 2 ≤ 2.
+    This counter keeps the rule verifiable after the last 64 ledgers are evicted.
+
+  A closed connection is added **once**, when its in-flight send (if any) has resolved.
+- `closed_unresolved`: the number of closed connections still waiting for that.
+- `connections_opened`: every connection ever registered.
+
+The summed identities hold at every instant: `offered = published_span`,
+`offered = enqueued + client_dropped` and `enqueued = sent + delivery_unknown + discarded_on_close`.
+`connections_opened = clients + closed_totals.connections + closed_unresolved` also holds.
+(Revised 2026-09-27, from the M1 final review: an event being sent when a forced close happened was counted as
+discarded even when it reached the client, which would have made P5(d) fail.)
+
+**Writer contract** (added 2026-09-27; the full text is the docstring of
+`observe/connection.py`). One writer task per connection takes one message at a time
+with `next_message()`, awaits `send_str`, and resolves an `exchange` before taking the
+next:
+- `mark_sent()` if `send_str` returned;
+- `mark_failed()` only if non-delivery is **known**, which counts as `discarded_on_close`;
+- `mark_unknown()` for any other exception, or a cancellation while under way, which counts
+  as `delivery_unknown`.
+
+A close while `send_str` is awaiting discards what is still queued, but leaves the
+in-flight exchange to that resolution, so that it counts as exactly what happened to it.
+
+## 6. Security
+
+- `--api HOST:PORT` accepts only a loopback host: `127.0.0.1`, `::1` or `localhost`. Any
+  other host is refused at startup with exit status 2 and a message. The API is off by
+  default.
+- **`Host` header allowlist:** the request's `Host` must be the bound loopback address or
+  `localhost` with the bound port, otherwise 421. This defends against DNS rebinding.
+- **WebSocket `Origin`** must equal `http://` plus **the same request's `Host`**, after
+  that `Host` has passed the allowlist, otherwise 403 before `ws.prepare()`. The comparison
+  ignores case.
+  - `localhost` and `127.0.0.1` are different origins, and one is never accepted for the
+    other: a page loaded from `http://localhost:P` cannot open the socket through Host
+    `127.0.0.1:P`, nor the reverse.
+  - A missing `Origin`, or another scheme, is refused.
+
+  (Revised 2026-09-27; this said "the server's own origin", which the M2 draft read as
+  any allowed origin.) No CORS headers are ever sent.
+- **No authentication in v1,** by the owner's decision on 2026-09-26. Any local user of the
+  machine can read the page. The data is simulator state, and the VIN is a test value.
+  This is revisited when §8 adds writes.
+- The static files are package data, served from a fixed directory, with no directory
+  listing and no path parameters.
+
+## 7. Frontend
+
+- **No build step, no npm, and no CDN at runtime,** because a bench host may be offline.
+  The page is static HTML, CSS and plain JavaScript modules, served by `ApiServer`.
+- Views:
+  - a status bar showing connection, interface, uptime, scenario time and drops;
+  - a vehicle signals table;
+  - a DTC panel;
+  - an exchange log, filterable by ECU, service and outcome (`no_response`, `unrouted`,
+    `error`), with pause and clear. It shows a gap marker wherever `seq` jumps (§4.5).
+- **Milestone 3b: live signal graphs** (revised in the tenth revision, 2026-09-30;
+  **implemented, not accepted**; `docs/plans/gui-m3b-graphs-design.md`. Thirteenth
+  revision: the server items are implemented at M3b checkpoint 1. Fourteenth revision: the
+  graphs and the page are implemented at M3b checkpoint 2,
+  `docs/validation/gui-m3b-live-demo.md`; not accepted until the owner's checklist,
+  including both CSP checks, passes):
+  - five separate graphs: `vehicle.speed` (km/h), `engine.rpm` (rpm), `engine.throttle`
+    (%), `engine.engine_load` (%) and `engine.coolant_temp` (°C). The VIN stays text;
+  - drawn only from the `state` messages and `GET /vehicle` the page receives, against
+    scenario time (`as_of`), as **steps**: a stored value holds until the next apply;
+  - the page holds a **bounded history**: one ring per signal, at most 4096 points and
+    600 s. **There is no server-side state history and no backfill**;
+  - windows of 30 s, 2 min (default) and 10 min, the choice kept in `localStorage`;
+  - a collapsible section above the log, open by default;
+  - its own "Pause graphs", separate from the log's pause, which keeps buffering;
+  - a gap at a disconnect, at an invalid value, and when the data becomes "last known"; a
+    cleared graph at a restart; never a line across any of them;
+  - page health (eleventh revision, restated in the twelfth), as two separate variables:
+    - the **connection state** (`live`, `down` or `refused`) drives polling and
+      reconnects, so a page whose data is last known keeps polling;
+    - the **data validity** (`current` or `last-known`, with a reason) is governed only by
+      a **recovery requirement**. It starts when a socket is established, new or resumed,
+      or on a fault: a malformed frame, or a `GET /status` reporting
+      `state_encoding.ok: false`. It clears only when its required `state` is applied, on
+      the current connection and run; after an encoding fault, only on a socket
+      established after an `ok: true` read. Healthy polls never start or restart it,
+      `hello` alone never clears it, and silence never changes it;
+    - **"Live" means the connection state is `live` and the data is `current`**;
+  - recovery from a fault is a reconnect with **one retry budget per recovery episode**
+    (3 attempts, 1, 2 and 4 s apart, on a single timer). Every way an attempt ends counts
+    against it: a malformed frame, a 503, a timeout, or a close before the `state`. It is
+    reset only by recovery, and exhaustion ends in a manual "Retry now". **An ordinary
+    disconnect keeps M3a's indefinite reconnect, backoff capped at 15 s.**
+  - uPlot is vendored as the published `uPlot.iife.min.js` and `uPlot.min.css`, **pinned
+    at 1.6.32 by SHA-256**, with its MIT licence served as `uPlot-LICENSE.txt`. Each is a
+    fixed route (§6). **The CSP is unchanged.** The page works without uPlot, and says
+    so.
+- Decoding stays in Python (§5), so the JavaScript only renders. The frontend is checked
+  by the API tests that produce what it renders and, **in M3**, by tests that every
+  frontend file is served with its content type, and by the owner's manual rendering
+  checklist, which is the M3a and M3b exit (revised 2026-09-27; this was at M4). M2
+  serves one placeholder page and tests only that page.
+  There is no JavaScript test framework in v1. M3b's automated browser checks run in the
+  Chrome capture script on a vcan host. They read visible readouts and read-only `data-*`
+  attributes, never uPlot internals. The CSP check in **Chrome and Firefox** is manual.
+
+## 8. The future control boundary (designed, not built)
+
+- `/api/v1/control/*` is reserved and returns 405 in v1.
+- Controls will enter through **one** `ControlPort` interface. It writes a **manual-override
+  layer owned by `ScenarioRunner`** and applied inside `sync()`, the same way scenario
+  values are. The runner therefore stays the only writer, and idempotence under the
+  request path and the tick is unchanged.
+- Start and stop, profile and scenario selection, and DTC injection all belong here. They
+  need their **own decision record**, which must settle how DTC injection relates to
+  Phase 10, whether writes require authentication, and how an override is shown in the GUI
+  and in logs.
+
+## 9. Validation
+
+### 9.1 API off is unchanged
+
+- With `--api` absent, `run()` hands the transport the unwrapped `Dispatcher`, and aiohttp
+  is never imported. This is pinned by tests.
+- The full suite passes, and the project's **differential comparison** of every reply over
+  tens of thousands of request and address combinations shows no difference between the
+  API-off build and the `modernization` baseline.
+- A test runs the CLI in a subprocess and asserts that aiohttp is **not imported**. In the
+  `.[dev]` CI jobs aiohttp is not installed at all, so those jobs prove the stronger
+  claim: the simulator runs without it. In the `.[dev,gui]` job, the "not installed" form
+  of the test skips with that reason, and only the "not imported" form runs.
+
+### 9.2 Performance
+
+**Early checks, at the end of M1 and again at M2.** These catch regressions while they are
+cheap to fix. They are not acceptance.
+
+- **M1**, in-process, no network. 20,000 calls through a bare `Dispatcher` against the
+  same calls through `ObservedDispatcher`, with the publisher draining. It also drains a full 4096-record `HandOff` and reports the longest publisher turn.
+  **If median overhead exceeds 10 µs, p99 overhead exceeds 50 µs, or any publisher turn
+  exceeds 2 ms, stop and report before M2.**
+- **M2**, on vcan in a namespace. M4 conditions 1, 2 and 4 at 5,000 requests each. **If
+  any M4 latency criterion below is already missed, stop and report before M3.**
+
+**Full benchmark at M4. The criteria below are fixed now, not at M4.**
+
+*Setup.* vcan in a private namespace on the development host, with no other deliberate
+load. The report records the kernel, Python, commit and CPU frequency governor. The tester
+is a Python ISO-TP client on the functional and physical IDs. The request mix is that of
+the 2026-09-25 LX run: `01 0D` and `01 10` polled alternately, with the supported-PID
+chain (`01 00`, `01 20`, `01 40`) and the multi-frame VIN (`09 02`) interleaved once every
+100 requests. No request in the mix is expected to be silent. The tester sends each
+request after the previous reply, or after a 1 s timeout.
+
+| # | Condition |
+|---|---|
+| 1 | API off |
+| 2 | API on, 0 clients |
+| 3 | API on, 1 client reading normally |
+| 4 | API on, 4 clients: 3 reading normally and 1 stalled (connected, never reading). At 20,000 requests the stalled client is expected to overflow after about 6,000 messages (about 1.5–1.8 s at the M2 early check's rates), but not to be forced off while the tester sustains more than about 2,800 requests/s: the §4.3 rule disconnects it only after 5 s of continuous overflow (`docs/validation/gui-m2-early-check.md`; revised 2026-09-28). If it is forced off, the harness reconnects it at once, and each forced disconnect is counted. The forced path is covered by the *Forced-close run* below and by the forced-disconnect tests of §9.3 (`observe` unit tests and `api` tests) |
+| 5 | Condition 4, with the tester sending at the maximum rate it sustains |
+
+*Runs.* Conditions 1–4: 20,000 requests each, repeated in **3 rounds**, with the order of
+conditions rotated in each round. Condition 5: 60 s per round, 3 rounds.
+
+Every timed condition runs its requests **without segment pauses** (revised 2026-09-28).
+A segmented run, which pauses between segments to harvest events as the M2 diagnostic
+did, is a **diagnostic only**: it may be run beside M4 and reported, but it never judges
+P1–P9.
+
+*Forced-close run* (added 2026-09-28). Once in **every round**, a separate run outside
+conditions 1–5: API on, 3 reading clients, and 1 stalled client that the harness
+reconnects each time it is forced off. The tester sends condition 4's request mix
+continuously until the stalled client's third reconnection has been accepted, or until
+60 s have passed since its first request. There is no minimum number of requests.
+
+The run passes only if all of the following hold: the counts below, P5, P9, zero lost
+replies, and zero drops for the reading clients (the last two revised 2026-09-28). A
+shortfall in the counts, a lost reply or a drop for a reading client fails it and is not
+inconclusive. A P5 result that P5(g) or P5(h) makes inconclusive makes the run
+inconclusive, not passed.
+
+- **Counts.** Within 60 s of the run's start, its first request:
+  - the server counts **three 1013 closes**: `forced_disconnects` in `GET /status` rises
+    by at least 3 over the run, and `closed_totals.close_codes["1013"]` rises by the same
+    amount. The second is compared at quiesce, when `closed_unresolved` = 0, because a
+    closed connection enters `closed_totals` only once its in-flight send has resolved
+    (§5.1);
+  - **three reconnections** of the stalled client are accepted: each upgrade is answered
+    with HTTP 101, and each new connection's `id` appears in `GET /status`
+    `connections`. The server has no reconnection counter, so the harness records each
+    reconnection, with its status and `id`, in its JSONL output (P5(g)).
+
+  Fewer than three of either within 60 s is a shortfall.
+- **P5 and P9.** P5 in full at quiesce, (a) to (h). That includes P5(e) with non-zero
+  1013 counts, and P5(h)'s allowance, per connection (`delivery_unknown_over_allowance` =
+  0), not pooled: at most one `delivery_unknown` on each 1013 connection, and on the final
+  stalled connection if it closes 1006 at teardown; zero on the three reading clients.
+  Every allowed one is reported explicitly. P9's maximum of **≤ 2 ms** applies over
+  the run. `longest_turn_s` in `GET /status` is the longest turn since the publisher
+  was created (§5), so the run uses its own simulator process.
+- **Zero lost replies** (added 2026-09-28). Every tester request in the run is answered.
+  A lost reply is as P3 defines it, a request frame with no reply frame before the next
+  request, or within 1 s, and is counted from the run's own `candump -t a` capture.
+- **Zero drops for the reading clients** (added 2026-09-28). On each of the three
+  reading clients' connections, `client_dropped` = 0 and `discarded_on_close` = 0, and
+  over the run `handoff_dropped` = 0, as P6 requires of condition 4's reading clients. Their `delivery_unknown` = 0 is already
+  required by P5(h), above.
+- **The stalled client's drops, reported as expected** (added 2026-09-28). Its
+  `client_dropped`, `discarded_on_close` and `delivery_unknown`, per connection and
+  summed over its connections, are reported with the run's results. They are expected
+  and not judged, but they must still reconcile under P5(b) and (f), and P5(h)'s
+  allowance applies to its `delivery_unknown`.
+- **Reported separately, not judged.** Its wire latency (median and p99, from its own
+  `candump -t a` capture, by the *Measurement* method) and its dispatch latency (median
+  and p99 of `dispatch_us`) are reported beside the round's conditions 1–5. They are
+  **not judged against P1 or P2**. P4 is condition 5's alone. Only the counts, P5, P9,
+  and the lost-reply and reading-client rules above judge this run (revised 2026-09-28;
+  this said that only P5 and P9 judged it, and that its lost replies were reported and
+  not judged).
+
+*Measurement.* Wire latency is the time from the request's first frame to the reply's
+first frame, taken from a `candump -t a` capture by the method of
+`docs/validation/phase-8-lx-bluetooth-2026-09-25/analyze.py`. Dispatch latency comes from
+the events' `dispatch_us`. Because the timed conditions have no pauses (*Runs*), it is
+taken from the events that the reading clients receive, in conditions 3, 4 and 5 and in
+the forced-close run. Condition 2 has no client: its last 500 events are fetched from the
+history after the tester finishes, as in the M2 rotated runs. A full-run figure for
+condition 2 is available only from a segmented diagnostic run, if one is made, and that
+run judges none of P1–P9 (revised 2026-09-28). No criterion judges dispatch latency.
+
+**Pass criteria:**
+
+| # | Criterion | How it is judged |
+|---|---|---|
+| P1 | Median wire latency, conditions 2, 3 and 4 | ≤ condition 1's median **+ 0.10 ms**, on pooled samples, in every round |
+| P2 | p99 wire latency, conditions 2, 3 and 4 | ≤ condition 1's p99 **+ 0.50 ms**, on pooled samples, in every round |
+| P3 | Lost replies, every condition | **Exactly 0.** A lost reply is a request frame with no reply frame before the next request, or within 1 s. The same rule applies in the forced-close run (§9.2) |
+| P4 | Throughput, condition 5 | Requests answered per second ≥ **90 %** of the same tester's maximum rate with the API off (measured the same way in each round) |
+| P5 | Drop and delivery accounting (reconciliation) | Checked after the run has **quiesced**: tester stopped, `HandOff` drained, every open connection's `queued` = 0. All of the following must hold **exactly**: (a) `issued_seq = published + handoff_dropped`. A record whose encoding failed counts in `published`, because it was published as its fallback event (§5). (b) For every connection, open or closed, the §5.1 identities hold. (c) Summed over every connection that was open for the whole run, `offered` equals the growth of `published` over the run, measured by the harness from `GET /status` before and after. (d) On the harness side, the `exchange` messages a connection received have strictly increasing `seq` and no duplicates. For an **open** connection, received live events = `sent`. For a **closed** connection, received live events ≤ `sent` + `delivery_unknown`, and `sent` − received (sent but still in transit when the socket closed) is reported per connection. (e) **From the server's cumulative counters** (revised 2026-09-27; a client that never reads can never see its 1013 frame, so the harness cannot count those closes itself): `closed_totals.close_codes["1013"]` = `forced_disconnects`, and `closed_totals.close_codes["1011"]` = `fanout_failed` + `writer_failed`. The harness also records each time it had to reconnect its stalled client; that count must be ≤ `forced_disconnects`, and any shortfall is reported. HTTP 503 refusals seen = `refused_clients`. (f) Every closed connection is accounted for, including those no longer among the 64 retained: `closed_unresolved` = 0, `connections_opened = clients + closed_totals.connections`, the summed identities of §5.1, including `delivery_unknown`, hold on `closed_totals`, and `closed_totals.close_codes["1013"]` = `forced_disconnects`. (g) **Durable output:** the harness appends every `GET /status` poll (at most 1 s apart) and every close it observes to JSONL files committed with the results. The union of `closed_connections` ids across the polls must be exactly `1..connections_opened` minus the open ones. A missing id means the polls were too far apart, and the run is reported inconclusive, not passed. (h) **Delivery the ledger cannot vouch for, and its allowance** (revised 2026-09-27). A connection closed with **1013 (forced) or 1006 (reset or vanished)** may carry **at most one** `delivery_unknown`: the frame that was in the transport buffer when it was cut off. Every other connection must carry **zero**; that includes every open connection, every connection closed with any other code, and every healthy reading client. Checked on each open and retained ledger and, cumulatively for every closed connection including evicted ones, as `closed_totals.delivery_unknown_over_allowance` = 0 (a per-connection check made when each ledger is added; revised 2026-09-27, because the per-code sums, `delivery_unknown_by_close_code[c]` ≤ `close_codes[c]`, can hide a connection over its allowance behind one under it). The per-code sums are still reported, and still must be 0 for every code other than 1013 and 1006. **Every allowed `delivery_unknown` is reported explicitly** with the results, per condition and round, and per forced-close run, never folded silently into a pass. If the allowance is exceeded, or `closed_unresolved` > 0 at quiesce, P5 and P6 for that condition and round are **inconclusive**: reported with the counts, never passed; the run is repeated or the cause found. **Any unexplained difference fails** |
+| P6 | Drops where none should occur | In conditions 2 and 3, for the 3 reading clients in condition 4, and for the 3 reading clients in the forced-close run: `handoff_dropped` = 0, `client_dropped` = 0 and `discarded_on_close` = 0. In **every** condition, `encode_failed` = 0 and `fanout_failed` = 0. Drops, discards and in-transit losses are allowed only on the stalled client's connections, and only where P5 accounts for them. For those reading clients `delivery_unknown` must also be 0; the stalled client's connections may carry the P5(h) allowance of one per forced or reset close, reported explicitly. Anything beyond the allowance makes P6 inconclusive for that condition and round (P5(h)) |
+| P7 | Memory (RSS trend) | A 10-minute soak under condition 4 load, sampling the simulator's RSS every 5 s. Samples in the first 60 s are discarded as warm-up. **Pass if** the least-squares slope of RSS against time over the remaining samples is **≤ 0.1 MiB per minute**, **and** the final sample exceeds the first post-warm-up sample by **≤ 2 MiB**. Separately, the peak RSS increase over condition 1 must stay within the §4.3 bound of about 19 MiB plus 10 MiB for code and libraries |
+| P8 | Noise guard | If condition 1's own p99 differs by more than 0.50 ms between rounds, the benchmark is **inconclusive**. It is reported as such and does not pass |
+| P9 | Loop hold time | The publisher records the length of every turn. The maximum over the whole of conditions 2–5 and the forced-close run is **≤ 2 ms**. The M1 early check reports the same maximum for a full 4096-record `HandOff` |
+
+Results, the raw captures and the scripts that produced them are committed under
+`docs/validation/`. A failed criterion is reported with its numbers, never rounded into a
+pass.
+
+### 9.3 Tests, and where they run
+
+| Test | Needs | Runs in ordinary CI? |
+|---|---|---|
+| `observe` unit tests: `HandOff` count and byte bounds and drop counting; `seq` gaps on drop; `ObservedDispatcher` timing, error re-raise and one record per call; `Publisher` fan-out, per-client count and byte limits, one-slot `state` / `dropped`, forced disconnect; the client limit; the watermark handshake (no gap and no duplicate across history/live, `after=` and `gap`); every §5 `outcome` value, including `unrouted` by giving the wrapped dispatcher a router with no route; snapshots serialise and **never mutate** (state, store and runner compared before and after) | nothing | **Yes**, every job |
+| Ordering tests O1–O3 and the turn bound O4 (§4.2), through a real `IsoTpTransport` with a fake socket factory | nothing | **Yes**, every job |
+| Ledger tests (§5.1): the identities hold after enqueue, send, overflow, and voluntary and forced close; closed ledgers are retained and final | nothing | **Yes**, every job |
+| Observation of the two-socket case (§4.4): one request delivered to two fake sockets gives two exchanges | nothing | **Yes**, every job |
+| API-off proofs (§9.1) | nothing | **Yes**. In the `.[dev]` jobs, without aiohttp installed. In the `.[dev,gui]` job, the "not imported" form only |
+| `api` tests with aiohttp's test client over loopback: every route, 405 on every other method (including `HEAD`), `Host` 421, `Origin` 403, no CORS headers, 413, 503 for a 5th client, 1008 on an incoming data message, a forced 1013 for a stalled client, the WebSocket stream and its ordering, the initial `state`, the one placeholder page M2 serves | `.[dev,gui]` and loopback | **Yes**, in a CI job that installs `.[dev,gui]`. Loopback exists on hosted runners |
+| vcan integration: a real ISO-TP request produces the matching WebSocket `exchange` event | `.[dev,gui]` and a kernel with `CAN_ISOTP` | **No.** It skips on hosted runners (`linux-azure` has no `can_isotp`). It is **pending a compatible runner** ([0009](0009-self-hosted-vcan-runner.md)), runs locally, and is **never counted as validated from a CI run that skipped it** |
+| Performance (§9.2) | vcan and `CAN_ISOTP` | No. Local, recorded evidence |
+
+| Frontend files (M3): every file M3 adds is served with its content type, and nothing else is. From M3b, the vendored uPlot files are also **pinned by SHA-256**, its licence is shipped and linked, and the page loads it before `app.js` (tenth revision; **implemented at M3b checkpoint 2**) | `.[dev,gui]` and loopback | **Yes**, in the `.[dev,gui]` job, from M3 |
+| Non-finite values and state-encoding containment (tenth revision, **implemented at M3b checkpoint 1**): `null` plus a sorted `nonfinite` list; `unavailable` wins over `nonfinite`; strict encoding; the state task survives a failed snapshot and counts `state_encode_failed`; 500 from `GET /vehicle`; the startup refusal | nothing (`observe`); `.[dev,gui]` and loopback (`api`) | **Yes**, every job for `observe`, the `.[dev,gui]` job for `api` |
+| Encoding health and the first-good publish (eleventh revision, **implemented at M3b checkpoint 1**): `ok` set per attempt and never from the timestamps; a successful `GET /vehicle` leaves a failed full state failed; same-value recovery is pushed again, then only-when-changed resumes; a client connecting during a failure gets the last good state. Faults are injected in-process, never through a profile file | nothing (`observe`); `.[dev,gui]` and loopback (`api`) | **Yes**, every job for `observe`, the `.[dev,gui]` job for `api` |
+| The strict-encoding guard (twelfth revision, **implemented at M3b checkpoint 1**): a non-finite float placed where the sanitiser does not look (the DTC part, `as_of`) is caught only by `allow_nan=False`. The test shows the same input encodes under the default, so it fails if the guard is removed, and the failure is contained (counter, `ok: false`, task alive, last known state kept) | nothing (`observe`) | **Yes**, every job |
+| M3b browser checks: no false invalidation (no scenario, 65 s "Live", polls changing nothing), held value at the left edge, bounded history (at most one predecessor point before the window, plus the count cap), recovery with all four client slots occupied (the budget, no overlapping timers, no tight loop), polling while last known, SIGSTOP disconnect and recovery without restart, restart reset, window persistence, pause while buffering, non-finite values, malformed state then unchanged data, bounded resync, encoding failure and same-value recovery, overflow. Faults come from an in-process test server, not from the shipped page or a profile file. (Fourteenth revision: **implemented at M3b checkpoint 2**; 24 of 24 passed (runs 9 and 12, `docs/validation/gui-m3b-live-demo.md`); M3b not accepted) | vcan, Chrome, the capture script | **No.** Local, recorded evidence. Firefox is manual only |
+
+The CI changes, made on branch `gui` only:
+- a job installing `.[dev,gui]` for the `api` tests;
+- `gui` added to the push branches (owner, 2026-09-27);
+- every job's annotation lists its skip reasons by name, so the vcan tests show the
+  CAN_ISOTP reason on hosted runners.
+
+The `modernization` workflow is unchanged. Integration and performance results are
+reported as local results, with their commands.
+
+## 10. Milestones
+
+| # | Deliverable | Production code | Exit |
+|---|---|---|---|
+| **M0** | This record, approved. **After approval**, a roadmap note in `modernization-plan.md` on branch `gui`: the GUI is a separate track, and the V1.0 non-goal and the 8b gate are unchanged | no | Owner approves this record |
+| **M1** | `observe`: `HandOff`, `ObservedDispatcher`, `Publisher`, snapshots, sequence and watermark; the §9.1 proofs, including the differential comparison; the ordering tests; the M1 early check | yes, core, no dependencies | Tests green in CI; differential comparison clean; M1 early check reported |
+| **M2** | `ApiServer`, `--api`, the `[gui]` extra, §6 security, §4.3 limits, API tests, the CI job; the M2 early check | yes | API tests green in CI on a `gui` push; M2 early check reported |
+| **M3a** | Frontend MVP: status, vehicle, DTCs, exchange log with gap markers | yes | Frontend file tests green in CI; owner runs the manual rendering checklist |
+| **M3b** | Live signal graphs with vendored uPlot 1.6.32 (§7); the non-finite rule and state-encoding containment (§4.3, §5). The non-finite rule, containment and encoding health are **implemented at M3b checkpoint 1** (thirteenth revision); the graphs (§7) are **implemented at M3b checkpoint 2, not accepted** (fourteenth revision; `docs/validation/gui-m3b-live-demo.md`). Two checkpoints: (1) the observer JSON and health safeguards with their tests and a before-and-after measurement of state build and encode cost and of the publisher's longest turn; (2) graph rendering and the browser checks | yes | The frontend file tests and the non-finite and containment tests are green in CI; the capture-run browser checks pass on a vcan host; the owner runs the manual view checklist; **and the CSP check passes in both Chrome and Firefox**, which is manual and unverified until run |
+| **M4** | Full benchmark (§9.2) and MVP acceptance report | benchmark scripts only | P1–P9 met and the forced-close run passed in every round, or failures reported; owner accepts |
+| Later | Raw CAN frame panel (optional, read-only, a raw CAN socket in the API process) | — | Separate approval |
+| Later | `ControlPort` controls (§8) | — | Own decision record first |
+
+Each milestone stops for owner review before the next starts. Each is committed on `gui`
+and pushed only when the owner asks.
+
+## 11. Risks
+
+| Risk | Mitigation |
+|---|---|
+| API work on the shared loop delays replies, including queued ones | Single-append hot path (§4.2); count and byte limits (§4.3); early checks at M1 and M2; P1–P4 under client load at M4 |
+| The observer mutates state, or triggers scenario application | Snapshots never call `sync()`; "never mutates" unit tests; v1 has no write routes, and every other method returns 405 |
+| Memory growth under a slow client | Byte and count limits on every retaining structure; forced disconnect; P7 |
+| A drop goes unnoticed | `seq` gaps are visible to clients; P5 reconciliation must balance exactly |
+| `responded` read as "transmitted" | §4.4 and §5 define it as dispatcher output only; test O2 pins the queued case |
+| A local web page abused by other sites | Loopback-only bind, `Host` allowlist, `Origin` check, no CORS |
+| GUI code leaks into V1.0 | Separate branch, merged only after V1.0 is tagged; the API is off by default, and its dependency is an optional extra |
+| CI green mistaken for vcan-validated | §9.3 names the skipped test and its reason; reports keep local and CI results separate |
+
+## 12. Evidence for the routing and ordering claims
+
+All references are to `a57b98f`, the base of this branch.
+
+- **E1: the read path** (`src/ecu_simulator/transport/socketcan/transport.py`,
+  `_on_readable`, lines 163–191):
+  - `recv` failure → log and return, before dispatch (164–169);
+  - the handler is called synchronously inside `try` (181–185), and an exception is
+    logged with nothing sent;
+  - `None` → return (186–187);
+  - otherwise `_send(via, payload)` runs, with `via` the `reply_via` endpoint if one is
+    set (190–191).
+- **E2: the send path** (same file, `_send` 193–202, `_on_writable` 209–219;
+  `transport/socketcan/isotp.py` `send` 151–165):
+  - `send` returning `True` means the kernel accepted the payload;
+  - `False` (`EAGAIN`) means the payload is appended to `endpoint.pending`, and a writable
+    callback sends it later;
+  - a `TransportIOError` is logged and the reply is dropped;
+  - `start` accepts a `socket_factory` seam (116–119), which is what the ordering tests use.
+- **E3: routing** (`src/ecu_simulator/ecu/dispatcher.py` 77–99; `ecu/router.py`
+  `resolve` 129–136; `app.py` `check_routes` 277–296):
+  - `sync()` runs first (78–79);
+  - an empty resolve logs *"no ECU for … dropped"* and returns `None` (80–87);
+  - more than one route raises `NotImplementedError`, both at construction (59–60) and per
+    request (89, 94–99), so one call yields at most one response;
+  - `check_routes` refuses to start unless every receiving endpoint has a route of the
+    same kind, and every route has an endpoint.
+- **E4: the wake-up** (CPython 3.12.12, `asyncio/locks.py` `Event.set` 181–191;
+  `asyncio/futures.py` `__schedule_callbacks` 161–173): `set()` resolves the waiters'
+  futures, and their callbacks are scheduled with `loop.call_soon`, so nothing runs
+  inside `set()`. That is the pure-Python source. Test O1 pins the behavior for whichever
+  `Future` implementation is in use.
+- **E5: duplicate receive IDs within one ECU** (`src/ecu_simulator/config/schema.py`
+  233–236: only `(rx, tx)` pairs must be unique within an ECU; 306–318: physical `rx`
+  must be unique across ECUs). Checked 2026-09-26 by loading `ice_default` with an extra
+  physical endpoint `rx 0x7E0 / tx 0x7EF` on the same ECU: schema, `build_runtime` and
+  `check_routes` **accept** it. A second ECU with its own functional endpoint on `0x7DF`
+  is **refused** at build time (`NotImplementedError`, fan-out).
+- **E6: kernel delivery to two sockets.** Measured 2026-09-26 on kernel 6.8.0-138-generic,
+  vcan in a private namespace, can-isotp 2.x. Two ISO-TP sockets bound to `rx 0x7E0` (tx
+  `0x7E8` and `0x7EF`), and a tester sending to `0x7E0`. Both sockets received the
+  single-frame `01 0C` and a 20-byte multi-frame payload.

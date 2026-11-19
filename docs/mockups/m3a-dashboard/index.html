@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ECU observer mockup</title>
+<meta name="description" content="Offline M3a dashboard mockup of the ecu-simulator observer, rendered from a static sample. Not connected.">
+<link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+
+<div class="sample-banner" role="note" aria-label="Sample data notice">
+  <p class="sample-banner__lead">Sample data. Not connected to a simulator.</p>
+</div>
+<div class="sample-detail" role="note">
+  <p id="banner-detail">Replayed from a static capture. Rows tagged <span class="syn-tag">synthetic</span> are hand-made.</p>
+</div>
+
+<header class="statusbar" aria-label="Simulator status">
+  <div class="statusbar__id">
+    <h1>ecu-simulator</h1>
+    <span class="statusbar__sub" id="status-sub">read-only observer, M3a mockup</span>
+  </div>
+  <dl class="readouts" id="status"></dl>
+</header>
+
+<main class="layout">
+  <div class="side">
+    <section class="panel" id="dtc-panel" aria-labelledby="dtc-h">
+      <div class="panel__head">
+        <h2 id="dtc-h">Trouble codes</h2>
+        <span class="sample-tag">Sample</span>
+      </div>
+      <div class="panel__body" id="dtcs"></div>
+    </section>
+
+    <section class="panel" id="vehicle-panel" aria-labelledby="vehicle-h">
+      <div class="panel__head">
+        <h2 id="vehicle-h">Vehicle signals</h2>
+        <span class="sample-tag">Sample</span>
+        <span class="panel__meta" id="vehicle-meta"></span>
+      </div>
+      <div class="panel__body panel__scroll" id="vehicle" tabindex="0" aria-label="Vehicle signals, scrollable"></div>
+    </section>
+  </div>
+
+  <section class="panel panel--log" id="log-panel" aria-labelledby="log-h">
+    <div class="panel__head">
+      <h2 id="log-h">Exchange log</h2>
+      <span class="sample-tag">Sample</span>
+      <span class="panel__meta" id="log-count" aria-live="polite"></span>
+    </div>
+
+    <div class="logbar" role="group" aria-label="Log view controls (this view only)">
+      <label class="field">
+        <span>ECU</span>
+        <select id="f-ecu"></select>
+      </label>
+      <label class="field">
+        <span>Service</span>
+        <select id="f-service"></select>
+      </label>
+      <fieldset class="field outcomes" id="f-outcome">
+        <legend>Outcome</legend>
+      </fieldset>
+      <div class="logbar__actions">
+        <button type="button" id="btn-pause" aria-pressed="false">Pause view</button>
+        <button type="button" id="btn-clear">Clear view</button>
+      </div>
+    </div>
+
+    <div class="log-state" id="log-state" hidden></div>
+
+    <div class="logwrap" id="logwrap" tabindex="0" aria-label="Exchanges, oldest first">
+      <table class="log" id="log">
+        <thead>
+          <tr>
+            <th scope="col" class="c-seq">Seq</th>
+            <th scope="col" class="c-time">Time <abbr title="Coordinated Universal Time, from the event's t field">UTC</abbr></th>
+            <th scope="col" class="c-ecu">ECU</th>
+            <th scope="col" class="c-ep">Endpoint, rx → tx</th>
+            <th scope="col" class="c-sum">Summary</th>
+            <th scope="col" class="c-hex">Request</th>
+            <th scope="col" class="c-hex">Response</th>
+            <th scope="col" class="c-out">Outcome</th>
+            <th scope="col" class="c-us"><abbr title="Dispatcher time only, in microseconds. Not wire latency.">Dispatch µs</abbr></th>
+          </tr>
+        </thead>
+        <tbody id="log-body"></tbody>
+      </table>
+    </div>
+
+    <footer class="logfoot">
+      <p><strong>Dispatch µs</strong> is dispatcher time only: how long the dispatcher call took. It is not wire latency; wire timing belongs to candump.</p>
+      <p>Pause and clear change this view only. The page cannot send anything to the simulator.</p>
+    </footer>
+  </section>
+</main>
+
+<script src="sample-data.js"></script>
+<script src="dashboard.js"></script>
+</body>
+</html>

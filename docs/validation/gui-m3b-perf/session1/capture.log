@@ -1,0 +1,27 @@
+[   0.00 s] gui demo capture, 2026-10-01T07:58:47+00:00
+[   0.00 s] start headless Chrome: /usr/bin/google-chrome
+[   0.27 s] Chrome: Chrome/151.0.7922.173
+[   0.30 s] start simulator: --profile docs/examples/ice_drive_cycle_stepped.yaml --interface vcan0 --api 127.0.0.1:8765
+[   1.33 s] prefill: start traffic at 50/s until the log holds 2000 exchanges
+[  95.45 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[ 100.87 s] prefilled: {'retained': 2000, 'dom_rows': 2001, 'exchange_rows': 2000, 'last_seq': 2031, 'health': 'live', 'graphs_hidden': False, 'log_paused': False, 'log_count': '2000 exchanges, last seq 2031 (live)'}
+[ 173.30 s] perf 1440x900-baseline-a: busy 99.9 % (60050.5 ms), split {'js': 8740.5, 'style': 9167.2, 'layout': 30147.0, 'paint': 10908.1, 'composite': 101.0, 'other': 986.8}, renderLog 135 / 46209.4 ms, rows 2000->2000, 3.81 req/s, 3.81 exchanges/s
+[ 245.07 s] perf 1440x900-log-paused: busy 99.9 % (60221.6 ms), split {'js': 8785.1, 'style': 9150.4, 'layout': 29786.5, 'paint': 11432.0, 'composite': 66.7, 'other': 1001.0}, renderLog 147 / 45933.5 ms, rows 2000->2000, 3.78 req/s, 3.8 exchanges/s
+[ 315.95 s] perf 1440x900-graphs-hidden: busy 99.9 % (59945.0 ms), split {'js': 8399.8, 'style': 9080.2, 'layout': 29811.3, 'paint': 11611.7, 'composite': 110.2, 'other': 931.9}, renderLog 137 / 45925.5 ms, rows 2000->2000, 3.78 req/s, 3.77 exchanges/s
+[ 316.37 s] stop traffic
+[ 386.01 s] perf 1440x900-no-traffic: busy 83.0 % (49844.8 ms), split {'js': 567.6, 'style': 358.7, 'layout': 820.8, 'paint': 45942.6, 'composite': 731.2, 'other': 1423.9}, renderLog 0 / 0.0 ms, rows 2000->2000, 0.0 req/s, 0.0 exchanges/s
+[ 386.01 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[ 460.42 s] perf 1440x900-baseline-b: busy 99.9 % (60020.6 ms), split {'js': 8303.2, 'style': 9066.7, 'layout': 29540.9, 'paint': 11945.3, 'composite': 110.6, 'other': 1053.8}, renderLog 141 / 45727.7 ms, rows 2000->2000, 3.8 req/s, 3.81 exchanges/s
+[ 531.99 s] perf 1440x900-log-cleared: busy 32.8 % (19711.2 ms), split {'js': 1220.4, 'style': 1347.1, 'layout': 3138.4, 'paint': 11348.9, 'composite': 752.8, 'other': 1903.6}, renderLog 227 / 4607.9 ms, rows 2000->2000, 3.78 req/s, 3.78 exchanges/s
+[ 533.43 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[ 608.92 s] perf 390x844-baseline-a: busy 100.0 % (60039.6 ms), split {'js': 7729.8, 'style': 10435.7, 'layout': 31743.2, 'paint': 9178.1, 'composite': 95.5, 'other': 857.3}, renderLog 123 / 48787.1 ms, rows 2000->2000, 3.8 req/s, 3.85 exchanges/s
+[ 678.92 s] perf 390x844-log-paused: busy 99.9 % (60091.5 ms), split {'js': 7612.7, 'style': 10389.6, 'layout': 32209.5, 'paint': 8957.5, 'composite': 89.9, 'other': 832.3}, renderLog 121 / 48828.2 ms, rows 2000->2000, 3.81 req/s, 3.79 exchanges/s
+[ 748.34 s] perf 390x844-graphs-hidden: busy 99.9 % (60235.0 ms), split {'js': 7828.6, 'style': 10305.4, 'layout': 31578.0, 'paint': 9567.9, 'composite': 86.0, 'other': 869.1}, renderLog 121 / 48416.8 ms, rows 2000->2000, 3.78 req/s, 3.77 exchanges/s
+[ 749.20 s] stop traffic
+[ 816.67 s] perf 390x844-no-traffic: busy 75.9 % (45572.2 ms), split {'js': 515.5, 'style': 348.3, 'layout': 777.0, 'paint': 42570.5, 'composite': 211.5, 'other': 1149.5}, renderLog 0 / 0.0 ms, rows 2000->2000, 0.0 req/s, 0.0 exchanges/s
+[ 816.67 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[ 890.35 s] perf 390x844-baseline-b: busy 100.0 % (60139.6 ms), split {'js': 7690.5, 'style': 10121.5, 'layout': 31613.2, 'paint': 9832.1, 'composite': 82.0, 'other': 800.4}, renderLog 118 / 48159.3 ms, rows 2000->2000, 3.79 req/s, 3.79 exchanges/s
+[ 960.50 s] perf 390x844-log-cleared: busy 100.0 % (60341.6 ms), split {'js': 7600.4, 'style': 10191.5, 'layout': 31918.7, 'paint': 9786.8, 'composite': 79.4, 'other': 764.8}, renderLog 116 / 48481.6 ms, rows 2000->2000, 3.79 req/s, 3.79 exchanges/s
+[ 962.11 s] start traffic: scripts/gui_demo_traffic.py --interface vcan0 --rate 4
+[ 967.56 s] perf runs: 12; console messages, exceptions and log entries: 0
+[ 967.56 s] done

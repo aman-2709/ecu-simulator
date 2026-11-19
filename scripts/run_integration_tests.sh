@@ -19,6 +19,7 @@ fi
 command -v unshare >/dev/null || { echo "unshare (util-linux) not found" >&2; exit 1; }
 
 exec unshare -r -n bash -euo pipefail -c '
+    ip link set lo up
     ip link add dev vcan0 type vcan
     ip link set up vcan0
     exec "$0" -m pytest tests/integration -m vcan "$@"

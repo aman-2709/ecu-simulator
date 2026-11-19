@@ -1,0 +1,3825 @@
+{
+ "chrome": "Chrome/151.0.7922.173",
+ "cases": [
+  {
+   "case": "No false invalidation",
+   "rule": "At every 5 s sample over 65 s: conn text Live; data-conn live, data-data current, data-health live; no Last known or Stale tag; no banner; data-malformed-total 0; data-episode none; data-polls rose by about 30; exactly one state received in the whole period",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "every sample healthy": true,
+    "polls rose by about 30 (one per 2 s, 26-36)": true,
+    "exactly one state since the page loaded": true
+   },
+   "observed": {
+    "samples": [
+     {
+      "now": 1790828900575,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 1,
+      "malformed": 0,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     },
+     {
+      "now": 1790828905580,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 3,
+      "malformed": 0,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     },
+     {
+      "now": 1790828910586,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 6,
+      "malformed": 0,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     },
+     {
+      "now": 1790828915592,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 8,
+      "malformed": 0,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     },
+     {
+      "now": 1790828920598,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 11,
+      "malformed": 0,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     },
+     {
+      "now": 1790828925604,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 13,
+      "malformed": 0,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     },
+     {
+      "now": 1790828930610,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 16,
+      "malformed": 0,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     },
+     {
+      "now": 1790828935616,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 18,
+      "malformed": 0,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     },
+     {
+      "now": 1790828940623,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 21,
+      "malformed": 0,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     },
+     {
+      "now": 1790828945628,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 23,
+      "malformed": 0,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     },
+     {
+      "now": 1790828950634,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 26,
+      "malformed": 0,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     },
+     {
+      "now": 1790828955640,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 28,
+      "malformed": 0,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     },
+     {
+      "now": 1790828960646,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 31,
+      "malformed": 0,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     },
+     {
+      "now": 1790828965652,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 33,
+      "malformed": 0,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     }
+    ],
+    "span_s": 65.077,
+    "polls_rose": 32,
+    "states": [
+     {
+      "t": 1790828900455,
+      "sock": 0,
+      "len": 798
+     }
+    ],
+    "sockets": 1
+   }
+  },
+  {
+   "case": "Malformed state, then unchanged data",
+   "rule": "Immediately: data-conn live, data-data last-known, data-reason malformed, the Last known tag, data-malformed-total 1, data-episode active. Within 3 s: the resync reconnected, hello arrived and the state after it was applied; data-health live, data-episode none, data-attempts 0; the tag gone; the log shows Resynchronised after an unreadable message; started_at unchanged; no restart marker; seq continuity",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "immediately last-known/malformed/active": true,
+    "immediately the Last known tag": true,
+    "live within 3 s": true,
+    "a new socket, its hello and its state": true,
+    "after: live, episode none, attempts 0, no tag": true,
+    "log has the resync line": true,
+    "no restart marker": true,
+    "started_at unchanged": true,
+    "seq continuity (vacuous: no exchanges, no traffic)": true
+   },
+   "observed": {
+    "seq_continuity": "vacuous: no exchanges (no traffic)",
+    "immediately": {
+     "now": 1790828965771,
+     "conn": "live",
+     "data": "last-known",
+     "reason": "malformed",
+     "health": "last-known",
+     "episode": "active",
+     "attempts": 0,
+     "timers": 1,
+     "polls": 33,
+     "malformed": 1,
+     "text": "Connected, last known data",
+     "banner": "Last known data. The simulator sent a message this page could not read (1 so far), so the page reconnects to get a complete state. The views show the last state applied, at 04:28:20 UTC. Recovery attempt 0 of 3; the first starts in 1 s.",
+     "retry": null,
+     "known": [
+      "Last known, 04:28:20 UTC",
+      "Last known, 04:28:20 UTC",
+      "Last known, 04:28:20 UTC"
+     ],
+     "stale": [],
+     "socks": 1,
+     "states": 1,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    },
+    "live_after_s": 1.015,
+    "end": {
+     "now": 1790828967388,
+     "conn": "live",
+     "data": "current",
+     "reason": "",
+     "health": "live",
+     "episode": "none",
+     "attempts": 0,
+     "timers": 0,
+     "polls": 34,
+     "malformed": 1,
+     "text": "Live",
+     "banner": null,
+     "retry": null,
+     "known": [],
+     "stale": [],
+     "socks": 2,
+     "states": 2,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    },
+    "transitions": [
+     {
+      "now": 1790828965773,
+      "conn": "live",
+      "data": "last-known",
+      "reason": "malformed",
+      "health": "last-known",
+      "episode": "active",
+      "attempts": 0,
+      "timers": 1,
+      "polls": 33,
+      "malformed": 1,
+      "text": "Connected, last known data",
+      "banner": "Last known data. The simulator sent a message this page could not read (1 so far), so the page reconnects to get a complete state. The views show the last state applied, at 04:28:20 UTC. Recovery attempt 0 of 3; the first starts in 1 s.",
+      "retry": null,
+      "known": [
+       "Last known, 04:28:20 UTC",
+       "Last known, 04:28:20 UTC",
+       "Last known, 04:28:20 UTC"
+      ],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     },
+     {
+      "now": 1790828966786,
+      "conn": "live",
+      "data": "current",
+      "reason": "",
+      "health": "live",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 34,
+      "malformed": 1,
+      "text": "Live",
+      "banner": null,
+      "retry": null,
+      "known": [],
+      "stale": [],
+      "socks": 2,
+      "states": 2,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     }
+    ],
+    "new_sockets": [
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=0",
+      "created": 1790828966770,
+      "opened": 1790828966771,
+      "error": null,
+      "closed": null,
+      "code": null,
+      "frames": 4,
+      "states": 1,
+      "bad": null
+     }
+    ],
+    "log_marks": [
+     "Resynchronised after an unreadable message.A complete state arrived on a new connection at 04:29:26 "
+    ],
+    "seqs": [],
+    "started_at": [
+     1790828900.3464074,
+     1790828900.3464074
+    ]
+   }
+  },
+  {
+   "case": "Malformed, bounded",
+   "rule": "Exactly 3 attempts (data-attempts 3), started 1, 2 and 4 s after the previous one ended (+-0.3 s, from the wrapper's socket timestamps); then data-episode exhausted, Could not recover ... with Retry now. No further socket in the following 30 s. data-timers <= 1 at every 100 ms sample; data-health never live meanwhile. Removing the fault and pressing Retry now recovers with a fresh budget",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "immediately active": true,
+    "exactly 3 attempts": true,
+    "waits 1, 2, 4 s (+-0.3)": true,
+    "exhausted, Could not recover, Retry now": true,
+    "no further socket in 30 s": true,
+    "data-timers <= 1 at every sample and every change": true,
+    "never live meanwhile": true,
+    "data-attempts went 1, 2, 3": true,
+    "Retry now recovers with a fresh budget": true
+   },
+   "observed": {
+    "waits_s": [
+     1.002,
+     2.003,
+     4.003
+    ],
+    "attempt_sockets": [
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=0",
+      "created": 1790828968487,
+      "opened": 1790828968489,
+      "error": null,
+      "closed": 1790828968490,
+      "code": 1000,
+      "frames": 1,
+      "states": 0,
+      "bad": 1790828968489,
+      "closeCalled": 1790828968489
+     },
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=0",
+      "created": 1790828970492,
+      "opened": 1790828970493,
+      "error": null,
+      "closed": 1790828970495,
+      "code": 1000,
+      "frames": 1,
+      "states": 0,
+      "bad": 1790828970493,
+      "closeCalled": 1790828970493
+     },
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=0",
+      "created": 1790828974496,
+      "opened": 1790828974497,
+      "error": null,
+      "closed": null,
+      "code": null,
+      "frames": 123,
+      "states": 1,
+      "bad": 1790828974497
+     }
+    ],
+    "at_exhaustion": {
+     "now": 1790828974584,
+     "conn": "live",
+     "data": "last-known",
+     "reason": "malformed",
+     "health": "last-known",
+     "episode": "exhausted",
+     "attempts": 3,
+     "timers": 0,
+     "polls": 35,
+     "malformed": 5,
+     "text": "Connected, last known data",
+     "banner": "Could not recover: The simulator sent a message this page could not read (5 so far). The views show the last state applied, at 04:29:34 UTC. The page made 3 attempts to get a complete state and does not try again by itself. Last attempt: the simulator sent a message this page could not read.\n\nRetry now",
+     "retry": "Retry now",
+     "known": [
+      "Last known, 04:29:34 UTC",
+      "Last known, 04:29:34 UTC",
+      "Last known, 04:29:34 UTC"
+     ],
+     "stale": [],
+     "socks": 5,
+     "states": 3,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    },
+    "samples": 367,
+    "max_timers": 1,
+    "sockets_at_exhaustion": 5,
+    "sockets_after_30s": 5,
+    "attribute_changes": [
+     {
+      "t": 1790828967487,
+      "a": "health",
+      "v": "last-known"
+     },
+     {
+      "t": 1790828967487,
+      "a": "episode",
+      "v": "active"
+     },
+     {
+      "t": 1790828967487,
+      "a": "timers",
+      "v": "1"
+     },
+     {
+      "t": 1790828968485,
+      "a": "attempts",
+      "v": "1"
+     },
+     {
+      "t": 1790828968485,
+      "a": "timers",
+      "v": "0"
+     },
+     {
+      "t": 1790828968490,
+      "a": "timers",
+      "v": "1"
+     },
+     {
+      "t": 1790828970489,
+      "a": "attempts",
+      "v": "2"
+     },
+     {
+      "t": 1790828970489,
+      "a": "timers",
+      "v": "0"
+     },
+     {
+      "t": 1790828970495,
+      "a": "timers",
+      "v": "1"
+     },
+     {
+      "t": 1790828974494,
+      "a": "attempts",
+      "v": "3"
+     },
+     {
+      "t": 1790828974494,
+      "a": "timers",
+      "v": "0"
+     },
+     {
+      "t": 1790828974499,
+      "a": "episode",
+      "v": "exhausted"
+     }
+    ],
+    "retry_attribute_changes": [
+     {
+      "t": 1790829004667,
+      "a": "episode",
+      "v": "active"
+     },
+     {
+      "t": 1790829004667,
+      "a": "attempts",
+      "v": "0"
+     },
+     {
+      "t": 1790829004667,
+      "a": "timers",
+      "v": "1"
+     },
+     {
+      "t": 1790829005667,
+      "a": "attempts",
+      "v": "1"
+     },
+     {
+      "t": 1790829005667,
+      "a": "timers",
+      "v": "0"
+     },
+     {
+      "t": 1790829005672,
+      "a": "health",
+      "v": "live"
+     },
+     {
+      "t": 1790829005672,
+      "a": "episode",
+      "v": "none"
+     },
+     {
+      "t": 1790829005672,
+      "a": "attempts",
+      "v": "0"
+     }
+    ],
+    "after_retry": {
+     "now": 1790829005681,
+     "conn": "live",
+     "data": "current",
+     "reason": "",
+     "health": "live",
+     "episode": "none",
+     "attempts": 0,
+     "timers": 0,
+     "polls": 51,
+     "malformed": 5,
+     "text": "Live",
+     "banner": null,
+     "retry": null,
+     "known": [],
+     "stale": [],
+     "socks": 6,
+     "states": 4,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    }
+   }
+  },
+  {
+   "case": "Recovery with all four client slots occupied, variant A",
+   "rule": "Both: data-timers <= 1 at every 100 ms sample; no two attempts start less than 0.9 s apart; each attempt raises data-attempts by exactly 1; any 503 is counted in refused_clients and matches one attempt. A: recovery within the budget, then data-health live and the budget reset. B: exactly 3 attempts, then exhausted and Retry now, with no further upgrade request in 30 s (refused_clients stops rising). Releasing the slot and pressing Retry now recovers",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "data-timers <= 1 at every 100 ms sample and every change": true,
+    "no two attempts start less than 0.9 s apart": true,
+    "each attempt raises data-attempts by exactly 1": true,
+    "each 503 counted in refused_clients, one per attempt": true,
+    "recovered within the budget, then live and the budget reset": true
+   },
+   "observed": {
+    "immediately": {
+     "now": 1790829006190,
+     "conn": "live",
+     "data": "last-known",
+     "reason": "malformed",
+     "health": "last-known",
+     "episode": "active",
+     "attempts": 0,
+     "timers": 1,
+     "polls": 51,
+     "malformed": 6,
+     "text": "Connected, last known data",
+     "banner": "Last known data. The simulator sent a message this page could not read (6 so far), so the page reconnects to get a complete state. The views show the last state applied, at 04:30:05 UTC. Recovery attempt 0 of 3; the first starts in 1 s.",
+     "retry": null,
+     "known": [
+      "Last known, 04:30:05 UTC",
+      "Last known, 04:30:05 UTC",
+      "Last known, 04:30:05 UTC"
+     ],
+     "stale": [],
+     "socks": 6,
+     "states": 4,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    },
+    "attempt_sockets": [
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=0",
+      "created": 1790829007191,
+      "opened": 1790829007192,
+      "error": null,
+      "closed": null,
+      "code": null,
+      "frames": 2,
+      "states": 1,
+      "bad": null
+     }
+    ],
+    "start_gaps_s": [],
+    "attempts_seen": [
+     0,
+     1,
+     0
+    ],
+    "refused_before": 0,
+    "attribute_changes": [
+     {
+      "t": 1790829006190,
+      "a": "health",
+      "v": "last-known"
+     },
+     {
+      "t": 1790829006190,
+      "a": "episode",
+      "v": "active"
+     },
+     {
+      "t": 1790829006190,
+      "a": "timers",
+      "v": "1"
+     },
+     {
+      "t": 1790829007189,
+      "a": "attempts",
+      "v": "1"
+     },
+     {
+      "t": 1790829007189,
+      "a": "timers",
+      "v": "0"
+     },
+     {
+      "t": 1790829007194,
+      "a": "health",
+      "v": "live"
+     },
+     {
+      "t": 1790829007194,
+      "a": "episode",
+      "v": "none"
+     },
+     {
+      "t": 1790829007194,
+      "a": "attempts",
+      "v": "0"
+     }
+    ],
+    "refused_after": 0,
+    "attempts_not_opened": 0,
+    "end": {
+     "now": 1790829007208,
+     "conn": "live",
+     "data": "current",
+     "reason": "",
+     "health": "live",
+     "episode": "none",
+     "attempts": 0,
+     "timers": 0,
+     "polls": 52,
+     "malformed": 6,
+     "text": "Live",
+     "banner": null,
+     "retry": null,
+     "known": [],
+     "stale": [],
+     "socks": 7,
+     "states": 5,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    },
+    "setup": {},
+    "live_after_s": 1.018
+   }
+  },
+  {
+   "case": "Recovery with all four client slots occupied, variant B",
+   "rule": "Both: data-timers <= 1 at every 100 ms sample; no two attempts start less than 0.9 s apart; each attempt raises data-attempts by exactly 1; any 503 is counted in refused_clients and matches one attempt. A: recovery within the budget, then data-health live and the budget reset. B: exactly 3 attempts, then exhausted and Retry now, with no further upgrade request in 30 s (refused_clients stops rising). Releasing the slot and pressing Retry now recovers",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "data-timers <= 1 at every 100 ms sample and every change": true,
+    "no two attempts start less than 0.9 s apart": true,
+    "each attempt raises data-attempts by exactly 1": true,
+    "each 503 counted in refused_clients, one per attempt": true,
+    "setup: the script holds the freed slot before the page's first attempt": true,
+    "exactly 3 attempts, then exhausted and Retry now": true,
+    "no further upgrade request in 30 s (refused_clients stops rising)": true,
+    "releasing the slot and pressing Retry now recovers": true
+   },
+   "observed": {
+    "immediately": {
+     "now": 1790829010216,
+     "conn": "live",
+     "data": "last-known",
+     "reason": "malformed",
+     "health": "last-known",
+     "episode": "active",
+     "attempts": 0,
+     "timers": 1,
+     "polls": 53,
+     "malformed": 7,
+     "text": "Connected, last known data",
+     "banner": "Last known data. The simulator sent a message this page could not read (7 so far), so the page reconnects to get a complete state. The views show the last state applied, at 04:30:07 UTC. Recovery attempt 0 of 3; the first starts in 1 s.",
+     "retry": null,
+     "known": [
+      "Last known, 04:30:07 UTC",
+      "Last known, 04:30:07 UTC",
+      "Last known, 04:30:07 UTC"
+     ],
+     "stale": [],
+     "socks": 7,
+     "states": 5,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    },
+    "attempt_sockets": [
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=0",
+      "created": 1790829011217,
+      "opened": null,
+      "error": 1790829011218,
+      "closed": 1790829011218,
+      "code": 1006,
+      "frames": 0,
+      "states": 0,
+      "bad": null
+     },
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=0",
+      "created": 1790829013222,
+      "opened": null,
+      "error": 1790829013223,
+      "closed": 1790829013223,
+      "code": 1006,
+      "frames": 0,
+      "states": 0,
+      "bad": null
+     },
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=0",
+      "created": 1790829017228,
+      "opened": null,
+      "error": 1790829017229,
+      "closed": 1790829017229,
+      "code": 1006,
+      "frames": 0,
+      "states": 0,
+      "bad": null
+     }
+    ],
+    "start_gaps_s": [
+     2.005,
+     4.006
+    ],
+    "attempts_seen": [
+     0,
+     1,
+     2,
+     3
+    ],
+    "refused_before": 0,
+    "attribute_changes": [
+     {
+      "t": 1790829010216,
+      "a": "health",
+      "v": "last-known"
+     },
+     {
+      "t": 1790829010216,
+      "a": "episode",
+      "v": "active"
+     },
+     {
+      "t": 1790829010216,
+      "a": "timers",
+      "v": "1"
+     },
+     {
+      "t": 1790829011214,
+      "a": "attempts",
+      "v": "1"
+     },
+     {
+      "t": 1790829011214,
+      "a": "timers",
+      "v": "0"
+     },
+     {
+      "t": 1790829011222,
+      "a": "conn",
+      "v": "refused"
+     },
+     {
+      "t": 1790829011222,
+      "a": "health",
+      "v": "stale"
+     },
+     {
+      "t": 1790829011222,
+      "a": "timers",
+      "v": "1"
+     },
+     {
+      "t": 1790829013220,
+      "a": "attempts",
+      "v": "2"
+     },
+     {
+      "t": 1790829013220,
+      "a": "timers",
+      "v": "0"
+     },
+     {
+      "t": 1790829013227,
+      "a": "timers",
+      "v": "1"
+     },
+     {
+      "t": 1790829017226,
+      "a": "attempts",
+      "v": "3"
+     },
+     {
+      "t": 1790829017226,
+      "a": "timers",
+      "v": "0"
+     },
+     {
+      "t": 1790829017232,
+      "a": "episode",
+      "v": "exhausted"
+     }
+    ],
+    "refused_after": 3,
+    "attempts_not_opened": 3,
+    "end": {
+     "now": 1790829047224,
+     "conn": "refused",
+     "data": "last-known",
+     "reason": "malformed",
+     "health": "stale",
+     "episode": "exhausted",
+     "attempts": 3,
+     "timers": 0,
+     "polls": 53,
+     "malformed": 7,
+     "text": "Refused, not retrying",
+     "banner": "Could not recover: The simulator sent a message this page could not read (7 so far). The views show the last state applied, at 04:30:07 UTC. The page made 3 attempts to get a complete state and does not try again by itself. Last attempt: refused: too many clients (503). The simulator's client limit is reached; 4 are connected now. Close another observer to free a place..\n\nRetry now",
+     "retry": "Retry now",
+     "known": [],
+     "stale": [
+      "Stale, as of 04:30:10 UTC",
+      "Stale, as of 04:30:10 UTC",
+      "Stale, as of 04:30:10 UTC",
+      "Stale, as of 04:30:10 UTC"
+     ],
+     "socks": 10,
+     "states": 5,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    },
+    "setup": {
+     "slot_taken_after_s": 0.001,
+     "clients_now": 4,
+     "page_sockets_open": 0
+    },
+    "refused_series_30s": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "after_retry": {
+     "now": 1790829047497,
+     "conn": "live",
+     "data": "current",
+     "reason": "",
+     "health": "live",
+     "episode": "none",
+     "attempts": 0,
+     "timers": 0,
+     "polls": 54,
+     "malformed": 7,
+     "text": "Live",
+     "banner": null,
+     "retry": null,
+     "known": [],
+     "stale": [],
+     "socks": 11,
+     "states": 6,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    }
+   }
+  },
+  {
+   "case": "Window persists",
+   "rule": "Click 30 s, reload: data-window-s = 30 everywhere; 30 s has aria-pressed=true",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "data-window-s 30 everywhere": true,
+    "30 s aria-pressed true, the others false": true
+   },
+   "observed": {
+    "stored": "30",
+    "window_s": [
+     "30",
+     "30",
+     "30",
+     "30",
+     "30"
+    ],
+    "aria_pressed": [
+     [
+      "30",
+      "true"
+     ],
+     [
+      "120",
+      "false"
+     ],
+     [
+      "600",
+      "false"
+     ]
+    ]
+   }
+  },
+  {
+   "case": "Log rows at 1440 x 900",
+   "rule": "Section open, log filled: at least 5 full log rows inside #logwrap",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "graphs open": true,
+    "log filled (more rows than fit)": true,
+    "at least 5 full log rows": true
+   },
+   "observed": {
+    "full": 5,
+    "heights": [
+     53,
+     53,
+     52,
+     52,
+     53
+    ],
+    "rowsRegion": 298,
+    "graphsH": 176,
+    "plotH": 72.578125,
+    "cardH": 114.765625,
+    "banner": false,
+    "line2": [
+     "min 0 \u00b7 max 80 in 30 s",
+     "min 800 \u00b7 max 2800 in 30 s",
+     "min 0 \u00b7 max 45 in 30 s",
+     "min 20 \u00b7 max 75 in 30 s",
+     "min 20.2 \u00b7 max 27.4 in 30 s"
+    ],
+    "breaks": "",
+    "statusH": 99
+   }
+  },
+  {
+   "case": "Overflow",
+   "rule": "#graphs and each .uplot in OVERFLOW, at 1440, 390 and 2000 (and 1200): no scrollWidth above its clientWidth",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "1440: none over, #graphs and 5 .uplot measured": true,
+    "1200: none over, #graphs and 5 .uplot measured": true,
+    "390: none over, #graphs and 5 .uplot measured": true,
+    "2000: none over, #graphs and 5 .uplot measured": true
+   },
+   "observed": {
+    "measured": {
+     "1440": [
+      [
+       "#vehicle",
+       378,
+       378
+      ],
+      [
+       "html",
+       1440,
+       1440
+      ],
+      [
+       "body",
+       1440,
+       1440
+      ],
+      [
+       "#graphs",
+       1010,
+       1010
+      ],
+      [
+       ".uplot 0",
+       179,
+       179
+      ],
+      [
+       ".uplot 1",
+       179,
+       179
+      ],
+      [
+       ".uplot 2",
+       179,
+       179
+      ],
+      [
+       ".uplot 3",
+       179,
+       179
+      ],
+      [
+       ".uplot 4",
+       179,
+       179
+      ]
+     ],
+     "1200": [
+      [
+       "#vehicle",
+       378,
+       378
+      ],
+      [
+       "html",
+       1200,
+       1200
+      ],
+      [
+       "body",
+       1200,
+       1200
+      ],
+      [
+       "#graphs",
+       773,
+       773
+      ],
+      [
+       ".uplot 0",
+       171,
+       171
+      ],
+      [
+       ".uplot 1",
+       171,
+       171
+      ],
+      [
+       ".uplot 2",
+       171,
+       171
+      ],
+      [
+       ".uplot 3",
+       171,
+       171
+      ],
+      [
+       ".uplot 4",
+       171,
+       171
+      ]
+     ],
+     "390": [
+      [
+       "#vehicle",
+       372,
+       372
+      ],
+      [
+       "html",
+       390,
+       390
+      ],
+      [
+       "body",
+       390,
+       390
+      ],
+      [
+       "#graphs",
+       372,
+       372
+      ],
+      [
+       ".uplot 0",
+       342,
+       342
+      ],
+      [
+       ".uplot 1",
+       342,
+       342
+      ],
+      [
+       ".uplot 2",
+       342,
+       342
+      ],
+      [
+       ".uplot 3",
+       342,
+       342
+      ],
+      [
+       ".uplot 4",
+       342,
+       342
+      ]
+     ],
+     "2000": [
+      [
+       "#vehicle",
+       498,
+       498
+      ],
+      [
+       "html",
+       2000,
+       2000
+      ],
+      [
+       "body",
+       2000,
+       2000
+      ],
+      [
+       "#graphs",
+       1442,
+       1442
+      ],
+      [
+       ".uplot 0",
+       262,
+       262
+      ],
+      [
+       ".uplot 1",
+       262,
+       262
+      ],
+      [
+       ".uplot 2",
+       262,
+       262
+      ],
+      [
+       ".uplot 3",
+       262,
+       262
+      ],
+      [
+       ".uplot 4",
+       262,
+       262
+      ]
+     ]
+    },
+    "status_bar_px": {
+     "1440": 99,
+     "1200": 92,
+     "390": 372,
+     "2000": 115
+    }
+   }
+  },
+  {
+   "case": "Held value at the left edge of a trimmed window",
+   "rule": "Stepped demo, 30 s window, read at t ~ 55 s (speed 80 since t = 21): data-left-value = 80; line 2 reads min 80 \u00b7 max 80 in 30 s; data-segments = 1; data-oldest-t < data-as-of - 30",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "data-left-value 80": true,
+    "line 2 min 80 \u00b7 max 80 in 30 s": true,
+    "data-segments 1": true,
+    "data-oldest-t < data-as-of - 30": true
+   },
+   "observed": {
+    "speed": {
+     "path": "vehicle.speed",
+     "cap": "4096",
+     "state": "ok",
+     "points": "17",
+     "oldestT": "0.5808694260194898",
+     "newestT": "21.120801139855757",
+     "asOf": "55.245953114004806",
+     "drawnTo": "55.245953114004806",
+     "windowS": "30",
+     "leftValue": "80",
+     "pointsBeforeWindow": "17",
+     "segments": "1",
+     "gaps": "0",
+     "run": "1790829047.8868492",
+     "paused": "false",
+     "hidden": false,
+     "line1": "80",
+     "line2": "min 80 \u00b7 max 80 in 30 s"
+    }
+   }
+  },
+  {
+   "case": "Pause while buffering",
+   "rule": "Pause graphs for 10 s, then resume. While paused: data-paused = true; data-drawn-to and line 1 unchanged; data-as-of rising; data-points not falling except by the caps. After: data-drawn-to = data-as-of. The log kept running",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "graphs shown": true,
+    "paused true throughout": true,
+    "drawn-to unchanged": true,
+    "line 1 unchanged": true,
+    "as-of rising": true,
+    "points not falling": true,
+    "after: drawn-to = as-of, paused false": true,
+    "the log kept running": true
+   },
+   "observed": {
+    "meta": "Paused at t = 55.5 s \u00b7 x: scenario t, s \u00b7 newest 10 min kept",
+    "first": {
+     "vehicle.speed": {
+      "path": "vehicle.speed",
+      "cap": "4096",
+      "state": "ok",
+      "points": "17",
+      "oldestT": "0.5808694260194898",
+      "newestT": "21.120801139855757",
+      "asOf": "55.74594216584228",
+      "drawnTo": "55.4959198969882",
+      "windowS": "30",
+      "leftValue": "80",
+      "pointsBeforeWindow": "17",
+      "segments": "1",
+      "gaps": "0",
+      "run": "1790829047.8868492",
+      "paused": "true",
+      "hidden": false,
+      "line1": "80",
+      "line2": "min 80 \u00b7 max 80 in 30 s"
+     },
+     "engine.rpm": {
+      "path": "engine.rpm",
+      "cap": "4096",
+      "state": "ok",
+      "points": "17",
+      "oldestT": "0.5808694260194898",
+      "newestT": "21.120801139855757",
+      "asOf": "55.74594216584228",
+      "drawnTo": "55.4959198969882",
+      "windowS": "30",
+      "leftValue": "2400",
+      "pointsBeforeWindow": "17",
+      "segments": "1",
+      "gaps": "0",
+      "run": "1790829047.8868492",
+      "paused": "true",
+      "hidden": false,
+      "line1": "2400",
+      "line2": "min 2400 \u00b7 max 2400 in 30 s"
+     },
+     "engine.throttle": {
+      "path": "engine.throttle",
+      "cap": "4096",
+      "state": "ok",
+      "points": "3",
+      "oldestT": "0.5808694260194898",
+      "newestT": "22.122749513946474",
+      "asOf": "55.74594216584228",
+      "drawnTo": "55.4959198969882",
+      "windowS": "30",
+      "leftValue": "18",
+      "pointsBeforeWindow": "3",
+      "segments": "1",
+      "gaps": "0",
+      "run": "1790829047.8868492",
+      "paused": "true",
+      "hidden": false,
+      "line1": "18",
+      "line2": "min 18 \u00b7 max 18 in 30 s"
+     },
+     "engine.engine_load": {
+      "path": "engine.engine_load",
+      "cap": "4096",
+      "state": "ok",
+      "points": "3",
+      "oldestT": "0.5808694260194898",
+      "newestT": "22.122749513946474",
+      "asOf": "55.74594216584228",
+      "drawnTo": "55.4959198969882",
+      "windowS": "30",
+      "leftValue": "35",
+      "pointsBeforeWindow": "3",
+      "segments": "1",
+      "gaps": "0",
+      "run": "1790829047.8868492",
+      "paused": "true",
+      "hidden": false,
+      "line1": "35",
+      "line2": "min 35 \u00b7 max 35 in 30 s"
+     },
+     "engine.coolant_temp": {
+      "path": "engine.coolant_temp",
+      "cap": "4096",
+      "state": "ok",
+      "points": "215",
+      "oldestT": "0.5808694260194898",
+      "newestT": "55.74594216584228",
+      "asOf": "55.74594216584228",
+      "drawnTo": "55.4959198969882",
+      "windowS": "30",
+      "leftValue": "27.36243908458467",
+      "pointsBeforeWindow": "99",
+      "segments": "1",
+      "gaps": "0",
+      "run": "1790829047.8868492",
+      "paused": "true",
+      "hidden": false,
+      "line1": "36.19",
+      "line2": "min 27.4 \u00b7 max 36.2 in 30 s"
+     }
+    },
+    "last": {
+     "vehicle.speed": {
+      "path": "vehicle.speed",
+      "cap": "4096",
+      "state": "ok",
+      "points": "22",
+      "oldestT": "0.5808694260194898",
+      "newestT": "65.2469669629354",
+      "asOf": "65.74699632800184",
+      "drawnTo": "55.4959198969882",
+      "windowS": "30",
+      "leftValue": "80",
+      "pointsBeforeWindow": "17",
+      "segments": "1",
+      "gaps": "0",
+      "run": "1790829047.8868492",
+      "paused": "true",
+      "hidden": false,
+      "line1": "80",
+      "line2": "min 80 \u00b7 max 80 in 30 s"
+     },
+     "engine.rpm": {
+      "path": "engine.rpm",
+      "cap": "4096",
+      "state": "ok",
+      "points": "22",
+      "oldestT": "0.5808694260194898",
+      "newestT": "65.2469669629354",
+      "asOf": "65.74699632800184",
+      "drawnTo": "55.4959198969882",
+      "windowS": "30",
+      "leftValue": "2400",
+      "pointsBeforeWindow": "17",
+      "segments": "1",
+      "gaps": "0",
+      "run": "1790829047.8868492",
+      "paused": "true",
+      "hidden": false,
+      "line1": "2400",
+      "line2": "min 2400 \u00b7 max 2400 in 30 s"
+     },
+     "engine.throttle": {
+      "path": "engine.throttle",
+      "cap": "4096",
+      "state": "ok",
+      "points": "4",
+      "oldestT": "0.5808694260194898",
+      "newestT": "60.24664683104493",
+      "asOf": "65.74699632800184",
+      "drawnTo": "55.4959198969882",
+      "windowS": "30",
+      "leftValue": "18",
+      "pointsBeforeWindow": "3",
+      "segments": "1",
+      "gaps": "0",
+      "run": "1790829047.8868492",
+      "paused": "true",
+      "hidden": false,
+      "line1": "18",
+      "line2": "min 18 \u00b7 max 18 in 30 s"
+     },
+     "engine.engine_load": {
+      "path": "engine.engine_load",
+      "cap": "4096",
+      "state": "ok",
+      "points": "4",
+      "oldestT": "0.5808694260194898",
+      "newestT": "60.24664683104493",
+      "asOf": "65.74699632800184",
+      "drawnTo": "55.4959198969882",
+      "windowS": "30",
+      "leftValue": "35",
+      "pointsBeforeWindow": "3",
+      "segments": "1",
+      "gaps": "0",
+      "run": "1790829047.8868492",
+      "paused": "true",
+      "hidden": false,
+      "line1": "35",
+      "line2": "min 35 \u00b7 max 35 in 30 s"
+     },
+     "engine.coolant_temp": {
+      "path": "engine.coolant_temp",
+      "cap": "4096",
+      "state": "ok",
+      "points": "254",
+      "oldestT": "0.5808694260194898",
+      "newestT": "65.74699632800184",
+      "asOf": "65.74699632800184",
+      "drawnTo": "55.4959198969882",
+      "windowS": "30",
+      "leftValue": "27.36243908458467",
+      "pointsBeforeWindow": "138",
+      "segments": "1",
+      "gaps": "0",
+      "run": "1790829047.8868492",
+      "paused": "true",
+      "hidden": false,
+      "line1": "36.19",
+      "line2": "min 27.4 \u00b7 max 36.2 in 30 s"
+     }
+    },
+    "after": {
+     "vehicle.speed": {
+      "path": "vehicle.speed",
+      "cap": "4096",
+      "state": "ok",
+      "points": "24",
+      "oldestT": "0.5808694260194898",
+      "newestT": "67.24769310094416",
+      "asOf": "67.24769310094416",
+      "drawnTo": "67.24769310094416",
+      "windowS": "30",
+      "leftValue": "80",
+      "pointsBeforeWindow": "17",
+      "segments": "1",
+      "gaps": "0",
+      "run": "1790829047.8868492",
+      "paused": "false",
+      "hidden": false,
+      "line1": "42",
+      "line2": "min 42 \u00b7 max 80 in 30 s"
+     },
+     "engine.rpm": {
+      "path": "engine.rpm",
+      "cap": "4096",
+      "state": "ok",
+      "points": "24",
+      "oldestT": "0.5808694260194898",
+      "newestT": "67.24769310094416",
+      "asOf": "67.24769310094416",
+      "drawnTo": "67.24769310094416",
+      "windowS": "30",
+      "leftValue": "2400",
+      "pointsBeforeWindow": "17",
+      "segments": "1",
+      "gaps": "0",
+      "run": "1790829047.8868492",
+      "paused": "false",
+      "hidden": false,
+      "line1": "1280",
+      "line2": "min 1280 \u00b7 max 2400 in 30 s"
+     },
+     "engine.throttle": {
+      "path": "engine.throttle",
+      "cap": "4096",
+      "state": "ok",
+      "points": "4",
+      "oldestT": "0.5808694260194898",
+      "newestT": "60.24664683104493",
+      "asOf": "67.24769310094416",
+      "drawnTo": "67.24769310094416",
+      "windowS": "30",
+      "leftValue": "18",
+      "pointsBeforeWindow": "3",
+      "segments": "1",
+      "gaps": "0",
+      "run": "1790829047.8868492",
+      "paused": "false",
+      "hidden": false,
+      "line1": "0",
+      "line2": "min 0 \u00b7 max 18 in 30 s"
+     },
+     "engine.engine_load": {
+      "path": "engine.engine_load",
+      "cap": "4096",
+      "state": "ok",
+      "points": "4",
+      "oldestT": "0.5808694260194898",
+      "newestT": "60.24664683104493",
+      "asOf": "67.24769310094416",
+      "drawnTo": "67.24769310094416",
+      "windowS": "30",
+      "leftValue": "35",
+      "pointsBeforeWindow": "3",
+      "segments": "1",
+      "gaps": "0",
+      "run": "1790829047.8868492",
+      "paused": "false",
+      "hidden": false,
+      "line1": "10",
+      "line2": "min 10 \u00b7 max 35 in 30 s"
+     },
+     "engine.coolant_temp": {
+      "path": "engine.coolant_temp",
+      "cap": "4096",
+      "state": "ok",
+      "points": "260",
+      "oldestT": "0.5808694260194898",
+      "newestT": "67.24769310094416",
+      "asOf": "67.24769310094416",
+      "drawnTo": "67.24769310094416",
+      "windowS": "30",
+      "leftValue": "30.862789073464228",
+      "pointsBeforeWindow": "144",
+      "segments": "1",
+      "gaps": "0",
+      "run": "1790829047.8868492",
+      "paused": "false",
+      "hidden": false,
+      "line1": "39.61",
+      "line2": "min 30.9 \u00b7 max 39.6 in 30 s"
+     }
+    },
+    "log_last_seq": [
+     [
+      208
+     ],
+     [
+      248
+     ]
+    ]
+   }
+  },
+  {
+   "case": "Disconnect without restart (SIGSTOP)",
+   "rule": "Within 8 s: conn text starts Disconnected; data-conn down, data-health stale, data-episode none; the banner is shown; the panels carry Stale, as of",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "down within 8 s": true,
+    "conn text starts Disconnected": true,
+    "down, stale, episode none": true,
+    "banner shown": true,
+    "panels carry Stale, as of": true
+   },
+   "observed": {
+    "down_after_s": 6.465847412109375,
+    "state": {
+     "now": 1790829254937,
+     "conn": "down",
+     "data": "current",
+     "reason": "",
+     "health": "stale",
+     "episode": "none",
+     "attempts": 0,
+     "timers": 1,
+     "polls": 100,
+     "malformed": 0,
+     "text": "Disconnected, retry in 1 s",
+     "banner": "Disconnected. Last live 04:34:07 UTC (7 s ago). The views below show data as of then. Reason: status request failed: no answer within 5 s. Retrying in 1 s (1 failed attempt; the wait doubles from 1 s to at most 15 s).\n\nRetry now",
+     "retry": "Retry now",
+     "known": [],
+     "stale": [
+      "Stale, as of 04:34:07 UTC",
+      "Stale, as of 04:34:07 UTC",
+      "Stale, as of 04:34:07 UTC",
+      "Stale, as of 04:34:07 UTC"
+     ],
+     "socks": 1,
+     "states": 775,
+     "cells": {
+      "vehicle.speed": "75",
+      "engine.rpm": "2250",
+      "engine.coolant_temp": "78.34",
+      "engine.engine_load": "75",
+      "engine.throttle": "45"
+     },
+     "note": "",
+     "breaks": ""
+    }
+   }
+  },
+  {
+   "case": "Log rows at 1440 x 900, graphs open, a break note showing (extra, disconnect break)",
+   "rule": "At least 5 full log rows inside #logwrap at 1440 x 900 with the graphs open and a break note showing",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "a break note is shown": true,
+    "at least 5 full log rows": true
+   },
+   "observed": {
+    "full": 5,
+    "heights": [
+     53,
+     52,
+     52,
+     52,
+     33
+    ],
+    "rowsRegion": 285,
+    "graphsH": 190,
+    "plotH": 72.578125,
+    "cardH": 114.765625,
+    "banner": false,
+    "line2": [
+     "min 0 \u00b7 max 80 in 2 min",
+     "min 800 \u00b7 max 2800 in 2 min",
+     "min 0 \u00b7 max 45 in 2 min",
+     "min 10 \u00b7 max 75 in 2 min",
+     "min 45.7 \u00b7 max 80.7 in 2 min"
+    ],
+    "breaks": "No data from t = 200.0 to t = 207.7 s (disconnected)",
+    "statusH": 99
+   }
+  },
+  {
+   "case": "... then SIGCONT",
+   "rule": "SIGCONT, Live within the backoff (<= 16 s): GET /status started_at equals the value read before; no Simulator restarted. marker, and Connection lost, then resumed.; data-run unchanged; data-gaps rose by 1 and data-segments by 1; line 2 names the gap's scenario times; seq continuity",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "live within 16 s": true,
+    "started_at equal": true,
+    "no restart marker": true,
+    "Connection lost, then resumed.": true,
+    "graphs shown": true,
+    "data-run unchanged": true,
+    "gaps +1 and segments +1": true,
+    "the shared gap line names the gap's scenario times (disconnected)": true,
+    "line 2 is min and max only": true,
+    "seq continuity": true
+   },
+   "observed": {
+    "live_after_s": 0.948459716796875,
+    "started_at": [
+     1790829047.8868492,
+     1790829047.8868492
+    ],
+    "before": {
+     "vehicle.speed": {
+      "gaps": "0",
+      "segments": "1",
+      "run": "1790829047.8868492"
+     },
+     "engine.rpm": {
+      "gaps": "0",
+      "segments": "1",
+      "run": "1790829047.8868492"
+     },
+     "engine.throttle": {
+      "gaps": "0",
+      "segments": "1",
+      "run": "1790829047.8868492"
+     },
+     "engine.engine_load": {
+      "gaps": "0",
+      "segments": "1",
+      "run": "1790829047.8868492"
+     },
+     "engine.coolant_temp": {
+      "gaps": "0",
+      "segments": "1",
+      "run": "1790829047.8868492"
+     }
+    },
+    "after": {
+     "vehicle.speed": {
+      "gaps": "1",
+      "segments": "2",
+      "run": "1790829047.8868492",
+      "line2": "min 0 \u00b7 max 80 in 2 min"
+     },
+     "engine.rpm": {
+      "gaps": "1",
+      "segments": "2",
+      "run": "1790829047.8868492",
+      "line2": "min 800 \u00b7 max 2800 in 2 min"
+     },
+     "engine.throttle": {
+      "gaps": "1",
+      "segments": "2",
+      "run": "1790829047.8868492",
+      "line2": "min 0 \u00b7 max 45 in 2 min"
+     },
+     "engine.engine_load": {
+      "gaps": "1",
+      "segments": "2",
+      "run": "1790829047.8868492",
+      "line2": "min 10 \u00b7 max 75 in 2 min"
+     },
+     "engine.coolant_temp": {
+      "gaps": "1",
+      "segments": "2",
+      "run": "1790829047.8868492",
+      "line2": "min 45.5 \u00b7 max 80.6 in 2 min"
+     }
+    },
+    "breaks_line": "No data from t = 200.0 to t = 207.7 s (disconnected)",
+    "seqs": [
+     752,
+     [
+      1,
+      2,
+      3
+     ],
+     [
+      750,
+      751,
+      752
+     ]
+    ],
+    "log_count": "752 exchanges, last seq 752 (live)"
+   }
+  },
+  {
+   "case": "Restart reset",
+   "rule": "SIGTERM, then a new simulator: data-run changed; data-oldest-t >= 0 and data-points counts only the new run; the restart note and marker are visible; data-segments = 1 after the first new point",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "graphs shown": true,
+    "live again": true,
+    "the first new point drawn": true,
+    "data-run changed": true,
+    "oldest-t >= 0 and only this run's points": true,
+    "restart note visible": true,
+    "restart marker in the log": true,
+    "segments 1 after the first new point": true
+   },
+   "observed": {
+    "before": {
+     "vehicle.speed": {
+      "run": "1790829047.8868492",
+      "points": "80",
+      "oldestT": "0.5808694260194898",
+      "asOf": "208.19450487592258"
+     },
+     "engine.rpm": {
+      "run": "1790829047.8868492",
+      "points": "70",
+      "oldestT": "0.5808694260194898",
+      "asOf": "208.19450487592258"
+     },
+     "engine.throttle": {
+      "run": "1790829047.8868492",
+      "points": "11",
+      "oldestT": "0.5808694260194898",
+      "asOf": "208.19450487592258"
+     },
+     "engine.engine_load": {
+      "run": "1790829047.8868492",
+      "points": "13",
+      "oldestT": "0.5808694260194898",
+      "asOf": "208.19450487592258"
+     },
+     "engine.coolant_temp": {
+      "run": "1790829047.8868492",
+      "points": "778",
+      "oldestT": "0.5808694260194898",
+      "asOf": "208.19450487592258"
+     }
+    },
+    "after": {
+     "vehicle.speed": {
+      "run": "1790829256.517321",
+      "points": "1",
+      "oldestT": "0.574543294031173",
+      "newestT": "0.574543294031173",
+      "asOf": "1.075541330035776",
+      "drawnTo": "1.075541330035776",
+      "segments": "1"
+     },
+     "engine.rpm": {
+      "run": "1790829256.517321",
+      "points": "1",
+      "oldestT": "0.574543294031173",
+      "newestT": "0.574543294031173",
+      "asOf": "1.075541330035776",
+      "drawnTo": "1.075541330035776",
+      "segments": "1"
+     },
+     "engine.throttle": {
+      "run": "1790829256.517321",
+      "points": "1",
+      "oldestT": "0.574543294031173",
+      "newestT": "0.574543294031173",
+      "asOf": "1.075541330035776",
+      "drawnTo": "1.075541330035776",
+      "segments": "1"
+     },
+     "engine.engine_load": {
+      "run": "1790829256.517321",
+      "points": "1",
+      "oldestT": "0.574543294031173",
+      "newestT": "0.574543294031173",
+      "asOf": "1.075541330035776",
+      "drawnTo": "1.075541330035776",
+      "segments": "1"
+     },
+     "engine.coolant_temp": {
+      "run": "1790829256.517321",
+      "points": "2",
+      "oldestT": "0.574543294031173",
+      "newestT": "1.075541330035776",
+      "asOf": "1.075541330035776",
+      "drawnTo": "1.075541330035776",
+      "segments": "1"
+     }
+    },
+    "note": "Simulator restarted at 04:34:16 UTC. Graphs start again from scenario t = 0; the previous run's graphs were cleared."
+   }
+  },
+  {
+   "case": "Non-finite values",
+   "rule": "Fault server, scenario profile, engine.coolant_temp nan for t in [10, 20) in-process, no traffic. While invalid: data-state invalid; line 1 and the table read invalid value; conn text Live; data-malformed-total 0. After: data-gaps >= 1, data-segments >= 2, and no point is drawn between the last valid and the next valid t",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "invalid seen, only inside [10, 20)": true,
+    "while invalid: line 1 and the table read invalid value": true,
+    "while invalid: conn text Live, malformed 0": true,
+    "after: gaps >= 1, segments >= 2": true,
+    "no point between the last valid and the next valid t": true
+   },
+   "observed": {
+    "invalid_samples": 98,
+    "invalid_as_of": [
+     "10.092645167838782",
+     "19.61233608587645"
+    ],
+    "invalid_newest_t": [
+     "10.092645167838782"
+    ],
+    "invalid_points": [
+     "20"
+    ],
+    "first_valid_after": {
+     "path": "engine.coolant_temp",
+     "cap": "4096",
+     "state": "ok",
+     "points": "21",
+     "oldestT": "0.5721837040036917",
+     "newestT": "20.11334518995136",
+     "asOf": "20.11334518995136",
+     "drawnTo": "20.11334518995136",
+     "windowS": "120",
+     "leftValue": "",
+     "pointsBeforeWindow": "0",
+     "segments": "2",
+     "gaps": "1",
+     "run": "1790829258.2713723",
+     "paused": "false",
+     "hidden": false,
+     "line1": "44.14",
+     "line2": "min 20.7 \u00b7 max 44.1 in 2 min"
+    },
+    "last": {
+     "path": "engine.coolant_temp",
+     "cap": "4096",
+     "state": "ok",
+     "points": "29",
+     "oldestT": "0.5721837040036917",
+     "newestT": "24.124047664925456",
+     "asOf": "24.124047664925456",
+     "drawnTo": "23.622782645979896",
+     "windowS": "120",
+     "leftValue": "",
+     "pointsBeforeWindow": "0",
+     "segments": "2",
+     "gaps": "1",
+     "run": "1790829258.2713723",
+     "paused": "false",
+     "hidden": false,
+     "line1": "48.95",
+     "line2": "min 20.7 \u00b7 max 48.3 in 2 min"
+    },
+    "breaks_line_while_invalid": "Coolant: invalid value from t = 9.6 to t = 19.6 s (still invalid)",
+    "breaks_line_after": "Coolant: invalid value from t = 9.6 to t = 20.1 s",
+    "invalid_example": {
+     "now": 1790829268350,
+     "conn": "live",
+     "data": "current",
+     "reason": "",
+     "health": "live",
+     "episode": "none",
+     "attempts": 0,
+     "timers": 0,
+     "polls": 5,
+     "malformed": 0,
+     "text": "Live",
+     "banner": null,
+     "retry": null,
+     "known": [],
+     "stale": [],
+     "socks": 1,
+     "states": 21,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "850",
+      "engine.coolant_temp": "invalid value",
+      "engine.engine_load": "50.51",
+      "engine.throttle": "8"
+     },
+     "note": "",
+     "breaks": "Coolant: invalid value from t = 9.6 to t = 10.1 s (still invalid)",
+     "cell": "invalid value",
+     "graphs": {
+      "engine.coolant_temp": {
+       "path": "engine.coolant_temp",
+       "cap": "4096",
+       "state": "invalid",
+       "points": "20",
+       "oldestT": "0.5721837040036917",
+       "newestT": "10.092645167838782",
+       "asOf": "10.092645167838782",
+       "drawnTo": "10.092645167838782",
+       "windowS": "120",
+       "leftValue": "",
+       "pointsBeforeWindow": "0",
+       "segments": "1",
+       "gaps": "1",
+       "run": "1790829258.2713723",
+       "paused": "false",
+       "hidden": false,
+       "line1": "invalid value",
+       "line2": "min 20.7 \u00b7 max 31.5 in 2 min"
+      }
+     }
+    }
+   }
+  },
+  {
+   "case": "Encoding failure, then recovery to changed data",
+   "rule": "Fault server, stepped scenario, the full snapshot raises for 5 s. Within one poll (<= 3 s): data-data last-known, data-reason encoding, the banner names state_encode_failed; data-conn stays live and data-polls keeps rising. The graphs get a break. After the fault ends: live again, and only after a state was applied on a socket established after a /status with ok: true",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "last-known/encoding within 3 s of the fault": true,
+    "the banner names state_encode_failed": true,
+    "data-conn stays live during the fault": true,
+    "data-polls keeps rising": true,
+    "the graphs get a break (and the resync its own, when the fault's gap had already ended)": true,
+    "graphs shown": true,
+    "live again after the fault": true,
+    "no health -> live change between the fault and t_live": true,
+    "the recovering socket was opened after an ok:true /status that followed the last ok:false": true,
+    "its first state arrived no later than t_live": true
+   },
+   "observed": {
+    "first_fault_after_s": 0.302941162109375,
+    "fault_samples": 68,
+    "fault_polls": [
+     [
+      15
+     ],
+     [
+      18
+     ]
+    ],
+    "banner": "Last known data. The simulator could not build its full state (state_encode_failed 1). The page keeps polling and reconnects once GET /status reports state_encoding ok. The views show the last state applied, at 04:35:12 UTC.",
+    "live_again_after_s": 7.254941162109375,
+    "t_fault_ms": 1790829312956,
+    "t_live_ms": 1790829319992,
+    "first_state_ms": 1790829319991,
+    "ok_true_end_ms": 1790829319965,
+    "last_ok_false_end_ms": 1790829316960,
+    "recovering_socket": {
+     "index": 1,
+     "url": "ws://127.0.0.1:8765/api/v1/events?after=129",
+     "created": 1790829319965,
+     "opened": 1790829319966,
+     "error": null,
+     "closed": null,
+     "code": null,
+     "frames": 12,
+     "states": 3,
+     "bad": null
+    },
+    "early_live": [],
+    "health_changes": [
+     {
+      "t": 1790829312956,
+      "a": "health",
+      "v": "last-known"
+     },
+     {
+      "t": 1790829319992,
+      "a": "health",
+      "v": "live"
+     }
+    ],
+    "sockets": [
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events",
+      "created": 1790829284916,
+      "opened": 1790829284917,
+      "error": null,
+      "closed": 1790829318963,
+      "code": 1000,
+      "frames": 378,
+      "states": 113,
+      "bad": null,
+      "closeCalled": 1790829318962
+     },
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=129",
+      "created": 1790829319965,
+      "opened": 1790829319966,
+      "error": null,
+      "closed": null,
+      "code": null,
+      "frames": 12,
+      "states": 3,
+      "bad": null
+     }
+    ],
+    "false_reads": [
+     {
+      "start": 1790829312954,
+      "end": 1790829312956,
+      "http": 200,
+      "ok": false,
+      "started_at": 1790829282.8225083,
+      "failed": 1
+     },
+     {
+      "start": 1790829314956,
+      "end": 1790829314958,
+      "http": 200,
+      "ok": false,
+      "started_at": 1790829282.8225083,
+      "failed": 9
+     },
+     {
+      "start": 1790829316958,
+      "end": 1790829316960,
+      "http": 200,
+      "ok": false,
+      "started_at": 1790829282.8225083,
+      "failed": 17
+     }
+    ],
+    "qualifying_ok_read": {
+     "start": 1790829319963,
+     "end": 1790829319965,
+     "http": 200,
+     "ok": true,
+     "started_at": 1790829282.8225083,
+     "failed": 20
+    },
+    "breaks_line": "No data from t = 35.9 to t = 37.2 s (reconnecting to resynchronise)",
+    "line2": {
+     "vehicle.speed": "min 0 \u00b7 max 80 in 2 min",
+     "engine.rpm": "min 800 \u00b7 max 2800 in 2 min",
+     "engine.throttle": "min 0 \u00b7 max 45 in 2 min",
+     "engine.engine_load": "min 20 \u00b7 max 75 in 2 min",
+     "engine.coolant_temp": "min 20.6 \u00b7 max 31 in 2 min"
+    },
+    "expected_gaps": 2,
+    "states_on_fault_socket_after_fault": 4,
+    "gaps": {
+     "vehicle.speed": [
+      "0",
+      "2"
+     ],
+     "engine.rpm": [
+      "0",
+      "2"
+     ],
+     "engine.throttle": [
+      "0",
+      "2"
+     ],
+     "engine.engine_load": [
+      "0",
+      "2"
+     ],
+     "engine.coolant_temp": [
+      "0",
+      "2"
+     ]
+    },
+    "segments": {
+     "vehicle.speed": [
+      "1",
+      "3"
+     ],
+     "engine.rpm": [
+      "1",
+      "3"
+     ],
+     "engine.throttle": [
+      "1",
+      "3"
+     ],
+     "engine.engine_load": [
+      "1",
+      "3"
+     ],
+     "engine.coolant_temp": [
+      "1",
+      "3"
+     ]
+    }
+   }
+  },
+  {
+   "case": "Log rows at 1440 x 900, graphs open, a break note showing (extra, encoding break)",
+   "rule": "At least 5 full log rows inside #logwrap at 1440 x 900 with the graphs open and a break note showing (the shared line under the graphs head: No data from t = A to t = B s (...))",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "a break note is shown": true,
+    "at least 5 full log rows": true
+   },
+   "observed": {
+    "full": 5,
+    "heights": [
+     52,
+     53,
+     53,
+     52,
+     53
+    ],
+    "rowsRegion": 278,
+    "graphsH": 196,
+    "plotH": 72.578125,
+    "cardH": 114.765625,
+    "banner": false,
+    "line2": [
+     "min 0 \u00b7 max 80 in 2 min",
+     "min 800 \u00b7 max 2800 in 2 min",
+     "min 0 \u00b7 max 45 in 2 min",
+     "min 20 \u00b7 max 75 in 2 min",
+     "min 20.6 \u00b7 max 31 in 2 min"
+    ],
+    "breaks": "No data from t = 35.9 to t = 37.2 s (reconnecting to resynchronise)",
+    "statusH": 99
+   }
+  },
+  {
+   "case": "Same-value recovery",
+   "rule": "Fault server, no scenario: the snapshot raises for 5 s, then recovers to identical text. data-reason encoding during the fault, with data-polls rising; after it, live within one poll plus one resync (<= 5 s); the wrapper saw a state after the recovery. A page loaded during the fault starts as last known, not Live, although it received a state after hello",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "data-reason encoding during the fault": true,
+    "data-polls rising during it": true,
+    "live within one poll plus one resync (<= 5 s) after it": true,
+    "the wrapper saw a state after the recovery": true,
+    "... and its attribute log has no change to live before the fault ended": true,
+    "a page loaded during the fault: last known, not Live": true,
+    "... although it received a state after hello": true,
+    "... and Live after the fault ends": true
+   },
+   "observed": {
+    "fault_samples": 70,
+    "polls": [
+     [
+      11
+     ],
+     [
+      14
+     ]
+    ],
+    "live_after_fault_end_s": 2.220215087890625,
+    "states_after_recovery": [
+     {
+      "t": 1790829346317,
+      "sock": 0,
+      "len": 798
+     },
+     {
+      "t": 1790829348347,
+      "sock": 1,
+      "len": 798
+     }
+    ],
+    "sockets": [
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events",
+      "created": 1790829321305,
+      "opened": 1790829321308,
+      "error": null,
+      "closed": 1790829347344,
+      "code": 1000,
+      "frames": 107,
+      "states": 2,
+      "bad": null,
+      "closeCalled": 1790829347342
+     },
+     {
+      "url": "ws://127.0.0.1:8765/api/v1/events?after=0",
+      "created": 1790829348344,
+      "opened": 1790829348346,
+      "error": null,
+      "closed": null,
+      "code": null,
+      "frames": 17,
+      "states": 1,
+      "bad": null
+     }
+    ],
+    "loaded_health_changes": [
+     {
+      "t": 1790829368242,
+      "a": "health",
+      "v": "stale"
+     },
+     {
+      "t": 1790829368254,
+      "a": "health",
+      "v": "last-known"
+     },
+     {
+      "t": 1790829377274,
+      "a": "health",
+      "v": "live"
+     }
+    ],
+    "fault_end_ms": 1790829376219.7827,
+    "loaded_during": [
+     {
+      "now": 1790829368437,
+      "conn": "live",
+      "data": "last-known",
+      "reason": "encoding",
+      "health": "last-known",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 1,
+      "malformed": 0,
+      "text": "Connected, last known data",
+      "banner": "Last known data. The simulator could not build its full state (state_encode_failed 28). The page keeps polling and reconnects once GET /status reports state_encoding ok. The views show the last state applied, at 04:36:08 UTC.",
+      "retry": null,
+      "known": [
+       "Last known, 04:36:08 UTC",
+       "Last known, 04:36:08 UTC",
+       "Last known, 04:36:08 UTC"
+      ],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     },
+     {
+      "now": 1790829375681,
+      "conn": "live",
+      "data": "last-known",
+      "reason": "encoding",
+      "health": "last-known",
+      "episode": "none",
+      "attempts": 0,
+      "timers": 0,
+      "polls": 4,
+      "malformed": 0,
+      "text": "Connected, last known data",
+      "banner": "Last known data. The simulator could not build its full state (state_encode_failed 52). The page keeps polling and reconnects once GET /status reports state_encoding ok. The views show the last state applied, at 04:36:08 UTC.",
+      "retry": null,
+      "known": [
+       "Last known, 04:36:08 UTC",
+       "Last known, 04:36:08 UTC",
+       "Last known, 04:36:08 UTC"
+      ],
+      "stale": [],
+      "socks": 1,
+      "states": 1,
+      "cells": {
+       "vehicle.speed": "0",
+       "engine.rpm": "800",
+       "engine.coolant_temp": "90",
+       "engine.engine_load": "22",
+       "engine.throttle": "14"
+      },
+      "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+      "breaks": ""
+     }
+    ],
+    "loaded_live_after": {
+     "now": 1790829377354,
+     "conn": "live",
+     "data": "current",
+     "reason": "",
+     "health": "live",
+     "episode": "none",
+     "attempts": 0,
+     "timers": 0,
+     "polls": 6,
+     "malformed": 0,
+     "text": "Live",
+     "banner": null,
+     "retry": null,
+     "known": [],
+     "stale": [],
+     "socks": 2,
+     "states": 3,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    }
+   }
+  },
+  {
+   "case": "REST is not proof",
+   "rule": "Fault server: the DTC part of the snapshot fails and the vehicle part succeeds. GET /vehicle answers 200 throughout; the page stays last known until the fault ends, and then clears as above",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "GET /vehicle 200 throughout": true,
+    "the page goes last known (encoding)": true,
+    "and stays last known until the fault ends": true,
+    "then clears": true
+   },
+   "observed": {
+    "vehicle_statuses": [
+     200
+    ],
+    "requests": 49,
+    "first_last_known": {
+     "now": 1790829397503,
+     "conn": "live",
+     "data": "last-known",
+     "reason": "encoding",
+     "health": "last-known",
+     "episode": "none",
+     "attempts": 0,
+     "timers": 0,
+     "polls": 16,
+     "malformed": 0,
+     "text": "Connected, last known data",
+     "banner": "Last known data. The simulator could not build its full state (state_encode_failed 64). The page keeps polling and reconnects once GET /status reports state_encoding ok. The views show the last state applied, at 04:36:17 UTC.",
+     "retry": null,
+     "known": [
+      "Last known, 04:36:17 UTC",
+      "Last known, 04:36:17 UTC",
+      "Last known, 04:36:17 UTC"
+     ],
+     "stale": [],
+     "socks": 2,
+     "states": 3,
+     "cells": {
+      "vehicle.speed": "0",
+      "engine.rpm": "800",
+      "engine.coolant_temp": "90",
+      "engine.engine_load": "22",
+      "engine.throttle": "14"
+     },
+     "note": "No scenario: the values are constant, as configured. Graphs follow scenario time.",
+     "breaks": ""
+    },
+    "live_after_s": 2.145210693359375
+   }
+  },
+  {
+   "case": "Agreement",
+   "rule": "Every live screenshot with the graphs not paused (data-paused false): each line-1 value equals the signal table's cell, read in one evaluation",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "every live screenshot with graphs agrees": true,
+    "at least one live screenshot had graphs": true
+   },
+   "observed": {
+    "checked": 14,
+    "skipped": [
+     "m3b-a1-no-scenario-65s.png",
+     "m3b-a2-malformed-recovered.png",
+     "m3b-a3-malformed-exhausted.png",
+     "m3b-a5-slots-b-exhausted.png",
+     "m3b-b-paused.png",
+     "m3b-b-sigstop-stale.png",
+     "m3b-e-same-value-recovered.png",
+     "m3b-e-loaded-during-fault.png",
+     "m3b-e-rest-not-proof-recovered.png"
+    ],
+    "paused_not_checked": [
+     "m3b-b-paused.png"
+    ],
+    "disagreeing": []
+   }
+  }
+ ],
+ "agreement": [
+  {
+   "shot": "m3b-a1-no-scenario-65s.png",
+   "health": "live",
+   "checked": false,
+   "agree": true,
+   "paused": false,
+   "pairs": []
+  },
+  {
+   "shot": "m3b-a2-malformed-recovered.png",
+   "health": "live",
+   "checked": false,
+   "agree": true,
+   "paused": false,
+   "pairs": []
+  },
+  {
+   "shot": "m3b-a3-malformed-exhausted.png",
+   "health": "last-known",
+   "checked": false,
+   "agree": true,
+   "paused": false,
+   "pairs": []
+  },
+  {
+   "shot": "m3b-a5-slots-b-exhausted.png",
+   "health": "stale",
+   "checked": false,
+   "agree": true,
+   "paused": false,
+   "pairs": []
+  },
+  {
+   "shot": "m3b-b-graphs-1440.png",
+   "health": "live",
+   "checked": true,
+   "agree": true,
+   "paused": false,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "80",
+     "80"
+    ],
+    [
+     "engine.rpm",
+     "2400",
+     "2400"
+    ],
+    [
+     "engine.throttle",
+     "18",
+     "18"
+    ],
+    [
+     "engine.engine_load",
+     "35",
+     "35"
+    ],
+    [
+     "engine.coolant_temp",
+     "27.36",
+     "27.36"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-b-graphs-1200.png",
+   "health": "live",
+   "checked": true,
+   "agree": true,
+   "paused": false,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "80",
+     "80"
+    ],
+    [
+     "engine.rpm",
+     "2400",
+     "2400"
+    ],
+    [
+     "engine.throttle",
+     "18",
+     "18"
+    ],
+    [
+     "engine.engine_load",
+     "35",
+     "35"
+    ],
+    [
+     "engine.coolant_temp",
+     "27.77",
+     "27.77"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-b-graphs-390.png",
+   "health": "live",
+   "checked": true,
+   "agree": true,
+   "paused": false,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "80",
+     "80"
+    ],
+    [
+     "engine.rpm",
+     "2400",
+     "2400"
+    ],
+    [
+     "engine.throttle",
+     "18",
+     "18"
+    ],
+    [
+     "engine.engine_load",
+     "35",
+     "35"
+    ],
+    [
+     "engine.coolant_temp",
+     "28.35",
+     "28.35"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-b-graphs-2000.png",
+   "health": "live",
+   "checked": true,
+   "agree": true,
+   "paused": false,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "80",
+     "80"
+    ],
+    [
+     "engine.rpm",
+     "2400",
+     "2400"
+    ],
+    [
+     "engine.throttle",
+     "18",
+     "18"
+    ],
+    [
+     "engine.engine_load",
+     "35",
+     "35"
+    ],
+    [
+     "engine.coolant_temp",
+     "28.68",
+     "28.68"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-b-held-left-30s.png",
+   "health": "live",
+   "checked": true,
+   "agree": true,
+   "paused": false,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "80",
+     "80"
+    ],
+    [
+     "engine.rpm",
+     "2400",
+     "2400"
+    ],
+    [
+     "engine.throttle",
+     "18",
+     "18"
+    ],
+    [
+     "engine.engine_load",
+     "35",
+     "35"
+    ],
+    [
+     "engine.coolant_temp",
+     "36.11",
+     "36.11"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-b-paused.png",
+   "health": "live",
+   "checked": false,
+   "agree": false,
+   "paused": true,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "80",
+     "48"
+    ],
+    [
+     "engine.rpm",
+     "2400",
+     "1440"
+    ],
+    [
+     "engine.throttle",
+     "18",
+     "0"
+    ],
+    [
+     "engine.engine_load",
+     "35",
+     "10"
+    ],
+    [
+     "engine.coolant_temp",
+     "36.19",
+     "39.32"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-b-cost-1440x900.png",
+   "health": "live",
+   "checked": true,
+   "agree": true,
+   "paused": false,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "80",
+     "80"
+    ],
+    [
+     "engine.rpm",
+     "2400",
+     "2400"
+    ],
+    [
+     "engine.throttle",
+     "18",
+     "18"
+    ],
+    [
+     "engine.engine_load",
+     "35",
+     "35"
+    ],
+    [
+     "engine.coolant_temp",
+     "58.65",
+     "58.65"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-b-cost-390x844.png",
+   "health": "live",
+   "checked": true,
+   "agree": true,
+   "paused": false,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "60",
+     "60"
+    ],
+    [
+     "engine.rpm",
+     "1800",
+     "1800"
+    ],
+    [
+     "engine.throttle",
+     "45",
+     "45"
+    ],
+    [
+     "engine.engine_load",
+     "75",
+     "75"
+    ],
+    [
+     "engine.coolant_temp",
+     "77.61",
+     "77.61"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-b-live-1440.png",
+   "health": "live",
+   "checked": true,
+   "agree": true,
+   "paused": false,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "70",
+     "70"
+    ],
+    [
+     "engine.rpm",
+     "2100",
+     "2100"
+    ],
+    [
+     "engine.throttle",
+     "45",
+     "45"
+    ],
+    [
+     "engine.engine_load",
+     "75",
+     "75"
+    ],
+    [
+     "engine.coolant_temp",
+     "78.05",
+     "78.05"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-b-sigstop-stale.png",
+   "health": "stale",
+   "checked": false,
+   "agree": true,
+   "paused": false,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "75",
+     "75"
+    ],
+    [
+     "engine.rpm",
+     "2250",
+     "2250"
+    ],
+    [
+     "engine.throttle",
+     "45",
+     "45"
+    ],
+    [
+     "engine.engine_load",
+     "75",
+     "75"
+    ],
+    [
+     "engine.coolant_temp",
+     "78.34",
+     "78.34"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-b-sigcont-break.png",
+   "health": "live",
+   "checked": true,
+   "agree": true,
+   "paused": false,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "80",
+     "80"
+    ],
+    [
+     "engine.rpm",
+     "2400",
+     "2400"
+    ],
+    [
+     "engine.throttle",
+     "18",
+     "18"
+    ],
+    [
+     "engine.engine_load",
+     "35",
+     "35"
+    ],
+    [
+     "engine.coolant_temp",
+     "80.72",
+     "80.72"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-b-restart.png",
+   "health": "live",
+   "checked": true,
+   "agree": true,
+   "paused": false,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "0",
+     "0"
+    ],
+    [
+     "engine.rpm",
+     "800",
+     "800"
+    ],
+    [
+     "engine.throttle",
+     "0",
+     "0"
+    ],
+    [
+     "engine.engine_load",
+     "20",
+     "20"
+    ],
+    [
+     "engine.coolant_temp",
+     "20.31",
+     "20.31"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-c-nonfinite-invalid.png",
+   "health": "live",
+   "checked": true,
+   "agree": true,
+   "paused": false,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "0",
+     "0"
+    ],
+    [
+     "engine.rpm",
+     "850",
+     "850"
+    ],
+    [
+     "engine.throttle",
+     "24",
+     "24"
+    ],
+    [
+     "engine.engine_load",
+     "29.38",
+     "29.38"
+    ],
+    [
+     "engine.coolant_temp",
+     "invalid value",
+     "invalid value"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-c-nonfinite-after.png",
+   "health": "live",
+   "checked": true,
+   "agree": true,
+   "paused": false,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "30",
+     "30"
+    ],
+    [
+     "engine.rpm",
+     "1600",
+     "1600"
+    ],
+    [
+     "engine.throttle",
+     "41",
+     "41"
+    ],
+    [
+     "engine.engine_load",
+     "33.2",
+     "33.2"
+    ],
+    [
+     "engine.coolant_temp",
+     "48.95",
+     "48.95"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-d-encoding-recovered.png",
+   "health": "live",
+   "checked": true,
+   "agree": true,
+   "paused": false,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "80",
+     "80"
+    ],
+    [
+     "engine.rpm",
+     "2400",
+     "2400"
+    ],
+    [
+     "engine.throttle",
+     "18",
+     "18"
+    ],
+    [
+     "engine.engine_load",
+     "35",
+     "35"
+    ],
+    [
+     "engine.coolant_temp",
+     "30.99",
+     "30.99"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-d-log-rows-with-break-note.png",
+   "health": "live",
+   "checked": true,
+   "agree": true,
+   "paused": false,
+   "pairs": [
+    [
+     "vehicle.speed",
+     "80",
+     "80"
+    ],
+    [
+     "engine.rpm",
+     "2400",
+     "2400"
+    ],
+    [
+     "engine.throttle",
+     "18",
+     "18"
+    ],
+    [
+     "engine.engine_load",
+     "35",
+     "35"
+    ],
+    [
+     "engine.coolant_temp",
+     "31.06",
+     "31.06"
+    ]
+   ]
+  },
+  {
+   "shot": "m3b-e-same-value-recovered.png",
+   "health": "live",
+   "checked": false,
+   "agree": true,
+   "paused": false,
+   "pairs": []
+  },
+  {
+   "shot": "m3b-e-loaded-during-fault.png",
+   "health": "last-known",
+   "checked": false,
+   "agree": true,
+   "paused": false,
+   "pairs": []
+  },
+  {
+   "shot": "m3b-e-rest-not-proof-recovered.png",
+   "health": "live",
+   "checked": false,
+   "agree": true,
+   "paused": false,
+   "pairs": []
+  }
+ ],
+ "cost": [
+  {
+   "label": "1440x900",
+   "viewport": [
+    1440,
+    900
+   ],
+   "seconds": 60.03,
+   "heap": [
+    {
+     "t": 1790829118634,
+     "used": 2707028,
+     "total": 4145104,
+     "limit": 4395630592
+    },
+    {
+     "t": 1790829128645,
+     "used": 2747394,
+     "total": 3883054,
+     "limit": 4395630592
+    },
+    {
+     "t": 1790829138646,
+     "used": 2779531,
+     "total": 4145219,
+     "limit": 4395630592
+    },
+    {
+     "t": 1790829148646,
+     "used": 3064291,
+     "total": 4148647,
+     "limit": 4395630592
+    },
+    {
+     "t": 1790829158658,
+     "used": 3385145,
+     "total": 4939029,
+     "limit": 4395630592
+    },
+    {
+     "t": 1790829168649,
+     "used": 3246292,
+     "total": 5199676,
+     "limit": 4395630592
+    },
+    {
+     "t": 1790829178656,
+     "used": 2931479,
+     "total": 4145223,
+     "limit": 4395630592
+    }
+   ],
+   "heap_used_mib": [
+    2.58,
+    2.62,
+    2.65,
+    2.92,
+    3.23,
+    3.1,
+    2.8
+   ],
+   "heap_total_mib": [
+    3.95,
+    3.7,
+    3.95,
+    3.96,
+    4.71,
+    4.96,
+    3.95
+   ],
+   "TaskDuration_s": 30.583,
+   "ScriptDuration_s": 2.027,
+   "LayoutDuration_s": 8.246,
+   "RecalcStyleDuration_s": 2.885,
+   "TaskDuration_percent": 50.95,
+   "canvases": {
+    "dpr": 1,
+    "canvases": [
+     {
+      "w": 179,
+      "h": 72,
+      "cssW": 179,
+      "cssH": 72,
+      "path": "vehicle.speed"
+     },
+     {
+      "w": 179,
+      "h": 72,
+      "cssW": 179,
+      "cssH": 72,
+      "path": "engine.rpm"
+     },
+     {
+      "w": 179,
+      "h": 72,
+      "cssW": 179,
+      "cssH": 72,
+      "path": "engine.throttle"
+     },
+     {
+      "w": 179,
+      "h": 72,
+      "cssW": 179,
+      "cssH": 72,
+      "path": "engine.engine_load"
+     },
+     {
+      "w": 179,
+      "h": 72,
+      "cssW": 179,
+      "cssH": 72,
+      "path": "engine.coolant_temp"
+     }
+    ]
+   },
+   "canvas_bytes": 257760,
+   "canvas_mib": 0.246,
+   "points": {
+    "vehicle.speed": "48",
+    "engine.rpm": "43",
+    "engine.throttle": "6",
+    "engine.engine_load": "7",
+    "engine.coolant_temp": "507"
+   },
+   "health": "live",
+   "trace_file": "m3b-trace-1440x900.json.gz",
+   "trace_bytes": 1496459,
+   "trace": {
+    "thread": [
+     862434,
+     862434
+    ],
+    "events": 49360,
+    "main_thread_busy_ms": 28636.4,
+    "busy_percent_of_window": 47.71,
+    "graph_redraws": 233,
+    "graph_redraw_ms_total": 26.6,
+    "graph_redraw_ms_max": 0.61,
+    "graph_redraw_ms_median": 0.108,
+    "resize_ms_total": 0,
+    "fire_animation_frame_ms_total": 155.2,
+    "function_call_ms_total": 12246.1,
+    "app_js_lines_matched": [
+     857,
+     861
+    ]
+   }
+  },
+  {
+   "label": "390x844",
+   "viewport": [
+    390,
+    844
+   ],
+   "seconds": 60.02,
+   "heap": [
+    {
+     "t": 1790829183970,
+     "used": 3342014,
+     "total": 4149654,
+     "limit": 4395630592
+    },
+    {
+     "t": 1790829193984,
+     "used": 3269903,
+     "total": 3886171,
+     "limit": 4395630592
+    },
+    {
+     "t": 1790829203978,
+     "used": 3085268,
+     "total": 3883024,
+     "limit": 4395630592
+    },
+    {
+     "t": 1790829213981,
+     "used": 3342403,
+     "total": 3886183,
+     "limit": 4395630592
+    },
+    {
+     "t": 1790829223988,
+     "used": 3253852,
+     "total": 4146996,
+     "limit": 4395630592
+    },
+    {
+     "t": 1790829233988,
+     "used": 3534158,
+     "total": 4411970,
+     "limit": 4395630592
+    },
+    {
+     "t": 1790829243989,
+     "used": 3442669,
+     "total": 4148373,
+     "limit": 4395630592
+    }
+   ],
+   "heap_used_mib": [
+    3.19,
+    3.12,
+    2.94,
+    3.19,
+    3.1,
+    3.37,
+    3.28
+   ],
+   "heap_total_mib": [
+    3.96,
+    3.71,
+    3.7,
+    3.71,
+    3.95,
+    4.21,
+    3.96
+   ],
+   "TaskDuration_s": 42.532,
+   "ScriptDuration_s": 3.518,
+   "LayoutDuration_s": 17.418,
+   "RecalcStyleDuration_s": 5.806,
+   "TaskDuration_percent": 70.86,
+   "canvases": {
+    "dpr": 1,
+    "canvases": [
+     {
+      "w": 342,
+      "h": 66,
+      "cssW": 342,
+      "cssH": 66,
+      "path": "vehicle.speed"
+     },
+     {
+      "w": 342,
+      "h": 66,
+      "cssW": 342,
+      "cssH": 66,
+      "path": "engine.rpm"
+     },
+     {
+      "w": 342,
+      "h": 66,
+      "cssW": 342,
+      "cssH": 66,
+      "path": "engine.throttle"
+     },
+     {
+      "w": 342,
+      "h": 66,
+      "cssW": 342,
+      "cssH": 66,
+      "path": "engine.engine_load"
+     },
+     {
+      "w": 342,
+      "h": 66,
+      "cssW": 342,
+      "cssH": 66,
+      "path": "engine.coolant_temp"
+     }
+    ]
+   },
+   "canvas_bytes": 451440,
+   "canvas_mib": 0.431,
+   "points": {
+    "vehicle.speed": "74",
+    "engine.rpm": "64",
+    "engine.throttle": "8",
+    "engine.engine_load": "10",
+    "engine.coolant_temp": "761"
+   },
+   "health": "live",
+   "trace_file": "m3b-trace-390x844.json.gz",
+   "trace_bytes": 1266794,
+   "trace": {
+    "thread": [
+     862434,
+     862434
+    ],
+    "events": 41373,
+    "main_thread_busy_ms": 40313.9,
+    "busy_percent_of_window": 67.17,
+    "graph_redraws": 232,
+    "graph_redraw_ms_total": 26.8,
+    "graph_redraw_ms_max": 0.21,
+    "graph_redraw_ms_median": 0.111,
+    "resize_ms_total": 0,
+    "fire_animation_frame_ms_total": 164.9,
+    "function_call_ms_total": 25800.6,
+    "app_js_lines_matched": [
+     857,
+     861
+    ]
+   }
+  }
+ ],
+ "extra": {
+  "overflow": {
+   "1440": [
+    [
+     "#vehicle",
+     378,
+     378
+    ],
+    [
+     "html",
+     1440,
+     1440
+    ],
+    [
+     "body",
+     1440,
+     1440
+    ],
+    [
+     "#graphs",
+     1010,
+     1010
+    ],
+    [
+     ".uplot 0",
+     179,
+     179
+    ],
+    [
+     ".uplot 1",
+     179,
+     179
+    ],
+    [
+     ".uplot 2",
+     179,
+     179
+    ],
+    [
+     ".uplot 3",
+     179,
+     179
+    ],
+    [
+     ".uplot 4",
+     179,
+     179
+    ]
+   ],
+   "1200": [
+    [
+     "#vehicle",
+     378,
+     378
+    ],
+    [
+     "html",
+     1200,
+     1200
+    ],
+    [
+     "body",
+     1200,
+     1200
+    ],
+    [
+     "#graphs",
+     773,
+     773
+    ],
+    [
+     ".uplot 0",
+     171,
+     171
+    ],
+    [
+     ".uplot 1",
+     171,
+     171
+    ],
+    [
+     ".uplot 2",
+     171,
+     171
+    ],
+    [
+     ".uplot 3",
+     171,
+     171
+    ],
+    [
+     ".uplot 4",
+     171,
+     171
+    ]
+   ],
+   "390": [
+    [
+     "#vehicle",
+     372,
+     372
+    ],
+    [
+     "html",
+     390,
+     390
+    ],
+    [
+     "body",
+     390,
+     390
+    ],
+    [
+     "#graphs",
+     372,
+     372
+    ],
+    [
+     ".uplot 0",
+     342,
+     342
+    ],
+    [
+     ".uplot 1",
+     342,
+     342
+    ],
+    [
+     ".uplot 2",
+     342,
+     342
+    ],
+    [
+     ".uplot 3",
+     342,
+     342
+    ],
+    [
+     ".uplot 4",
+     342,
+     342
+    ]
+   ],
+   "2000": [
+    [
+     "#vehicle",
+     498,
+     498
+    ],
+    [
+     "html",
+     2000,
+     2000
+    ],
+    [
+     "body",
+     2000,
+     2000
+    ],
+    [
+     "#graphs",
+     1442,
+     1442
+    ],
+    [
+     ".uplot 0",
+     262,
+     262
+    ],
+    [
+     ".uplot 1",
+     262,
+     262
+    ],
+    [
+     ".uplot 2",
+     262,
+     262
+    ],
+    [
+     ".uplot 3",
+     262,
+     262
+    ],
+    [
+     ".uplot 4",
+     262,
+     262
+    ]
+   ]
+  },
+  "status_bar_px": {
+   "1440": 99,
+   "1200": 92,
+   "390": 372,
+   "2000": 115
+  },
+  "problems": [
+   "log error (network): WebSocket connection to 'ws://127.0.0.1:8765/api/v1/events?after=0' failed: Error during WebSocket handshake: Unexpected response code: 503",
+   "log error (network): WebSocket connection to 'ws://127.0.0.1:8765/api/v1/events?after=0' failed: Error during WebSocket handshake: Unexpected response code: 503",
+   "log error (network): WebSocket connection to 'ws://127.0.0.1:8765/api/v1/events?after=0' failed: Error during WebSocket handshake: Unexpected response code: 503"
+  ]
+ },
+ "tally": {
+  "passed": 20,
+  "total": 20
+ }
+}

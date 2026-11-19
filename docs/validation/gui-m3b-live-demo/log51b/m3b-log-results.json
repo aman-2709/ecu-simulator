@@ -1,0 +1,6311 @@
+{
+ "chrome": "Chrome/151.0.7922.173",
+ "served": {
+  "app_js_sha256": "528dbddaa0bba04fe54fe8c25f590616f0f8ed52532ceaeee3560c4e1a842e66",
+  "wording_missing": []
+ },
+ "rows_cap": 2000,
+ "traffic_rate": "4",
+ "profile": "docs/examples/ice_drive_cycle_stepped.yaml",
+ "cases": [
+  {
+   "case": "page: the wording the cases read is the served page's",
+   "rule": "Every phrase the cases match is in the app.js the simulator served",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "no phrase missing": true
+   },
+   "observed": {
+    "app_js_sha256": "528dbddaa0bba04fe54fe8c25f590616f0f8ed52532ceaeee3560c4e1a842e66",
+    "wording_missing": []
+   }
+  },
+  {
+   "case": "1440x900: 1. Live following",
+   "rule": "Full buffer (2,000 retained). Following at the standard rate for 10 s: the window slides (its newest seq rises); at every sample <= 200 exchange rows and the body holds only them, hidden runs and marker rows whose class matches their title (gap / link / note); the newest exchange is drawn in the log box and is the count line's last seq; one row in and one out per arrival (row-list adds = removes = arrivals, no other row mutation). No new matching exchange: 5 s with the traffic stopped, zero mutations of any kind; 8 s of arrivals under a filter none of them match (service 0x0A), zero row-list adds / removes and the same rows",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "full buffer at the start": true,
+    "following throughout (the jump control off)": true,
+    "the window slides": true,
+    "<= 200 exchange rows at every sample, 200 at the cap": true,
+    "the body holds only exchange rows, hidden runs and markers drawn as the page draws them": true,
+    "the newest exchange drawn, in the log box, at every sample": true,
+    "one in / one out per arrival": true,
+    "no arrival: zero mutations in 5 s": true,
+    "arrivals no filter matches: zero row-list mutations, same rows": true,
+    "counts add up": true
+   },
+   "observed": {
+    "width": "1440x900",
+    "retained": 2000,
+    "windows": [
+     [
+      2492,
+      2691,
+      200
+     ],
+     [
+      2496,
+      2695,
+      200
+     ],
+     [
+      2500,
+      2699,
+      200
+     ],
+     [
+      2504,
+      2703,
+      200
+     ],
+     [
+      2507,
+      2706,
+      200
+     ],
+     [
+      2511,
+      2710,
+      200
+     ],
+     [
+      2515,
+      2714,
+      200
+     ],
+     [
+      2519,
+      2718,
+      200
+     ],
+     [
+      2523,
+      2722,
+      200
+     ],
+     [
+      2526,
+      2725,
+      200
+     ],
+     [
+      2531,
+      2730,
+      200
+     ]
+    ],
+    "last_seq": [
+     2691,
+     2695,
+     2699,
+     2703,
+     2706,
+     2710,
+     2714,
+     2718,
+     2722,
+     2725,
+     2730
+    ],
+    "arrived": 39,
+    "mutations": {
+     "add": 39,
+     "rem": 39,
+     "inRows": 0,
+     "nb": 39,
+     "focusout": 0
+    },
+    "count": "200 of 2,000 shown, last seq 2730",
+    "older_row": "1,800 older exchanges match your filters. Use Older in the log header to show them.",
+    "rows_body": 200,
+    "marks_seen": [],
+    "other_rows": [],
+    "quiet_mutations": {
+     "add": 0,
+     "rem": 0,
+     "inRows": 0,
+     "nb": 0,
+     "focusout": 0
+    },
+    "filtered": {
+     "arrived": 30,
+     "mutations": {
+      "add": 0,
+      "rem": 0,
+      "inRows": 30,
+      "nb": 0,
+      "focusout": 0
+     },
+     "count": "200 of 250 matching, last seq 2768",
+     "hidden_rows": [
+      "506 exchanges hidden by filters (not a gap)"
+     ],
+     "window": [
+      2063,
+      2262,
+      200
+     ]
+    },
+    "accounting": {
+     "where": "following",
+     "count": "200 of 2,000 shown, last seq 2730",
+     "matching": 2000,
+     "older": 1800,
+     "shown": 200,
+     "newer": 0,
+     "rows": 200,
+     "adds_up": true
+    }
+   }
+  },
+  {
+   "case": "1440x900: 2. Pause / resume, Clear view",
+   "rule": "Full buffer, standard traffic. Pause view: aria-pressed true, the button reads Resume (named Resume view; Task 47b shortened the visible text). Paused 20 s: zero row-list and in-row mutations, the same rows and the same log text, the held counter rising at every 5 s sample. Resume: the first row-list batch brings every held exchange at once (one rebuild: its adds >= the held count), later batches are single arrivals; every held seq is drawn; following, newest drawn. Clear view: no row up to the clear is drawn, the page still retains 2,000, new exchanges appear; paused and cleared: No exchanges since you cleared the view. with Show cleared rows, which brings back the 200-row window; resume follows again",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "full buffer at the start": true,
+    "paused: aria-pressed true, Resume (named Resume view)": true,
+    "paused 20 s: zero mutations": true,
+    "paused: same rows and the log text frozen": true,
+    "paused: the held counter rises at every sample": true,
+    "paused: the held count is the arrivals since the pause": true,
+    "resume: one rebuild brings the held rows": true,
+    "resume: every held seq drawn, following, newest drawn": true,
+    "Clear view: no row up to the clear drawn, 2,000 retained": true,
+    "Clear view: new exchanges appear, following": true,
+    "paused and cleared: the cleared line with Show cleared rows": true,
+    "Show cleared rows: the 200-row window back": true,
+    "resume after: following, 200 rows, newest drawn": true
+   },
+   "observed": {
+    "width": "1440x900",
+    "retained": 2000,
+    "paused_window": [
+     2581,
+     2780,
+     200
+    ],
+    "held": [
+     3,
+     22,
+     41,
+     60,
+     80
+    ],
+    "mutations_paused": {
+     "add": 0,
+     "rem": 0,
+     "inRows": 0,
+     "nb": 0,
+     "focusout": 0
+    },
+    "state_paused": "View paused. 80 new exchanges are held; they appear when you resume. The simulator keeps running.",
+    "text_frozen": true,
+    "resume_batches": [
+     {
+      "t": 133108,
+      "add": 81,
+      "rem": 81
+     },
+     {
+      "t": 133298.60000014305,
+      "add": 1,
+      "rem": 1
+     },
+     {
+      "t": 133529.60000014305,
+      "add": 1,
+      "rem": 1
+     },
+     {
+      "t": 133779.29999995232,
+      "add": 1,
+      "rem": 1
+     },
+     {
+      "t": 134029.70000004768,
+      "add": 1,
+      "rem": 1
+     },
+     {
+      "t": 134279.29999995232,
+      "add": 1,
+      "rem": 1
+     }
+    ],
+    "resumed_window": [
+     2667,
+     2866,
+     200
+    ],
+    "held_seqs": [
+     2781,
+     2860
+    ],
+    "clear": {
+     "last_seq_at_clear": 2866,
+     "just_after": [
+      [
+       2868,
+       2868,
+       1
+      ],
+      "1 exchange, last seq 2868",
+      null
+     ],
+     "3s_after": [
+      [
+       2868,
+       2880,
+       13
+      ],
+      "13 exchanges, last seq 2880"
+     ],
+     "paused_cleared": [
+      0,
+      "View paused. 1 new exchange is held; they appear when you resume. The simulator keeps running.No exchanges since you cleared the view. The simulator's history is untouched; new exchanges appear here.Show cleared rows"
+     ],
+     "restored": [
+      [
+       2685,
+       2884,
+       200
+      ],
+      "200 of 1,997 shown, last seq 2887"
+     ],
+     "resumed": [
+      [
+       2694,
+       2893,
+       200
+      ],
+      "200 of 2,000 shown, last seq 2893"
+     ]
+    }
+   }
+  },
+  {
+   "case": "1440x900: 3. Filtering across all retained exchanges",
+   "rule": "Full buffer; traffic stopped while filters change (so every rebuild is the filter's own). Service 0x0A, which only the harness's 250 old requests match: one rebuild; the count line reads '200 of 250 matching, last seq N'; every drawn row is a 0x0A request and older than the unfiltered window; the Older row counts the other 50 (then any older markers) and the hidden older ones as not a gap; Older (a real click) reaches all of them, the leading hidden run worded (not a gap). Then all services, and the outcome chips off one at a time (no response first: hidden runs between rows worded (not a gap)) until nothing matches: No exchanges match these filters. with Reset filters. Each change: at most one rebuild, and one whenever the drawn exchange rows changed. A focused Reset filters keeps the focus through 6 s of arrivals; pressing it restores every filter, 200 rows, following, focus on the ECU filter. Counts add up in every filtered state",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "full buffer at the start": true,
+    "the 0x0A option counts 250": true,
+    "0x0A: one rebuild": true,
+    "0x0A: the count line": true,
+    "0x0A: every drawn row is a 0x0A request": true,
+    "0x0A: all older than the unfiltered window": true,
+    "0x0A: the Older row counts the rest, and the hidden ones as not a gap": true,
+    "0x0A: the trailing hidden run worded (not a gap)": true,
+    "0x0A: counts add up": true,
+    "Older: one press, a correct step": true,
+    "Older: every 0x0A exchange reached": true,
+    "Older: the Newer row counts the rest": true,
+    "Older: the leading hidden run worded (not a gap)": true,
+    "Older: counts add up": true,
+    "every filter change: at most one rebuild, one when the exchange rows changed": true,
+    "no response off: hidden runs between rows, worded (not a gap)": true,
+    "nothing matches: no row, the no-match line with Reset filters": true,
+    "a focused Reset filters keeps the focus through 6 s of arrivals": true,
+    "Reset filters: every filter back, 200 rows, following, focus on the ECU filter": true
+   },
+   "observed": {
+    "width": "1440x900",
+    "retained": 2000,
+    "unfiltered_window": [
+     2698,
+     2897,
+     200
+    ],
+    "option": "0x0A (250)",
+    "filtered": {
+     "count": "200 of 250 matching, last seq 2897",
+     "window": [
+      2063,
+      2262,
+      200
+     ],
+     "older": "50 older exchanges match your filters; 1,115 older exchanges hidden by filters (not a gap). Use Older in the log header to show them.",
+     "hidden": [
+      "635 exchanges hidden by filters (not a gap)"
+     ],
+     "mutations": {
+      "add": 201,
+      "rem": 200,
+      "inRows": 0,
+      "nb": 1,
+      "focusout": 0
+     },
+     "accounting": {
+      "where": "service 0x0A, following",
+      "count": "200 of 250 matching, last seq 2897",
+      "matching": 250,
+      "older": 50,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     }
+    },
+    "older_press": {
+     "kind": "older",
+     "how": "click",
+     "before": [
+      2063,
+      2262,
+      200
+     ],
+     "after": [
+      2013,
+      2212,
+      200
+     ],
+     "moved": true,
+     "loaded": 50,
+     "scroll": [
+      0,
+      2583
+     ],
+     "scroll_delta": 2583,
+     "to_end": false,
+     "anchor": "2063|2026-10-04T10:46:55.945Z",
+     "offset": [
+      96.5,
+      96.8
+     ],
+     "diff": 0.3,
+     "clamp": false,
+     "following": false,
+     "focus": "btn-older",
+     "refocused": false,
+     "available_after": false,
+     "overlap": true,
+     "breaks": [],
+     "ex": 200,
+     "older": null,
+     "newer": "50 newer exchanges match your filters; 635 newer exchanges hidden by filters (not a gap). Use Newer or Jump to newest in the log header to show them.",
+     "ok": true
+    },
+    "after_older": {
+     "count": "200 of 250 matching, last seq 2897",
+     "window": [
+      2013,
+      2212,
+      200
+     ],
+     "newer": "50 newer exchanges match your filters; 635 newer exchanges hidden by filters (not a gap). Use Newer or Jump to newest in the log header to show them.",
+     "hidden": [
+      "1,115 exchanges hidden by filters (not a gap)"
+     ],
+     "reached": 250,
+     "accounting": {
+      "where": "service 0x0A, after Older",
+      "count": "200 of 250 matching, last seq 2897",
+      "matching": 250,
+      "older": 0,
+      "shown": 200,
+      "newer": 50,
+      "rows": 200,
+      "adds_up": true
+     }
+    },
+    "changes": [
+     {
+      "filter": "service all",
+      "rebuilds": 1,
+      "rows_changed": true
+     },
+     {
+      "filter": "o-no_response off",
+      "rebuilds": 1,
+      "rows_changed": true,
+      "count": "200 of 1,653 matching, last seq 2897",
+      "hidden": [
+       "1 exchange hidden by filters (not a gap)",
+       "1 exchange hidden by filters (not a gap)",
+       "1 exchange hidden by filters (not a gap)"
+      ]
+     },
+     {
+      "filter": "o-responded off",
+      "rebuilds": 1,
+      "rows_changed": true,
+      "count": "0 of 0 matching, last seq 2897",
+      "hidden": []
+     },
+     {
+      "filter": "o-unrouted off",
+      "rebuilds": 0,
+      "rows_changed": false,
+      "count": "0 of 0 matching, last seq 2897",
+      "hidden": []
+     },
+     {
+      "filter": "o-error off",
+      "rebuilds": 0,
+      "rows_changed": false,
+      "count": "0 of 0 matching, last seq 2897",
+      "hidden": []
+     }
+    ],
+    "no_response_off": {
+     "count": "200 of 1,653 matching, last seq 2897",
+     "hidden": [
+      "1 exchange hidden by filters (not a gap)",
+      "1 exchange hidden by filters (not a gap)",
+      "1 exchange hidden by filters (not a gap)",
+      "1 exchange hidden by filters (not a gap)"
+     ],
+     "older": "1,453 older exchanges match your filters; 336 older exchanges hidden by filters (not a gap). Use Older in the log header to show them.",
+     "accounting": {
+      "where": "no response off",
+      "count": "200 of 1,653 matching, last seq 2897",
+      "matching": 1653,
+      "older": 1453,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     }
+    },
+    "nothing": {
+     "count": "0 of 0 matching, last seq 2897",
+     "state": "No exchanges match these filters. 2000 are hidden by the ECU, service or outcome filter.Reset filters"
+    },
+    "reset": {
+     "focus": [
+      "btn-reset",
+      "btn-reset"
+     ],
+     "focusout": 0,
+     "arrived": 23,
+     "after": [
+      "200 of 2,000 shown, last seq 2925",
+      "f-ecu"
+     ]
+    }
+   }
+  },
+  {
+   "case": "1440x900: 4. Older-history navigation",
+   "rule": "Full buffer. A real wheel scroll up pins: for 8 s of arrivals the drawn rows are unchanged and every visible row keeps its offset within 1 px, zero row-list mutations, the header's 'beyond this window' count rises and equals the Newer row's count. Older, Newer and Jump to newest are together in the log header (Task 47): the edge rows are plain text (no button) pointing at them, unavailable directions are aria-disabled (never disabled), and real Tab presses from the graphs' last control reach Older, Newer, Jump to newest (only while shown), then the ECU filter. Older and Newer (real clicks) each move the window by 100 with the anchor row within 1 px and the focus staying on the pressed control; Jump to newest (a real click) follows again: newest drawn, at the bottom, the control off, the focus on the log box, the window sliding. With the traffic stopped, Older pressed by Enter with no scroll until no older exchange matches, then Newer until following: the focus is put on each control once and stays there through every press, never on body; every press moves the window or (a step of 0) scrolls the box to the window's other end, never nothing; the press that leaves nothing in its direction keeps the focus on the now aria-disabled control, and a further press on it changes nothing; rows contiguous; each moved window overlaps the last; the anchor within 1 px except at a scroll limit (a clamp, counted); the windows together hold every retained exchange (2,000), both ways",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "full buffer at the start": true,
+    "scroll up pins (the jump control on)": true,
+    "pinned: the same rows, every visible row within 1 px of its offset": true,
+    "pinned: zero row-list mutations": true,
+    "pinned: arrivals counted beyond this window, rising": true,
+    "pinned: the Newer row counts the same": true,
+    "pinned: counts add up": true,
+    "the edge rows are plain text pointing at the header controls; aria-disabled, never disabled": true,
+    "Tab order, pinned: Older, Newer, Jump to newest, then the ECU filter": true,
+    "Tab order, following: Older, Newer, then the ECU filter (Jump hidden)": true,
+    "Older (click): 100 back, anchor kept, focus stays on Older": true,
+    "Newer (click): 100 on, anchor kept, focus stays on Newer": true,
+    "Jump to newest: following, newest drawn, at the bottom, focus on the log box": true,
+    "Jump to newest: the window slides again": true,
+    "walk back: every press correct, none silent": true,
+    "walk back: the focus put on Older once, then kept by every press": true,
+    "walk back: reached the oldest (no Older row) and every retained exchange": true,
+    "walk back: the last press left Older aria-disabled with the focus on it": true,
+    "walk back: a press on the unavailable Older changes nothing, focus kept": true,
+    "walk back: at least one step of 0 that scrolled to the top": true,
+    "walk forward: every press correct, none silent": true,
+    "walk forward: the focus put on Newer once, then kept by every press": true,
+    "walk forward: following again, every retained exchange": true,
+    "walk forward: the last press left Newer aria-disabled with the focus on it, a further press changes nothing": true
+   },
+   "observed": {
+    "width": "1440x900",
+    "retained": 2000,
+    "pinned": {
+     "window": [
+      2734,
+      2933,
+      200
+     ],
+     "beyond": [
+      5,
+      13,
+      20,
+      28,
+      35
+     ],
+     "mutations": {
+      "add": 0,
+      "rem": 0,
+      "inRows": 0,
+      "nb": 0,
+      "focusout": 0
+     },
+     "newer": "35 newer exchanges match your filters. Use Newer or Jump to newest in the log header to show them.",
+     "follow": "11 rows below + 35 beyond this window",
+     "anchor": [
+      [
+       "2915|2026-10-04T10:48:36.255Z",
+       -9
+      ]
+     ],
+     "accounting": {
+      "where": "pinned by a scroll",
+      "count": "200 of 2,000 shown, last seq 2968",
+      "matching": 2000,
+      "older": 1765,
+      "shown": 200,
+      "newer": 35,
+      "rows": 200,
+      "adds_up": true
+     }
+    },
+    "older_click": {
+     "kind": "older",
+     "how": "click",
+     "before": [
+      2734,
+      2933,
+      200
+     ],
+     "after": [
+      2634,
+      2833,
+      200
+     ],
+     "moved": true,
+     "loaded": 100,
+     "scroll": [
+      0,
+      5253
+     ],
+     "scroll_delta": 5253,
+     "to_end": false,
+     "anchor": "2734|2026-10-04T10:47:39.972Z",
+     "offset": [
+      96.5,
+      96.1
+     ],
+     "diff": -0.4,
+     "clamp": false,
+     "following": false,
+     "focus": "btn-older",
+     "refocused": false,
+     "available_after": true,
+     "overlap": true,
+     "breaks": [],
+     "ex": 200,
+     "older": "1,654 older exchanges match your filters. Use Older in the log header to show them.",
+     "newer": "146 newer exchanges match your filters. Use Newer or Jump to newest in the log header to show them.",
+     "ok": true
+    },
+    "newer_click": {
+     "kind": "newer",
+     "how": "click",
+     "before": [
+      2634,
+      2833,
+      200
+     ],
+     "after": [
+      2734,
+      2933,
+      200
+     ],
+     "moved": true,
+     "loaded": 100,
+     "scroll": [
+      10245,
+      4992
+     ],
+     "scroll_delta": -5253,
+     "to_end": false,
+     "anchor": "2827|2026-10-04T10:48:04.474Z",
+     "offset": [
+      -7.3,
+      -6.9
+     ],
+     "diff": 0.4,
+     "clamp": false,
+     "following": false,
+     "focus": "btn-newer",
+     "refocused": false,
+     "available_after": true,
+     "overlap": true,
+     "breaks": [],
+     "ex": 200,
+     "older": "1,745 older exchanges match your filters. Use Older in the log header to show them.",
+     "newer": "55 newer exchanges match your filters. Use Newer or Jump to newest in the log header to show them.",
+     "ok": true
+    },
+    "jump": {
+     "before": "99 rows below + 55 beyond this window",
+     "label": "Jump to newest",
+     "after": [
+      [
+       2794,
+       2993,
+       200
+      ],
+      true,
+      "logwrap"
+     ],
+     "later": [
+      2803,
+      3002,
+      200
+     ]
+    },
+    "tab_order": {
+     "pinned": [
+      "btn-older",
+      "btn-newer",
+      "btn-follow",
+      "f-ecu"
+     ],
+     "following": [
+      "btn-older",
+      "btn-newer",
+      "f-ecu"
+     ]
+    },
+    "edge_rows": [
+     "1,765 older exchanges match your filters. Use Older in the log header to show them.",
+     "35 newer exchanges match your filters. Use Newer or Jump to newest in the log header to show them."
+    ],
+    "nav_attrs": {
+     "older": "false",
+     "newer": "false",
+     "disabledAttr": false,
+     "rowButtons": 0
+    },
+    "walk_back": {
+     "presses": 28,
+     "moved": 19,
+     "zero_steps_scrolled": 9,
+     "clamps": 9,
+     "clamp_drifts": [
+      352.4,
+      263.0,
+      262.2,
+      263.5,
+      263.1,
+      262.4,
+      263.2,
+      263.0,
+      262.2
+     ],
+     "zero_step_scroll_deltas": [
+      -10249,
+      -10247,
+      -10251,
+      -10196,
+      -10116,
+      -10251,
+      -10249,
+      -10249,
+      -10251
+     ],
+     "silent": 0,
+     "bad": [],
+     "loaded": [
+      13,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      87
+     ],
+     "max_anchor_diff_unclamped": 0.5,
+     "union": 2000
+    },
+    "walk_forward": {
+     "presses": 28,
+     "moved": 19,
+     "zero_steps_scrolled": 9,
+     "clamps": 9,
+     "clamp_drifts": [
+      -264.8,
+      -263.3,
+      -263.3,
+      -263.0,
+      -262.3,
+      -263.9,
+      -263.5,
+      -263.3,
+      -263.3
+     ],
+     "zero_step_scroll_deltas": [
+      10249,
+      10249,
+      10248,
+      10251,
+      10113,
+      10201,
+      10249,
+      10247,
+      10249
+     ],
+     "silent": 0,
+     "bad": [],
+     "loaded": [
+      100,
+      92,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      8
+     ],
+     "max_anchor_diff_unclamped": 0.5,
+     "union": 2000
+    },
+    "oldest_window": [
+     1005,
+     1204,
+     200
+    ],
+    "after_walks": {
+     "oldest": [
+      {
+       "older": "true",
+       "newer": "false",
+       "disabledAttr": false,
+       "rowButtons": 0
+      },
+      "btn-older"
+     ],
+     "unavailable_older_press": [
+      [
+       1005,
+       1204,
+       200
+      ],
+      "btn-older"
+     ],
+     "end": [
+      {
+       "older": "false",
+       "newer": "true",
+       "disabledAttr": false,
+       "rowButtons": 0
+      },
+      "btn-newer"
+     ],
+     "unavailable_newer_press": [
+      [
+       2805,
+       3004,
+       200
+      ],
+      "btn-newer"
+     ]
+    },
+    "oldest_count": "200 of 2,000 shown, last seq 3004",
+    "back_steps": [
+     {
+      "before": [
+       2805,
+       3004,
+       200
+      ],
+      "after": [
+       2792,
+       2991,
+       200
+      ],
+      "loaded": 13,
+      "scroll": [
+       9918,
+       10249
+      ],
+      "diff": 352.4,
+      "clamp": true,
+      "scroll_delta": 331,
+      "focus": "btn-older",
+      "refocused": true
+     },
+     {
+      "before": [
+       2792,
+       2991,
+       200
+      ],
+      "after": [
+       2792,
+       2991,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       10249,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -10249,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       2792,
+       2991,
+       200
+      ],
+      "after": [
+       2692,
+       2891,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       5255
+      ],
+      "diff": 0.0,
+      "clamp": false,
+      "scroll_delta": 5255,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       2692,
+       2891,
+       200
+      ],
+      "after": [
+       2592,
+       2791,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       5255,
+       10247
+      ],
+      "diff": 263.0,
+      "clamp": true,
+      "scroll_delta": 4992,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       2592,
+       2791,
+       200
+      ],
+      "after": [
+       2592,
+       2791,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       10247,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -10247,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       2592,
+       2791,
+       200
+      ],
+      "after": [
+       2492,
+       2691,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       5257
+      ],
+      "diff": 0.5,
+      "clamp": false,
+      "scroll_delta": 5257,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       2492,
+       2691,
+       200
+      ],
+      "after": [
+       2392,
+       2591,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       5257,
+       10251
+      ],
+      "diff": 262.2,
+      "clamp": true,
+      "scroll_delta": 4994,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       2392,
+       2591,
+       200
+      ],
+      "after": [
+       2392,
+       2591,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       10251,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -10251,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       2392,
+       2591,
+       200
+      ],
+      "after": [
+       2292,
+       2491,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       5255
+      ],
+      "diff": 0.0,
+      "clamp": false,
+      "scroll_delta": 5255,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       2292,
+       2491,
+       200
+      ],
+      "after": [
+       2192,
+       2391,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       5255,
+       10196
+      ],
+      "diff": 263.5,
+      "clamp": true,
+      "scroll_delta": 4941,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       2192,
+       2391,
+       200
+      ],
+      "after": [
+       2192,
+       2391,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       10196,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -10196,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       2192,
+       2391,
+       200
+      ],
+      "after": [
+       2092,
+       2291,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       5183
+      ],
+      "diff": -0.1,
+      "clamp": false,
+      "scroll_delta": 5183,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       2092,
+       2291,
+       200
+      ],
+      "after": [
+       1992,
+       2191,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       5183,
+       10116
+      ],
+      "diff": 263.1,
+      "clamp": true,
+      "scroll_delta": 4933,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       1992,
+       2191,
+       200
+      ],
+      "after": [
+       1992,
+       2191,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       10116,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -10116,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       1992,
+       2191,
+       200
+      ],
+      "after": [
+       1892,
+       2091,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       5256
+      ],
+      "diff": 0.3,
+      "clamp": false,
+      "scroll_delta": 5256,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       1892,
+       2091,
+       200
+      ],
+      "after": [
+       1792,
+       1991,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       5256,
+       10251
+      ],
+      "diff": 262.4,
+      "clamp": true,
+      "scroll_delta": 4995,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       1792,
+       1991,
+       200
+      ],
+      "after": [
+       1792,
+       1991,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       10251,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -10251,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       1792,
+       1991,
+       200
+      ],
+      "after": [
+       1692,
+       1891,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       5256
+      ],
+      "diff": 0.3,
+      "clamp": false,
+      "scroll_delta": 5256,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       1692,
+       1891,
+       200
+      ],
+      "after": [
+       1592,
+       1791,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       5256,
+       10249
+      ],
+      "diff": 263.2,
+      "clamp": true,
+      "scroll_delta": 4993,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       1592,
+       1791,
+       200
+      ],
+      "after": [
+       1592,
+       1791,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       10249,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -10249,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       1592,
+       1791,
+       200
+      ],
+      "after": [
+       1492,
+       1691,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       5257
+      ],
+      "diff": 0.5,
+      "clamp": false,
+      "scroll_delta": 5257,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       1492,
+       1691,
+       200
+      ],
+      "after": [
+       1392,
+       1591,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       5257,
+       10249
+      ],
+      "diff": 263.0,
+      "clamp": true,
+      "scroll_delta": 4992,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       1392,
+       1591,
+       200
+      ],
+      "after": [
+       1392,
+       1591,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       10249,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -10249,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       1392,
+       1591,
+       200
+      ],
+      "after": [
+       1292,
+       1491,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       5257
+      ],
+      "diff": 0.5,
+      "clamp": false,
+      "scroll_delta": 5257,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       1292,
+       1491,
+       200
+      ],
+      "after": [
+       1192,
+       1391,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       5257,
+       10251
+      ],
+      "diff": 262.2,
+      "clamp": true,
+      "scroll_delta": 4994,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       1192,
+       1391,
+       200
+      ],
+      "after": [
+       1192,
+       1391,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       10251,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -10251,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       1192,
+       1391,
+       200
+      ],
+      "after": [
+       1092,
+       1291,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       5255
+      ],
+      "diff": 0.0,
+      "clamp": false,
+      "scroll_delta": 5255,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       1092,
+       1291,
+       200
+      ],
+      "after": [
+       1005,
+       1204,
+       200
+      ],
+      "loaded": 87,
+      "scroll": [
+       5255,
+       9799
+      ],
+      "diff": 0.3,
+      "clamp": false,
+      "scroll_delta": 4544,
+      "focus": "btn-older",
+      "refocused": false
+     }
+    ],
+    "forward_steps": [
+     {
+      "before": [
+       1005,
+       1204,
+       200
+      ],
+      "after": [
+       1105,
+       1304,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       9799,
+       4572
+      ],
+      "diff": 0.5,
+      "clamp": false,
+      "scroll_delta": -5227,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": true
+     },
+     {
+      "before": [
+       1105,
+       1304,
+       200
+      ],
+      "after": [
+       1197,
+       1396,
+       200
+      ],
+      "loaded": 92,
+      "scroll": [
+       4572,
+       0
+      ],
+      "diff": -264.8,
+      "clamp": true,
+      "scroll_delta": -4572,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       1197,
+       1396,
+       200
+      ],
+      "after": [
+       1197,
+       1396,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       10249
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 10249,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       1197,
+       1396,
+       200
+      ],
+      "after": [
+       1297,
+       1496,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       10249,
+       4993
+      ],
+      "diff": -0.2,
+      "clamp": false,
+      "scroll_delta": -5256,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       1297,
+       1496,
+       200
+      ],
+      "after": [
+       1397,
+       1596,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       4993,
+       0
+      ],
+      "diff": -263.3,
+      "clamp": true,
+      "scroll_delta": -4993,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       1397,
+       1596,
+       200
+      ],
+      "after": [
+       1397,
+       1596,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       10249
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 10249,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       1397,
+       1596,
+       200
+      ],
+      "after": [
+       1497,
+       1696,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       10249,
+       4993
+      ],
+      "diff": -0.2,
+      "clamp": false,
+      "scroll_delta": -5256,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       1497,
+       1696,
+       200
+      ],
+      "after": [
+       1597,
+       1796,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       4993,
+       0
+      ],
+      "diff": -263.3,
+      "clamp": true,
+      "scroll_delta": -4993,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       1597,
+       1796,
+       200
+      ],
+      "after": [
+       1597,
+       1796,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       10248
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 10248,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       1597,
+       1796,
+       200
+      ],
+      "after": [
+       1697,
+       1896,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       10248,
+       4992
+      ],
+      "diff": -0.2,
+      "clamp": false,
+      "scroll_delta": -5256,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       1697,
+       1896,
+       200
+      ],
+      "after": [
+       1797,
+       1996,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       4992,
+       0
+      ],
+      "diff": -263.0,
+      "clamp": true,
+      "scroll_delta": -4992,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       1797,
+       1996,
+       200
+      ],
+      "after": [
+       1797,
+       1996,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       10251
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 10251,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       1797,
+       1996,
+       200
+      ],
+      "after": [
+       1897,
+       2096,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       10251,
+       4994
+      ],
+      "diff": -0.4,
+      "clamp": false,
+      "scroll_delta": -5257,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       1897,
+       2096,
+       200
+      ],
+      "after": [
+       1997,
+       2196,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       4994,
+       0
+      ],
+      "diff": -262.3,
+      "clamp": true,
+      "scroll_delta": -4994,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       1997,
+       2196,
+       200
+      ],
+      "after": [
+       1997,
+       2196,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       10113
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 10113,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       1997,
+       2196,
+       200
+      ],
+      "after": [
+       2097,
+       2296,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       10113,
+       4919
+      ],
+      "diff": 0.4,
+      "clamp": false,
+      "scroll_delta": -5194,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       2097,
+       2296,
+       200
+      ],
+      "after": [
+       2197,
+       2396,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       4919,
+       0
+      ],
+      "diff": -263.9,
+      "clamp": true,
+      "scroll_delta": -4919,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       2197,
+       2396,
+       200
+      ],
+      "after": [
+       2197,
+       2396,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       10201
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 10201,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       2197,
+       2396,
+       200
+      ],
+      "after": [
+       2297,
+       2496,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       10201,
+       4994
+      ],
+      "diff": 0.1,
+      "clamp": false,
+      "scroll_delta": -5207,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       2297,
+       2496,
+       200
+      ],
+      "after": [
+       2397,
+       2596,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       4994,
+       0
+      ],
+      "diff": -263.5,
+      "clamp": true,
+      "scroll_delta": -4994,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       2397,
+       2596,
+       200
+      ],
+      "after": [
+       2397,
+       2596,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       10249
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 10249,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       2397,
+       2596,
+       200
+      ],
+      "after": [
+       2497,
+       2696,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       10249,
+       4993
+      ],
+      "diff": -0.2,
+      "clamp": false,
+      "scroll_delta": -5256,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       2497,
+       2696,
+       200
+      ],
+      "after": [
+       2597,
+       2796,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       4993,
+       0
+      ],
+      "diff": -263.3,
+      "clamp": true,
+      "scroll_delta": -4993,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       2597,
+       2796,
+       200
+      ],
+      "after": [
+       2597,
+       2796,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       10247
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 10247,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       2597,
+       2796,
+       200
+      ],
+      "after": [
+       2697,
+       2896,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       10247,
+       4993
+      ],
+      "diff": 0.2,
+      "clamp": false,
+      "scroll_delta": -5254,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       2697,
+       2896,
+       200
+      ],
+      "after": [
+       2797,
+       2996,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       4993,
+       0
+      ],
+      "diff": -263.3,
+      "clamp": true,
+      "scroll_delta": -4993,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       2797,
+       2996,
+       200
+      ],
+      "after": [
+       2797,
+       2996,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       10249
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 10249,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       2797,
+       2996,
+       200
+      ],
+      "after": [
+       2805,
+       3004,
+       200
+      ],
+      "loaded": 8,
+      "scroll": [
+       10249,
+       10218
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -31,
+      "following": true,
+      "focus": "btn-newer",
+      "refocused": false
+     }
+    ]
+   }
+  },
+  {
+   "case": "1440x900: 7. Payload expansion kept",
+   "rule": "Pinned, with traffic: a real click on a row's 'show all' opens it (aria-expanded true, hex--open, more than 6 bytes shown); Older moves the window until that row is no longer drawn; Newer brings it back, still expanded (aria-expanded true, hex--open, the same bytes); the page's count of kept expansions (data-expansions-kept) is one more than before the click, before and after the row left the window",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "a row to expand": true,
+    "the kept-expansions count rose by one and held while the row was out of the window": true,
+    "opened": true,
+    "the row left the window": true,
+    "the row came back still expanded": true,
+    "every press correct": true
+   },
+   "observed": {
+    "width": "1440x900",
+    "key": "2966:response",
+    "opened": [
+     "true",
+     "hex hex--open",
+     20
+    ],
+    "kept": [
+     0,
+     1
+    ],
+    "older_presses": [
+     [
+      2763,
+      2962,
+      200
+     ]
+    ],
+    "newer_presses": [
+     [
+      2825,
+      3024,
+      200
+     ]
+    ],
+    "back": [
+     "true",
+     "hex hex--open",
+     20
+    ]
+   }
+  },
+  {
+   "case": "1440x900: 5. Eviction past the 2,000 cap",
+   "rule": "Following, a burst of 300 at 50/s: the trimmed note's count rises by exactly the exchanges that arrived and reads '\u2026 left this view.' with 'The page keeps the newest 2,000 exchanges it received.'; 2,000 retained; 200 rows, the count line '200 of 2,000 shown', the Older row '1,800 older exchanges match your filters' (then any marker counts). Pinned by a real wheel scroll, a burst until every row of the reader's window has left the cap: at every 1 s sample the window holds 200 exchanges (never fewer), contiguous; it stays pinned; at the end it is at the oldest exchanges kept (no Older row) and the note adds 'Rows this view was showing left too, so it moved to the oldest exchanges kept.'; counts add up. Jump to newest then follows and the sentence goes. The expansion case 7 left open is kept while its row is retained (after the following burst) and pruned once its row has left the cap (data-expansions-kept back to 0 after the pinned burst; Task 49)",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "full buffer at the start": true,
+    "following: the trimmed count rises by the arrivals": true,
+    "following: the note's wording": true,
+    "following: 2,000 retained, 200 rows, the count line and the Older row": true,
+    "following: counts add up": true,
+    "pinned: 200 rows at every sample, never fewer": true,
+    "pinned: contiguous at every sample": true,
+    "pinned: still pinned at every sample": true,
+    "pinned: every row of the reader's window left": true,
+    "pinned: the final window holds 200 exchanges": true,
+    "pinned: at the oldest kept, the Newer row offered": true,
+    "pinned: the note adds the re-pin sentence": true,
+    "pinned: counts add up": true,
+    "Jump to newest: following, the sentence gone": true,
+    "an expansion of a retained row is kept": true,
+    "an expansion whose row left the cap is pruned": true
+   },
+   "observed": {
+    "width": "1440x900",
+    "retained": 2000,
+    "following": {
+     "trimmed": [
+      1031,
+      1359
+     ],
+     "arrived": 328,
+     "note": "1,359 older rows left this view.The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap.",
+     "count": "200 of 2,000 shown, last seq 3359",
+     "older": "1,800 older exchanges match your filters. Use Older in the log header to show them.",
+     "accounting": {
+      "where": "following past the cap",
+      "count": "200 of 2,000 shown, last seq 3359",
+      "matching": 2000,
+      "older": 1800,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     }
+    },
+    "pinned": {
+     "window_at_pin": [
+      3160,
+      3359,
+      200
+     ],
+     "samples": 49,
+     "min_rows": 200,
+     "windows": [
+      [
+       3160,
+       3359,
+       200
+      ],
+      [
+       3160,
+       3359,
+       200
+      ],
+      [
+       3160,
+       3359,
+       200
+      ],
+      [
+       3160,
+       3359,
+       200
+      ],
+      [
+       3160,
+       3359,
+       200
+      ],
+      [
+       3160,
+       3359,
+       200
+      ],
+      [
+       3160,
+       3359,
+       200
+      ],
+      [
+       3160,
+       3359,
+       200
+      ],
+      [
+       3160,
+       3359,
+       200
+      ],
+      [
+       3160,
+       3359,
+       200
+      ],
+      [
+       3160,
+       3359,
+       200
+      ],
+      [
+       3160,
+       3359,
+       200
+      ],
+      [
+       3160,
+       3359,
+       200
+      ],
+      [
+       3160,
+       3359,
+       200
+      ],
+      [
+       3160,
+       3359,
+       200
+      ],
+      [
+       3245,
+       3444,
+       200
+      ],
+      [
+       3367,
+       3566,
+       200
+      ]
+     ],
+     "end": [
+      3371,
+      3570,
+      200
+     ],
+     "note": "3,370 older rows left this view.The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap. Rows this view was showing left too, so it moved to the oldest exchanges kept.",
+     "newer": "1,800 newer exchanges match your filters. Use Newer or Jump to newest in the log header to show them.",
+     "count": "200 of 2,000 shown, last seq 5370",
+     "accounting": {
+      "where": "pinned, re-pinned after eviction",
+      "count": "200 of 2,000 shown, last seq 5370",
+      "matching": 2000,
+      "older": 0,
+      "shown": 200,
+      "newer": 1800,
+      "rows": 200,
+      "adds_up": true
+     }
+    },
+    "after_jump": [
+     "200 of 2,000 shown, last seq 5379",
+     "3,379 older rows left this view.The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap."
+    ],
+    "expansions_kept": {
+     "start": 1,
+     "after_following_burst": 1,
+     "after_pinned_burst": 0
+    }
+   }
+  },
+  {
+   "case": "1440x900: 6. Reconnect and gap markers",
+   "rule": "Full buffer, following, standard traffic. Every marker the page accounts for (left the cap + older + drawn + newer, read from the trimmed note, the Older / Newer rows and the rows) is counted before the faults; this case's own add exactly 1 gap marker and 1 connection note to that total at every step. 3 exchange events kept from the page: 'Gap: seq a\u2013b not received (3).' drawn between seq a-1 and b+1. SIGSTOP / SIGCONT: 'Connection lost, then resumed.' drawn after the exchange it names ('after seq N'). Pinned and moved older (Older by Enter) until both are newer than the window: neither is drawn and the Newer row reads exactly '1 gap marker and 1 connection note in newer rows' and points at the header's Jump to newest (shown); Jump to newest (a real click) follows, the focus on the log box. A burst of 260 makes them older than the following window: not drawn, no marker drawn in either window, and the older side (Older row plus left the cap) rose by exactly 1 and 1. Counts add up. SIGTERM and a new simulator: 'Simulator restarted.' drawn between the old run's rows and the new run's (seq goes back), and the window spans both runs (its first seq above its last); the count line names no seq range (Task 47 shortened it), so the marker row is the record of the restart",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "full buffer at the start": true,
+    "the gap marker drawn where it falls, in the following window": true,
+    "the gap adds exactly 1 gap marker, drawn and not also counted outside": true,
+    "the connection note drawn where it falls (after the exchange it names)": true,
+    "the stop adds exactly 1 connection note, drawn and not counted in the Older row": true,
+    "outside the window (newer): neither drawn, the Newer row counts exactly 1 and 1, pointing at Jump to newest (shown in the header)": true,
+    "Jump to newest (the header control) follows again, focus on the log box": true,
+    "outside the window (older): neither drawn, the Older side rose by exactly 1 and 1": true,
+    "counts add up": true,
+    "the restart marker drawn between the two runs' rows": true,
+    "across a restart: the window spans both runs, the count line names no seq range": true
+   },
+   "observed": {
+    "width": "1440x900",
+    "retained": 2000,
+    "dropped": [
+     5385,
+     5386,
+     5387
+    ],
+    "gap": {
+     "text": "Gap: seq 5385\u20135387 not received (3).Counters when it was seen: handoff_dropped 0, this page's client_dropped 0, forced_disconnects 0.",
+     "cls": "mark mark--gap",
+     "prev": 5384,
+     "next": 5388
+    },
+    "connection_note": {
+     "text": "Connection lost, then resumed.Last live 10:50:35 UTC, resumed 10:50:42 UTC after seq 5390.",
+     "cls": "mark mark--link",
+     "prev": 5390,
+     "next": 5391
+    },
+    "older_presses": [
+     [
+      5197,
+      5399,
+      200
+     ],
+     [
+      5197,
+      5399,
+      200
+     ],
+     [
+      5097,
+      5296,
+      200
+     ]
+    ],
+    "newer_row": "126 newer exchanges match your filters; 1 gap marker and 1 connection note in newer rows. Use Newer or Jump to newest in the log header to show them.",
+    "newer_window": [
+     5097,
+     5296,
+     200
+    ],
+    "older_row": "1,800 older exchanges match your filters; 1 gap marker and 1 connection note in older rows. Use Older in the log header to show them.",
+    "older_window": [
+     5520,
+     5719,
+     200
+    ],
+    "jump": {
+     "after": [
+      5228,
+      5430,
+      200
+     ],
+     "following": true
+    },
+    "census": {
+     "before": {
+      "left": [
+       0,
+       0
+      ],
+      "older": [
+       0,
+       0
+      ],
+      "drawn": [
+       0,
+       0
+      ],
+      "newer": [
+       0,
+       0
+      ],
+      "total": [
+       0,
+       0
+      ]
+     },
+     "gap": {
+      "left": [
+       0,
+       0
+      ],
+      "older": [
+       0,
+       0
+      ],
+      "drawn": [
+       1,
+       0
+      ],
+      "newer": [
+       0,
+       0
+      ],
+      "total": [
+       1,
+       0
+      ]
+     },
+     "note": {
+      "left": [
+       0,
+       0
+      ],
+      "older": [
+       0,
+       0
+      ],
+      "drawn": [
+       1,
+       1
+      ],
+      "newer": [
+       0,
+       0
+      ],
+      "total": [
+       1,
+       1
+      ]
+     },
+     "newer": {
+      "left": [
+       0,
+       0
+      ],
+      "older": [
+       0,
+       0
+      ],
+      "drawn": [
+       0,
+       0
+      ],
+      "newer": [
+       1,
+       1
+      ],
+      "total": [
+       1,
+       1
+      ]
+     },
+     "older": {
+      "left": [
+       0,
+       0
+      ],
+      "older": [
+       1,
+       1
+      ],
+      "drawn": [
+       0,
+       0
+      ],
+      "newer": [
+       0,
+       0
+      ],
+      "total": [
+       1,
+       1
+      ]
+     }
+    },
+    "restart": {
+     "text": "Simulator restarted.A new run started at 10:50:57 UTC. Rows above are from the previous run; seq starts again at 1.",
+     "cls": "mark mark--link",
+     "prev": 5719,
+     "next": 1
+    },
+    "count_after_restart": "200 of 2,000 shown, last seq 7",
+    "window_after_restart": [
+     5527,
+     7,
+     200
+    ],
+    "accounting": [
+     {
+      "where": "markers newer than a pinned window",
+      "count": "200 of 2,000 shown, last seq 5425",
+      "matching": 2000,
+      "older": 1674,
+      "shown": 200,
+      "newer": 126,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "markers older than the following window",
+      "count": "200 of 2,000 shown, last seq 5719",
+      "matching": 2000,
+      "older": 1800,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     }
+    ]
+   }
+  },
+  {
+   "case": "1440x900: 8. The four absent-row wordings",
+   "rule": "Over this width's cases: outside this window ('\u2026 older exchanges match your filters'), hidden by filters ('\u2026 hidden by filters (not a gap)'), a sequence gap ('Gap: seq \u2026 not received'), and the rows that left the 2,000 cap ('\u2026 left this view.') each appear in their own situation, and each kind's own row carries none of the others' phrases. In every state read, the count line's matching = the Older row's count + the rows drawn + the Newer row's count, and the count line's shown = the exchange rows drawn",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "outside: seen, in its own wording": true,
+    "hidden: seen, in its own wording": true,
+    "gap: seen, in its own wording": true,
+    "left: seen, in its own wording": true,
+    "outside: its own row carries no other kind's phrase": true,
+    "hidden: its own row carries no other kind's phrase": true,
+    "gap: its own row carries no other kind's phrase": true,
+    "left: its own row carries no other kind's phrase": true,
+    "counts add up in every state read (matching = older + shown + newer)": true
+   },
+   "observed": {
+    "width": "1440x900",
+    "seen": {
+     "outside": [
+      "1,800 older exchanges match your filters. Use Older in the log header to show them.",
+      "50 older exchanges match your filters; 1,115 older exchanges hidden by filters (not a gap). Use Older in the log header to show them.",
+      "35 newer exchanges match your filters. Use Newer or Jump to newest in the log header to show them.",
+      "11 rows below + 35 beyond this window"
+     ],
+     "held": [
+      "View paused. 80 new exchanges are held; they appear when you resume. The simulator keeps running."
+     ],
+     "hidden": [
+      "635 exchanges hidden by filters (not a gap)",
+      "1,115 exchanges hidden by filters (not a gap)",
+      "1 exchange hidden by filters (not a gap)",
+      "1 exchange hidden by filters (not a gap)"
+     ],
+     "left": [
+      "1,359 older rows left this view.The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap.",
+      "3,370 older rows left this view.The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap. Rows this view was showing left too, so it moved to the oldest exchanges kept."
+     ],
+     "gap": [
+      "Gap: seq 5385\u20135387 not received (3).Counters when it was seen: handoff_dropped 0, this page's client_dropped 0, forced_disconnects 0.",
+      "126 newer exchanges match your filters; 1 gap marker and 1 connection note in newer rows. Use Newer or Jump to newest in the log header to show them."
+     ]
+    },
+    "own_rows": {
+     "outside": "1,800 older exchanges match your filters. Use Older in the log header to show them.",
+     "hidden": "635 exchanges hidden by filters (not a gap)",
+     "gap": "Gap: seq 5385\u20135387 not received (3).Counters when it was seen: handoff_dropped 0, this page's client_dropped 0, forced_disconnects 0.",
+     "left": "1,359 older rows left this view.The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap."
+    },
+    "first": {
+     "outside": "1,800 older exchanges match your filters. Use Older in the log header to show them.",
+     "hidden": "635 exchanges hidden by filters (not a gap)",
+     "gap": "Gap: seq 5385\u20135387 not received (3).Counters when it was seen: handoff_dropped 0, this page's client_dropped 0, forced_disconnects 0.",
+     "left": "1,359 older rows left this view.The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap."
+    },
+    "accounts": [
+     {
+      "where": "following",
+      "count": "200 of 2,000 shown, last seq 2730",
+      "matching": 2000,
+      "older": 1800,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "service 0x0A, following",
+      "count": "200 of 250 matching, last seq 2897",
+      "matching": 250,
+      "older": 50,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "service 0x0A, after Older",
+      "count": "200 of 250 matching, last seq 2897",
+      "matching": 250,
+      "older": 0,
+      "shown": 200,
+      "newer": 50,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "no response off",
+      "count": "200 of 1,653 matching, last seq 2897",
+      "matching": 1653,
+      "older": 1453,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "pinned by a scroll",
+      "count": "200 of 2,000 shown, last seq 2968",
+      "matching": 2000,
+      "older": 1765,
+      "shown": 200,
+      "newer": 35,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "following past the cap",
+      "count": "200 of 2,000 shown, last seq 3359",
+      "matching": 2000,
+      "older": 1800,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "pinned, re-pinned after eviction",
+      "count": "200 of 2,000 shown, last seq 5370",
+      "matching": 2000,
+      "older": 0,
+      "shown": 200,
+      "newer": 1800,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "markers newer than a pinned window",
+      "count": "200 of 2,000 shown, last seq 5425",
+      "matching": 2000,
+      "older": 1674,
+      "shown": 200,
+      "newer": 126,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "markers older than the following window",
+      "count": "200 of 2,000 shown, last seq 5719",
+      "matching": 2000,
+      "older": 1800,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     }
+    ],
+    "not_adding_up": []
+   }
+  },
+  {
+   "case": "1440x900: 9. Layout",
+   "rule": "No scrollWidth above its clientWidth (OVERFLOW, #log-panel, #logwrap, #log-state) in every state measured; at 1440 x 900 at least 5 full log rows inside #logwrap with the graphs open (LOG_ROWS, the fewest of 3 readings), following and pinned with the header's 'beyond this window' count, the log header one line in both (Task 47)",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "no horizontal overflow (following)": true,
+    "no horizontal overflow (filtered, following)": true,
+    "no horizontal overflow (nothing matches)": true,
+    "no horizontal overflow (pinned, Newer row shown)": true,
+    "graphs open": true,
+    "at least 5 full log rows (1440 x 900, graphs open, full buffer)": true,
+    "following: the log header is one line": true,
+    "pinned, with the 'beyond this window' count: at least 5 full log rows": true,
+    "pinned: the log header is one line": true,
+    "at least one state measured": true
+   },
+   "observed": {
+    "width": "1440x900",
+    "overflow": [
+     {
+      "state": "following",
+      "measured": [
+       [
+        "#vehicle",
+        378,
+        378
+       ],
+       [
+        "html",
+        1440,
+        1440
+       ],
+       [
+        "body",
+        1440,
+        1440
+       ],
+       [
+        "#graphs",
+        1010,
+        1010
+       ],
+       [
+        ".uplot 0",
+        179,
+        179
+       ],
+       [
+        ".uplot 1",
+        179,
+        179
+       ],
+       [
+        ".uplot 2",
+        179,
+        179
+       ],
+       [
+        ".uplot 3",
+        179,
+        179
+       ],
+       [
+        ".uplot 4",
+        179,
+        179
+       ],
+       [
+        "#log-panel",
+        1010,
+        1010
+       ],
+       [
+        "#logwrap",
+        1010,
+        1010
+       ]
+      ],
+      "over": []
+     },
+     {
+      "state": "filtered, following",
+      "measured": [
+       [
+        "#vehicle",
+        378,
+        378
+       ],
+       [
+        "html",
+        1440,
+        1440
+       ],
+       [
+        "body",
+        1440,
+        1440
+       ],
+       [
+        "#graphs",
+        1010,
+        1010
+       ],
+       [
+        ".uplot 0",
+        179,
+        179
+       ],
+       [
+        ".uplot 1",
+        179,
+        179
+       ],
+       [
+        ".uplot 2",
+        179,
+        179
+       ],
+       [
+        ".uplot 3",
+        179,
+        179
+       ],
+       [
+        ".uplot 4",
+        179,
+        179
+       ],
+       [
+        "#log-panel",
+        1010,
+        1010
+       ],
+       [
+        "#logwrap",
+        1010,
+        1010
+       ]
+      ],
+      "over": []
+     },
+     {
+      "state": "nothing matches",
+      "measured": [
+       [
+        "#vehicle",
+        378,
+        378
+       ],
+       [
+        "html",
+        1440,
+        1440
+       ],
+       [
+        "body",
+        1440,
+        1440
+       ],
+       [
+        "#graphs",
+        1010,
+        1010
+       ],
+       [
+        ".uplot 0",
+        179,
+        179
+       ],
+       [
+        ".uplot 1",
+        179,
+        179
+       ],
+       [
+        ".uplot 2",
+        179,
+        179
+       ],
+       [
+        ".uplot 3",
+        179,
+        179
+       ],
+       [
+        ".uplot 4",
+        179,
+        179
+       ],
+       [
+        "#log-panel",
+        1010,
+        1010
+       ],
+       [
+        "#logwrap",
+        1010,
+        1010
+       ],
+       [
+        "#log-state",
+        1010,
+        1010
+       ]
+      ],
+      "over": []
+     },
+     {
+      "state": "pinned, Newer row shown",
+      "measured": [
+       [
+        "#vehicle",
+        378,
+        378
+       ],
+       [
+        "html",
+        1440,
+        1440
+       ],
+       [
+        "body",
+        1440,
+        1440
+       ],
+       [
+        "#graphs",
+        1010,
+        1010
+       ],
+       [
+        ".uplot 0",
+        179,
+        179
+       ],
+       [
+        ".uplot 1",
+        179,
+        179
+       ],
+       [
+        ".uplot 2",
+        179,
+        179
+       ],
+       [
+        ".uplot 3",
+        179,
+        179
+       ],
+       [
+        ".uplot 4",
+        179,
+        179
+       ],
+       [
+        "#log-panel",
+        1010,
+        1010
+       ],
+       [
+        "#logwrap",
+        1010,
+        1010
+       ]
+      ],
+      "over": []
+     }
+    ],
+    "log_rows": {
+     "fewest": 6,
+     "readings": [
+      6,
+      6,
+      6
+     ],
+     "rowsRegion": 337,
+     "clearance5": 74,
+     "logHead": {
+      "h": 42.2,
+      "wrapped": false,
+      "count": "200 of 2,000 shown, last seq 7",
+      "below": ""
+     },
+     "heights": [
+      52,
+      52,
+      53,
+      53,
+      52,
+      53
+     ]
+    },
+    "log_rows_pinned": {
+     "fewest": 6,
+     "readings": [
+      6,
+      6,
+      6
+     ],
+     "rowsRegion": 337,
+     "clearance5": 94,
+     "logHead": {
+      "h": 42.2,
+      "wrapped": false,
+      "count": "200 of 2,000 shown, last seq 32",
+      "below": "11 rows below + 16 beyond this window"
+     },
+     "heights": [
+      53,
+      33,
+      53,
+      52,
+      52,
+      53
+     ]
+    }
+   }
+  },
+  {
+   "case": "390x844: 1. Live following",
+   "rule": "Full buffer (2,000 retained). Following at the standard rate for 10 s: the window slides (its newest seq rises); at every sample <= 200 exchange rows and the body holds only them, hidden runs and marker rows whose class matches their title (gap / link / note); the newest exchange is drawn in the log box and is the count line's last seq; one row in and one out per arrival (row-list adds = removes = arrivals, no other row mutation). No new matching exchange: 5 s with the traffic stopped, zero mutations of any kind; 8 s of arrivals under a filter none of them match (service 0x0A), zero row-list adds / removes and the same rows",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "full buffer at the start": true,
+    "following throughout (the jump control off)": true,
+    "the window slides": true,
+    "<= 200 exchange rows at every sample, 200 at the cap": true,
+    "the body holds only exchange rows, hidden runs and markers drawn as the page draws them": true,
+    "the newest exchange drawn, in the log box, at every sample": true,
+    "one in / one out per arrival": true,
+    "no arrival: zero mutations in 5 s": true,
+    "arrivals no filter matches: zero row-list mutations, same rows": true,
+    "counts add up": true
+   },
+   "observed": {
+    "width": "390x844",
+    "retained": 2000,
+    "windows": [
+     [
+      530,
+      729,
+      200
+     ],
+     [
+      534,
+      733,
+      200
+     ],
+     [
+      538,
+      737,
+      200
+     ],
+     [
+      542,
+      741,
+      200
+     ],
+     [
+      545,
+      744,
+      200
+     ],
+     [
+      549,
+      748,
+      200
+     ],
+     [
+      553,
+      752,
+      200
+     ],
+     [
+      557,
+      756,
+      200
+     ],
+     [
+      561,
+      760,
+      200
+     ],
+     [
+      564,
+      763,
+      200
+     ],
+     [
+      569,
+      768,
+      200
+     ]
+    ],
+    "last_seq": [
+     729,
+     733,
+     737,
+     741,
+     744,
+     748,
+     752,
+     756,
+     760,
+     763,
+     768
+    ],
+    "arrived": 39,
+    "mutations": {
+     "add": 39,
+     "rem": 39,
+     "inRows": 0,
+     "nb": 39,
+     "focusout": 0
+    },
+    "count": "200 of 2,000 shown, last seq 768",
+    "older_row": "1,800 older exchanges match your filters; 1 gap marker and 2 connection notes in older rows. Use Older in the log header to show them.",
+    "rows_body": 200,
+    "marks_seen": [],
+    "other_rows": [],
+    "quiet_mutations": {
+     "add": 0,
+     "rem": 0,
+     "inRows": 0,
+     "nb": 0,
+     "focusout": 0
+    },
+    "filtered": {
+     "arrived": 30,
+     "mutations": {
+      "add": 0,
+      "rem": 0,
+      "inRows": 30,
+      "nb": 0,
+      "focusout": 0
+     },
+     "count": "200 of 250 matching, last seq 806",
+     "hidden_rows": [
+      "506 exchanges hidden by filters (not a gap)"
+     ],
+     "window": [
+      101,
+      300,
+      200
+     ]
+    },
+    "accounting": {
+     "where": "following",
+     "count": "200 of 2,000 shown, last seq 768",
+     "matching": 2000,
+     "older": 1800,
+     "shown": 200,
+     "newer": 0,
+     "rows": 200,
+     "adds_up": true
+    }
+   }
+  },
+  {
+   "case": "390x844: 2. Pause / resume, Clear view",
+   "rule": "Full buffer, standard traffic. Pause view: aria-pressed true, the button reads Resume (named Resume view; Task 47b shortened the visible text). Paused 20 s: zero row-list and in-row mutations, the same rows and the same log text, the held counter rising at every 5 s sample. Resume: the first row-list batch brings every held exchange at once (one rebuild: its adds >= the held count), later batches are single arrivals; every held seq is drawn; following, newest drawn. Clear view: no row up to the clear is drawn, the page still retains 2,000, new exchanges appear; paused and cleared: No exchanges since you cleared the view. with Show cleared rows, which brings back the 200-row window; resume follows again",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "full buffer at the start": true,
+    "paused: aria-pressed true, Resume (named Resume view)": true,
+    "paused 20 s: zero mutations": true,
+    "paused: same rows and the log text frozen": true,
+    "paused: the held counter rises at every sample": true,
+    "paused: the held count is the arrivals since the pause": true,
+    "resume: one rebuild brings the held rows": true,
+    "resume: every held seq drawn, following, newest drawn": true,
+    "Clear view: no row up to the clear drawn, 2,000 retained": true,
+    "Clear view: new exchanges appear, following": true,
+    "paused and cleared: the cleared line with Show cleared rows": true,
+    "Show cleared rows: the 200-row window back": true,
+    "resume after: following, 200 rows, newest drawn": true
+   },
+   "observed": {
+    "width": "390x844",
+    "retained": 2000,
+    "paused_window": [
+     619,
+     818,
+     200
+    ],
+    "held": [
+     3,
+     22,
+     41,
+     60,
+     80
+    ],
+    "mutations_paused": {
+     "add": 0,
+     "rem": 0,
+     "inRows": 0,
+     "nb": 0,
+     "focusout": 0
+    },
+    "state_paused": "View paused. 80 new exchanges are held; they appear when you resume. The simulator keeps running.",
+    "text_frozen": true,
+    "resume_batches": [
+     {
+      "t": 392601.2999999523,
+      "add": 81,
+      "rem": 81
+     },
+     {
+      "t": 392787.2000000477,
+      "add": 1,
+      "rem": 1
+     },
+     {
+      "t": 393017.2000000477,
+      "add": 1,
+      "rem": 1
+     },
+     {
+      "t": 393267.2000000477,
+      "add": 1,
+      "rem": 1
+     },
+     {
+      "t": 393517.5,
+      "add": 1,
+      "rem": 1
+     },
+     {
+      "t": 393767.5,
+      "add": 1,
+      "rem": 1
+     }
+    ],
+    "resumed_window": [
+     705,
+     904,
+     200
+    ],
+    "held_seqs": [
+     819,
+     898
+    ],
+    "clear": {
+     "last_seq_at_clear": 904,
+     "just_after": [
+      [
+       906,
+       906,
+       1
+      ],
+      "1 exchange, last seq 906",
+      null
+     ],
+     "3s_after": [
+      [
+       906,
+       918,
+       13
+      ],
+      "13 exchanges, last seq 918"
+     ],
+     "paused_cleared": [
+      0,
+      "View paused. 1 new exchange is held; they appear when you resume. The simulator keeps running.No exchanges since you cleared the view. The simulator's history is untouched; new exchanges appear here.Show cleared rows"
+     ],
+     "restored": [
+      [
+       723,
+       922,
+       200
+      ],
+      "200 of 1,997 shown, last seq 925"
+     ],
+     "resumed": [
+      [
+       732,
+       931,
+       200
+      ],
+      "200 of 2,000 shown, last seq 931"
+     ]
+    }
+   }
+  },
+  {
+   "case": "390x844: 3. Filtering across all retained exchanges",
+   "rule": "Full buffer; traffic stopped while filters change (so every rebuild is the filter's own). Service 0x0A, which only the harness's 250 old requests match: one rebuild; the count line reads '200 of 250 matching, last seq N'; every drawn row is a 0x0A request and older than the unfiltered window; the Older row counts the other 50 (then any older markers) and the hidden older ones as not a gap; Older (a real click) reaches all of them, the leading hidden run worded (not a gap). Then all services, and the outcome chips off one at a time (no response first: hidden runs between rows worded (not a gap)) until nothing matches: No exchanges match these filters. with Reset filters. Each change: at most one rebuild, and one whenever the drawn exchange rows changed. A focused Reset filters keeps the focus through 6 s of arrivals; pressing it restores every filter, 200 rows, following, focus on the ECU filter. Counts add up in every filtered state",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "full buffer at the start": true,
+    "the 0x0A option counts 250": true,
+    "0x0A: one rebuild": true,
+    "0x0A: the count line": true,
+    "0x0A: every drawn row is a 0x0A request": true,
+    "0x0A: all older than the unfiltered window": true,
+    "0x0A: the Older row counts the rest, and the hidden ones as not a gap": true,
+    "0x0A: the trailing hidden run worded (not a gap)": true,
+    "0x0A: counts add up": true,
+    "Older: one press, a correct step": true,
+    "Older: every 0x0A exchange reached": true,
+    "Older: the Newer row counts the rest": true,
+    "Older: the leading hidden run worded (not a gap)": true,
+    "Older: counts add up": true,
+    "every filter change: at most one rebuild, one when the exchange rows changed": true,
+    "no response off: hidden runs between rows, worded (not a gap)": true,
+    "nothing matches: no row, the no-match line with Reset filters": true,
+    "a focused Reset filters keeps the focus through 6 s of arrivals": true,
+    "Reset filters: every filter back, 200 rows, following, focus on the ECU filter": true
+   },
+   "observed": {
+    "width": "390x844",
+    "retained": 2000,
+    "unfiltered_window": [
+     736,
+     935,
+     200
+    ],
+    "option": "0x0A (250)",
+    "filtered": {
+     "count": "200 of 250 matching, last seq 935",
+     "window": [
+      101,
+      300,
+      200
+     ],
+     "older": "50 older exchanges match your filters; 1 gap marker and 2 connection notes in older rows; 1,115 older exchanges hidden by filters (not a gap). Use Older in the log header to show them.",
+     "hidden": [
+      "635 exchanges hidden by filters (not a gap)"
+     ],
+     "mutations": {
+      "add": 201,
+      "rem": 200,
+      "inRows": 0,
+      "nb": 1,
+      "focusout": 0
+     },
+     "accounting": {
+      "where": "service 0x0A, following",
+      "count": "200 of 250 matching, last seq 935",
+      "matching": 250,
+      "older": 50,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     }
+    },
+    "older_press": {
+     "kind": "older",
+     "how": "click",
+     "before": [
+      101,
+      300,
+      200
+     ],
+     "after": [
+      51,
+      250,
+      200
+     ],
+     "moved": true,
+     "loaded": 50,
+     "scroll": [
+      0,
+      5128
+     ],
+     "scroll_delta": 5128,
+     "to_end": false,
+     "anchor": "101|2026-10-04T10:51:15.467Z",
+     "offset": [
+      146.7,
+      146.6
+     ],
+     "diff": -0.1,
+     "clamp": false,
+     "following": false,
+     "focus": "btn-older",
+     "refocused": false,
+     "available_after": false,
+     "overlap": true,
+     "breaks": [],
+     "ex": 200,
+     "older": null,
+     "newer": "50 newer exchanges match your filters; 635 newer exchanges hidden by filters (not a gap). Use Newer or Jump to newest in the log header to show them.",
+     "ok": true
+    },
+    "after_older": {
+     "count": "200 of 250 matching, last seq 935",
+     "window": [
+      51,
+      250,
+      200
+     ],
+     "newer": "50 newer exchanges match your filters; 635 newer exchanges hidden by filters (not a gap). Use Newer or Jump to newest in the log header to show them.",
+     "hidden": [
+      "733 exchanges hidden by filters (not a gap)",
+      "3 exchanges hidden by filters (not a gap)",
+      "329 exchanges hidden by filters (not a gap)",
+      "50 exchanges hidden by filters (not a gap)"
+     ],
+     "reached": 250,
+     "accounting": {
+      "where": "service 0x0A, after Older",
+      "count": "200 of 250 matching, last seq 935",
+      "matching": 250,
+      "older": 0,
+      "shown": 200,
+      "newer": 50,
+      "rows": 200,
+      "adds_up": true
+     }
+    },
+    "changes": [
+     {
+      "filter": "service all",
+      "rebuilds": 1,
+      "rows_changed": true
+     },
+     {
+      "filter": "o-no_response off",
+      "rebuilds": 1,
+      "rows_changed": true,
+      "count": "200 of 1,654 matching, last seq 935",
+      "hidden": [
+       "1 exchange hidden by filters (not a gap)",
+       "1 exchange hidden by filters (not a gap)",
+       "1 exchange hidden by filters (not a gap)"
+      ]
+     },
+     {
+      "filter": "o-responded off",
+      "rebuilds": 1,
+      "rows_changed": true,
+      "count": "0 of 0 matching, last seq 935",
+      "hidden": [
+       "3 exchanges hidden by filters (not a gap)",
+       "329 exchanges hidden by filters (not a gap)"
+      ]
+     },
+     {
+      "filter": "o-unrouted off",
+      "rebuilds": 0,
+      "rows_changed": false,
+      "count": "0 of 0 matching, last seq 935",
+      "hidden": [
+       "3 exchanges hidden by filters (not a gap)",
+       "329 exchanges hidden by filters (not a gap)"
+      ]
+     },
+     {
+      "filter": "o-error off",
+      "rebuilds": 0,
+      "rows_changed": false,
+      "count": "0 of 0 matching, last seq 935",
+      "hidden": [
+       "3 exchanges hidden by filters (not a gap)",
+       "329 exchanges hidden by filters (not a gap)"
+      ]
+     }
+    ],
+    "no_response_off": {
+     "count": "200 of 1,654 matching, last seq 935",
+     "hidden": [
+      "1 exchange hidden by filters (not a gap)",
+      "1 exchange hidden by filters (not a gap)",
+      "1 exchange hidden by filters (not a gap)",
+      "1 exchange hidden by filters (not a gap)"
+     ],
+     "older": "1,454 older exchanges match your filters; 1 gap marker and 2 connection notes in older rows; 335 older exchanges hidden by filters (not a gap). Use Older in the log header to show them.",
+     "accounting": {
+      "where": "no response off",
+      "count": "200 of 1,654 matching, last seq 935",
+      "matching": 1654,
+      "older": 1454,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     }
+    },
+    "nothing": {
+     "count": "0 of 0 matching, last seq 935",
+     "state": "No exchanges match these filters. 2000 are hidden by the ECU, service or outcome filter.Reset filters"
+    },
+    "reset": {
+     "focus": [
+      "btn-reset",
+      "btn-reset"
+     ],
+     "focusout": 0,
+     "arrived": 23,
+     "after": [
+      "200 of 2,000 shown, last seq 963",
+      "f-ecu"
+     ]
+    }
+   }
+  },
+  {
+   "case": "390x844: 4. Older-history navigation",
+   "rule": "Full buffer. A real wheel scroll up pins: for 8 s of arrivals the drawn rows are unchanged and every visible row keeps its offset within 1 px, zero row-list mutations, the header's 'beyond this window' count rises and equals the Newer row's count. Older, Newer and Jump to newest are together in the log header (Task 47): the edge rows are plain text (no button) pointing at them, unavailable directions are aria-disabled (never disabled), and real Tab presses from the graphs' last control reach Older, Newer, Jump to newest (only while shown), then the ECU filter. Older and Newer (real clicks) each move the window by 100 with the anchor row within 1 px and the focus staying on the pressed control; Jump to newest (a real click) follows again: newest drawn, at the bottom, the control off, the focus on the log box, the window sliding. With the traffic stopped, Older pressed by Enter with no scroll until no older exchange matches, then Newer until following: the focus is put on each control once and stays there through every press, never on body; every press moves the window or (a step of 0) scrolls the box to the window's other end, never nothing; the press that leaves nothing in its direction keeps the focus on the now aria-disabled control, and a further press on it changes nothing; rows contiguous; each moved window overlaps the last; the anchor within 1 px except at a scroll limit (a clamp, counted); the windows together hold every retained exchange (2,000), both ways",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "full buffer at the start": true,
+    "scroll up pins (the jump control on)": true,
+    "pinned: the same rows, every visible row within 1 px of its offset": true,
+    "pinned: zero row-list mutations": true,
+    "pinned: arrivals counted beyond this window, rising": true,
+    "pinned: the Newer row counts the same": true,
+    "pinned: counts add up": true,
+    "the edge rows are plain text pointing at the header controls; aria-disabled, never disabled": true,
+    "Tab order, pinned: Older, Newer, Jump to newest, then the ECU filter": true,
+    "Tab order, following: Older, Newer, then the ECU filter (Jump hidden)": true,
+    "Older (click): 100 back, anchor kept, focus stays on Older": true,
+    "Newer (click): 100 on, anchor kept, focus stays on Newer": true,
+    "Jump to newest: following, newest drawn, at the bottom, focus on the log box": true,
+    "Jump to newest: the window slides again": true,
+    "walk back: every press correct, none silent": true,
+    "walk back: the focus put on Older once, then kept by every press": true,
+    "walk back: reached the oldest (no Older row) and every retained exchange": true,
+    "walk back: the last press left Older aria-disabled with the focus on it": true,
+    "walk back: a press on the unavailable Older changes nothing, focus kept": true,
+    "walk back: at least one step of 0 that scrolled to the top": true,
+    "walk forward: every press correct, none silent": true,
+    "walk forward: the focus put on Newer once, then kept by every press": true,
+    "walk forward: following again, every retained exchange": true,
+    "walk forward: the last press left Newer aria-disabled with the focus on it, a further press changes nothing": true
+   },
+   "observed": {
+    "width": "390x844",
+    "retained": 2000,
+    "pinned": {
+     "window": [
+      772,
+      971,
+      200
+     ],
+     "beyond": [
+      5,
+      13,
+      20,
+      28,
+      35
+     ],
+     "mutations": {
+      "add": 0,
+      "rem": 0,
+      "inRows": 0,
+      "nb": 0,
+      "focusout": 0
+     },
+     "newer": "35 newer exchanges match your filters. Use Newer or Jump to newest in the log header to show them.",
+     "follow": "5 rows below + 35 beyond this window",
+     "anchor": [
+      [
+       "960|2026-10-04T10:52:57.478Z",
+       -24.8
+      ]
+     ],
+     "accounting": {
+      "where": "pinned by a scroll",
+      "count": "200 of 2,000 shown, last seq 1006",
+      "matching": 2000,
+      "older": 1765,
+      "shown": 200,
+      "newer": 35,
+      "rows": 200,
+      "adds_up": true
+     }
+    },
+    "older_click": {
+     "kind": "older",
+     "how": "click",
+     "before": [
+      772,
+      971,
+      200
+     ],
+     "after": [
+      672,
+      871,
+      200
+     ],
+     "moved": true,
+     "loaded": 100,
+     "scroll": [
+      0,
+      10869
+     ],
+     "scroll_delta": 10869,
+     "to_end": false,
+     "anchor": "772|2026-10-04T10:51:59.461Z",
+     "offset": [
+      129.3,
+      129.3
+     ],
+     "diff": 0.0,
+     "clamp": false,
+     "following": false,
+     "focus": "btn-older",
+     "refocused": false,
+     "available_after": true,
+     "overlap": true,
+     "breaks": [],
+     "ex": 200,
+     "older": "1,654 older exchanges match your filters; 1 gap marker and 2 connection notes in older rows. Use Older in the log header to show them.",
+     "newer": "146 newer exchanges match your filters. Use Newer or Jump to newest in the log header to show them.",
+     "ok": true
+    },
+    "newer_click": {
+     "kind": "newer",
+     "how": "click",
+     "before": [
+      672,
+      871,
+      200
+     ],
+     "after": [
+      772,
+      971,
+      200
+     ],
+     "moved": true,
+     "loaded": 100,
+     "scroll": [
+      21126,
+      10257
+     ],
+     "scroll_delta": -10869,
+     "to_end": false,
+     "anchor": "865|2026-10-04T10:52:23.963Z",
+     "offset": [
+      -83,
+      -82.9
+     ],
+     "diff": 0.1,
+     "clamp": false,
+     "following": false,
+     "focus": "btn-newer",
+     "refocused": false,
+     "available_after": true,
+     "overlap": true,
+     "breaks": [],
+     "ex": 200,
+     "older": "1,745 older exchanges match your filters; 1 gap marker and 2 connection notes in older rows. Use Older in the log header to show them.",
+     "newer": "55 newer exchanges match your filters. Use Newer or Jump to newest in the log header to show them.",
+     "ok": true
+    },
+    "jump": {
+     "before": "99 rows below + 55 beyond this window",
+     "label": "Jump to newest",
+     "after": [
+      [
+       832,
+       1031,
+       200
+      ],
+      true,
+      "logwrap"
+     ],
+     "later": [
+      841,
+      1040,
+      200
+     ]
+    },
+    "tab_order": {
+     "pinned": [
+      "btn-older",
+      "btn-newer",
+      "btn-follow",
+      "f-ecu"
+     ],
+     "following": [
+      "btn-older",
+      "btn-newer",
+      "f-ecu"
+     ]
+    },
+    "edge_rows": [
+     "1,765 older exchanges match your filters; 1 gap marker and 2 connection notes in older rows. Use Older in the log header to show them.",
+     "35 newer exchanges match your filters. Use Newer or Jump to newest in the log header to show them."
+    ],
+    "nav_attrs": {
+     "older": "false",
+     "newer": "false",
+     "disabledAttr": false,
+     "rowButtons": 0
+    },
+    "walk_back": {
+     "presses": 28,
+     "moved": 19,
+     "zero_steps_scrolled": 9,
+     "clamps": 9,
+     "clamp_drifts": [
+      511,
+      498.4,
+      498.8,
+      498.4,
+      499.3,
+      498.8,
+      481.6,
+      498.9,
+      499.2
+     ],
+     "zero_step_scroll_deltas": [
+      -21587,
+      -21126,
+      -21145,
+      -20523,
+      -19373,
+      -23090,
+      -23473,
+      -23410,
+      -23391
+     ],
+     "silent": 0,
+     "bad": [],
+     "loaded": [
+      7,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      93
+     ],
+     "max_anchor_diff_unclamped": 0.4,
+     "union": 2000
+    },
+    "walk_forward": {
+     "presses": 28,
+     "moved": 19,
+     "zero_steps_scrolled": 9,
+     "clamps": 9,
+     "clamp_drifts": [
+      -452.1,
+      -499.5,
+      -499.4,
+      -481.9,
+      -498.2,
+      -499.1,
+      -498.9,
+      -499.6,
+      -498.8
+     ],
+     "zero_step_scroll_deltas": [
+      23391,
+      23443,
+      23497,
+      23053,
+      19298,
+      20542,
+      21182,
+      21145,
+      21569
+     ],
+     "silent": 0,
+     "bad": [],
+     "loaded": [
+      100,
+      97,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      100,
+      100,
+      null,
+      3
+     ],
+     "max_anchor_diff_unclamped": 0.4,
+     "union": 2000
+    },
+    "oldest_window": [
+     4759,
+     4958,
+     200
+    ],
+    "after_walks": {
+     "oldest": [
+      {
+       "older": "true",
+       "newer": "false",
+       "disabledAttr": false,
+       "rowButtons": 0
+      },
+      "btn-older"
+     ],
+     "unavailable_older_press": [
+      [
+       4759,
+       4958,
+       200
+      ],
+      "btn-older"
+     ],
+     "end": [
+      {
+       "older": "false",
+       "newer": "true",
+       "disabledAttr": false,
+       "rowButtons": 0
+      },
+      "btn-newer"
+     ],
+     "unavailable_newer_press": [
+      [
+       843,
+       1042,
+       200
+      ],
+      "btn-newer"
+     ]
+    },
+    "oldest_count": "200 of 2,000 shown, last seq 1042",
+    "back_steps": [
+     {
+      "before": [
+       843,
+       1042,
+       200
+      ],
+      "after": [
+       836,
+       1035,
+       200
+      ],
+      "loaded": 7,
+      "scroll": [
+       21255,
+       21587
+      ],
+      "diff": 511,
+      "clamp": true,
+      "scroll_delta": 332,
+      "focus": "btn-older",
+      "refocused": true
+     },
+     {
+      "before": [
+       836,
+       1035,
+       200
+      ],
+      "after": [
+       836,
+       1035,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       21587,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -21587,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       836,
+       1035,
+       200
+      ],
+      "after": [
+       736,
+       935,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       10812
+      ],
+      "diff": 0.4,
+      "clamp": false,
+      "scroll_delta": 10812,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       736,
+       935,
+       200
+      ],
+      "after": [
+       636,
+       835,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       10812,
+       21126
+      ],
+      "diff": 498.4,
+      "clamp": true,
+      "scroll_delta": 10314,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       636,
+       835,
+       200
+      ],
+      "after": [
+       636,
+       835,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       21126,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -21126,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       636,
+       835,
+       200
+      ],
+      "after": [
+       536,
+       735,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       10756
+      ],
+      "diff": -0.1,
+      "clamp": false,
+      "scroll_delta": 10756,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       536,
+       735,
+       200
+      ],
+      "after": [
+       436,
+       635,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       10756,
+       21145
+      ],
+      "diff": 498.8,
+      "clamp": true,
+      "scroll_delta": 10389,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       436,
+       635,
+       200
+      ],
+      "after": [
+       436,
+       635,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       21145,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -21145,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       436,
+       635,
+       200
+      ],
+      "after": [
+       336,
+       535,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       10812
+      ],
+      "diff": 0.4,
+      "clamp": false,
+      "scroll_delta": 10812,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       336,
+       535,
+       200
+      ],
+      "after": [
+       236,
+       435,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       10812,
+       20523
+      ],
+      "diff": 498.4,
+      "clamp": true,
+      "scroll_delta": 9711,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       236,
+       435,
+       200
+      ],
+      "after": [
+       236,
+       435,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       20523,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -20523,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       236,
+       435,
+       200
+      ],
+      "after": [
+       136,
+       335,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       9889
+      ],
+      "diff": 0.1,
+      "clamp": false,
+      "scroll_delta": 9889,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       136,
+       335,
+       200
+      ],
+      "after": [
+       36,
+       235,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       9889,
+       19373
+      ],
+      "diff": 499.3,
+      "clamp": true,
+      "scroll_delta": 9484,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       36,
+       235,
+       200
+      ],
+      "after": [
+       36,
+       235,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       19373,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -19373,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       36,
+       235,
+       200
+      ],
+      "after": [
+       5655,
+       135,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       11613
+      ],
+      "diff": 0.3,
+      "clamp": false,
+      "scroll_delta": 11613,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       5655,
+       135,
+       200
+      ],
+      "after": [
+       5555,
+       35,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       11613,
+       23090
+      ],
+      "diff": 498.8,
+      "clamp": true,
+      "scroll_delta": 11477,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       5555,
+       35,
+       200
+      ],
+      "after": [
+       5555,
+       35,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       23090,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -23090,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       5555,
+       35,
+       200
+      ],
+      "after": [
+       5455,
+       5654,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       11933
+      ],
+      "diff": 0.4,
+      "clamp": false,
+      "scroll_delta": 11933,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       5455,
+       5654,
+       200
+      ],
+      "after": [
+       5352,
+       5554,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       11933,
+       23473
+      ],
+      "diff": 481.6,
+      "clamp": true,
+      "scroll_delta": 11540,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       5352,
+       5554,
+       200
+      ],
+      "after": [
+       5352,
+       5554,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       23473,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -23473,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       5352,
+       5554,
+       200
+      ],
+      "after": [
+       5252,
+       5454,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       11919
+      ],
+      "diff": 0.3,
+      "clamp": false,
+      "scroll_delta": 11919,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       5252,
+       5454,
+       200
+      ],
+      "after": [
+       5152,
+       5351,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       11919,
+       23410
+      ],
+      "diff": 498.9,
+      "clamp": true,
+      "scroll_delta": 11491,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       5152,
+       5351,
+       200
+      ],
+      "after": [
+       5152,
+       5351,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       23410,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -23410,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       5152,
+       5351,
+       200
+      ],
+      "after": [
+       5052,
+       5251,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       11938
+      ],
+      "diff": 0.1,
+      "clamp": false,
+      "scroll_delta": 11938,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       5052,
+       5251,
+       200
+      ],
+      "after": [
+       4952,
+       5151,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       11938,
+       23391
+      ],
+      "diff": 499.2,
+      "clamp": true,
+      "scroll_delta": 11453,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       4952,
+       5151,
+       200
+      ],
+      "after": [
+       4952,
+       5151,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       23391,
+       0
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -23391,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       4952,
+       5151,
+       200
+      ],
+      "after": [
+       4852,
+       5051,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       0,
+       11976
+      ],
+      "diff": -0.2,
+      "clamp": false,
+      "scroll_delta": 11976,
+      "focus": "btn-older",
+      "refocused": false
+     },
+     {
+      "before": [
+       4852,
+       5051,
+       200
+      ],
+      "after": [
+       4759,
+       4958,
+       200
+      ],
+      "loaded": 93,
+      "scroll": [
+       11976,
+       23057
+      ],
+      "diff": 0.3,
+      "clamp": false,
+      "scroll_delta": 11081,
+      "focus": "btn-older",
+      "refocused": false
+     }
+    ],
+    "forward_steps": [
+     {
+      "before": [
+       4759,
+       4958,
+       200
+      ],
+      "after": [
+       4859,
+       5058,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       23057,
+       11114
+      ],
+      "diff": -0.1,
+      "clamp": false,
+      "scroll_delta": -11943,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": true
+     },
+     {
+      "before": [
+       4859,
+       5058,
+       200
+      ],
+      "after": [
+       4956,
+       5155,
+       200
+      ],
+      "loaded": 97,
+      "scroll": [
+       11114,
+       0
+      ],
+      "diff": -452.1,
+      "clamp": true,
+      "scroll_delta": -11114,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       4956,
+       5155,
+       200
+      ],
+      "after": [
+       4956,
+       5155,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       23391
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 23391,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       4956,
+       5155,
+       200
+      ],
+      "after": [
+       5056,
+       5255,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       23391,
+       11401
+      ],
+      "diff": 0.1,
+      "clamp": false,
+      "scroll_delta": -11990,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       5056,
+       5255,
+       200
+      ],
+      "after": [
+       5156,
+       5355,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       11401,
+       0
+      ],
+      "diff": -499.5,
+      "clamp": true,
+      "scroll_delta": -11401,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       5156,
+       5355,
+       200
+      ],
+      "after": [
+       5156,
+       5355,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       23443
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 23443,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       5156,
+       5355,
+       200
+      ],
+      "after": [
+       5256,
+       5458,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       23443,
+       11434
+      ],
+      "diff": 0.3,
+      "clamp": false,
+      "scroll_delta": -12009,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       5256,
+       5458,
+       200
+      ],
+      "after": [
+       5356,
+       5558,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       11434,
+       0
+      ],
+      "diff": -499.4,
+      "clamp": true,
+      "scroll_delta": -11434,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       5356,
+       5558,
+       200
+      ],
+      "after": [
+       5356,
+       5558,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       23497
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 23497,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       5356,
+       5558,
+       200
+      ],
+      "after": [
+       5459,
+       5658,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       23497,
+       11508
+      ],
+      "diff": 0.4,
+      "clamp": false,
+      "scroll_delta": -11989,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       5459,
+       5658,
+       200
+      ],
+      "after": [
+       5559,
+       39,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       11508,
+       0
+      ],
+      "diff": -481.9,
+      "clamp": true,
+      "scroll_delta": -11508,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       5559,
+       39,
+       200
+      ],
+      "after": [
+       5559,
+       39,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       23053
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 23053,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       5559,
+       39,
+       200
+      ],
+      "after": [
+       5659,
+       139,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       23053,
+       11134
+      ],
+      "diff": -0.3,
+      "clamp": false,
+      "scroll_delta": -11919,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       5659,
+       139,
+       200
+      ],
+      "after": [
+       40,
+       239,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       11134,
+       0
+      ],
+      "diff": -498.2,
+      "clamp": true,
+      "scroll_delta": -11134,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       40,
+       239,
+       200
+      ],
+      "after": [
+       40,
+       239,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       19298
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 19298,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       40,
+       239,
+       200
+      ],
+      "after": [
+       140,
+       339,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       19298,
+       9390
+      ],
+      "diff": 0.1,
+      "clamp": false,
+      "scroll_delta": -9908,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       140,
+       339,
+       200
+      ],
+      "after": [
+       240,
+       439,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       9390,
+       0
+      ],
+      "diff": -499.1,
+      "clamp": true,
+      "scroll_delta": -9390,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       240,
+       439,
+       200
+      ],
+      "after": [
+       240,
+       439,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       20542
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 20542,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       240,
+       439,
+       200
+      ],
+      "after": [
+       340,
+       539,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       20542,
+       10257
+      ],
+      "diff": 0.2,
+      "clamp": false,
+      "scroll_delta": -10285,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       340,
+       539,
+       200
+      ],
+      "after": [
+       440,
+       639,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       10257,
+       0
+      ],
+      "diff": -498.9,
+      "clamp": true,
+      "scroll_delta": -10257,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       440,
+       639,
+       200
+      ],
+      "after": [
+       440,
+       639,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       21182
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 21182,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       440,
+       639,
+       200
+      ],
+      "after": [
+       540,
+       739,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       21182,
+       10294
+      ],
+      "diff": 0.2,
+      "clamp": false,
+      "scroll_delta": -10888,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       540,
+       739,
+       200
+      ],
+      "after": [
+       640,
+       839,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       10294,
+       0
+      ],
+      "diff": -499.6,
+      "clamp": true,
+      "scroll_delta": -10294,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       640,
+       839,
+       200
+      ],
+      "after": [
+       640,
+       839,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       21145
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 21145,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       640,
+       839,
+       200
+      ],
+      "after": [
+       740,
+       939,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       21145,
+       10389
+      ],
+      "diff": 0.1,
+      "clamp": false,
+      "scroll_delta": -10756,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       740,
+       939,
+       200
+      ],
+      "after": [
+       840,
+       1039,
+       200
+      ],
+      "loaded": 100,
+      "scroll": [
+       10389,
+       0
+      ],
+      "diff": -498.8,
+      "clamp": true,
+      "scroll_delta": -10389,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       840,
+       1039,
+       200
+      ],
+      "after": [
+       840,
+       1039,
+       200
+      ],
+      "loaded": null,
+      "scroll": [
+       0,
+       21569
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": 21569,
+      "following": false,
+      "focus": "btn-newer",
+      "refocused": false
+     },
+     {
+      "before": [
+       840,
+       1039,
+       200
+      ],
+      "after": [
+       843,
+       1042,
+       200
+      ],
+      "loaded": 3,
+      "scroll": [
+       21569,
+       21555
+      ],
+      "diff": null,
+      "clamp": false,
+      "scroll_delta": -14,
+      "following": true,
+      "focus": "btn-newer",
+      "refocused": false
+     }
+    ]
+   }
+  },
+  {
+   "case": "390x844: 7. Payload expansion kept",
+   "rule": "Pinned, with traffic: a real click on a row's 'show all' opens it (aria-expanded true, hex--open, more than 6 bytes shown); Older moves the window until that row is no longer drawn; Newer brings it back, still expanded (aria-expanded true, hex--open, the same bytes); the page's count of kept expansions (data-expansions-kept) is one more than before the click, before and after the row left the window",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "a row to expand": true,
+    "the kept-expansions count rose by one and held while the row was out of the window": true,
+    "opened": true,
+    "the row left the window": true,
+    "the row came back still expanded": true,
+    "every press correct": true
+   },
+   "observed": {
+    "width": "390x844",
+    "key": "6723:response",
+    "opened": [
+     "true",
+     "hex hex--open",
+     20
+    ],
+    "kept": [
+     0,
+     1
+    ],
+    "older_presses": [
+     [
+      803,
+      1002,
+      200
+     ]
+    ],
+    "newer_presses": [
+     [
+      863,
+      1062,
+      200
+     ]
+    ],
+    "back": [
+     "true",
+     "hex hex--open",
+     20
+    ]
+   }
+  },
+  {
+   "case": "390x844: 5. Eviction past the 2,000 cap",
+   "rule": "Following, a burst of 300 at 50/s: the trimmed note's count rises by exactly the exchanges that arrived and reads '\u2026 left this view.' with 'The page keeps the newest 2,000 exchanges it received.'; 2,000 retained; 200 rows, the count line '200 of 2,000 shown', the Older row '1,800 older exchanges match your filters' (then any marker counts). Pinned by a real wheel scroll, a burst until every row of the reader's window has left the cap: at every 1 s sample the window holds 200 exchanges (never fewer), contiguous; it stays pinned; at the end it is at the oldest exchanges kept (no Older row) and the note adds 'Rows this view was showing left too, so it moved to the oldest exchanges kept.'; counts add up. Jump to newest then follows and the sentence goes. The expansion case 7 left open is kept while its row is retained (after the following burst) and pruned once its row has left the cap (data-expansions-kept back to 0 after the pinned burst; Task 49)",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "full buffer at the start": true,
+    "following: the trimmed count rises by the arrivals": true,
+    "following: the note's wording": true,
+    "following: 2,000 retained, 200 rows, the count line and the Older row": true,
+    "following: counts add up": true,
+    "pinned: 200 rows at every sample, never fewer": true,
+    "pinned: contiguous at every sample": true,
+    "pinned: still pinned at every sample": true,
+    "pinned: every row of the reader's window left": true,
+    "pinned: the final window holds 200 exchanges": true,
+    "pinned: at the oldest kept, the Newer row offered": true,
+    "pinned: the note adds the re-pin sentence": true,
+    "pinned: counts add up": true,
+    "Jump to newest: following, the sentence gone": true,
+    "an expansion of a retained row is kept": true,
+    "an expansion whose row left the cap is pruned": true
+   },
+   "observed": {
+    "width": "390x844",
+    "retained": 2000,
+    "following": {
+     "trimmed": [
+      4785,
+      5112
+     ],
+     "arrived": 327,
+     "note": "5,112 older rows left this view.The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap.",
+     "count": "200 of 2,000 shown, last seq 1396",
+     "older": "1,800 older exchanges match your filters; 1 gap marker and 2 connection notes in older rows. Use Older in the log header to show them.",
+     "accounting": {
+      "where": "following past the cap",
+      "count": "200 of 2,000 shown, last seq 1396",
+      "matching": 2000,
+      "older": 1800,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     }
+    },
+    "pinned": {
+     "window_at_pin": [
+      1197,
+      1396,
+      200
+     ],
+     "samples": 49,
+     "min_rows": 200,
+     "windows": [
+      [
+       1197,
+       1396,
+       200
+      ],
+      [
+       1197,
+       1396,
+       200
+      ],
+      [
+       1197,
+       1396,
+       200
+      ],
+      [
+       1197,
+       1396,
+       200
+      ],
+      [
+       1197,
+       1396,
+       200
+      ],
+      [
+       1197,
+       1396,
+       200
+      ],
+      [
+       1197,
+       1396,
+       200
+      ],
+      [
+       1197,
+       1396,
+       200
+      ],
+      [
+       1197,
+       1396,
+       200
+      ],
+      [
+       1197,
+       1396,
+       200
+      ],
+      [
+       1197,
+       1396,
+       200
+      ],
+      [
+       1197,
+       1396,
+       200
+      ],
+      [
+       1197,
+       1396,
+       200
+      ],
+      [
+       1197,
+       1396,
+       200
+      ],
+      [
+       1197,
+       1396,
+       200
+      ],
+      [
+       1281,
+       1480,
+       200
+      ],
+      [
+       1403,
+       1602,
+       200
+      ]
+     ],
+     "end": [
+      1408,
+      1607,
+      200
+     ],
+     "note": "7,123 older rows, 1 gap marker and 2 connection notes left this view.The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap. Rows this view was showing left too, so it moved to the oldest exchanges kept.",
+     "newer": "1,800 newer exchanges match your filters. Use Newer or Jump to newest in the log header to show them.",
+     "count": "200 of 2,000 shown, last seq 3407",
+     "accounting": {
+      "where": "pinned, re-pinned after eviction",
+      "count": "200 of 2,000 shown, last seq 3407",
+      "matching": 2000,
+      "older": 0,
+      "shown": 200,
+      "newer": 1800,
+      "rows": 200,
+      "adds_up": true
+     }
+    },
+    "after_jump": [
+     "200 of 2,000 shown, last seq 3416",
+     "7,132 older rows, 1 gap marker and 2 connection notes left this view.The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap."
+    ],
+    "expansions_kept": {
+     "start": 1,
+     "after_following_burst": 1,
+     "after_pinned_burst": 0
+    }
+   }
+  },
+  {
+   "case": "390x844: 6. Reconnect and gap markers",
+   "rule": "Full buffer, following, standard traffic. Every marker the page accounts for (left the cap + older + drawn + newer, read from the trimmed note, the Older / Newer rows and the rows) is counted before the faults; this case's own add exactly 1 gap marker and 1 connection note to that total at every step. 3 exchange events kept from the page: 'Gap: seq a\u2013b not received (3).' drawn between seq a-1 and b+1. SIGSTOP / SIGCONT: 'Connection lost, then resumed.' drawn after the exchange it names ('after seq N'). Pinned and moved older (Older by Enter) until both are newer than the window: neither is drawn and the Newer row reads exactly '1 gap marker and 1 connection note in newer rows' and points at the header's Jump to newest (shown); Jump to newest (a real click) follows, the focus on the log box. A burst of 260 makes them older than the following window: not drawn, no marker drawn in either window, and the older side (Older row plus left the cap) rose by exactly 1 and 1. Counts add up. SIGTERM and a new simulator: 'Simulator restarted.' drawn between the old run's rows and the new run's (seq goes back), and the window spans both runs (its first seq above its last); the count line names no seq range (Task 47 shortened it), so the marker row is the record of the restart",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "full buffer at the start": true,
+    "the gap marker drawn where it falls, in the following window": true,
+    "the gap adds exactly 1 gap marker, drawn and not also counted outside": true,
+    "the connection note drawn where it falls (after the exchange it names)": true,
+    "the stop adds exactly 1 connection note, drawn and not counted in the Older row": true,
+    "outside the window (newer): neither drawn, the Newer row counts exactly 1 and 1, pointing at Jump to newest (shown in the header)": true,
+    "Jump to newest (the header control) follows again, focus on the log box": true,
+    "outside the window (older): neither drawn, the Older side rose by exactly 1 and 1": true,
+    "counts add up": true,
+    "the restart marker drawn between the two runs' rows": true,
+    "across a restart: the window spans both runs, the count line names no seq range": true
+   },
+   "observed": {
+    "width": "390x844",
+    "retained": 2000,
+    "dropped": [
+     3422,
+     3423,
+     3424
+    ],
+    "gap": {
+     "text": "Gap: seq 3422\u20133424 not received (3).Counters when it was seen: handoff_dropped 0, this page's client_dropped 0, forced_disconnects 0.",
+     "cls": "mark mark--gap",
+     "prev": 3421,
+     "next": 3425
+    },
+    "connection_note": {
+     "text": "Connection lost, then resumed.Last live 10:54:54 UTC, resumed 10:55:02 UTC after seq 3427.",
+     "cls": "mark mark--link",
+     "prev": 3427,
+     "next": 3428
+    },
+    "older_presses": [
+     [
+      3243,
+      3445,
+      200
+     ],
+     [
+      3243,
+      3445,
+      200
+     ],
+     [
+      3143,
+      3342,
+      200
+     ]
+    ],
+    "newer_row": "118 newer exchanges match your filters; 1 gap marker and 1 connection note in newer rows. Use Newer or Jump to newest in the log header to show them.",
+    "newer_window": [
+     3143,
+     3342,
+     200
+    ],
+    "older_row": "1,800 older exchanges match your filters; 1 gap marker and 1 connection note in older rows. Use Older in the log header to show them.",
+    "older_window": [
+     3559,
+     3758,
+     200
+    ],
+    "jump": {
+     "after": [
+      3267,
+      3469,
+      200
+     ],
+     "following": true
+    },
+    "census": {
+     "before": {
+      "left": [
+       1,
+       2
+      ],
+      "older": [
+       0,
+       0
+      ],
+      "drawn": [
+       0,
+       0
+      ],
+      "newer": [
+       0,
+       0
+      ],
+      "total": [
+       1,
+       2
+      ]
+     },
+     "gap": {
+      "left": [
+       1,
+       2
+      ],
+      "older": [
+       0,
+       0
+      ],
+      "drawn": [
+       1,
+       0
+      ],
+      "newer": [
+       0,
+       0
+      ],
+      "total": [
+       2,
+       2
+      ]
+     },
+     "note": {
+      "left": [
+       1,
+       2
+      ],
+      "older": [
+       0,
+       0
+      ],
+      "drawn": [
+       1,
+       1
+      ],
+      "newer": [
+       0,
+       0
+      ],
+      "total": [
+       2,
+       3
+      ]
+     },
+     "newer": {
+      "left": [
+       1,
+       2
+      ],
+      "older": [
+       0,
+       0
+      ],
+      "drawn": [
+       0,
+       0
+      ],
+      "newer": [
+       1,
+       1
+      ],
+      "total": [
+       2,
+       3
+      ]
+     },
+     "older": {
+      "left": [
+       1,
+       2
+      ],
+      "older": [
+       1,
+       1
+      ],
+      "drawn": [
+       0,
+       0
+      ],
+      "newer": [
+       0,
+       0
+      ],
+      "total": [
+       2,
+       3
+      ]
+     }
+    },
+    "restart": {
+     "text": "Simulator restarted.A new run started at 10:55:17 UTC. Rows above are from the previous run; seq starts again at 1.",
+     "cls": "mark mark--link",
+     "prev": 3758,
+     "next": 1
+    },
+    "count_after_restart": "200 of 2,000 shown, last seq 7",
+    "window_after_restart": [
+     3566,
+     7,
+     200
+    ],
+    "accounting": [
+     {
+      "where": "markers newer than a pinned window",
+      "count": "200 of 2,000 shown, last seq 3463",
+      "matching": 2000,
+      "older": 1682,
+      "shown": 200,
+      "newer": 118,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "markers older than the following window",
+      "count": "200 of 2,000 shown, last seq 3758",
+      "matching": 2000,
+      "older": 1800,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     }
+    ]
+   }
+  },
+  {
+   "case": "390x844: 8. The four absent-row wordings",
+   "rule": "Over this width's cases: outside this window ('\u2026 older exchanges match your filters'), hidden by filters ('\u2026 hidden by filters (not a gap)'), a sequence gap ('Gap: seq \u2026 not received'), and the rows that left the 2,000 cap ('\u2026 left this view.') each appear in their own situation, and each kind's own row carries none of the others' phrases. In every state read, the count line's matching = the Older row's count + the rows drawn + the Newer row's count, and the count line's shown = the exchange rows drawn",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "outside: seen, in its own wording": true,
+    "hidden: seen, in its own wording": true,
+    "gap: seen, in its own wording": true,
+    "left: seen, in its own wording": true,
+    "outside: its own row carries no other kind's phrase": true,
+    "hidden: its own row carries no other kind's phrase": true,
+    "gap: its own row carries no other kind's phrase": true,
+    "left: its own row carries no other kind's phrase": true,
+    "counts add up in every state read (matching = older + shown + newer)": true
+   },
+   "observed": {
+    "width": "390x844",
+    "seen": {
+     "outside": [
+      "1,800 older exchanges match your filters; 1 gap marker and 2 connection notes in older rows. Use Older in the log header to show them.",
+      "50 older exchanges match your filters; 1 gap marker and 2 connection notes in older rows; 1,115 older exchanges hidden by filters (not a gap). Use Older in the log header to show them.",
+      "35 newer exchanges match your filters. Use Newer or Jump to newest in the log header to show them.",
+      "5 rows below + 35 beyond this window"
+     ],
+     "held": [
+      "View paused. 80 new exchanges are held; they appear when you resume. The simulator keeps running."
+     ],
+     "hidden": [
+      "635 exchanges hidden by filters (not a gap)",
+      "733 exchanges hidden by filters (not a gap)",
+      "1 exchange hidden by filters (not a gap)",
+      "1 exchange hidden by filters (not a gap)"
+     ],
+     "left": [
+      "5,112 older rows left this view.The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap.",
+      "7,123 older rows, 1 gap marker and 2 connection notes left this view.The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap. Rows this view was showing left too, so it moved to the oldest exchanges kept."
+     ],
+     "gap": [
+      "Gap: seq 3422\u20133424 not received (3).Counters when it was seen: handoff_dropped 0, this page's client_dropped 0, forced_disconnects 0.",
+      "118 newer exchanges match your filters; 1 gap marker and 1 connection note in newer rows. Use Newer or Jump to newest in the log header to show them."
+     ]
+    },
+    "own_rows": {
+     "outside": "1,800 older exchanges match your filters; 1 gap marker and 2 connection notes in older rows. Use Older in the log header to show them.",
+     "hidden": "635 exchanges hidden by filters (not a gap)",
+     "gap": "Gap: seq 3422\u20133424 not received (3).Counters when it was seen: handoff_dropped 0, this page's client_dropped 0, forced_disconnects 0.",
+     "left": "5,112 older rows left this view.The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap."
+    },
+    "first": {
+     "outside": "1,800 older exchanges match your filters; 1 gap marker and 2 connection notes in older rows. Use Older in the log header to show them.",
+     "hidden": "635 exchanges hidden by filters (not a gap)",
+     "gap": "Gap: seq 3422\u20133424 not received (3).Counters when it was seen: handoff_dropped 0, this page's client_dropped 0, forced_disconnects 0.",
+     "left": "5,112 older rows left this view.The page keeps the newest 2,000 exchanges it received. The rows were received, so their removal is not a gap."
+    },
+    "accounts": [
+     {
+      "where": "following",
+      "count": "200 of 2,000 shown, last seq 768",
+      "matching": 2000,
+      "older": 1800,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "service 0x0A, following",
+      "count": "200 of 250 matching, last seq 935",
+      "matching": 250,
+      "older": 50,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "service 0x0A, after Older",
+      "count": "200 of 250 matching, last seq 935",
+      "matching": 250,
+      "older": 0,
+      "shown": 200,
+      "newer": 50,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "no response off",
+      "count": "200 of 1,654 matching, last seq 935",
+      "matching": 1654,
+      "older": 1454,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "pinned by a scroll",
+      "count": "200 of 2,000 shown, last seq 1006",
+      "matching": 2000,
+      "older": 1765,
+      "shown": 200,
+      "newer": 35,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "following past the cap",
+      "count": "200 of 2,000 shown, last seq 1396",
+      "matching": 2000,
+      "older": 1800,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "pinned, re-pinned after eviction",
+      "count": "200 of 2,000 shown, last seq 3407",
+      "matching": 2000,
+      "older": 0,
+      "shown": 200,
+      "newer": 1800,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "markers newer than a pinned window",
+      "count": "200 of 2,000 shown, last seq 3463",
+      "matching": 2000,
+      "older": 1682,
+      "shown": 200,
+      "newer": 118,
+      "rows": 200,
+      "adds_up": true
+     },
+     {
+      "where": "markers older than the following window",
+      "count": "200 of 2,000 shown, last seq 3758",
+      "matching": 2000,
+      "older": 1800,
+      "shown": 200,
+      "newer": 0,
+      "rows": 200,
+      "adds_up": true
+     }
+    ],
+    "not_adding_up": []
+   }
+  },
+  {
+   "case": "390x844: 9. Layout",
+   "rule": "No scrollWidth above its clientWidth (OVERFLOW, #log-panel, #logwrap, #log-state) in every state measured",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "no horizontal overflow (following)": true,
+    "no horizontal overflow (filtered, following)": true,
+    "no horizontal overflow (nothing matches)": true,
+    "no horizontal overflow (pinned, Newer row shown)": true,
+    "at least one state measured": true
+   },
+   "observed": {
+    "width": "390x844",
+    "overflow": [
+     {
+      "state": "following",
+      "measured": [
+       [
+        "#vehicle",
+        372,
+        372
+       ],
+       [
+        "html",
+        390,
+        390
+       ],
+       [
+        "body",
+        390,
+        390
+       ],
+       [
+        "#graphs",
+        372,
+        372
+       ],
+       [
+        ".uplot 0",
+        342,
+        342
+       ],
+       [
+        ".uplot 1",
+        342,
+        342
+       ],
+       [
+        ".uplot 2",
+        342,
+        342
+       ],
+       [
+        ".uplot 3",
+        342,
+        342
+       ],
+       [
+        ".uplot 4",
+        342,
+        342
+       ],
+       [
+        "#log-panel",
+        372,
+        372
+       ],
+       [
+        "#logwrap",
+        372,
+        372
+       ]
+      ],
+      "over": []
+     },
+     {
+      "state": "filtered, following",
+      "measured": [
+       [
+        "#vehicle",
+        372,
+        372
+       ],
+       [
+        "html",
+        390,
+        390
+       ],
+       [
+        "body",
+        390,
+        390
+       ],
+       [
+        "#graphs",
+        372,
+        372
+       ],
+       [
+        ".uplot 0",
+        342,
+        342
+       ],
+       [
+        ".uplot 1",
+        342,
+        342
+       ],
+       [
+        ".uplot 2",
+        342,
+        342
+       ],
+       [
+        ".uplot 3",
+        342,
+        342
+       ],
+       [
+        ".uplot 4",
+        342,
+        342
+       ],
+       [
+        "#log-panel",
+        372,
+        372
+       ],
+       [
+        "#logwrap",
+        372,
+        372
+       ]
+      ],
+      "over": []
+     },
+     {
+      "state": "nothing matches",
+      "measured": [
+       [
+        "#vehicle",
+        372,
+        372
+       ],
+       [
+        "html",
+        390,
+        390
+       ],
+       [
+        "body",
+        390,
+        390
+       ],
+       [
+        "#graphs",
+        372,
+        372
+       ],
+       [
+        ".uplot 0",
+        342,
+        342
+       ],
+       [
+        ".uplot 1",
+        342,
+        342
+       ],
+       [
+        ".uplot 2",
+        342,
+        342
+       ],
+       [
+        ".uplot 3",
+        342,
+        342
+       ],
+       [
+        ".uplot 4",
+        342,
+        342
+       ],
+       [
+        "#log-panel",
+        372,
+        372
+       ],
+       [
+        "#logwrap",
+        372,
+        372
+       ],
+       [
+        "#log-state",
+        372,
+        372
+       ]
+      ],
+      "over": []
+     },
+     {
+      "state": "pinned, Newer row shown",
+      "measured": [
+       [
+        "#vehicle",
+        372,
+        372
+       ],
+       [
+        "html",
+        390,
+        390
+       ],
+       [
+        "body",
+        390,
+        390
+       ],
+       [
+        "#graphs",
+        372,
+        372
+       ],
+       [
+        ".uplot 0",
+        342,
+        342
+       ],
+       [
+        ".uplot 1",
+        342,
+        342
+       ],
+       [
+        ".uplot 2",
+        342,
+        342
+       ],
+       [
+        ".uplot 3",
+        342,
+        342
+       ],
+       [
+        ".uplot 4",
+        342,
+        342
+       ],
+       [
+        "#log-panel",
+        372,
+        372
+       ],
+       [
+        "#logwrap",
+        372,
+        372
+       ]
+      ],
+      "over": []
+     }
+    ]
+   }
+  },
+  {
+   "case": "1440x900: 10. No exchange shown: nothing to pin",
+   "rule": "Every outcome chip off, so no exchange matches; gap markers (one exchange event kept from the page at a time) until the marker rows overflow the log box. A real wheel scroll up over them: with no exchange shown there is nothing to pin, so the log stays following (Jump to newest hidden, no count beside it, Newer unavailable); markers arriving then are drawn at the end as a following log draws them. Reset filters: following, the newest exchange drawn at the bottom of the box, the window sliding over 6 s of arrivals (not a window that slides while the page shows the reader as pinned)",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "nothing matches; marker rows drawn and scrollable": true,
+    "the wheel scrolled the box up (the reader's own scroll)": true,
+    "after the scroll: still following (Jump to newest hidden, no count), Newer unavailable": true,
+    "markers arriving with no input: still following": true,
+    "Reset filters: following, the newest drawn at the bottom": true,
+    "Reset filters: the window slides while following, at the bottom": true
+   },
+   "observed": {
+    "width": "1440x900",
+    "chips_off": [
+     "o-responded",
+     "o-no_response",
+     "o-unrouted",
+     "o-error"
+    ],
+    "gaps_made": 5,
+    "marks_drawn": 8,
+    "state": "No exchanges match these filters. 2000 are hidden by the ECU, service or outcome filter.Reset filters",
+    "box_before_wheel": [
+     164,
+     164
+    ],
+    "lowest_scroll_top_after_wheel": 0,
+    "box_1s_after_wheel": [
+     164,
+     164
+    ],
+    "after_wheel": {
+     "follow": {
+      "text": "",
+      "label": "Jump to newest",
+      "disabled": true
+     },
+     "nav": {
+      "older": "true",
+      "newer": "true",
+      "disabledAttr": false,
+      "rowButtons": 0
+     },
+     "atBottom": true,
+     "marks": 8
+    },
+    "after_two_markers": {
+     "follow": {
+      "text": "",
+      "label": "Jump to newest",
+      "disabled": true
+     },
+     "nav": {
+      "older": "true",
+      "newer": "true",
+      "disabledAttr": false,
+      "rowButtons": 0
+     },
+     "atBottom": true,
+     "marks": 10,
+     "scrollTop": 276,
+     "newer": null
+    },
+    "after_reset": [
+     {
+      "window": [
+       3609,
+       57,
+       200
+      ],
+      "follow": {
+       "text": "",
+       "label": "Jump to newest",
+       "disabled": true
+      },
+      "atBottom": true,
+      "newestVisible": true,
+      "count": "200 of 2,000 shown, last seq 57"
+     },
+     {
+      "window": [
+       3632,
+       80,
+       200
+      ],
+      "follow": {
+       "text": "",
+       "label": "Jump to newest",
+       "disabled": true
+      },
+      "atBottom": true,
+      "newestVisible": true,
+      "count": "200 of 2,000 shown, last seq 80"
+     }
+    ],
+    "mutations_6s": {
+     "add": 23,
+     "rem": 23,
+     "inRows": 0,
+     "nb": 23,
+     "focusout": 0
+    }
+   }
+  },
+  {
+   "case": "1440x900: 11. Live regions",
+   "rule": "Task 51 markup: the only live region (aria-live, role status / alert / log / marquee / timer, aria-atomic, aria-relevant) is #announce (role status, polite, atomic), a child of body with no hidden ancestor; #linkstate, #log-count and every other element have no live-region attribute and no live-region ancestor. Over 20 s of traffic, healthy: zero #announce mutations and zero #linkstate mutations that change anything, while the log counter's text does change. A disconnect (SIGSTOP): the banner shows 'Disconnected.' with its countdown and time since live, changing each second; #announce says the disconnect once and nothing but retry announcements meanwhile; after SIGCONT exactly one 'Connection restored; data current.'. A fault (one unreadable frame): the banner says 'Last known data.'; #announce says the fault once, the attempt, then exactly one 'Live data restored.'. Automation verifies markup, mutations and announcement text and timing, not what a screen reader says",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "the live regions on the page are exactly #announce": true,
+    "#announce: role status, aria-live polite, aria-atomic true": true,
+    "#announce is a child of body with no hidden ancestor, not hidden itself": true,
+    "#announce is visually hidden (1 x 1 px box)": true,
+    "#linkstate has no live-region attribute": true,
+    "#linkstate, #log-count and every continuously updating element: no live-region ancestor": true,
+    "no element outside #announce is in a live region": true,
+    "20 s of traffic: zero #announce mutations": true,
+    "20 s of traffic: #linkstate unchanged (0 changing mutations), hidden": true,
+    "20 s of traffic: the log counter's text changed": true,
+    "a disconnect: the banner says Disconnected. with its countdown and time since live": true,
+    "a disconnect: the banner's ticking text changed each second": true,
+    "a disconnect: #announce said it once, then only retries": true,
+    "after SIGCONT: exactly one 'Connection restored; data current.'": true,
+    "a fault: the banner says Last known data.": true,
+    "a fault: the fault said once": true,
+    "a fault: the other announcements are recovery attempts, each named by its data-attempts number": true,
+    "a fault: exactly one recovery announcement, 'Live data restored.', with the change to Live": true,
+    "a fault: no announcement holds a ticking value": true,
+    "a fault: every #announce mutation is a transition's announcement or a clean-up": true,
+    "a fault: never the same announcement twice in a row": true
+   },
+   "observed": {
+    "width": "1440x900",
+    "audit": {
+     "live": [
+      "announce"
+     ],
+     "ancestors": {
+      "linkstate": null,
+      "conn": null,
+      "conn-text": null,
+      "log-count": null,
+      "log-below": null,
+      "btn-follow": null,
+      "btn-older": null,
+      "btn-newer": null,
+      "log-head": null,
+      "log-body": null,
+      "log-tail": null,
+      "log-state": null,
+      "f-ecu": null,
+      "f-service": null,
+      "f-outcome": null,
+      "status": null,
+      "malformed": null,
+      "status-polled": null,
+      "vehicle": null,
+      "vehicle-meta": null,
+      "dtcs": null,
+      "graphs-status": null,
+      "graphs-fine": null,
+      "graphs-breaks": null,
+      "graphs-note": null,
+      "graphs-grid": null
+     },
+     "others": [],
+     "announce": {
+      "parent": "BODY",
+      "role": "status",
+      "live": "polite",
+      "atomic": "true",
+      "hidden": false,
+      "ariaHidden": null,
+      "display": "block",
+      "visibility": "visible",
+      "cls": "visually-hidden",
+      "box": [
+       1,
+       1
+      ],
+      "hiddenAncestor": null
+     },
+     "linkstate": {
+      "role": null,
+      "live": null,
+      "atomic": null
+     }
+    },
+    "quiet_20s": {
+     "raw": 87,
+     "changed": 0,
+     "kinds": {},
+     "counts": 75,
+     "distinct": 75,
+     "banner": null,
+     "health": "live"
+    },
+    "quiet_announce_mutations": [],
+    "log_count": [
+     "200 of 2,000 shown, last seq 84",
+     "200 of 2,000 shown, last seq 159"
+    ],
+    "disconnect": {
+     "raw": 5,
+     "changed": 4,
+     "kinds": {
+      "attributes:hidden": 1,
+      "childList": 2,
+      "attributes:disabled": 1
+     },
+     "counts": 0,
+     "distinct": 0,
+     "banner": "Disconnected. Last live 10:56:00 UTC (5 s ago). The views below show data as of then. Reason: status request failed: no answer within 5 s. Retrying in 1 s (1 failed attempt; the wait doubles from 1 s to at most 15 s).Retry now",
+     "health": "stale"
+    },
+    "disconnect_banner": "Disconnected. Last live 10:56:00 UTC (5 s ago). The views below show data as of then. Reason: status request failed: no answer within 5 s. Retrying in 1 s (1 failed attempt; the wait doubles from 1 s to at most 15 s).\n\nRetry now",
+    "banner_while_down": [
+     [
+      5152,
+      [
+       "5 s ago",
+       "1 s"
+      ]
+     ],
+     [
+      6023,
+      [
+       "6 s ago",
+       "1 s"
+      ]
+     ],
+     [
+      6151,
+      [
+       "6 s ago"
+      ]
+     ],
+     [
+      7023,
+      [
+       "7 s ago"
+      ]
+     ]
+    ],
+    "said_while_down": [
+     "Disconnected. Reason: status request failed: no answer within 5 s. The page retries on its own.",
+     "Reconnecting: attempt 2."
+    ],
+    "said_after_sigcont": [
+     "Connection restored; data current."
+    ],
+    "fault": {
+     "raw": 6,
+     "changed": 6,
+     "kinds": {
+      "attributes:hidden": 2,
+      "attributes:class": 1,
+      "childList": 2,
+      "attributes:disabled": 1
+     },
+     "counts": 0,
+     "distinct": 0,
+     "banner": "Last known data. The simulator sent a message this page could not read (1 malformed so far), so the page reconnects to get a complete state. The views show the last state applied, at 10:56:09 UTC. Recovery attempt 0 of 3; the first starts in 1 s.Retry now",
+     "health": "last-known"
+    },
+    "fault_said": {
+     "announcements": [
+      {
+       "t": 1791111369927,
+       "text": "Last known data: the simulator sent a message this page could not read. The page reconnects to get a complete state."
+      },
+      {
+       "t": 1791111370926,
+       "text": "Recovery attempt 1 of 3 under way."
+      },
+      {
+       "t": 1791111370931,
+       "text": "Live data restored."
+      }
+     ],
+     "data_current_ms": 1791111370931,
+     "attempts_seen": [
+      "1"
+     ]
+    }
+   }
+  },
+  {
+   "case": "page: no exception or console message",
+   "rule": "Over the whole run: no page exception, console message or browser log entry",
+   "pass": true,
+   "failed": [],
+   "conditions": {
+    "none": true
+   },
+   "observed": {
+    "problems": []
+   }
+  }
+ ],
+ "tally": {
+  "1440x900": {
+   "passed": 11,
+   "total": 11
+  },
+  "390x844": {
+   "passed": 9,
+   "total": 9
+  },
+  "page": {
+   "passed": 2,
+   "total": 2
+  }
+ },
+ "problems": []
+}

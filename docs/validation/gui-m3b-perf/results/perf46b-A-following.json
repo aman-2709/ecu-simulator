@@ -1,0 +1,1548 @@
+{
+ "chrome": "Chrome/151.0.7922.173",
+ "categories": [
+  "toplevel",
+  "devtools.timeline",
+  "v8"
+ ],
+ "seconds": 60.0,
+ "rows_cap": 2000,
+ "traffic_rate": "4",
+ "served": {
+  "ecu_simulator_origin": "/home/aman/dev/personal-projects/ecu-simulator/.claude/worktrees/gui/src/ecu_simulator/__init__.py",
+  "app_js_sha256": "4c2419cae4709f962a59d3968fbfacc3e7b9e2a864a759ee498816f7d8959c9e",
+  "worktree_app_js_sha256": "4c2419cae4709f962a59d3968fbfacc3e7b9e2a864a759ee498816f7d8959c9e",
+  "app_js_lines": {
+   "renderLog": 1633,
+   "graph_draw": 875,
+   "ws_onmessage": 255,
+   "follow_frame": 1915
+  },
+  "app_css_sha256": "ecbea9ec609fc9f8aa2ee90914bf0fd492ff8c683dba6c2cc854b91157056917",
+  "worktree_app_css_sha256": "ecbea9ec609fc9f8aa2ee90914bf0fd492ff8c683dba6c2cc854b91157056917"
+ },
+ "diagnostic": null,
+ "idle_runs": false,
+ "animation_check": {
+  "diag": null,
+  "sheets": 0,
+  "conn": "conn conn--live",
+  "lamp_animation": "none"
+ },
+ "repeats": 2,
+ "states": null,
+ "browser": {
+  "visible": false,
+  "gpu": {
+   "feature_status": {
+    "2d_canvas": "unavailable_software",
+    "direct_rendering_display_compositor": "disabled_off_ok",
+    "gpu_compositing": "disabled_software",
+    "multiple_raster_threads": "enabled_on",
+    "opengl": "disabled_off",
+    "rasterization": "disabled_software",
+    "raw_draw": "disabled_off_ok",
+    "skia_graphite": "disabled_off",
+    "trees_in_viz": "disabled_off",
+    "video_decode": "disabled_software",
+    "video_encode": "disabled_software",
+    "vulkan": "disabled_off",
+    "webgl": "unavailable_software",
+    "webgpu": "unavailable_software",
+    "webgpu_on_vk_via_gl_interop": "disabled_off",
+    "webnn": "unavailable_software"
+   },
+   "devices": [
+    {
+     "vendorId": 65535,
+     "deviceId": 65535,
+     "vendorString": "Google Inc. (Google)",
+     "deviceString": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver-5.0.0)",
+     "driverVendor": "SwANGLE",
+     "driverVersion": "5.0.0"
+    }
+   ],
+   "driver_bug_workarounds": 0,
+   "aux_attributes": {
+    "displayType": "ANGLE_SWIFTSHADER",
+    "glImplementationParts": "(gl=egl-angle,angle=swiftshader)",
+    "glRenderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver-5.0.0)",
+    "glVendor": "Google Inc. (Google)",
+    "glVersion": "OpenGL ES 3.0 (ANGLE 2.1.28234 git hash: a17d6c8e9269)",
+    "skiaBackendType": "None"
+   },
+   "model": "",
+   "command_line": "/usr/bin/google-chrome --headless=new --no-sandbox --disable-gpu --hide-scrollbars --no-first-run --no-default-browser-check --user-data-dir=/tmp/gui-demo-chrome-rdl_4rov --remote-debugging-port=9222 --noerrdialogs --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl --flag-switches-begin --flag-switches-end about:blank"
+  }
+ },
+ "steps": [
+  [
+   6.0,
+   "pause"
+  ],
+  [
+   10.0,
+   "resume"
+  ],
+  [
+   16.0,
+   "filter-off"
+  ],
+  [
+   20.0,
+   "filter-on"
+  ],
+  [
+   30.0,
+   "pause"
+  ],
+  [
+   34.0,
+   "resume"
+  ],
+  [
+   40.0,
+   "filter-off"
+  ],
+  [
+   44.0,
+   "filter-on"
+  ],
+  [
+   49.0,
+   "older"
+  ],
+  [
+   54.0,
+   "jump"
+  ]
+ ],
+ "profile": "docs/examples/ice_drive_cycle_stepped.yaml",
+ "runs": [
+  {
+   "label": "1440x900-following-1",
+   "viewport": [
+    1440,
+    900
+   ],
+   "condition": "following-with-clicks",
+   "seconds": 60.01,
+   "traffic": {
+    "on": true,
+    "sent_start": 36,
+    "sent_end": 264,
+    "requests_per_s": 3.8
+   },
+   "exchanges_per_s": 3.8,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 200,
+    "exchange_rows": 200,
+    "last_seq": 2050,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "following": true,
+    "log_count": "200 of 2,000 shown (seq 1,851\u20132,050), last seq 2050 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 200,
+    "exchange_rows": 200,
+    "last_seq": 2278,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "following": true,
+    "log_count": "200 of 2,000 shown (seq 2,079\u20132,278), last seq 2278 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 6.064,
+    "ScriptDuration": 0.432,
+    "LayoutDuration": 1.076,
+    "RecalcStyleDuration": 0.235
+   },
+   "trace_file": "perf-1440x900-following-1.json.gz",
+   "trace_bytes": 4916275,
+   "trace_sha256": "cd54e52db97455df01a7163e47cfdfb3c9b11508fec7a8a23b5d6b356547ebc2",
+   "breakdown": {
+    "trace": "perf-1440x900-following-1.json.gz",
+    "thread": [
+     3202810,
+     3202810
+    ],
+    "window_s": 60.01,
+    "measured_s": 60.00655727693811,
+    "top_level": "RunTask",
+    "top_level_count": 37090,
+    "busy_ms": 5995.1,
+    "busy_percent": 10.0,
+    "split_ms": {
+     "js": 682.2,
+     "style": 236.5,
+     "layout": 1062.2,
+     "paint": 3230.9,
+     "composite": 145.4,
+     "other": 638.0
+    },
+    "split_sum_ms": 5995.1,
+    "gc_ms": 202.5,
+    "prepaint_ms": 1730.5,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 515.9,
+     "HitTest": 43.1,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 34.8,
+     "Receive mojo message": 29.7,
+     "SimpleWatcher::OnHandleReady": 13.3,
+     "Major concurrent marking rescheduled": 0.5
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 5960.4,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 34.8
+    },
+    "frames": 917,
+    "paint_events": 1048,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1633,
+      "count": 228,
+      "sum_ms": 740.4,
+      "mean_ms": 3.25,
+      "median_ms": 3.14,
+      "max_ms": 8.69,
+      "p95_ms": 4.68,
+      "split_ms": {
+       "js": 161.1,
+       "style": 40.9,
+       "layout": 537.0,
+       "paint": 0.0,
+       "composite": 1.4,
+       "other": 0.0
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 875,
+      "count": 233,
+      "sum_ms": 140.8,
+      "mean_ms": 0.6,
+      "median_ms": 0.56,
+      "max_ms": 1.89,
+      "p95_ms": 0.93,
+      "split_ms": {
+       "js": 136.4,
+       "style": 0.6,
+       "layout": 3.8,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 255,
+      "count": 700,
+      "sum_ms": 329.6,
+      "mean_ms": 0.47,
+      "median_ms": 0.12,
+      "max_ms": 7.15,
+      "p95_ms": 1.45,
+      "split_ms": {
+       "js": 142.1,
+       "style": 53.6,
+       "layout": 133.9,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1915,
+      "count": 120,
+      "sum_ms": 1.9,
+      "mean_ms": 0.02,
+      "median_ms": 0.01,
+      "max_ms": 0.11,
+      "p95_ms": 0.02,
+      "split_ms": {
+       "js": 1.9,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    },
+    "long_tasks": {
+     "threshold_ms": 50.0,
+     "count": 0,
+     "max_ms": 0.0,
+     "sum_ms": 0.0
+    }
+   },
+   "interactions": [
+    {
+     "name": "pause",
+     "selector": "#btn-pause",
+     "at_s": 6.31,
+     "mark_ms": 110630,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 48,
+      "input_delay_ms": 0.2,
+      "processing_ms": 2.0,
+      "presentation_ms": 45.8,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "resume",
+     "selector": "#btn-pause",
+     "at_s": 10.31,
+     "mark_ms": 114627.79999995232,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 48,
+      "input_delay_ms": 0.3,
+      "processing_ms": 5.0,
+      "presentation_ms": 42.7,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-off",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 16.31,
+     "mark_ms": 120631.20000004768,
+     "took": true,
+     "event_timing": {
+      "entry": "pointerdown",
+      "duration_ms": 32,
+      "input_delay_ms": 2.2,
+      "processing_ms": 0.0,
+      "presentation_ms": 29.8,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-on",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 20.31,
+     "mark_ms": 124628.29999995232,
+     "took": true,
+     "event_timing": {
+      "entry": "pointerdown",
+      "duration_ms": 48,
+      "input_delay_ms": 4.4,
+      "processing_ms": 0.0,
+      "presentation_ms": 43.6,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "pause",
+     "selector": "#btn-pause",
+     "at_s": 30.31,
+     "mark_ms": 134633.29999995232,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 32,
+      "input_delay_ms": 0.3,
+      "processing_ms": 1.1,
+      "presentation_ms": 30.6,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "resume",
+     "selector": "#btn-pause",
+     "at_s": 34.31,
+     "mark_ms": 138627.39999985695,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 48,
+      "input_delay_ms": 0.1,
+      "processing_ms": 5.3,
+      "presentation_ms": 42.6,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-off",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 40.31,
+     "mark_ms": 144630.5,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 48,
+      "input_delay_ms": 0.2,
+      "processing_ms": 7.2,
+      "presentation_ms": 40.6,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-on",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 44.31,
+     "mark_ms": 148629.20000004768,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 48,
+      "input_delay_ms": 0.0,
+      "processing_ms": 7.1,
+      "presentation_ms": 40.9,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "older",
+     "selector": "[data-lognav=\"older\"]",
+     "at_s": 49.3,
+     "mark_ms": 153625.79999995232,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 48,
+      "input_delay_ms": 0.1,
+      "processing_ms": 15.7,
+      "presentation_ms": 32.2,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "jump",
+     "selector": "#btn-follow",
+     "at_s": 54.31,
+     "mark_ms": 158628.5,
+     "took": true,
+     "event_timing": {
+      "entry": "pointerdown",
+      "duration_ms": 48,
+      "input_delay_ms": 4.1,
+      "processing_ms": 0.0,
+      "presentation_ms": 43.9,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    }
+   ],
+   "event_timing_supported": true,
+   "event_entries": 212,
+   "window": null
+  },
+  {
+   "label": "1440x900-following-2",
+   "viewport": [
+    1440,
+    900
+   ],
+   "condition": "following-with-clicks",
+   "seconds": 60.01,
+   "traffic": {
+    "on": true,
+    "sent_start": 293,
+    "sent_end": 520,
+    "requests_per_s": 3.78
+   },
+   "exchanges_per_s": 3.78,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 200,
+    "exchange_rows": 200,
+    "last_seq": 2307,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "following": true,
+    "log_count": "200 of 2,000 shown (seq 2,108\u20132,307), last seq 2307 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 200,
+    "exchange_rows": 200,
+    "last_seq": 2534,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "following": true,
+    "log_count": "200 of 2,000 shown (seq 2,335\u20132,534), last seq 2534 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 5.896,
+    "ScriptDuration": 0.431,
+    "LayoutDuration": 1.049,
+    "RecalcStyleDuration": 0.233
+   },
+   "trace_file": "perf-1440x900-following-2.json.gz",
+   "trace_bytes": 4912354,
+   "trace_sha256": "78748b5ed975affefaab6ab117d8c3c721ce52bccf01591aaa7e7fa847373db9",
+   "breakdown": {
+    "trace": "perf-1440x900-following-2.json.gz",
+    "thread": [
+     3202810,
+     3202810
+    ],
+    "window_s": 60.01,
+    "measured_s": 60.0063202988822,
+    "top_level": "RunTask",
+    "top_level_count": 39159,
+    "busy_ms": 5823.1,
+    "busy_percent": 9.7,
+    "split_ms": {
+     "js": 673.6,
+     "style": 234.4,
+     "layout": 1036.7,
+     "paint": 3119.7,
+     "composite": 139.1,
+     "other": 619.7
+    },
+    "split_sum_ms": 5823.1,
+    "gc_ms": 195.1,
+    "prepaint_ms": 1632.4,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 497.7,
+     "HitTest": 41.5,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 36.8,
+     "Receive mojo message": 28.3,
+     "SimpleWatcher::OnHandleReady": 14.3,
+     "Major concurrent marking rescheduled": 0.5
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 5786.3,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 36.8
+    },
+    "frames": 894,
+    "paint_events": 1034,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1633,
+      "count": 227,
+      "sum_ms": 719.1,
+      "mean_ms": 3.17,
+      "median_ms": 3.11,
+      "max_ms": 8.92,
+      "p95_ms": 4.09,
+      "split_ms": {
+       "js": 162.8,
+       "style": 42.6,
+       "layout": 512.3,
+       "paint": 0.0,
+       "composite": 1.5,
+       "other": 0.0
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 875,
+      "count": 233,
+      "sum_ms": 137.1,
+      "mean_ms": 0.59,
+      "median_ms": 0.56,
+      "max_ms": 1.03,
+      "p95_ms": 0.89,
+      "split_ms": {
+       "js": 137.1,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 255,
+      "count": 699,
+      "sum_ms": 327.1,
+      "mean_ms": 0.47,
+      "median_ms": 0.12,
+      "max_ms": 3.4,
+      "p95_ms": 1.47,
+      "split_ms": {
+       "js": 139.1,
+       "style": 56.9,
+       "layout": 131.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1915,
+      "count": 126,
+      "sum_ms": 2.2,
+      "mean_ms": 0.02,
+      "median_ms": 0.01,
+      "max_ms": 0.1,
+      "p95_ms": 0.03,
+      "split_ms": {
+       "js": 2.2,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    },
+    "long_tasks": {
+     "threshold_ms": 50.0,
+     "count": 0,
+     "max_ms": 0.0,
+     "sum_ms": 0.0
+    }
+   },
+   "interactions": [
+    {
+     "name": "pause",
+     "selector": "#btn-pause",
+     "at_s": 6.31,
+     "mark_ms": 178270.20000004768,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 32,
+      "input_delay_ms": 0.2,
+      "processing_ms": 1.1,
+      "presentation_ms": 30.7,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "resume",
+     "selector": "#btn-pause",
+     "at_s": 10.31,
+     "mark_ms": 182267.70000004768,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 48,
+      "input_delay_ms": 0.2,
+      "processing_ms": 4.7,
+      "presentation_ms": 43.1,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-off",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 16.31,
+     "mark_ms": 188269.89999985695,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 32,
+      "input_delay_ms": 0.4,
+      "processing_ms": 7.3,
+      "presentation_ms": 24.3,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-on",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 20.31,
+     "mark_ms": 192267.79999995232,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 48,
+      "input_delay_ms": 0.2,
+      "processing_ms": 6.6,
+      "presentation_ms": 41.2,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "pause",
+     "selector": "#btn-pause",
+     "at_s": 30.31,
+     "mark_ms": 202274.70000004768,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 32,
+      "input_delay_ms": 0.1,
+      "processing_ms": 1.1,
+      "presentation_ms": 30.8,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "resume",
+     "selector": "#btn-pause",
+     "at_s": 34.31,
+     "mark_ms": 206274,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 48,
+      "input_delay_ms": 0.1,
+      "processing_ms": 5.4,
+      "presentation_ms": 42.5,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-off",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 40.31,
+     "mark_ms": 212269.70000004768,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 32,
+      "input_delay_ms": 0.3,
+      "processing_ms": 7.4,
+      "presentation_ms": 24.3,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-on",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 44.31,
+     "mark_ms": 216272,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 32,
+      "input_delay_ms": 0.2,
+      "processing_ms": 6.8,
+      "presentation_ms": 25,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "older",
+     "selector": "[data-lognav=\"older\"]",
+     "at_s": 49.3,
+     "mark_ms": 221266.79999995232,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 48,
+      "input_delay_ms": 0.2,
+      "processing_ms": 15.5,
+      "presentation_ms": 32.3,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "jump",
+     "selector": "#btn-follow",
+     "at_s": 54.3,
+     "mark_ms": 226264.89999985695,
+     "took": true,
+     "event_timing": {
+      "entry": "pointerdown",
+      "duration_ms": 48,
+      "input_delay_ms": 5.3,
+      "processing_ms": 0.0,
+      "presentation_ms": 42.7,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    }
+   ],
+   "event_timing_supported": true,
+   "event_entries": 232,
+   "window": null
+  },
+  {
+   "label": "390x844-following-1",
+   "viewport": [
+    390,
+    844
+   ],
+   "condition": "following-with-clicks",
+   "seconds": 60.0,
+   "traffic": {
+    "on": true,
+    "sent_start": 555,
+    "sent_end": 783,
+    "requests_per_s": 3.8
+   },
+   "exchanges_per_s": 3.8,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 200,
+    "exchange_rows": 200,
+    "last_seq": 2569,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "following": true,
+    "log_count": "200 of 2,000 shown (seq 2,370\u20132,569), last seq 2569 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 200,
+    "exchange_rows": 200,
+    "last_seq": 2797,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "following": true,
+    "log_count": "200 of 2,000 shown (seq 2,598\u20132,797), last seq 2797 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 3.908,
+    "ScriptDuration": 0.399,
+    "LayoutDuration": 0.564,
+    "RecalcStyleDuration": 0.164
+   },
+   "trace_file": "perf-390x844-following-1.json.gz",
+   "trace_bytes": 2952017,
+   "trace_sha256": "97897f83ccedf160400e3b0e2a7a637abfa5f4e68395d3dbc1f721ecb43748d2",
+   "breakdown": {
+    "trace": "perf-390x844-following-1.json.gz",
+    "thread": [
+     3202810,
+     3202810
+    ],
+    "window_s": 60.0,
+    "measured_s": 60.002370574045926,
+    "top_level": "RunTask",
+    "top_level_count": 28512,
+    "busy_ms": 3856.8,
+    "busy_percent": 6.4,
+    "split_ms": {
+     "js": 519.2,
+     "style": 164.8,
+     "layout": 553.9,
+     "paint": 2020.8,
+     "composite": 104.4,
+     "other": 493.7
+    },
+    "split_sum_ms": 3856.8,
+    "gc_ms": 78.0,
+    "prepaint_ms": 1232.1,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 390.3,
+     "HitTest": 32.9,
+     "Receive mojo message": 28.2,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 27.1,
+     "SimpleWatcher::OnHandleReady": 14.5,
+     "Major concurrent marking rescheduled": 0.3
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 3829.6,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 27.1
+    },
+    "frames": 668,
+    "paint_events": 1014,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1633,
+      "count": 228,
+      "sum_ms": 366.7,
+      "mean_ms": 1.61,
+      "median_ms": 1.66,
+      "max_ms": 4.92,
+      "p95_ms": 1.94,
+      "split_ms": {
+       "js": 150.3,
+       "style": 44.4,
+       "layout": 171.0,
+       "paint": 0.0,
+       "composite": 0.9,
+       "other": 0.0
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 875,
+      "count": 234,
+      "sum_ms": 131.8,
+      "mean_ms": 0.56,
+      "median_ms": 0.54,
+      "max_ms": 1.07,
+      "p95_ms": 0.72,
+      "split_ms": {
+       "js": 131.8,
+       "style": 0.1,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 255,
+      "count": 701,
+      "sum_ms": 250.5,
+      "mean_ms": 0.36,
+      "median_ms": 0.12,
+      "max_ms": 2.24,
+      "p95_ms": 1.16,
+      "split_ms": {
+       "js": 127.1,
+       "style": 29.2,
+       "layout": 94.3,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1915,
+      "count": 77,
+      "sum_ms": 1.2,
+      "mean_ms": 0.02,
+      "median_ms": 0.01,
+      "max_ms": 0.1,
+      "p95_ms": 0.03,
+      "split_ms": {
+       "js": 1.2,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    },
+    "long_tasks": {
+     "threshold_ms": 50.0,
+     "count": 0,
+     "max_ms": 0.0,
+     "sum_ms": 0.0
+    }
+   },
+   "interactions": [
+    {
+     "name": "pause",
+     "selector": "#btn-pause",
+     "at_s": 6.31,
+     "mark_ms": 247549,
+     "took": true,
+     "event_timing": {
+      "entry": "pointerdown",
+      "duration_ms": 24,
+      "input_delay_ms": 1.4,
+      "processing_ms": 0.0,
+      "presentation_ms": 22.6,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "resume",
+     "selector": "#btn-pause",
+     "at_s": 10.31,
+     "mark_ms": 251545.59999990463,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 32,
+      "input_delay_ms": 0.2,
+      "processing_ms": 4.2,
+      "presentation_ms": 27.6,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-off",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 16.31,
+     "mark_ms": 257547.79999995232,
+     "took": true,
+     "event_timing": {
+      "entry": "pointerdown",
+      "duration_ms": 24,
+      "input_delay_ms": 1.4,
+      "processing_ms": 0,
+      "presentation_ms": 22.6,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-on",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 20.31,
+     "mark_ms": 261545.79999995232,
+     "took": true,
+     "event_timing": {
+      "entry": "pointerdown",
+      "duration_ms": 24,
+      "input_delay_ms": 0.3,
+      "processing_ms": 0.1,
+      "presentation_ms": 23.6,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "pause",
+     "selector": "#btn-pause",
+     "at_s": 30.31,
+     "mark_ms": 271552.2999999523,
+     "took": true,
+     "event_timing": {
+      "entry": "pointerdown",
+      "duration_ms": 24,
+      "input_delay_ms": 1.2,
+      "processing_ms": 0.1,
+      "presentation_ms": 22.7,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "resume",
+     "selector": "#btn-pause",
+     "at_s": 34.31,
+     "mark_ms": 275547.2000000477,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 24,
+      "input_delay_ms": 0.2,
+      "processing_ms": 4.2,
+      "presentation_ms": 19.6,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-off",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 40.31,
+     "mark_ms": 281547.39999985695,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 24,
+      "input_delay_ms": 0.2,
+      "processing_ms": 3.8,
+      "presentation_ms": 20.0,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-on",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 44.31,
+     "mark_ms": 285551.09999990463,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 32,
+      "input_delay_ms": 0.1,
+      "processing_ms": 3.3,
+      "presentation_ms": 28.6,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "older",
+     "selector": "[data-lognav=\"older\"]",
+     "at_s": 49.3,
+     "mark_ms": 290544.09999990463,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 32,
+      "input_delay_ms": 0.2,
+      "processing_ms": 18.3,
+      "presentation_ms": 13.5,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "jump",
+     "selector": "#btn-follow",
+     "at_s": 54.31,
+     "mark_ms": 295547.5,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 32,
+      "input_delay_ms": 0.2,
+      "processing_ms": 22.9,
+      "presentation_ms": 8.9,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    }
+   ],
+   "event_timing_supported": true,
+   "event_entries": 134,
+   "window": null
+  },
+  {
+   "label": "390x844-following-2",
+   "viewport": [
+    390,
+    844
+   ],
+   "condition": "following-with-clicks",
+   "seconds": 60.01,
+   "traffic": {
+    "on": true,
+    "sent_start": 805,
+    "sent_end": 1033,
+    "requests_per_s": 3.8
+   },
+   "exchanges_per_s": 3.78,
+   "log_start": {
+    "retained": 2000,
+    "dom_rows": 200,
+    "exchange_rows": 200,
+    "last_seq": 2820,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "following": true,
+    "log_count": "200 of 2,000 shown (seq 2,621\u20132,820), last seq 2820 (live)"
+   },
+   "log_end": {
+    "retained": 2000,
+    "dom_rows": 200,
+    "exchange_rows": 200,
+    "last_seq": 3047,
+    "health": "live",
+    "graphs_hidden": false,
+    "log_paused": false,
+    "following": true,
+    "log_count": "200 of 2,000 shown (seq 2,848\u20133,047), last seq 3047 (live)"
+   },
+   "metrics_s": {
+    "TaskDuration": 3.826,
+    "ScriptDuration": 0.382,
+    "LayoutDuration": 0.559,
+    "RecalcStyleDuration": 0.147
+   },
+   "trace_file": "perf-390x844-following-2.json.gz",
+   "trace_bytes": 2839452,
+   "trace_sha256": "16e53473aae0328918f6032fb34f010ea8a7ee7d7d47081b83ebc5d5a02583f8",
+   "breakdown": {
+    "trace": "perf-390x844-following-2.json.gz",
+    "thread": [
+     3202810,
+     3202810
+    ],
+    "window_s": 60.01,
+    "measured_s": 60.00732323084958,
+    "top_level": "RunTask",
+    "top_level_count": 25157,
+    "busy_ms": 3777.5,
+    "busy_percent": 6.3,
+    "split_ms": {
+     "js": 489.1,
+     "style": 148.4,
+     "layout": 548.8,
+     "paint": 2031.6,
+     "composite": 103.5,
+     "other": 456.1
+    },
+    "split_sum_ms": 3777.5,
+    "gc_ms": 66.0,
+    "prepaint_ms": 1231.6,
+    "other_top_names_ms": {
+     "ThreadControllerImpl::RunTask": 355.6,
+     "HitTest": 33.2,
+     "Receive mojo message": 27.6,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 25.6,
+     "SimpleWatcher::OnHandleReady": 13.6,
+     "Major concurrent marking rescheduled": 0.2
+    },
+    "top_level_names_ms": {
+     "ThreadControllerImpl::RunTask": 3751.9,
+     "BlinkScheduler_PerformMicrotaskCheckpoint": 25.6
+    },
+    "frames": 631,
+    "paint_events": 1020,
+    "callbacks": {
+     "renderLog": {
+      "app_js_line": 1633,
+      "count": 227,
+      "sum_ms": 366.3,
+      "mean_ms": 1.61,
+      "median_ms": 1.66,
+      "max_ms": 3.18,
+      "p95_ms": 2.1,
+      "split_ms": {
+       "js": 148.4,
+       "style": 41.4,
+       "layout": 175.7,
+       "paint": 0.0,
+       "composite": 0.9,
+       "other": 0.0
+      }
+     },
+     "graph_draw": {
+      "app_js_line": 875,
+      "count": 232,
+      "sum_ms": 117.7,
+      "mean_ms": 0.51,
+      "median_ms": 0.48,
+      "max_ms": 0.92,
+      "p95_ms": 0.73,
+      "split_ms": {
+       "js": 117.7,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "ws_onmessage": {
+      "app_js_line": 255,
+      "count": 698,
+      "sum_ms": 235.6,
+      "mean_ms": 0.34,
+      "median_ms": 0.12,
+      "max_ms": 1.99,
+      "p95_ms": 0.95,
+      "split_ms": {
+       "js": 124.3,
+       "style": 25.0,
+       "layout": 86.3,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     },
+     "follow_frame": {
+      "app_js_line": 1915,
+      "count": 76,
+      "sum_ms": 1.2,
+      "mean_ms": 0.02,
+      "median_ms": 0.01,
+      "max_ms": 0.1,
+      "p95_ms": 0.03,
+      "split_ms": {
+       "js": 1.2,
+       "style": 0.0,
+       "layout": 0.0,
+       "paint": 0.0,
+       "composite": 0.0,
+       "other": 0.0
+      }
+     }
+    },
+    "long_tasks": {
+     "threshold_ms": 50.0,
+     "count": 0,
+     "max_ms": 0.0,
+     "sum_ms": 0.0
+    }
+   },
+   "interactions": [
+    {
+     "name": "pause",
+     "selector": "#btn-pause",
+     "at_s": 6.31,
+     "mark_ms": 313501.09999990463,
+     "took": true,
+     "event_timing": {
+      "entry": "pointerdown",
+      "duration_ms": 24,
+      "input_delay_ms": 1.4,
+      "processing_ms": 0.0,
+      "presentation_ms": 22.6,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "resume",
+     "selector": "#btn-pause",
+     "at_s": 10.31,
+     "mark_ms": 317498.7000000477,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 24,
+      "input_delay_ms": 0.1,
+      "processing_ms": 4.1,
+      "presentation_ms": 19.8,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-off",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 16.31,
+     "mark_ms": 323500.89999985695,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 24,
+      "input_delay_ms": 0.1,
+      "processing_ms": 3.6,
+      "presentation_ms": 20.3,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-on",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 20.31,
+     "mark_ms": 327497.2999999523,
+     "took": true,
+     "event_timing": {
+      "entry": "pointerdown",
+      "duration_ms": 24,
+      "input_delay_ms": 0.4,
+      "processing_ms": 0.0,
+      "presentation_ms": 23.6,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "pause",
+     "selector": "#btn-pause",
+     "at_s": 30.31,
+     "mark_ms": 337504.89999985695,
+     "took": true,
+     "event_timing": {
+      "entry": "pointerdown",
+      "duration_ms": 24,
+      "input_delay_ms": 3.3,
+      "processing_ms": 0.0,
+      "presentation_ms": 20.7,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "resume",
+     "selector": "#btn-pause",
+     "at_s": 34.31,
+     "mark_ms": 341498.2999999523,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 32,
+      "input_delay_ms": 0.1,
+      "processing_ms": 4.1,
+      "presentation_ms": 27.8,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-off",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 40.31,
+     "mark_ms": 347500.59999990463,
+     "took": true,
+     "event_timing": {
+      "entry": "pointerdown",
+      "duration_ms": 24,
+      "input_delay_ms": 1.3,
+      "processing_ms": 0.0,
+      "presentation_ms": 22.7,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "filter-on",
+     "selector": "label[for=\"o-no_response\"]",
+     "at_s": 44.31,
+     "mark_ms": 351497.5,
+     "took": true,
+     "event_timing": {
+      "entry": "pointerdown",
+      "duration_ms": 24,
+      "input_delay_ms": 0.2,
+      "processing_ms": 0,
+      "presentation_ms": 23.8,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "older",
+     "selector": "[data-lognav=\"older\"]",
+     "at_s": 49.3,
+     "mark_ms": 356496.39999985695,
+     "took": true,
+     "event_timing": {
+      "entry": "click",
+      "duration_ms": 32,
+      "input_delay_ms": 0.2,
+      "processing_ms": 18.3,
+      "presentation_ms": 13.5,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    },
+    {
+     "name": "jump",
+     "selector": "#btn-follow",
+     "at_s": 54.31,
+     "mark_ms": 361499.89999985695,
+     "took": true,
+     "event_timing": {
+      "entry": "pointerdown",
+      "duration_ms": 40,
+      "input_delay_ms": 0.2,
+      "processing_ms": 0.0,
+      "presentation_ms": 39.8,
+      "entries": [
+       "click",
+       "pointerdown",
+       "pointerup"
+      ]
+     }
+    }
+   ],
+   "event_timing_supported": true,
+   "event_entries": 118,
+   "window": null
+  }
+ ],
+ "problems": []
+}
