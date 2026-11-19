@@ -155,7 +155,9 @@ async def test_request_metadata_and_response_routing_per_endpoint():
 
     by_target = {r.target_address: r for r in seen}
     assert by_target[0x7DF].functional is True and by_target[0x7DF].context is FUNCTIONAL
+    assert by_target[0x7DF].endpoint_name == "obd_functional"
     assert by_target[0x7E0].functional is False and by_target[0x7E0].context is PHYSICAL
+    assert by_target[0x7E0].endpoint_name == "obd_physical"
     assert fake_by_rx(0x7DF).sent == [b"\x41\x00"]
     assert fake_by_rx(0x7E0).sent == [b"\x41\x0d"]
 

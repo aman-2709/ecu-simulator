@@ -16,7 +16,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
-from ecu_simulator.transport.messages import DiagnosticRequest
+from ecu_simulator.transport.messages import AddressingMode, DiagnosticRequest
 
 
 class RouteConflictError(ValueError):
@@ -36,6 +36,8 @@ class Route:
     ecu: str
     protocols: frozenset[str] = field(default_factory=frozenset)
     answer_unsupported: bool = True
+    endpoint_name: str | None = None
+    addressing_mode: AddressingMode = AddressingMode.NORMAL_11BIT
 
     def permits(self, protocol_name: str) -> bool:
         return protocol_name in self.protocols
@@ -55,13 +57,15 @@ class AddressRouter:
         protocols: Iterable[str],
         *,
         answer_unsupported: bool = True,
+        endpoint_name: str | None = None,
+        addressing_mode: AddressingMode = AddressingMode.NORMAL_11BIT,
     ) -> None:
         """Route physically addressed requests on ``address`` to ``ecu`` (one ECU per address).
 
         A physically addressed request names one ECU, so by default a service identifier
         none of ``protocols`` claims is answered with NRC 0x11 (DEV-06).
         """
-        route = _make_route(address, ecu, protocols, answer_unsupported)
+        route = _make_route(address, ecu, protocols, answer_unsupported, endpoint_name, addressing_mode)
         if address in self._functional:
             raise RouteConflictError(f"0x{address:X} is a functional address; it cannot be physical for {ecu!r}")
         current = self._physical.get(address)
@@ -80,6 +84,8 @@ class AddressRouter:
         protocols: Iterable[str],
         *,
         answer_unsupported: bool = False,
+        endpoint_name: str | None = None,
+        addressing_mode: AddressingMode = AddressingMode.NORMAL_11BIT,
     ) -> None:
         """Make ``ecu`` eligible for functionally addressed requests on ``address``.
 
@@ -87,7 +93,7 @@ class AddressRouter:
         by default an unclaimed service identifier draws no response. Override it per
         route where that is wanted.
         """
-        route = _make_route(address, ecu, protocols, answer_unsupported)
+        route = _make_route(address, ecu, protocols, answer_unsupported, endpoint_name, addressing_mode)
         if address in self._physical:
             owner = self._physical[address].ecu
             raise RouteConflictError(f"0x{address:X} is the physical address of {owner!r}; it cannot be functional")
@@ -130,13 +136,26 @@ class AddressRouter:
         """Routes for ``request``: one for a physical address, zero or more for a functional
         one. An address with no route, or routed for the other addressing kind, yields ``()``.
         """
+        endpoint_name = getattr(request, "endpoint_name", None)
         if request.functional:
-            return self._functional.get(request.target_address, ())
+            routes = self._functional.get(request.target_address, ())
+            if endpoint_name is not None:
+                return tuple(route for route in routes if route.endpoint_name == endpoint_name)
+            return routes
         route = self._physical.get(request.target_address)
-        return (route,) if route is not None else ()
+        if route is None or (endpoint_name is not None and route.endpoint_name != endpoint_name):
+            return ()
+        return (route,)
 
 
-def _make_route(address: int, ecu: str, protocols: Iterable[str], answer_unsupported: bool) -> Route:
+def _make_route(
+    address: int,
+    ecu: str,
+    protocols: Iterable[str],
+    answer_unsupported: bool,
+    endpoint_name: str | None,
+    addressing_mode: AddressingMode,
+) -> Route:
     if not isinstance(address, int) or address < 0:
         raise ValueError(f"address must be a non-negative integer, got {address!r}")
     if not isinstance(ecu, str) or not ecu:
@@ -147,4 +166,12 @@ def _make_route(address: int, ecu: str, protocols: Iterable[str], answer_unsuppo
     for name in sorted(names):
         if not isinstance(name, str) or not name:
             raise ValueError(f"route for 0x{address:X} on {ecu!r} names an invalid protocol {name!r}")
-    return Route(ecu, names, answer_unsupported=bool(answer_unsupported))
+    if endpoint_name is not None and not endpoint_name:
+        raise ValueError("endpoint_name must be non-empty when present")
+    return Route(
+        ecu,
+        names,
+        answer_unsupported=bool(answer_unsupported),
+        endpoint_name=endpoint_name,
+        addressing_mode=addressing_mode,
+    )

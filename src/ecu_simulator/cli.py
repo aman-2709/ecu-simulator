@@ -13,7 +13,7 @@ from ecu_simulator.config import DEFAULT_PROFILE, ConfigError, load_profile
 from ecu_simulator.loggers import logger_app
 
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
-COMMANDS = ("run", "validate-config")
+COMMANDS = ("run", "validate-config", "list-ecus")
 
 
 def package_version() -> str:
@@ -46,7 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         choices=COMMANDS,
         default="run",
-        help="run the simulator (default), or validate a profile and exit",
+        help="run the simulator (default), validate a profile, or list its ECUs and endpoints",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {package_version()}")
     parser.add_argument(
@@ -79,6 +79,18 @@ def main(argv: list[str] | None = None) -> int:
         log.info(
             "profile %s is valid: %s vehicle, ECUs [%s], %d endpoint(s)", path, profile.vehicle.type, ecus, endpoints
         )
+        return 0
+    if args.command == "list-ecus":
+        for ecu_key, ecu in profile.ecus.items():
+            print(f"{ecu_key}\t{ecu.name}")
+            for endpoint in ecu.endpoints:
+                width = 3 if endpoint.mode.value == "normal_11bit" else 8
+                protocols = ",".join(endpoint.protocols)
+                print(
+                    f"  {endpoint.name}\t{endpoint.addressing}\t{endpoint.mode.value}"
+                    f"\trx=0x{endpoint.rx:0{width}X}\ttx=0x{endpoint.tx:0{width}X}"
+                    f"\tprotocols={protocols}"
+                )
         return 0
     config = app.RuntimeConfig.build(profile, args.interface)
     try:

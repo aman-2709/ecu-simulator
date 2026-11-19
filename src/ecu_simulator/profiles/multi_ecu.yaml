@@ -1,0 +1,101 @@
+# Phase 9 demonstration profile: two ECUs, shared functional addressing, and both
+# 11-bit and normal-fixed 29-bit ISO-TP endpoints. It is intentionally deterministic so
+# the two functional replies differ by CAN identifier, not by timing or vehicle state.
+
+version: 1
+
+transport:
+  interface: vcan0
+
+vehicle:
+  vin: MULTIECU012345678
+  type: ice
+  speed: 42
+  ambient_temp: 20
+  battery_voltage: 14.1
+  obd_standard: 1
+  engine:
+    rpm: 800
+    coolant_temp: 90
+    intake_temp: 25
+    engine_load: 22.0
+    throttle: 14.0
+    maf: 3.5
+    map: 33
+    timing_advance: 10.0
+    short_fuel_trim: 0.0
+    long_fuel_trim: 1.5
+    runtime: 600
+    fuel_level: 50
+    fuel_type: 1
+
+ecus:
+  engine:
+    name: ENGINE_SIMULATOR
+    dtcs: [P0001]
+    endpoints:
+      - name: functional_11
+        rx: 0x7DF
+        tx: 0x7E8
+        addressing: functional
+        protocols: [obd]
+        answer_unsupported: false
+        tx_padding: true
+        reply_via: physical_11
+      - name: physical_11
+        rx: 0x7E0
+        tx: 0x7E8
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: true
+      - name: functional_29
+        rx: 0x18DB33F1
+        tx: 0x18DAF110
+        mode: normal_fixed_29bit
+        addressing: functional
+        protocols: [obd]
+        answer_unsupported: false
+        tx_padding: true
+        reply_via: physical_29
+      - name: physical_29
+        rx: 0x18DA10F1
+        tx: 0x18DAF110
+        mode: normal_fixed_29bit
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: true
+
+  transmission:
+    name: TCM_SIMULATOR
+    dtcs: [P0700]
+    endpoints:
+      - name: functional_11
+        rx: 0x7DF
+        tx: 0x7E9
+        addressing: functional
+        protocols: [obd]
+        answer_unsupported: false
+        tx_padding: true
+        reply_via: physical_11
+      - name: physical_11
+        rx: 0x7E1
+        tx: 0x7E9
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: true
+      - name: functional_29
+        rx: 0x18DB33F1
+        tx: 0x18DAF118
+        mode: normal_fixed_29bit
+        addressing: functional
+        protocols: [obd]
+        answer_unsupported: false
+        tx_padding: true
+        reply_via: physical_29
+      - name: physical_29
+        rx: 0x18DA18F1
+        tx: 0x18DAF118
+        mode: normal_fixed_29bit
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: true

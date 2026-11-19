@@ -29,7 +29,7 @@ from ecu_simulator.protocols.uds import SessionTiming, UdsProtocol, UdsSession
 from ecu_simulator.protocols.uds.dids import SessionDidProvider, StaticDidProvider, VinDidProvider
 from ecu_simulator.protocols.uds.dtc import DtcStoreProvider
 from ecu_simulator.scenario import Scenario, ScenarioRunner, ScenarioSync
-from ecu_simulator.transport import TransportError
+from ecu_simulator.transport import AddressingMode, TransportError
 from ecu_simulator.transport.socketcan import EndpointConfig, IsoTpAddress, IsoTpOptions, IsoTpTransport
 from ecu_simulator.vehicle import POWERTRAINS, CommonState, IceState, TractionBattery, VehicleState
 
@@ -62,7 +62,7 @@ def build_endpoints(config: RuntimeConfig) -> list[EndpointConfig]:
             endpoints.append(
                 EndpointConfig(
                     endpoint_name(ecu_name, endpoint),
-                    IsoTpAddress(endpoint.rx, endpoint.tx),
+                    IsoTpAddress(endpoint.rx, endpoint.tx, endpoint.mode),
                     functional=endpoint.functional,
                     options=IsoTpOptions(tx_padding=endpoint.tx_padding, pad_byte=endpoint.pad_byte),
                     reply_via=(
@@ -86,6 +86,8 @@ def build_router(config: RuntimeConfig) -> AddressRouter:
                 ecu_name,
                 tuple(endpoint.protocols),
                 answer_unsupported=endpoint.answers_unsupported,
+                endpoint_name=endpoint_name(ecu_name, endpoint),
+                addressing_mode=endpoint.mode,
             )
     return router
 
@@ -309,18 +311,40 @@ def check_routes(router: AddressRouter, endpoints: Iterable[EndpointConfig]) -> 
     nothing answers, or a route pointing at an address nothing listens on, so it is
     checked before any socket is opened.
     """
-    listening = {e.address.rx_id: bool(e.functional) for e in endpoints if e.receive}
-    routed: dict[int, bool] = {address: False for address in router.physical_routes}
-    routed.update({address: True for address in router.functional_routes})
-    for address, functional in sorted(listening.items()):
-        if address not in routed:
-            raise ValueError(f"no route for address 0x{address:X}: requests received there would be dropped")
-        if routed[address] != functional:
-            kind, other = ("functional", "physical") if functional else ("physical", "functional")
-            raise ValueError(f"address 0x{address:X} is a {kind} endpoint but a {other} route")
-    for address in sorted(routed):
-        if address not in listening:
-            raise ValueError(f"route for address 0x{address:X} has no endpoint receiving on it")
+    listening = {
+        endpoint.name: (endpoint.address.rx_id, endpoint.address.mode, bool(endpoint.functional))
+        for endpoint in endpoints
+        if endpoint.receive
+    }
+    routed: dict[str, tuple[int, AddressingMode, bool]] = {}
+    unnamed: list[int] = []
+    for address, route in router.physical_routes.items():
+        if route.endpoint_name is None:
+            unnamed.append(address)
+        else:
+            routed[route.endpoint_name] = (address, route.addressing_mode, False)
+    for address, routes in router.functional_routes.items():
+        for route in routes:
+            if route.endpoint_name is None:
+                unnamed.append(address)
+            else:
+                routed[route.endpoint_name] = (address, route.addressing_mode, True)
+    if unnamed:
+        rendered = ", ".join(f"0x{address:X}" for address in sorted(unnamed))
+        raise ValueError(f"route(s) {rendered} have no endpoint identity")
+    for name, (address, mode, functional) in sorted(listening.items()):
+        if name not in routed:
+            raise ValueError(f"endpoint {name!r} on 0x{address:X} has no route")
+        if routed[name] != (address, mode, functional):
+            route_address, route_mode, route_functional = routed[name]
+            raise ValueError(
+                f"endpoint {name!r} ({mode}, 0x{address:X}, functional={functional}) "
+                f"does not match its route ({route_mode}, 0x{route_address:X}, "
+                f"functional={route_functional})"
+            )
+    for name, (address, _mode, _functional) in sorted(routed.items()):
+        if name not in listening:
+            raise ValueError(f"route {name!r} for address 0x{address:X} has no receiving endpoint")
 
 
 def _endpoint_named(ecu: EcuConfig, name: str) -> EndpointConfigModel:

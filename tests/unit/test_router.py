@@ -38,6 +38,23 @@ def test_functional_address_resolves_to_every_eligible_ecu_in_registration_order
     assert names(router.resolve(functional(0x7DF))) == ("engine", "tcm")
 
 
+def test_endpoint_identity_selects_one_route_from_a_shared_functional_address():
+    router = AddressRouter()
+    router.add_functional(0x7DF, "engine", OBD, endpoint_name="engine.obd_functional")
+    router.add_functional(0x7DF, "tcm", OBD, endpoint_name="tcm.obd_functional")
+    request = DiagnosticRequest(
+        b"\x01\x0d", 0x7DF, functional=True, endpoint_name="tcm.obd_functional"
+    )
+    assert names(router.resolve(request)) == ("tcm",)
+
+
+def test_unknown_endpoint_identity_does_not_fall_back_to_another_ecu():
+    router = AddressRouter()
+    router.add_functional(0x7DF, "engine", OBD, endpoint_name="engine.obd_functional")
+    request = DiagnosticRequest(b"\x01\x0d", 0x7DF, functional=True, endpoint_name="tcm.obd_functional")
+    assert router.resolve(request) == ()
+
+
 def test_a_route_carries_the_protocols_eligible_on_its_address():
     router = AddressRouter()
     router.add_functional(0x7DF, "engine", OBD)

@@ -11,6 +11,7 @@ import pytest
 
 from ecu_simulator.cli import default_profile_path
 from ecu_simulator.config import ConfigError, load_profile, parse_profile
+from ecu_simulator.transport import AddressingMode
 
 VALID = {
     "version": 1,
@@ -92,6 +93,7 @@ def test_the_valid_profile_parses():
     assert [d.code for d in engine.dtcs] == ["B1477", "P0001"]
     assert [e.name for e in engine.endpoints] == ["obd_functional", "obd_physical", "uds_physical"]
     assert engine.endpoints[0].protocols == ["obd"]
+    assert all(endpoint.mode is AddressingMode.NORMAL_11BIT for endpoint in engine.endpoints)
     # answer_unsupported is the raw key; answers_unsupported is the resolved policy, which
     # defaults to answering on a physical route and staying silent on a broadcast.
     assert engine.endpoints[0].answers_unsupported is False
@@ -112,6 +114,14 @@ def test_the_shipped_profile_file_loads():
     config = load_profile(default_profile_path())
     assert config.vehicle.vin == "TESTVIN0123456789"
     assert config.ecus["engine"].endpoints[0].rx == 0x7DF
+
+
+def test_the_shipped_multi_ecu_profile_loads():
+    path = default_profile_path().with_name("multi_ecu.yaml")
+    config = load_profile(path)
+    assert list(config.ecus) == ["engine", "transmission"]
+    assert len(config.ecus["engine"].endpoints) == 4
+    assert len(config.ecus["transmission"].endpoints) == 4
 
 
 # --- vehicle ---------------------------------------------------------------------------------
@@ -220,7 +230,85 @@ def test_an_unknown_key_on_a_trouble_code_is_rejected():
 
 
 def test_a_can_identifier_outside_the_eleven_bit_range_is_rejected():
-    rejects("rx", **{"ecus.engine.endpoints.1.rx": 0x800})
+    rejects("normal_11bit", **{"ecus.engine.endpoints.1.rx": 0x800})
+
+
+def test_canonical_normal_fixed_29bit_physical_identifiers_are_accepted():
+    endpoint = {
+        "name": "physical_29",
+        "rx": 0x18DA10F1,
+        "tx": 0x18DAF110,
+        "mode": "normal_fixed_29bit",
+        "addressing": "physical",
+        "protocols": ["uds"],
+    }
+    config = parse_profile(profile(**{"ecus.engine.endpoints": [endpoint]}))
+    parsed = config.ecus["engine"].endpoints[0]
+    assert parsed.mode is AddressingMode.NORMAL_FIXED_29BIT
+
+
+@pytest.mark.parametrize(
+    "rx,tx",
+    [
+        (0x18DB10F1, 0x18DAF110),
+        (0x18DA10F1, 0x18DAF118),
+        (0x18DA10F1, 0x20000000),
+    ],
+)
+def test_invalid_normal_fixed_29bit_physical_identifiers_are_rejected(rx, tx):
+    endpoint = {
+        "name": "physical_29",
+        "rx": rx,
+        "tx": tx,
+        "mode": "normal_fixed_29bit",
+        "addressing": "physical",
+        "protocols": ["uds"],
+    }
+    with pytest.raises(ConfigError, match="normal.fixed"):
+        parse_profile(profile(**{"ecus.engine.endpoints": [endpoint]}))
+
+
+def _normal_fixed_endpoints():
+    physical = {
+        "name": "physical_29",
+        "rx": 0x18DA10F1,
+        "tx": 0x18DAF110,
+        "mode": "normal_fixed_29bit",
+        "addressing": "physical",
+        "protocols": ["obd", "uds"],
+    }
+    functional = {
+        "name": "functional_29",
+        "rx": 0x18DB33F1,
+        "tx": 0x18DAF110,
+        "mode": "normal_fixed_29bit",
+        "addressing": "functional",
+        "protocols": ["obd"],
+        "reply_via": "physical_29",
+    }
+    return functional, physical
+
+
+def test_normal_fixed_functional_endpoint_uses_its_physical_reply_path():
+    functional, physical = _normal_fixed_endpoints()
+    config = parse_profile(profile(**{"ecus.engine.endpoints": [functional, physical]}))
+    assert config.ecus["engine"].endpoints[0].reply_via == "physical_29"
+
+
+@pytest.mark.parametrize(
+    "change,match",
+    [
+        ({"reply_via": None}, "reply_via"),
+        ({"rx": 0x18DA33F1}, "functional"),
+        ({"rx": 0x18DB33F2}, "source"),
+        ({"tx": 0x18DAF118}, "response"),
+    ],
+)
+def test_invalid_normal_fixed_functional_reply_paths_are_rejected(change, match):
+    functional, physical = _normal_fixed_endpoints()
+    functional.update(change)
+    with pytest.raises(ConfigError, match=match):
+        parse_profile(profile(**{"ecus.engine.endpoints": [functional, physical]}))
 
 
 def test_rx_and_tx_must_differ():

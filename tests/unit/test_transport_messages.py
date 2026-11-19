@@ -8,6 +8,7 @@ def test_request_defaults_and_immutability():
     assert request.functional is False
     assert request.addressing_mode is AddressingMode.NORMAL_11BIT
     assert request.source_address is None
+    assert request.endpoint_name is None
     assert request.context is None
     with pytest.raises(AttributeError):
         request.payload = b""  # type: ignore[misc]
@@ -25,6 +26,13 @@ def test_request_carries_opaque_context():
     token = object()
     request = DiagnosticRequest(payload=b"\x3e\x00", target_address=0x7E1, context=token)
     assert request.context is token
+
+
+def test_request_endpoint_name_is_transport_metadata():
+    request = DiagnosticRequest(b"\x01\x0d", 0x7DF, functional=True, endpoint_name="engine.obd_functional")
+    assert request.endpoint_name == "engine.obd_functional"
+    with pytest.raises(ValueError, match="endpoint_name"):
+        DiagnosticRequest(b"\x01\x0d", 0x7DF, endpoint_name="")
 
 
 def test_response_validation():
