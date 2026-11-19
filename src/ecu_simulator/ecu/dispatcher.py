@@ -1,9 +1,9 @@
 """The request handler a transport calls: resolve the route, hand it to the ECU.
 
 ``transport -> route binding -> Ecu -> eligible protocol``. The dispatcher strips the
-transport's opaque ``context`` before the ECU sees the request, so an ECU can never
-reach a socket through it. Functional fan-out to several ECUs is rejected until the
-transport can carry one response per ECU (Phase 9).
+transport's opaque ``context`` and endpoint identity before the ECU sees the request, so
+an ECU can never reach a socket through it. Shared functional addresses are resolved by
+the endpoint on which the kernel delivered this copy of the request.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable
 from types import MappingProxyType
 
 from ecu_simulator.ecu.ecu import Ecu
-from ecu_simulator.ecu.router import AddressRouter, Route
+from ecu_simulator.ecu.router import AddressRouter
 from ecu_simulator.transport.messages import DiagnosticRequest, DiagnosticResponse
 
 logger = logging.getLogger(__name__)
@@ -56,8 +56,6 @@ class Dispatcher:
                     f"route for ECU {route.ecu!r} enables protocols it does not serve: {missing} "
                     f"(registered: {sorted(served)})"
                 )
-        for address, routes in router.functional_routes.items():
-            _reject_fan_out(address, routes)
         self._router = router
         self._ecus = by_name
         self._sync = sync
@@ -85,15 +83,11 @@ class Dispatcher:
                 request.target_address,
             )
             return None
-        # The router is a live object and may have gained routes since construction.
-        _reject_fan_out(request.target_address, routes)
+        if len(routes) > 1:
+            raise ValueError(
+                f"functional address 0x{request.target_address:X} is shared by {[r.ecu for r in routes]}; "
+                "the receiving endpoint identity is required"
+            )
         route = routes[0]
-        return self._ecus[route.ecu].handle(dataclasses.replace(request, context=None), route)
-
-
-def _reject_fan_out(address: int, routes: tuple[Route, ...]) -> None:
-    if len(routes) > 1:
-        raise NotImplementedError(
-            f"functional address 0x{address:X} is shared by {[r.ecu for r in routes]}; "
-            "fan-out to several ECUs needs per-ECU response routing (Phase 9)"
-        )
+        clean = dataclasses.replace(request, endpoint_name=None, context=None)
+        return self._ecus[route.ecu].handle(clean, route)

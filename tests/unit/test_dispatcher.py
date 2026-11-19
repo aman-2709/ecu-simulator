@@ -108,22 +108,24 @@ def test_duplicate_ecu_names_are_rejected():
         Dispatcher(router, ecus)
 
 
-def test_functional_fan_out_to_several_ecus_is_not_implemented_yet():
-    router, ecus = build(Ecu("engine"), Ecu("tcm"))
-    router.add_functional(0x7DF, "engine", ECHO)
-    router.add_functional(0x7DF, "tcm", ECHO)
-    with pytest.raises(NotImplementedError, match=r"0x7DF.*Phase 9"):
-        Dispatcher(router, ecus)
+def test_shared_functional_address_dispatches_by_the_receiving_endpoint():
+    engine, tcm = Recording("engine"), Recording("tcm")
+    router, ecus = build(engine, tcm)
+    router.add_functional(0x7DF, "engine", ECHO, endpoint_name="engine.functional")
+    router.add_functional(0x7DF, "tcm", ECHO, endpoint_name="tcm.functional")
+    dispatcher = Dispatcher(router, ecus)
+    request = DiagnosticRequest(b"\x3e\x00", 0x7DF, functional=True, endpoint_name="tcm.functional")
+    assert dispatcher(request) == DiagnosticResponse(b"\x7e\x00")
+    assert engine.requests == [] and len(tcm.requests) == 1
+    assert tcm.requests[0].endpoint_name is None
 
 
-def test_fan_out_added_after_construction_is_reported_clearly():
-    # The router is a live object; a second eligible ECU added later must not surface
-    # as an unpacking error inside the transport's readable callback.
+def test_a_shared_functional_request_without_endpoint_identity_is_ambiguous():
     router, ecus = build(Recording("engine"), Recording("tcm"))
     router.add_functional(0x7DF, "engine", ECHO)
     dispatcher = Dispatcher(router, ecus)
     router.add_functional(0x7DF, "tcm", ECHO)
-    with pytest.raises(NotImplementedError, match=r"0x7DF.*Phase 9"):
+    with pytest.raises(ValueError, match=r"0x7DF.*endpoint"):
         dispatcher(DiagnosticRequest(b"\x3e\x00", 0x7DF, functional=True))
 
 

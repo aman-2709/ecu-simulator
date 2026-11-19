@@ -175,6 +175,7 @@ class IsoTpTransport:
             target_address=config.address.rx_id,
             functional=config.functional,
             addressing_mode=config.address.mode,
+            endpoint_name=config.name,
             context=config,
         )
         assert self._handler is not None

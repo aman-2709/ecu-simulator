@@ -15,6 +15,10 @@ def shipped():
     return app.RuntimeConfig.build(load_profile(cli.default_profile_path()))
 
 
+def multi_ecu():
+    return app.RuntimeConfig.build(load_profile(cli.default_profile_path().with_name("multi_ecu.yaml")))
+
+
 def with_interface(interface):
     return app.RuntimeConfig.build(load_profile(cli.default_profile_path()), interface)
 
@@ -38,6 +42,7 @@ def test_the_shipped_profile_reproduces_the_legacy_addresses_and_plus_eight_rule
     assert (uds.address.rx_id, uds.address.tx_id) == (0x7E1, 0x7E9)
     assert functional.functional is True and functional.reply_via == "engine.obd_physical"
     assert physical.receive is True and uds.receive is True
+    assert all(endpoint.address.mode.value == "normal_11bit" for endpoint in endpoints.values())
     # DEV-08 corrected for OBD: padded to DLC 8; UDS unpadded, as before.
     assert functional.options.tx_padding is True and functional.options.pad_byte == 0x00
     assert physical.options.tx_padding is True
@@ -59,6 +64,7 @@ def test_every_profile_address_routes_to_its_ecu():
     router = app.build_router(shipped())
     assert {a: r.ecu for a, r in router.physical_routes.items()} == {0x7E0: "engine", 0x7E1: "engine"}
     assert {a: tuple(r.ecu for r in rs) for a, rs in router.functional_routes.items()} == {0x7DF: ("engine",)}
+    assert router.functional_routes[0x7DF][0].endpoint_name == "engine.obd_functional"
 
 
 def test_the_obd_broadcast_route_enables_obd_only_and_stays_silent_on_unknown_services():
@@ -84,6 +90,20 @@ def test_router_addresses_match_the_endpoints_that_receive():
     assert routed == receiving
 
 
+def test_multi_ecu_profile_builds_distinct_routes_for_shared_functional_endpoints():
+    config = multi_ecu()
+    endpoints = {endpoint.name: endpoint for endpoint in app.build_endpoints(config)}
+    assert len(endpoints) == 8
+    assert endpoints["engine.functional_29"].address.mode.value == "normal_fixed_29bit"
+    router = app.build_router(config)
+    routes = router.functional_routes[0x7DF]
+    assert [(route.ecu, route.endpoint_name) for route in routes] == [
+        ("engine", "engine.functional_11"),
+        ("transmission", "transmission.functional_11"),
+    ]
+    app.check_routes(router, endpoints.values())
+
+
 # --- route and endpoint consistency ----------------------------------------------------------
 
 
@@ -96,8 +116,8 @@ def test_a_receiving_endpoint_without_a_route_is_rejected_at_startup():
     # Otherwise the socket is open and every request on it is silently dropped.
     config = shipped()
     router = AddressRouter()
-    router.add_functional(0x7DF, "engine", ("obd",))
-    router.add_physical(0x7E0, "engine", ("obd", "uds"))
+    router.add_functional(0x7DF, "engine", ("obd",), endpoint_name="engine.obd_functional")
+    router.add_physical(0x7E0, "engine", ("obd", "uds"), endpoint_name="engine.obd_physical")
     with pytest.raises(ValueError, match="0x7E1"):
         app.check_routes(router, app.build_endpoints(config))
 
@@ -105,7 +125,7 @@ def test_a_receiving_endpoint_without_a_route_is_rejected_at_startup():
 def test_a_route_without_a_receiving_endpoint_is_rejected_at_startup():
     config = shipped()
     router = app.build_router(config)
-    router.add_physical(0x7E5, "engine", ("obd",))
+    router.add_physical(0x7E5, "engine", ("obd",), endpoint_name="engine.extra")
     with pytest.raises(ValueError, match="0x7E5"):
         app.check_routes(router, app.build_endpoints(config))
 
@@ -113,9 +133,11 @@ def test_a_route_without_a_receiving_endpoint_is_rejected_at_startup():
 def test_a_route_whose_addressing_kind_differs_from_the_endpoint_is_rejected():
     config = shipped()
     router = AddressRouter()
-    router.add_physical(0x7DF, "engine", ("obd",))  # 0x7DF is the functional endpoint
-    router.add_physical(0x7E0, "engine", ("obd", "uds"))
-    router.add_physical(0x7E1, "engine", ("obd", "uds"))
+    router.add_physical(
+        0x7DF, "engine", ("obd",), endpoint_name="engine.obd_functional"
+    )  # 0x7DF is the functional endpoint
+    router.add_physical(0x7E0, "engine", ("obd", "uds"), endpoint_name="engine.obd_physical")
+    router.add_physical(0x7E1, "engine", ("obd", "uds"), endpoint_name="engine.uds_physical")
     with pytest.raises(ValueError, match="0x7DF"):
         app.check_routes(router, app.build_endpoints(config))
 

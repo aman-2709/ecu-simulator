@@ -25,8 +25,9 @@ class DiagnosticRequest:
 
     ``target_address`` is the address the request arrived on (for CAN, the RX CAN
     identifier). ``source_address`` is the tester's address when the transport knows
-    it, which normal 11-bit addressing does not convey. ``context`` is an opaque token
-    the transport uses to route the reply; callers pass it back untouched.
+    it, which normal 11-bit addressing does not convey. ``endpoint_name`` identifies
+    the receiving transport endpoint when several endpoints share an address.
+    ``context`` is an opaque token the transport uses to route the reply.
     """
 
     payload: bytes
@@ -34,6 +35,7 @@ class DiagnosticRequest:
     functional: bool = False
     addressing_mode: AddressingMode = AddressingMode.NORMAL_11BIT
     source_address: int | None = None
+    endpoint_name: str | None = None
     context: Any = None
 
     def __post_init__(self) -> None:
@@ -42,6 +44,8 @@ class DiagnosticRequest:
         object.__setattr__(self, "payload", bytes(self.payload))
         if self.target_address < 0:
             raise ValueError("target_address must be non-negative")
+        if self.endpoint_name is not None and not self.endpoint_name:
+            raise ValueError("endpoint_name must be non-empty when present")
 
 
 @dataclass(frozen=True, slots=True)

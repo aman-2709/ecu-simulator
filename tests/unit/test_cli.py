@@ -71,6 +71,26 @@ def test_validate_config_never_opens_a_socket(isolated_logging, caplog):
         assert cli.main(["validate-config", "--interface", "nosuchcan9"]) == 0
 
 
+def test_list_ecus_prints_the_validated_profile_without_opening_a_socket(isolated_logging, capsys, monkeypatch):
+    def must_not_run(_config):
+        raise AssertionError("list-ecus opened the runtime")
+
+    monkeypatch.setattr(cli.app, "main", must_not_run)
+    assert cli.main(["list-ecus"]) == 0
+    output = capsys.readouterr().out
+    assert "engine\tECU_SIMULATOR" in output
+    assert "obd_functional\tfunctional\tnormal_11bit\trx=0x7DF\ttx=0x7E8\tprotocols=obd" in output
+
+
+def test_list_ecus_includes_both_ecus_and_29bit_endpoints(isolated_logging, capsys):
+    profile = cli.default_profile_path().with_name("multi_ecu.yaml")
+    assert cli.main(["list-ecus", "--profile", str(profile)]) == 0
+    output = capsys.readouterr().out
+    assert "engine\tENGINE_SIMULATOR" in output
+    assert "transmission\tTCM_SIMULATOR" in output
+    assert "functional_29\tfunctional\tnormal_fixed_29bit\trx=0x18DB33F1" in output
+
+
 def test_run_reports_a_missing_interface_with_exit_code_2(isolated_logging, caplog):
     # Real transport, real environment checks: either the interface is missing or the
     # kernel lacks CAN_ISOTP (GitHub-hosted runners). Both are startup failures -> 2.

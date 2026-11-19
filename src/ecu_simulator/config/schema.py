@@ -24,11 +24,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from ecu_simulator.config.errors import ConfigError
 from ecu_simulator.scenario.events import DtcEvent
 from ecu_simulator.scenario.generators import SignalScenario
+from ecu_simulator.transport import AddressingMode
 from ecu_simulator.vehicle import signal_types
 
 SCHEMA_VERSION = 1
 
 CAN_SFF_MAX = 0x7FF
+CAN_EFF_MAX = 0x1FFFFFFF
 VIN_MAX_LENGTH = 17
 ECU_NAME_MAX_LENGTH = 20
 MAX_DTCS = 255
@@ -67,7 +69,7 @@ DEFAULT_SESSIONS = (0x01, 0x02, 0x03, 0x04)
 BUILT_IN_DIDS = (0xF186, 0xF190)
 OBD_DID_RANGE = (0xF400, 0xF8FF)
 
-CanId = Annotated[int, Field(ge=0, le=CAN_SFF_MAX)]
+CanId = Annotated[int, Field(ge=0)]
 Byte = Annotated[int, Field(ge=0, le=0xFF)]
 Percent = Annotated[int, Field(ge=0, le=100)]
 
@@ -135,6 +137,7 @@ class EndpointConfigModel(Base):
     name: str = Field(min_length=1)
     rx: CanId
     tx: CanId
+    mode: AddressingMode = AddressingMode.NORMAL_11BIT
     addressing: Literal["physical", "functional"]
     protocols: list[str] = Field(min_length=1)
     answer_unsupported: bool | None = None
@@ -153,9 +156,40 @@ class EndpointConfigModel(Base):
         return value
 
     @model_validator(mode="after")
-    def addresses_differ(self) -> EndpointConfigModel:
+    def identifiers_match_the_addressing_mode(self) -> EndpointConfigModel:
         if self.rx == self.tx:
             raise ValueError(f"rx and tx must differ (both 0x{self.rx:X})")
+        if self.mode is AddressingMode.NORMAL_11BIT:
+            for name, value in (("rx", self.rx), ("tx", self.tx)):
+                if value > CAN_SFF_MAX:
+                    raise ValueError(
+                        f"{name} 0x{value:X} is outside the normal_11bit identifier range 0x000-0x7FF"
+                    )
+            return self
+
+        for name, value in (("rx", self.rx), ("tx", self.tx)):
+            if value > CAN_EFF_MAX:
+                raise ValueError(
+                    f"{name} 0x{value:X} is outside the normal-fixed 29-bit identifier range"
+                )
+        rx_prefix, tx_prefix = self.rx >> 16, self.tx >> 16
+        if self.addressing == "physical":
+            if rx_prefix != 0x18DA or tx_prefix != 0x18DA:
+                raise ValueError(
+                    "normal-fixed physical identifiers must be 0x18DA<ecu><tester> "
+                    "and 0x18DA<tester><ecu>"
+                )
+            rx_ecu, rx_tester = (self.rx >> 8) & 0xFF, self.rx & 0xFF
+            tx_tester, tx_ecu = (self.tx >> 8) & 0xFF, self.tx & 0xFF
+            if (rx_ecu, rx_tester) != (tx_ecu, tx_tester):
+                raise ValueError(
+                    "normal-fixed physical rx/tx target and source bytes must reverse"
+                )
+        elif rx_prefix != 0x18DB or tx_prefix != 0x18DA:
+            raise ValueError(
+                "normal-fixed functional identifiers must use request 0x18DB<group><tester> "
+                "and response 0x18DA<tester><ecu>"
+            )
         return self
 
     @property
@@ -319,15 +353,43 @@ class EcuConfig(Base):
         duplicate_names = sorted({n for n in names if names.count(n) > 1})
         if duplicate_names:
             raise ValueError(f"duplicate endpoint name(s) {duplicate_names}")
-        pairs = [(e.rx, e.tx) for e in self.endpoints]
-        duplicate_pairs = sorted({f"rx 0x{rx:X} / tx 0x{tx:X}" for rx, tx in pairs if pairs.count((rx, tx)) > 1})
+        pairs = [(e.mode, e.rx, e.tx) for e in self.endpoints]
+        duplicate_pairs = sorted(
+            {
+                f"{mode.value} rx 0x{rx:X} / tx 0x{tx:X}"
+                for mode, rx, tx in pairs
+                if pairs.count((mode, rx, tx)) > 1
+            }
+        )
         if duplicate_pairs:
             raise ValueError(f"duplicate endpoint address pair(s) {duplicate_pairs}")
+        by_name = {endpoint.name: endpoint for endpoint in self.endpoints}
         for endpoint in self.endpoints:
             if endpoint.reply_via is not None and endpoint.reply_via not in names:
                 raise ValueError(
                     f"endpoint {endpoint.name!r} has reply_via {endpoint.reply_via!r}, which is not an endpoint"
                 )
+            if endpoint.mode is AddressingMode.NORMAL_FIXED_29BIT and endpoint.functional:
+                if endpoint.reply_via is None:
+                    raise ValueError(
+                        f"normal-fixed functional endpoint {endpoint.name!r} requires a physical reply_via endpoint"
+                    )
+                reply = by_name[endpoint.reply_via]
+                if reply.functional or reply.mode is not AddressingMode.NORMAL_FIXED_29BIT:
+                    raise ValueError(
+                        f"normal-fixed functional endpoint {endpoint.name!r} reply_via must name a "
+                        "normal-fixed physical endpoint"
+                    )
+                if endpoint.rx & 0xFF != reply.rx & 0xFF:
+                    raise ValueError(
+                        f"normal-fixed functional endpoint {endpoint.name!r} source byte must match "
+                        f"reply_via {endpoint.reply_via!r}"
+                    )
+                if endpoint.tx != reply.tx:
+                    raise ValueError(
+                        f"normal-fixed functional endpoint {endpoint.name!r} response identifier must match "
+                        f"reply_via {endpoint.reply_via!r}"
+                    )
         return self
 
     @model_validator(mode="after")
@@ -394,16 +456,18 @@ class Profile(Base):
 
     @model_validator(mode="after")
     def receive_addresses_are_unique_across_ecus(self) -> Profile:
-        owners: dict[int, str] = {}
+        owners: dict[tuple[AddressingMode, int], str] = {}
         for ecu_name, ecu in self.ecus.items():
             for endpoint in ecu.endpoints:
-                owner = owners.get(endpoint.rx)
+                key = (endpoint.mode, endpoint.rx)
+                owner = owners.get(key)
                 if owner is not None and owner != ecu_name and endpoint.addressing == "physical":
                     raise ValueError(
-                        f"receive identifier 0x{endpoint.rx:X} is claimed by both {owner!r} and {ecu_name!r}"
+                        f"receive identifier {endpoint.mode.value} 0x{endpoint.rx:X} is claimed by "
+                        f"both {owner!r} and {ecu_name!r}"
                     )
                 if endpoint.addressing == "physical":
-                    owners[endpoint.rx] = ecu_name
+                    owners[key] = ecu_name
         return self
 
 
