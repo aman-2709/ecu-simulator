@@ -35,16 +35,20 @@ def load_yaml(path: str | Path) -> dict[str, Any]:
         raise ConfigError(f"profile {path} does not exist") from error
     except OSError as error:
         raise ConfigError(f"profile {path} could not be read: {error}") from error
+    return read_yaml(text, str(path))
+
+
+def read_yaml(text: str, source: str) -> dict[str, Any]:
     try:
         document = _reader().load(text)
     except DuplicateKeyError as error:
-        raise ConfigError(f"profile {path} has a duplicate key: {_first_line(error)}") from error
+        raise ConfigError(f"profile {source} has a duplicate key: {_first_line(error)}") from error
     except YAMLError as error:
-        raise ConfigError(f"profile {path} is not valid YAML: {_first_line(error)}") from error
+        raise ConfigError(f"profile {source} is not valid YAML: {_first_line(error)}") from error
     if document is None:
-        raise ConfigError(f"profile {path} is empty")
+        raise ConfigError(f"profile {source} is empty")
     if not isinstance(document, dict):
-        raise ConfigError(f"profile {path} must be a mapping at the top level, found {type(document).__name__}")
+        raise ConfigError(f"profile {source} must be a mapping at the top level, found {type(document).__name__}")
     return document
 
 

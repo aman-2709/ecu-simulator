@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from ecu_simulator.config.errors import ConfigError
-from ecu_simulator.config.loader import load_yaml
+from ecu_simulator.config.loader import load_yaml, read_yaml
 from ecu_simulator.config.schema import (
     EcuConfig,
     EndpointConfigModel,
@@ -23,6 +23,10 @@ def load_profile(path: str | Path) -> Profile:
     return parse_profile(load_yaml(path), source=str(path))
 
 
+def load_profile_text(text: str, source: str = "working copy") -> Profile:
+    return parse_profile(read_yaml(text, source), source=source)
+
+
 __all__ = [
     "DEFAULT_PROFILE",
     "ConfigError",
@@ -34,6 +38,7 @@ __all__ = [
     "UdsSessionConfig",
     "VehicleConfig",
     "load_profile",
+    "load_profile_text",
     "load_yaml",
     "parse_profile",
 ]
