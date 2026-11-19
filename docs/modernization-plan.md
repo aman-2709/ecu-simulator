@@ -391,6 +391,11 @@ Reviewed 2026-11-18 before implementation:
 Rules trigger on deterministic request occurrences; the synchronous ECU pipeline decides
 effects and the asyncio transport only schedules responses and reports silence/FC timeout.
 
+Implementation and local acceptance completed 2026-11-18 on branch `phase-10`; final PR
+CI is pending. All seven effects, ignored-flow-control recovery, delayed-response
+shutdown, the full local suite, and 84 isolated `vcan`/kernel `CAN_ISOTP` tests passed.
+See [the Phase 10 completion report](validation/phase-10-completion.md).
+
 ### Phase 11 — UDS session handling (V1.1)
 
 Session state machine, S3 timeout, TesterPresent timing, 0x22 with providers, 0x19/01 and

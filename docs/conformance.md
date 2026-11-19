@@ -250,6 +250,10 @@ specification text has not been reviewed, so the row is not `standards validated
 | Backward scenario time refused rather than reinterpreted | **yes** | yes | no | n/a | n/a |
 | Scenario configuration validated before any socket opens | **yes** | yes | no | n/a | n/a |
 | Clean shutdown with the periodic tick running | **yes** | yes | **yes** | no | n/a |
+| Per-ECU deterministic fault rules, off when unconfigured | **yes** | yes | **yes** | no | n/a |
+| Drop, delay, NRC, pending/final, truncate, corrupt, offline | **yes** | yes | **yes** | no | no |
+| Delayed responses cancelled during clean shutdown | **yes** | yes | **yes** | no | n/a |
+| Silence and ignored-flow-control transport observations | **yes** | yes | **yes** | no | n/a |
 
 The runtime rows describe project behavior, not protocol behavior, so `standards
 validated` does not apply to them, with one exception: the derived status byte and
@@ -268,6 +272,15 @@ vehicle *is* -- physical values and trouble-code state, through `VehicleState.se
 whatever they find, unchanged. Nothing in a scenario can drop a response, delay one, force
 a negative one or reach a protocol; that is fault injection, which is Phase 10. There is
 no randomness anywhere, seeded or otherwise.
+
+Phase 10 adds a separate response-fault layer; it does not expand the scenario language.
+Rules trigger from explicit matching-request occurrence numbers. The demonstration profile
+exercises every effect, while `ice_default.yaml` and `multi_ecu.yaml` configure none. The
+wire-visible effect row is `standards validated: no`: these are testbench faults, and the
+licensed ISO 14229-1 text was not reviewed. AUTOSAR CP R25-11 corroborates only the NRC
+`0x78` pending/final sequence. Design and evidence are in
+[decisions/0013](decisions/0013-phase-10-fault-injection.md) and
+[the Phase 10 completion report](validation/phase-10-completion.md).
 
 Phase 7's behavior was also accepted by hand at `c81d3e8`, independently of the automated
 suites: ten UDS requests on the default profile and a twenty-one-point run of the
