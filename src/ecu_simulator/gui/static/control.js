@@ -25,7 +25,7 @@ function showRun(next) {
   online = true;
   el("state").textContent = run.state;
   el("active").textContent = ["Starting","Running","Stopping"].includes(run.state) ? run.interface + " · " + run.id.slice(0, 8) : "";
-  if (run.error) el("error").textContent = run.error;
+  el("run-error").textContent = run.error;
   controls();
 }
 async function refresh() {

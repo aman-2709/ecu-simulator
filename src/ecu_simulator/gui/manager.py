@@ -28,6 +28,7 @@ class Manager:
         self.interface = ""
         self.error = ""
         self.endpoints: dict[str, EndpointConfigModel] = {}
+        self.replies: dict[str, EndpointConfigModel] = {}
         self.process: asyncio.subprocess.Process | None = None
         self.watcher: asyncio.Task[None] | None = None
         self.exchange: asyncio.Task[dict[str, Any]] | None = None
@@ -46,6 +47,11 @@ class Manager:
             self.interface = profile.transport.interface
             self.endpoints = {endpoint_name(key, ep): ep for key, ecu in profile.ecus.items()
                               for ep in ecu.endpoints if not ep.functional and "uds" in ep.protocols}
+            self.replies = {}
+            for key, ecu in profile.ecus.items():
+                by_name = {ep.name: ep for ep in ecu.endpoints}
+                for ep in ecu.endpoints:
+                    self.replies[endpoint_name(key, ep)] = by_name[ep.reply_via] if ep.reply_via else ep
             self.state, self.error = "Starting", ""
             try:
                 self.process = await asyncio.create_subprocess_exec(
@@ -127,7 +133,8 @@ class Manager:
                 raise ValueError("Enter complete hexadecimal byte pairs") from None
             if not payload:
                 raise ValueError("Enter request bytes")
-            task = asyncio.create_task(exchange(self.interface, self.endpoints[endpoint], payload))
+            request = exchange(self.interface, self.endpoints[endpoint], payload, self.replies[endpoint])
+            task = asyncio.create_task(request)
             self.exchange = task
         try:
             result = await task

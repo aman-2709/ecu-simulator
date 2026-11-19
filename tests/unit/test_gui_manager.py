@@ -58,7 +58,7 @@ async def test_failed_bind_names_interface_then_allows_retry():
 async def test_one_exchange_and_stale_actions_leave_current_child_alone(monkeypatch):
     started = asyncio.Event()
     calls = []
-    async def exchange(interface, endpoint, payload):
+    async def exchange(interface, endpoint, payload, reply):
         calls.append(payload)
         started.set()
         await asyncio.Event().wait()

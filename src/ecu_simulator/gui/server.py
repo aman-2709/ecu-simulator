@@ -27,7 +27,11 @@ async def local_access(request: web.Request, handler: Any) -> web.StreamResponse
     assert request.transport
     port = request.transport.get_extra_info("sockname")[1]
     host = request.headers.get("Host", "").lower()
-    if host not in allowed_hosts("127.0.0.1", port):
+    hostnames = allowed_hosts("127.0.0.1", port)
+    if port == 80:
+        host = host.removesuffix(":80")
+        hostnames = frozenset(name.removesuffix(":80") for name in hostnames)
+    if host not in hostnames:
         raise web.HTTPMisdirectedRequest(text="Host must match the local manager")
     if request.method == "POST" and request.headers.get("Origin") != f"http://{host}":
         raise web.HTTPForbidden(text="Origin must match the local manager")

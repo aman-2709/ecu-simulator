@@ -55,15 +55,17 @@ async def _ready(sock: IsoTpSocket, *, write: bool = False) -> None:
         remove(fd)
 
 
-async def transact(sock: IsoTpSocket, payload: bytes, timeout: float) -> dict[str, Any]:
+async def transact(sock: IsoTpSocket, payload: bytes, timeout: float,
+                   receiver: IsoTpSocket | None = None) -> dict[str, Any]:
+    receiver = receiver or sock
     sent = False
     try:
         async with asyncio.timeout(timeout):
             while not sock.send(payload):
                 await _ready(sock, write=True)
             sent = True
-            while (data := sock.recv()) is None:
-                await _ready(sock)
+            while (data := receiver.recv()) is None:
+                await _ready(receiver)
             return decode(data)
     except TimeoutError:
         suppressed = len(payload) > 1 and payload[0] in SUB_FUNCTION_SERVICES
@@ -76,8 +78,17 @@ async def transact(sock: IsoTpSocket, payload: bytes, timeout: float) -> dict[st
         return {"raw": "", "message": message, "records": []}
 
 
-async def exchange(interface: str, endpoint: EndpointConfigModel, payload: bytes) -> dict[str, Any]:
+def _socket(interface: str, endpoint: EndpointConfigModel, *, listen_mode: bool = False) -> IsoTpSocket:
     address = IsoTpAddress(endpoint.tx, endpoint.rx, endpoint.mode)
-    options = IsoTpOptions(tx_padding=endpoint.tx_padding, pad_byte=endpoint.pad_byte)
-    with IsoTpSocket(interface, address, options) as sock:
-        return await transact(sock, payload, 1.5)
+    options = IsoTpOptions(tx_padding=endpoint.tx_padding, pad_byte=endpoint.pad_byte, listen_mode=listen_mode)
+    return IsoTpSocket(interface, address, options)
+
+
+async def exchange(interface: str, endpoint: EndpointConfigModel, payload: bytes,
+                   reply: EndpointConfigModel) -> dict[str, Any]:
+    if reply == endpoint:
+        with _socket(interface, endpoint) as sock:
+            return await transact(sock, payload, 1.5)
+    # Only the return socket should issue flow control for the ECU reply.
+    with _socket(interface, reply) as receiver, _socket(interface, endpoint, listen_mode=True) as sender:
+        return await transact(sender, payload, 1.5, receiver)

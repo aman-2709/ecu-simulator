@@ -42,8 +42,8 @@ async def test_wait_until_reply_or_deadline(hex_input, negative, expected):
     a, b = socket.socketpair(type=socket.SOCK_DGRAM)
     with a, b:
         a.setblocking(False)
-        task = asyncio.create_task(transact(TestSocket(a), bytes.fromhex(hex_input), .12))
-        await asyncio.sleep(.04)
+        task = asyncio.create_task(transact(TestSocket(a), bytes.fromhex(hex_input), .5))
+        await asyncio.sleep(.45 if negative else .04)
         assert not task.done()
         assert b.recv(128) == bytes.fromhex(hex_input)
         if negative:

@@ -74,6 +74,7 @@ class IsoTpOptions:
     pad_byte: int = 0x00
     block_size: int = 0
     st_min: int = 0
+    listen_mode: bool = False
 
     def __post_init__(self) -> None:
         for name, value in (("pad_byte", self.pad_byte), ("block_size", self.block_size), ("st_min", self.st_min)):
@@ -117,8 +118,11 @@ class IsoTpSocket:
         except OSError as error:
             raise _map_socket_creation_error(error) from error
         try:
+            flags = isotp.socket.flags.LISTEN_MODE if self.options.listen_mode else 0
             if self.options.tx_padding:
-                sock.set_opts(optflag=isotp.socket.flags.TX_PADDING, txpad=self.options.pad_byte)
+                sock.set_opts(optflag=flags | isotp.socket.flags.TX_PADDING, txpad=self.options.pad_byte)
+            elif flags:
+                sock.set_opts(optflag=flags)
             sock.set_fc_opts(bs=self.options.block_size, stmin=self.options.st_min)
             sock.bind(
                 self.interface,

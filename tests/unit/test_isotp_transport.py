@@ -114,6 +114,10 @@ async def test_start_failure_closes_already_opened_sockets():
         await transport.start(lambda request: None)
     assert not transport.is_running
     assert all(f.closed for f in FakeIsotpSocket.instances)
+    await transport.start(lambda request: None)
+    assert transport.is_running
+    await transport.stop()
+    assert all(f.closed for f in FakeIsotpSocket.instances)
 
 
 @pytest.mark.asyncio
