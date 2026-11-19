@@ -1,5 +1,12 @@
 # Phase 8a — Completion Report
 
+> **Revalidation in progress, 2026-11-18.** GitHub's current hosted runner now exposes
+> CAN_ISOTP, unlike the runner recorded below. On branch `phase-8a-ci-closure`, the full
+> local suite passed with 1029 passed and 3 expected failures, the isolated vcan suite
+> passed all 68 tests (including the fake-ELM327 acceptance path), and Ruff and mypy were
+> clean. The conditional status remains until this branch's PR CI run confirms the same
+> end-to-end path on the hosted runner.
+
 **Result: accepted conditionally by the owner on 2026-09-25, with one Definition-of-Done
 requirement outstanding: the fake-ELM327 end-to-end harness has not executed in an
 ordinary CI run (§4.2).** That requirement is **not** a passed criterion. It stays open
