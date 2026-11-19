@@ -53,6 +53,7 @@ gui = ["aiohttp>=3.13,<4"]
 
 [project.scripts]
 ecu-simulator = "ecu_simulator.cli:main"
+ecu-simulator-gui = "ecu_simulator.gui.server:main"
 
 [project.urls]
 Homepage = "https://github.com/lbenthins/ecu-simulator"

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ECU Simulator · SocketCAN</title>
+  <link rel="stylesheet" href="/control.css"><script src="/control.js" defer></script>
+</head>
+<body>
+<header><h1>ECU Simulator</h1><span>SocketCAN</span></header>
+<main>
+  <section aria-labelledby="profile-heading">
+    <h2 id="profile-heading">Profile editor</h2>
+    <div class="row"><label>Profile<select id="profile"></select></label>
+      <label>CAN interface<select id="interface"></select></label></div>
+    <label>Working copy <textarea id="draft" spellcheck="false" rows="20"></textarea></label>
+    <form id="save-form"><label>Profile name<input id="name" required></label><button>Save as</button></form>
+  </section>
+  <div class="right">
+    <section aria-labelledby="run-heading"><h2 id="run-heading">Simulator</h2>
+      <p role="status"><strong id="state">Connecting</strong> <span id="active"></span></p>
+      <div class="actions"><button id="start" class="primary" disabled>Start ECU</button><button id="stop" disabled>Stop ECU</button></div>
+    </section>
+    <section aria-labelledby="tester-heading"><h2 id="tester-heading">UDS tester</h2>
+      <label>Endpoint<select id="endpoint"></select></label>
+      <form id="send-form"><label>Request bytes<input id="payload" value="19 02 FF" spellcheck="false" required></label>
+        <button id="send" class="primary" disabled>Send</button></form>
+      <div id="result" aria-live="polite" hidden><h3>Last exchange</h3><div id="request"></div><output id="raw"></output>
+        <p id="decoded"></p><ul id="records"></ul></div>
+    </section>
+    <p id="notice" role="status"></p><p id="error" role="alert"></p>
+  </div>
+</main>
+</body></html>

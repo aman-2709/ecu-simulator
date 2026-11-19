@@ -1,0 +1,27 @@
+:root { color-scheme: light; font: 16px/1.45 "Inter", system-ui, sans-serif; color: #192f36; background: #f3f6f5; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+header { background: #173439; color: white; display: flex; gap: 1.4rem; align-items: baseline; padding: 1.1rem max(4vw, 1rem); }
+h1 { font-size: 1.45rem; margin: 0; }
+header span { color: #abdad4; }
+main { display: grid; grid-template-columns: minmax(20rem, 1.35fr) minmax(18rem, 1fr); align-items: start; gap: 1.3rem; max-width: 84rem; margin: 2rem auto; padding: 0 max(3vw, 1rem); }
+section { background: white; padding: 1.4rem; border: 1px solid #c6d4d1; border-radius: .6rem; }
+h2 { margin: 0 0 1.1rem; font-size: 1.25rem; }
+h3 { margin-bottom: .4rem; font-size: 1rem; }
+.right { display: grid; gap: 1rem; }
+label { display: grid; gap: .3rem; font-weight: 600; font-size: .9rem; }
+.row, form, .actions { display: flex; gap: .8rem; align-items: end; flex-wrap: wrap; }
+form, #result { margin-top: 1rem; }
+.row { margin-bottom: 1rem; }
+.row label, form label { flex: 1; }
+select, input, textarea, button { color: inherit; font: inherit; border: 1px solid #869f9b; border-radius: .3rem; padding: .5rem .7rem; background: white; }
+textarea, #payload, output, #request { font: .9rem/1.5 "IBM Plex Mono", ui-monospace, monospace; }
+textarea { min-height: 15rem; width: 100%; resize: vertical; white-space: pre; background: #fafcfb; }
+button { font-weight: 650; cursor: pointer; }
+button.primary { background: #14635d; color: white; }
+button:disabled { opacity: .5; cursor: default; }
+:focus-visible { outline: 3px solid #228780; outline-offset: 2px; }
+output { display: block; overflow-wrap: anywhere; font-weight: bold; margin-top: .5rem; }
+#error { color: #932d22; }
+#notice:empty, #error:empty, #records:empty { display: none; }
+@media (max-width: 760px) { main { grid-template-columns: 1fr; margin: 1rem auto; } }
