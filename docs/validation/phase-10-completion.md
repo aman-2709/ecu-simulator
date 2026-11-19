@@ -4,7 +4,7 @@
 - Branch: `phase-10` (stacked on `phase-9`)
 - Date: 2026-11-18
 - Hardware required: no
-- Status: implementation and local acceptance complete; final PR CI pending
+- Status: complete
 
 ## Delivered
 
@@ -35,7 +35,7 @@ All commands below ran on the implementation commit on 2026-11-18.
 | Fault-specific real-wire cases | **9 passed**: all seven effects, ignored FC/recovery, pending-timer shutdown |
 | Ruff | Passed |
 | mypy | Passed in 49 source files |
-| Pull-request CI | Pending final branch run |
+| Pull-request CI | Run [44455304408](https://github.com/aman-2709/ecu-simulator/actions/runs/44455304408): all four jobs passed; hosted kernel job ran **84 integration tests** |
 
 The three strict expected failures are unchanged and explicitly tied to DEV-26, DEV-11,
 and DEV-03. Phase 10 neither hides nor broadens them.
@@ -64,7 +64,10 @@ and DEV-03. Phase 10 neither hides nor broadens them.
 | Transport hooks for silence/ignored FC | Unit callback tests and raw-CAN E2E timeout/recovery | Met |
 | Non-blocking delay and pending/final | Timer-order tests and real-wire timing | Met |
 | Clean lifecycle | Unit timer cancellation and real process SIGTERM test | Met |
-| Required PR CI | Final run pending | Pending |
+| Required PR CI | Python 3.12, Python 3.13, lint/type, and hosted kernel ISO-TP jobs passed | Met |
+
+The closing documentation commit was then rechecked by the final branch CI run recorded
+in the pull request. No acceptance result depends on physical CAN hardware.
 
 ## Boundary kept
 
