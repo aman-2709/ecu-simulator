@@ -9,8 +9,6 @@ from uuid import uuid4
 
 from ecu_simulator.app import endpoint_name
 from ecu_simulator.config import EndpointConfigModel, load_profile_text
-
-
 from ecu_simulator.gui.tester import exchange
 
 

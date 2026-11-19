@@ -97,6 +97,27 @@ python -m pip install -e ".[dev]"     # plus pytest, ruff, mypy
 
 With `uv`: `uv venv --python 3.12 .venv && uv pip install -e ".[dev]"`. A venv created by `uv` has no `pip` of its own, so a bare `pip` there resolves to whatever is on your PATH (possibly another Python); use `uv pip`, or bootstrap it with `python -m ensurepip --upgrade`.
 
+## Browser controls
+
+Install the GUI extra and launch the local manager with your project environment active.
+
+```sh
+python -m pip install -e ".[gui]"
+ecu-simulator-gui
+```
+
+Open the printed loopback address (default port 8766). Select a shipped profile, edit the YAML working copy, select an up CAN interface, and click **Start ECU**. The running interface and run ID appear when the child has opened its sockets. **Save as** keeps a named copy for the next launch. A validation or startup error leaves the draft in the editor.
+
+With `ice_default`, choose **engine.uds_physical**, send `19 02 FF`, and inspect the response bytes and decoded trouble codes. **Stop ECU** releases the sockets. The same controls use `vcan0` or a configured physical bench interface.
+
+To run browser acceptance locally, install the dev and GUI extras, Playwright, and a Chromium browser. The suite discovers Google Chrome or Chromium on PATH, honors `ECU_GUI_CHROME` for an explicit executable, and otherwise uses Playwright's installed Chromium.
+
+```sh
+python -m pip install -e ".[dev,gui,hardware]" playwright
+python -m playwright install chromium
+bash scripts/run_integration_tests.sh -k gui_control_vcan -q
+```
+
 ## Usage
 
 Configure the CAN interface once, with privileges, then run the simulator unprivileged.

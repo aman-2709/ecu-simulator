@@ -35,11 +35,11 @@ def test_aiohttp_is_neither_a_runtime_nor_a_dev_dependency():
         assert "aiohttp" not in spec, spec
 
 
-def test_only_the_server_module_imports_aiohttp():
+def test_only_the_two_optional_server_modules_import_aiohttp():
     offenders = [
         str(path.relative_to(SRC)) for path in SRC.rglob("*.py")
         if ("import aiohttp" in path.read_text() or "from aiohttp" in path.read_text())
-        and path != SRC / "api" / "server.py"
+        and path not in {SRC / "api" / "server.py", SRC / "gui" / "server.py"}
     ]
     assert offenders == [], offenders
 
