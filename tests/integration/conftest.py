@@ -96,11 +96,17 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 CAN_ISOTP_SF_BROADCAST = 0x0800  # linux/can/isotp.h; not defined by can-isotp 2.x
 
 
-def open_tester_socket(interface: str, rx_id: int, tx_id: int, timeout: float = 1.0) -> isotp.socket:
+def open_tester_socket(
+    interface: str,
+    rx_id: int,
+    tx_id: int,
+    timeout: float = 1.0,
+    mode: isotp.AddressingMode = isotp.AddressingMode.Normal_11bits,
+) -> isotp.socket:
     """A physical ISO-TP tester socket, padded like an ELM327 would pad."""
     sock = isotp.socket(timeout=timeout)
     sock.set_opts(optflag=isotp.socket.flags.TX_PADDING, txpad=0x00)
-    sock.bind(interface, isotp.Address(isotp.AddressingMode.Normal_11bits, rxid=rx_id, txid=tx_id))
+    sock.bind(interface, isotp.Address(mode, rxid=rx_id, txid=tx_id))
     return sock
 
 
@@ -132,6 +138,38 @@ class FunctionalTester:
     def close(self) -> None:
         self.tx.close()
         self.rx.close()
+
+
+class FunctionalFanoutTester:
+    """One functional transmitter plus one physical response channel per ECU."""
+
+    def __init__(
+        self,
+        interface: str,
+        functional_id: int,
+        responses: dict[int, int],
+        *,
+        mode: isotp.AddressingMode = isotp.AddressingMode.Normal_11bits,
+        timeout: float = 1.0,
+    ) -> None:
+        self.tx = isotp.socket()
+        self.tx.set_opts(optflag=isotp.socket.flags.TX_PADDING | CAN_ISOTP_SF_BROADCAST, txpad=0x00)
+        self.tx.bind(interface, isotp.Address(mode, rxid=0, txid=functional_id))
+        self.responses = {
+            response_id: open_tester_socket(interface, response_id, physical_id, timeout, mode)
+            for response_id, physical_id in responses.items()
+        }
+
+    def send(self, payload: bytes) -> None:
+        self.tx.send(payload)
+
+    def recv(self, response_id: int) -> bytes:
+        return self.responses[response_id].recv()
+
+    def close(self) -> None:
+        self.tx.close()
+        for channel in self.responses.values():
+            channel.close()
 
 
 def assert_silent(channel, request: bytes, probe: bytes, answer: bytes) -> None:
