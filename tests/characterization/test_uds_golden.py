@@ -190,17 +190,23 @@ def test_0x19_02_with_empty_dtc_list_returns_header_only():
 # --- Unsupported services and malformed input ------------------------------------------------
 
 
-@pytest.mark.parametrize("request_hex", ["2801", "2701", "2e", "3101", "7f", "50", "ff"])
+@pytest.mark.parametrize("request_hex", ["2801", "3101", "7f", "50", "ff"])
 def test_the_uds_protocol_does_not_claim_these_service_identifiers(request_hex):
     # Since DEV-06 these never reach a protocol at all: the route's unsupported-service
     # policy answers them (see below). The protocol must not start claiming them.
     assert bytes.fromhex(request_hex)[0] not in protocol().service_ids
 
 
-@pytest.mark.parametrize("request_hex, expected", [("2801", "7f2811"), ("2701", "7f2711"), ("3101", "7f3111")])
+@pytest.mark.parametrize("request_hex, expected", [("2801", "7f2811"), ("3101", "7f3111")])
 def test_unsupported_sids_on_the_physical_address_get_nrc_0x11(request_hex, expected):
     # DEV-06 corrected in Phase 3 by the ECU's unsupported-service policy, not by the
     # legacy module: a SID no registered protocol claims gets 7F <SID> 11 on a physical address.
+    assert engine_uds(request_hex).hex() == expected
+
+
+@pytest.mark.parametrize("request_hex, expected", [("2701", "7f277f"), ("2e", "7f2e7f")])
+def test_phase12_services_are_claimed_and_gated_in_the_default_session(request_hex, expected):
+    assert bytes.fromhex(request_hex)[0] in protocol().service_ids
     assert engine_uds(request_hex).hex() == expected
 
 
