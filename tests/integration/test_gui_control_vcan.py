@@ -243,7 +243,16 @@ def test_live_can_trace_and_groups_match_independent_capture(browser, vcan, tmp_
             page.get_by_role("button", name="Trace", exact=True).click()
             expect(page.locator("#frame-rows tr")).to_have_count(6)
             rows = page.locator("#frame-rows tr").all()
-            assert [tuple(row.locator("td").all_text_contents()[1:]) for row in rows[2:]] == wire
+            assert [(cells[1], cells[3], cells[4]) for cells in
+                    (row.locator("td").all_text_contents() for row in rows[2:])] == wire
+            for frame_id, data in [(0x7DF, "02 01 0D"), (0x7E8, "03 41 0D 00"),
+                                   (0x7DF, "02 01 10"), (0x7E8, "04 41 10 01 5E")]:
+                raw.send(struct.pack("=IB3x8s", frame_id, 8, bytes.fromhex(data)))
+            expect(page.locator("#frame-rows .meaning.request")).to_have_text(
+                ["Request · Vehicle speed", "Request · Mass airflow"])
+            expect(page.locator("#frame-rows .meaning.reply")).to_have_text(
+                ["Reply · Vehicle speed · 0 km/h", "Reply · Mass airflow · 3.50 g/s"])
+            expect(page.locator("#frame-rows tr").last.locator(".padding-byte")).to_have_count(3)
             page.get_by_label("Filter CAN ID").fill("0x7E9")
             expect(page.locator("#frame-rows tr")).to_have_count(2)
             page.get_by_role("button", name="Stop capture").click()

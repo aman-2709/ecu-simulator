@@ -54,9 +54,30 @@
     }
   }
 
+  // Interpret only recognized OBD single frames on the conventional 11-bit IDs.
+  // Unknown traffic keeps its original bytes and neutral styling.
+  function describe(frame) {
+    if (frame.kind === "ERR") return {text: "CAN controller error", role: "error"};
+    if (frame.kind === "RTR") return {text: "Remote frame"};
+    const [length, service, pid, a, b] = frame.bytes;
+    if (length > frame.bytes.length - 1 || frame.id.length !== 3) return {};
+    const id = parseInt(frame.id, 16);
+    const speed = pid === 0x0D;
+    if (!speed && pid !== 0x10) return {};
+    const name = speed ? "Vehicle speed" : "Mass airflow";
+    if (service === 0x01 && length === 2 && id >= 0x7DF && id <= 0x7E7) {
+      return {text: "Request · " + name, role: "request", end: length + 1};
+    }
+    if (service === 0x41 && length === (speed ? 3 : 4) && id >= 0x7E8 && id <= 0x7EF) {
+      const value = speed ? a + " km/h" : ((256 * a + b) / 100).toFixed(2) + " g/s";
+      return {text: "Reply · " + name + " · " + value, role: "reply", end: length + 1};
+    }
+    return {};
+  }
+
   function render() {
     const snapshot = frozen || {trace, groups, total, dropped};
-    const headings = grouped ? ["CAN ID", "Count", "Length", "Latest bytes"] : ["Time (UTC)", "CAN ID", "Length", "Bytes"];
+    const headings = grouped ? ["CAN ID", "Count", "Meaning", "Length", "Latest bytes"] : ["Time (UTC)", "CAN ID", "Meaning", "Length", "Bytes"];
     byId("frame-head").replaceChildren(...headings.map(label => {
       const th = document.createElement("th"); th.textContent = label; return th;
     }));
@@ -75,12 +96,22 @@
         row.insertCell().textContent = iso.slice(11, 23) + String(frame.time % 1000).padStart(3, "0");
         row.insertCell().textContent = id;
       }
+      const info = describe(frame);
+      const meaning = row.insertCell();
+      meaning.textContent = info.text || "—";
+      meaning.className = "meaning " + (info.role || "");
       row.insertCell().textContent = frame.length;
       const bytes = row.insertCell();
       frame.bytes.forEach((value, i) => {
         if (i) bytes.append(" ");
         const hex = value.toString(16).toUpperCase().padStart(2, "0");
-        if (grouped && frame.changed[i]) {
+        if (info.end !== undefined && i >= info.end) {
+          const padding = document.createElement("span");
+          padding.className = "padding-byte";
+          padding.title = "CAN padding";
+          padding.textContent = hex;
+          bytes.append(padding);
+        } else if (grouped && frame.changed[i]) {
           const mark = document.createElement("mark"); mark.textContent = hex; bytes.append(mark);
         } else bytes.append(hex);
       });
