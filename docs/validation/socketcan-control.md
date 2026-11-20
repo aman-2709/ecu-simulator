@@ -34,3 +34,18 @@ unshare -rn bash -ec '
 ## Physical bench
 
 The owner identified a dedicated terminated bench with a second node. The first attempt used the same browser test with `ECU_SIM_CAN_IFACE=can0` on a gs_usb adapter configured for 500 kbit/s. The single-P0001 raw payload, decoded status and Stop assertions passed. On the second run the two-DTC exchange timed out. Across the attempt, the controller moved from ERROR-ACTIVE to ERROR-PASSIVE. Error-warning events increased from 36 to 40 and error-passive events from 1 to 2. The bus-off counter remained zero. These counters do not identify which frame failed. Physical multi-frame acceptance remains open.
+
+### Retest with the Android app connected to the OBDLink LX
+
+On November 19 the live browser on the 500 kbit/s physical bench displayed two DTCs from `engine.physical`. The capture included functional OBD polls on 7DF and ECU replies on 7E8. Sending `19 02 FF` on 7E0 produced the following frames in order.
+
+```text
+7E0  03 19 02 FF 00 00 00 00
+7E8  10 0B 59 02 8C 94 77 01
+7E0  30 00 00 00 00 00 00 00
+7E8  21 0C 00 01 01 0C 00 00
+```
+
+A second flow-control frame followed the completed response. The GUI showed the full 11 bytes and decoded B1477 and P0001, both pending and confirmed. The error-warning, error-passive and bus-off counts remained at 72, 12 and zero over this exchange.
+
+A temporary ECU used only 7E1/7E9 so the existing GUI run could continue. The single confirmed P0001 case passed. For the two-record case, the first frame appeared 1.814 seconds after the request, beyond the tester’s 1.5-second deadline. A flow-control frame followed, with no consecutive frame captured. Controller error frames appeared during the attempt. By the final snapshot the error-warning and error-passive counters had risen to 108 and 23; bus-off remained zero. The specific two-record acceptance case on 7E1/7E9 remains open. The trace alone does not establish the underlying cause.
