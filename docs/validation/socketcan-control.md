@@ -53,3 +53,17 @@ A temporary ECU used only 7E1/7E9 so the existing GUI run could continue. The si
 ### Clear codes from Android and verify over UDS
 
 After clearing codes through the OBDLink LX, the operator reported that a fresh Android scan showed no pending, stored or permanent DTCs. The browser screenshot for the running `faults_demo` ECU on `can0` (run `cf6d352f`, endpoint `engine.physical`) shows request `19 02 FF`, response `59 02 8C` and zero matching DTCs. The response contains the availability mask and no DTC records. This verifies that the clear from Android was visible through the simulator’s UDS tester.
+
+### Physical two-record acceptance passed on 7E1/7E9
+
+At 16:57 local time on November 19, the OBDLink app was polling the live ECU on 7DF/7E8. A separate GUI manager started an unsaved ECU profile with only the 7E1/7E9 endpoint on can0 at 500 kbit/s. The browser sent the request and displayed two records. The CAN capture showed:
+
+```text
++0.000 ms  7E1  03 19 02 FF
++0.394 ms  7E9  10 0B 59 02 8C 00 01 01
++0.570 ms  7E1  30 00 00
++0.710 ms  7E9  21 08 94 77 01 04
++1.086 ms  7E1  30 00 00 00 00 00 00 00
+```
+
+The final listed flow-control frame arrived after the complete response. The browser displayed `59 02 8C 00 01 01 08 94 77 01 04`, decoded P0001 as confirmed and B1477 as pending, and reached Stopped after the operator flow clicked Stop ECU. The original ECU remained Running under the same run ID. The controller stayed ERROR-ACTIVE across the exchange with unchanged warning/passive/bus-off counters (197/1356/0). This closes the physical two-record acceptance case. The cause of the earlier intermittent timeouts remains undetermined.
