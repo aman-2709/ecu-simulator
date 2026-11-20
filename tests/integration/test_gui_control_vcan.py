@@ -100,9 +100,22 @@ def test_gui_control_vcan_profile_wire_and_persistence(browser, vcan, tmp_path):
         single = draft(base)
         page.locator("#draft").fill(single)
         start(page)
-        send(page)
-        expect(page.locator("#raw")).to_have_text("RX  59 02 8C 00 01 01 08")
-        expect(page.locator("#records li")).to_have_text(["P0001 · Confirmed · failure type 01 · status 08"])
+        page.get_by_role("button", name="Tester Present", exact=True).click()
+        expect(page.locator("#payload")).to_have_value("3E 00")
+        page.get_by_role("button", name="Read DTCs").click()
+        expect(page.locator("#payload")).to_have_value("19 02 FF")
+        expect(page.locator("#exchanges details")).to_have_count(0)
+        page.locator("#send").click()
+        expect(page.locator("#exchanges details:first-child .raw")).to_have_text("RX  59 02 8C 00 01 01 08")
+        expect(page.locator("#exchanges details:first-child .records li")).to_have_text(["P0001 · Confirmed · failure type 01 · status 08"])
+        page.get_by_role("button", name="Tester Present · suppress positive response").click()
+        expect(page.locator("#payload")).to_have_value("3E 80")
+        page.locator("#send").click()
+        expect(page.locator("#exchanges details")).to_have_count(2)
+        first_read = page.locator("#exchanges details").last
+        first_read.locator("summary").click()
+        expect(first_read.locator(".records")).to_contain_text("P0001 · Confirmed")
+        expect(first_read.locator(".raw")).to_be_visible()
         stop(page)
         expect(page.locator("#draft")).to_have_value(single)
         assert not list(tmp_path.rglob("*.yaml"))
@@ -111,12 +124,17 @@ def test_gui_control_vcan_profile_wire_and_persistence(browser, vcan, tmp_path):
         with socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW) as capture:
             capture.bind((vcan,))
             send(page)
-            expect(page.locator("#raw")).to_have_text("RX  59 02 8C 00 01 01 08 94 77 01 04")
+            expect(page.locator("#exchanges details:first-child .raw")).to_have_text("RX  59 02 8C 00 01 01 08 94 77 01 04")
             verify_frames(capture)
-        expect(page.locator("#records li")).to_have_text([
+        expect(page.locator("#exchanges details:first-child .records li")).to_have_text([
             "P0001 · Confirmed · failure type 01 · status 08", "B1477 · Pending · failure type 01 · status 04"])
         send(page, "3E 80")
-        expect(page.locator("#decoded")).to_have_text("No response received · positive response suppression requested.")
+        expect(page.locator("#exchanges details:first-child .outcome")).to_have_text("No response received · positive response suppression requested.")
+        expect(page.locator("#exchanges details")).to_have_count(2)
+        earlier = page.locator("#exchanges details").last
+        earlier.locator("summary").click()
+        expect(earlier.locator(".raw")).to_have_text("RX  59 02 8C 00 01 01 08 94 77 01 04")
+        expect(earlier.locator(".records li")).to_have_count(2)
         stop(page)
         page.locator("#name").fill("Two faults")
         page.get_by_role("button", name="Save as").click()
@@ -127,7 +145,7 @@ def test_gui_control_vcan_profile_wire_and_persistence(browser, vcan, tmp_path):
         expect(page.locator("#draft")).to_have_value(draft(base, two=True))
         start(page)
         send(page)
-        expect(page.locator("#raw")).to_have_text("RX  59 02 8C 00 01 01 08 94 77 01 04")
+        expect(page.locator("#exchanges details:first-child .raw")).to_have_text("RX  59 02 8C 00 01 01 08 94 77 01 04")
         stop(page)
     assert default_profile_path().read_bytes() == shipped
 
@@ -172,16 +190,16 @@ def test_gui_control_vcan_retry_stale_tabs_and_negative(browser, vcan, tmp_path)
         send(page, "3E 80")
         send(stale)
         expect(stale.locator("#error")).to_contain_text("in progress")
-        expect(page.locator("#decoded")).to_have_text("No response received · positive response suppression requested.")
+        expect(page.locator("#exchanges details:first-child .outcome")).to_have_text("No response received · positive response suppression requested.")
         send(stale)
-        expect(stale.locator("#raw")).to_contain_text("59 02 8C")
+        expect(stale.locator("#exchanges details:first-child .raw")).to_contain_text("59 02 8C")
         stop(page)
         faults = "    faults:\n      - {effect: nrc, sid: 0x3E, nrc: 0x22, addressing: physical, occurrences: [1]}\n"
         page.locator("#draft").fill(base.replace("    endpoints:", faults + "    endpoints:").replace("interface: vcan0", f"interface: {vcan}"))
         start(page)
         send(page, "3E 80")
-        expect(page.locator("#raw")).to_have_text("RX  7F 3E 22")
-        expect(page.locator("#decoded")).to_have_text("Negative response · NRC 22")
+        expect(page.locator("#exchanges details:first-child .raw")).to_have_text("RX  7F 3E 22")
+        expect(page.locator("#exchanges details:first-child .outcome")).to_have_text("Negative response · NRC 22")
         stop(page)
 
 
@@ -196,7 +214,7 @@ def test_gui_control_vcan_reply_via_returns_complete_payload(browser, vcan, tmp_
         page.locator("#draft").fill(text)
         start(page)
         send(page)
-        expect(page.locator("#raw")).to_have_text("RX  59 02 8C 00 01 01 08 94 77 01 04")
+        expect(page.locator("#exchanges details:first-child .raw")).to_have_text("RX  59 02 8C 00 01 01 08 94 77 01 04")
         stop(page)
 
 
@@ -232,8 +250,8 @@ def test_live_can_trace_and_groups_match_independent_capture(browser, vcan, tmp_
             page.locator("#draft").fill(draft(default_profile_path().read_text(), two=True))
             start(page)
             send(page)
-            expect(page.locator("#raw")).to_have_text("RX  59 02 8C 00 01 01 08 94 77 01 04")
-            expect(page.locator("#records li")).to_have_count(2)
+            expect(page.locator("#exchanges details:first-child .raw")).to_have_text("RX  59 02 8C 00 01 01 08 94 77 01 04")
+            expect(page.locator("#exchanges details:first-child .records li")).to_have_count(2)
             raw.settimeout(2)
             wire = []
             while len(wire) < 4:

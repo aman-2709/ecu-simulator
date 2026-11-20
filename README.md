@@ -108,7 +108,7 @@ ecu-simulator-gui
 
 Open the printed loopback address (default port 8766). Select a shipped profile, edit the YAML working copy, select an up CAN interface, and click **Start ECU**. The running interface and run ID appear when the child has opened its sockets. **Save as** keeps a named copy for the next launch. A validation or startup error leaves the draft in the editor.
 
-With `ice_default`, choose **engine.uds_physical**, send `19 02 FF`, and inspect the response bytes and decoded trouble codes. **Stop ECU** releases the sockets. The same controls use `vcan0` or a configured physical bench interface.
+With `ice_default`, choose **engine.uds_physical**, choose **Read DTCs** to fill in `19 02 FF`, then press **Send**. You can edit the bytes from any preset before sending. **Exchange history** keeps requests made in this tab for the current run, newest first. Expand a request to inspect its complete response bytes and decoded trouble codes. Reloading the page clears the history. **Stop ECU** releases the sockets. The same controls use `vcan0` or a configured physical bench interface.
 
 **Live CAN** captures Classical CAN frames on the selected interface even while the ECU is stopped.
 Choose an interface and click **Start capture**. **Trace** retains the latest 512 frames in arrival

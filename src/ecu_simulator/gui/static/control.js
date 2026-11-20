@@ -17,7 +17,10 @@ function controls() {
   el("send").disabled = !online || sending || run.state !== "Running" || !el("endpoint").value;
 }
 function showRun(next) {
-  if (next.id !== run.id) el("result").hidden = true;
+  if (next.id !== run.id) {
+    el("exchanges").replaceChildren();
+    el("result").hidden = true;
+  }
   if (next.id !== run.id || next.endpoints.join() !== run.endpoints.join()) {
     el("endpoint").replaceChildren(...next.endpoints.map(name => new Option(name, name)));
   }
@@ -111,22 +114,46 @@ el("stop").onclick = action(async () => {
   await api("/run/" + id + "/stop",{});
   await refresh();
 });
+for (const button of el("presets").querySelectorAll("button")) {
+  button.onclick = () => {
+    el("payload").value = button.dataset.payload;
+    el("payload").focus();
+  };
+}
+
+function recordExchange(time, endpoint, request, outcome, raw, records) {
+  const entry = el("exchange-template").content.firstElementChild.cloneNode(true);
+  entry.querySelector(".exchange-meta").textContent = time.toISOString().slice(11, 23) + " UTC · " + endpoint;
+  entry.querySelector(".request").textContent = "Request  " + request;
+  entry.querySelector(".outcome").textContent = outcome;
+  if (raw) entry.querySelector(".raw").textContent = "RX  " + raw;
+  for (const record of records) {
+    const item = document.createElement("li");
+    item.textContent = record;
+    entry.querySelector(".records").append(item);
+  }
+  const history = el("exchanges");
+  if (history.firstElementChild) history.firstElementChild.open = false;
+  history.prepend(entry);
+  el("result").hidden = false;
+  history.scrollTop = 0;
+}
+
 el("send-form").onsubmit = action(async () => {
   const id = run.id;
+  const endpoint = el("endpoint").value;
+  const payload = el("payload").value;
+  const time = new Date();
   sending = true;
   controls();
   try {
-    const data = await api("/run/" + id + "/send",{endpoint: el("endpoint").value, payload: el("payload").value});
-    if (run.id !== data.id) return;
-    el("request").textContent = "TX  " + data.request;
-    el("raw").textContent = data.raw ? "RX  " + data.raw : "";
-    el("decoded").textContent = data.message;
-    el("records").replaceChildren(...data.records.map(text => {
-      const li = document.createElement("li");
-      li.textContent = text;
-      return li;
-    }));
-    el("result").hidden = false;
+    const data = await api("/run/" + id + "/send", {endpoint, payload});
+    if (run.id === data.id) {
+      recordExchange(time, endpoint, data.request, data.message || "Response received", data.raw, data.records);
+    }
+  } catch (error) {
+    if (run.id === id) recordExchange(time, endpoint, payload, "Request failed · " + error.message, "", []);
+    throw error;
   } finally { sending = false; controls(); }
 });
 async function init() {

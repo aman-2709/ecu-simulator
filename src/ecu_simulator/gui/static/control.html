@@ -27,10 +27,19 @@
     </section>
     <section aria-labelledby="tester-heading"><h2 id="tester-heading">UDS tester</h2>
       <label>Endpoint<select id="endpoint"></select></label>
+      <div id="presets" role="group" aria-label="Request presets">
+        <button data-payload="19 02 FF">Read DTCs</button>
+        <button data-payload="3E 00">Tester Present</button>
+        <button data-payload="3E 80">Tester Present · suppress positive response</button>
+      </div>
       <form id="send-form"><label>Request bytes<input id="payload" value="19 02 FF" spellcheck="false" required></label>
         <button id="send" class="primary" disabled>Send</button></form>
-      <div id="result" aria-live="polite" hidden><h3>Last exchange</h3><div id="request"></div><output id="raw"></output>
-        <p id="decoded"></p><ul id="records"></ul></div>
+      <div id="result" hidden><h3>Exchange history</h3>
+        <div id="exchanges" aria-live="polite"></div></div>
+      <template id="exchange-template"><details open>
+        <summary><span class="exchange-meta"></span><code class="request"></code><span class="outcome"></span></summary>
+        <div class="raw"></div><ul class="records"></ul>
+      </details></template>
     </section>
     <p id="notice" role="status"></p><p id="error" role="alert"></p>
   </div>

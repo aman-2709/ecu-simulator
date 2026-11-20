@@ -15,15 +15,15 @@ form, #result { margin-top: 1rem; }
 .row { margin-bottom: 1rem; }
 .row label, form label { flex: 1; }
 select, input, textarea, button { color: inherit; font: inherit; border: 1px solid #869f9b; border-radius: .3rem; padding: .5rem .7rem; background: white; }
-textarea, #payload, output, #request { font: .9rem/1.5 "IBM Plex Mono", ui-monospace, monospace; }
+textarea, #payload, .raw, .request { font: .9rem/1.5 "IBM Plex Mono", ui-monospace, monospace; }
 textarea { min-height: 15rem; width: 100%; resize: vertical; white-space: pre; background: #fafcfb; }
 button { font-weight: 650; cursor: pointer; }
 button.primary { background: #14635d; color: white; }
 button:disabled { opacity: .5; cursor: default; }
 :focus-visible { outline: 3px solid #228780; outline-offset: 2px; }
-output { display: block; overflow-wrap: anywhere; font-weight: bold; margin-top: .5rem; }
+.raw { display: block; overflow-wrap: anywhere; font-weight: bold; margin-top: .5rem; }
 #error, #run-error { color: #932d22; }
-#run-error:empty, #notice:empty, #error:empty, #records:empty { display: none; }
+#run-error:empty, #notice:empty, #error:empty, .records:empty, .raw:empty { display: none; }
 @media (max-width: 760px) { main { grid-template-columns: 1fr; margin: 1rem auto; } }
 [hidden] { display: none !important; }
 nav { display: flex; gap: .5rem; padding: .75rem max(4vw, 1rem); background: white; border-bottom: 1px solid #c6d4d1; }
@@ -48,3 +48,11 @@ button[aria-pressed="true"] { background: #d9eee8; border-color: #14635d; color:
 #frame-scroll td strong, #frame-scroll td mark { font-weight: 750; }
 #frame-scroll td mark { padding: .04rem .14rem; border-radius: .15rem; }
 .padding-byte { color: #61716b; }
+
+#presets { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .75rem; }
+#presets button { font-size: .85rem; }
+#exchanges { overflow: auto; max-height: 55vh; }
+#exchanges details { border-top: 1px solid #c6d4d1; padding: .65rem 0; overflow-wrap: anywhere; }
+#exchanges summary { cursor: pointer; }
+.exchange-meta { font-size: .85rem; color: #42605d; }
+.request, .outcome { display: block; }
