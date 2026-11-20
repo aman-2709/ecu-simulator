@@ -49,3 +49,7 @@ On November 19 the live browser on the 500 kbit/s physical bench displayed two D
 A second flow-control frame followed the completed response. The GUI showed the full 11 bytes and decoded B1477 and P0001, both pending and confirmed. The error-warning, error-passive and bus-off counts remained at 72, 12 and zero over this exchange.
 
 A temporary ECU used only 7E1/7E9 so the existing GUI run could continue. The single confirmed P0001 case passed. For the two-record case, the first frame appeared 1.814 seconds after the request, beyond the tester’s 1.5-second deadline. A flow-control frame followed, with no consecutive frame captured. Controller error frames appeared during the attempt. By the final snapshot the error-warning and error-passive counters had risen to 108 and 23; bus-off remained zero. The specific two-record acceptance case on 7E1/7E9 remains open. The trace alone does not establish the underlying cause.
+
+### Clear codes from Android and verify over UDS
+
+After clearing codes through the OBDLink LX, the operator reported that a fresh Android scan showed no pending, stored or permanent DTCs. The browser screenshot for the running `faults_demo` ECU on `can0` (run `cf6d352f`, endpoint `engine.physical`) shows request `19 02 FF`, response `59 02 8C` and zero matching DTCs. The response contains the availability mask and no DTC records. This verifies that the clear from Android was visible through the simulator’s UDS tester.
