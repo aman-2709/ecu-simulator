@@ -38,8 +38,12 @@ button[aria-pressed="true"] { background: #d9eee8; border-color: #14635d; color:
 #frame-scroll td { font: .9rem/1.5 "IBM Plex Mono", ui-monospace, monospace; }
 #frame-scroll mark { background: #ffdda3; color: #4e3000; font-weight: bold; }
 
-#frame-scroll .meaning { font-family: inherit; }
-.meaning.request { color: #38547c; }
-.meaning.reply { color: #105d49; font-weight: 600; }
-.meaning.error { color: #932d22; font-weight: 600; }
-.padding-byte { color: #687773; }
+#frame-scroll tr.reply { background: #eef8f5; }
+#frame-scroll tr.error { background: #fce9e6; }
+#frame-scroll .frame-type { display: inline-block; padding: .1rem .45rem; border-radius: .25rem; font: 600 .8rem/1.4 system-ui, sans-serif; }
+#frame-scroll tr.request .frame-type { background: #dbe8fd; color: #183e70; }
+#frame-scroll tr.reply .frame-type { background: #ceeade; color: #114c38; }
+#frame-scroll tr.error .frame-type { background: #992e25; color: white; }
+#frame-scroll td strong, #frame-scroll td mark { font-weight: 750; }
+#frame-scroll td mark { padding: .04rem .14rem; border-radius: .15rem; }
+.padding-byte { color: #61716b; }

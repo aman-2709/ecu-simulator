@@ -6,6 +6,7 @@
   const pause = byId("capture-pause");
   const status = byId("capture-status");
   const limit = 512;
+  const previousValues = new Map();
   let trace = [], groups = new Map(), total = 0, dropped = 0;
   let session = null, frozen = null, grouped = false, renderTimer = null;
   let catalogVersion = 0;
@@ -42,6 +43,14 @@
       const key = frame.id + frame.kind;
       const previous = groups.get(key);
       const changed = frame.bytes.map((value, i) => Boolean(previous && previous.bytes[i] !== value));
+      const info = describe(frame);
+      if (info.value !== undefined) {
+        const signalKey = frame.id + ":" + info.name;
+        const prior = previousValues.get(signalKey);
+        info.changed = prior !== undefined && prior !== info.value;
+        previousValues.set(signalKey, info.value);
+      }
+      frame.info = info;
       groups.delete(key);
       groups.set(key, {...frame, changed, count: (previous?.count || 0) + 1});
       if (groups.size > limit) groups.delete(groups.keys().next().value);
@@ -57,8 +66,8 @@
   // Interpret only recognized OBD single frames on the conventional 11-bit IDs.
   // Unknown traffic keeps its original bytes and neutral styling.
   function describe(frame) {
-    if (frame.kind === "ERR") return {text: "CAN controller error", role: "error"};
-    if (frame.kind === "RTR") return {text: "Remote frame"};
+    if (frame.kind === "ERR") return {name: "CAN controller error", label: "Error", role: "error"};
+    if (frame.kind === "RTR") return {label: "Remote"};
     const [length, service, pid, a, b] = frame.bytes;
     if (length > frame.bytes.length - 1 || frame.id.length !== 3) return {};
     const id = parseInt(frame.id, 16);
@@ -66,18 +75,18 @@
     if (!speed && pid !== 0x10) return {};
     const name = speed ? "Vehicle speed" : "Mass airflow";
     if (service === 0x01 && length === 2 && id >= 0x7DF && id <= 0x7E7) {
-      return {text: "Request · " + name, role: "request", end: length + 1};
+      return {name, label: "Request", role: "request", end: length + 1};
     }
     if (service === 0x41 && length === (speed ? 3 : 4) && id >= 0x7E8 && id <= 0x7EF) {
       const value = speed ? a + " km/h" : ((256 * a + b) / 100).toFixed(2) + " g/s";
-      return {text: "Reply · " + name + " · " + value, role: "reply", end: length + 1};
+      return {name, value, label: "Reply", role: "reply", end: length + 1};
     }
     return {};
   }
 
   function render() {
     const snapshot = frozen || {trace, groups, total, dropped};
-    const headings = grouped ? ["CAN ID", "Count", "Meaning", "Length", "Latest bytes"] : ["Time (UTC)", "CAN ID", "Meaning", "Length", "Bytes"];
+    const headings = grouped ? ["CAN ID", "Count", "Type", "Signal", "Value", "Length", "Latest bytes"] : ["Time (UTC)", "CAN ID", "Type", "Signal", "Value", "Length", "Bytes"];
     byId("frame-head").replaceChildren(...headings.map(label => {
       const th = document.createElement("th"); th.textContent = label; return th;
     }));
@@ -96,10 +105,23 @@
         row.insertCell().textContent = iso.slice(11, 23) + String(frame.time % 1000).padStart(3, "0");
         row.insertCell().textContent = id;
       }
-      const info = describe(frame);
-      const meaning = row.insertCell();
-      meaning.textContent = info.text || "—";
-      meaning.className = "meaning " + (info.role || "");
+      const info = frame.info;
+      row.className = info.role || "";
+      const type = row.insertCell();
+      if (info.label) {
+        const label = document.createElement("span");
+        label.className = "frame-type";
+        label.textContent = info.label;
+        type.append(label);
+      } else type.textContent = "—";
+      row.insertCell().textContent = info.name || "—";
+      const value = row.insertCell();
+      if (info.value !== undefined) {
+        const reading = document.createElement(info.changed ? "mark" : "strong");
+        reading.textContent = info.value;
+        if (info.changed) reading.title = "Changed since the last reply for this signal";
+        value.append(reading);
+      } else value.textContent = "—";
       row.insertCell().textContent = frame.length;
       const bytes = row.insertCell();
       frame.bytes.forEach((value, i) => {
@@ -149,7 +171,7 @@
           buffer = buffer.slice(newline + 1);
           if (packet.error) throw Error(packet.error);
           if (packet.ready) {
-            trace = []; groups = new Map(); total = 0; dropped = 0; frozen = null;
+            trace = []; groups = new Map(); previousValues.clear(); total = 0; dropped = 0; frozen = null;
             pause.disabled = false; pause.textContent = "Pause display";
             status.textContent = "Capturing on " + select.value;
             render();
