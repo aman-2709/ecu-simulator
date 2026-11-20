@@ -25,3 +25,15 @@ output { display: block; overflow-wrap: anywhere; font-weight: bold; margin-top:
 #error, #run-error { color: #932d22; }
 #run-error:empty, #notice:empty, #error:empty, #records:empty { display: none; }
 @media (max-width: 760px) { main { grid-template-columns: 1fr; margin: 1rem auto; } }
+[hidden] { display: none !important; }
+nav { display: flex; gap: .5rem; padding: .75rem max(4vw, 1rem); background: white; border-bottom: 1px solid #c6d4d1; }
+button[aria-pressed="true"] { background: #d9eee8; border-color: #14635d; color: #104c48; }
+#live-panel { display: block; }
+.view-switch { display: flex; gap: .3rem; }
+#frame-summary { font-size: .9rem; margin-bottom: .5rem; }
+#frame-scroll { overflow: auto; max-height: 55vh; min-height: 8rem; border: 1px solid #c6d4d1; border-radius: .3rem; }
+#frame-scroll table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; }
+#frame-scroll th { position: sticky; top: 0; background: #eef4f2; font-size: .9rem; }
+#frame-scroll td, #frame-scroll th { padding: .4rem .65rem; border-bottom: 1px solid #e0e8e6; white-space: nowrap; }
+#frame-scroll td { font: .9rem/1.5 "IBM Plex Mono", ui-monospace, monospace; }
+#frame-scroll mark { background: #ffdda3; color: #4e3000; font-weight: bold; }

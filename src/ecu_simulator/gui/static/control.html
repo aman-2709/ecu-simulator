@@ -3,11 +3,15 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>ECU Simulator · SocketCAN</title>
-  <link rel="stylesheet" href="/control.css"><script src="/control.js" defer></script>
+  <link rel="stylesheet" href="/control.css"><script src="/control.js" defer></script><script src="/live.js" defer></script>
 </head>
 <body>
 <header><h1>ECU Simulator</h1><span>SocketCAN</span></header>
-<main>
+<nav aria-label="Workspace">
+  <button id="sim-tab" aria-pressed="true" aria-controls="sim-panel">Simulator</button>
+  <button id="live-tab" aria-pressed="false" aria-controls="live-panel">Live CAN</button>
+</nav>
+<main id="sim-panel">
   <section aria-labelledby="profile-heading">
     <h2 id="profile-heading">Profile editor</h2>
     <div class="row"><label>Profile<select id="profile"></select></label>
@@ -30,5 +34,22 @@
     </section>
     <p id="notice" role="status"></p><p id="error" role="alert"></p>
   </div>
+</main>
+<main id="live-panel" hidden>
+  <section aria-labelledby="capture-heading">
+    <h2 id="capture-heading">Live CAN</h2>
+    <div class="row"><label>Capture interface<select id="capture-interface"></select></label>
+      <button class="primary" id="capture-toggle" disabled>Start capture</button>
+      <span id="capture-status" role="status">Stopped</span></div>
+    <div class="row">
+      <div class="view-switch" aria-label="Frame view"><button id="trace-view" aria-pressed="true">Trace</button><button id="group-view" aria-pressed="false">By CAN ID</button></div>
+      <label>Filter CAN ID<input id="can-filter" placeholder="e.g. 7E8" spellcheck="false"></label>
+      <button id="capture-pause" disabled>Pause display</button>
+    </div>
+    <div id="frame-summary"></div>
+    <div id="frame-scroll" tabindex="0" aria-label="CAN frames"><table>
+      <thead><tr id="frame-head"></tr></thead><tbody id="frame-rows"></tbody>
+    </table></div>
+  </section>
 </main>
 </body></html>

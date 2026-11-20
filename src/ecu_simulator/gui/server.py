@@ -1,6 +1,8 @@
 """Local profile editor and SocketCAN control API."""
 
 import argparse
+import asyncio
+import json
 import socket
 from pathlib import Path
 from typing import Any
@@ -10,6 +12,7 @@ from aiohttp import web
 from ecu_simulator.api.options import allowed_hosts
 from ecu_simulator.api.server import FRONTEND_HEADERS
 from ecu_simulator.config import ConfigError, load_profile_text
+from ecu_simulator.gui.capture import BATCH_LIMIT, open_capture, read_batch
 from ecu_simulator.gui.manager import Manager, RunConflict
 from ecu_simulator.gui.profiles import Profiles, change_interface
 from ecu_simulator.transport.errors import TransportError
@@ -49,6 +52,36 @@ def application(directory: Path | None = None) -> web.Application:
     manager, profiles = Manager(), Profiles(directory)
     app = web.Application(middlewares=[local_access])
     routes = web.RouteTableDef()
+
+    shutting_down = asyncio.Event()
+
+    @routes.post("/capture")
+    async def capture(request: web.Request) -> web.StreamResponse:
+        interface, = await fields(request, "interface")
+        with open_capture(interface) as sock:
+            response = web.StreamResponse(headers={
+                "Content-Type": "application/x-ndjson", "Cache-Control": "no-store",
+            })
+            await response.prepare(request)
+            try:
+                await response.write(b'{"ready":true}\n')
+                while not shutting_down.is_set() and request.transport and not request.transport.is_closing():
+                    frames, dropped = read_batch(sock)
+                    if frames:
+                        batch = json.dumps({"frames": frames, "dropped": dropped}, separators=(",", ":"))
+                        await asyncio.wait_for(response.write((batch + "\n").encode()), timeout=3)
+                    # Drain a busy socket promptly, yielding between bounded batches.
+                    await asyncio.sleep(0 if len(frames) == BATCH_LIMIT else 0.05)
+            except (ConnectionError, TimeoutError):
+                pass
+            except OSError as error:
+                await response.write((json.dumps({"error": str(error)}) + "\n").encode())
+            return response
+
+    async def end_captures(app: web.Application) -> None:
+        shutting_down.set()
+
+    app.on_shutdown.append(end_captures)
 
     @routes.get("/profiles")
     async def catalog(request: web.Request) -> web.Response:
@@ -110,7 +143,8 @@ def application(directory: Path | None = None) -> web.Application:
 
     app.add_routes(routes)
     static = Path(__file__).with_name("static")
-    for route, filename in (("/", "control.html"), ("/control.js", "control.js"), ("/control.css", "control.css")):
+    for route, filename in (("/", "control.html"), ("/control.js", "control.js"), ("/control.css", "control.css"),
+                            ("/live.js", "live.js")):
         async def asset(request: web.Request, path: Path = static / filename) -> web.FileResponse:
             return web.FileResponse(path, headers=FRONTEND_HEADERS)
         app.router.add_get(route, asset)

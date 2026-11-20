@@ -110,6 +110,14 @@ Open the printed loopback address (default port 8766). Select a shipped profile,
 
 With `ice_default`, choose **engine.uds_physical**, send `19 02 FF`, and inspect the response bytes and decoded trouble codes. **Stop ECU** releases the sockets. The same controls use `vcan0` or a configured physical bench interface.
 
+**Live CAN** captures Classical CAN frames on the selected interface even while the ECU is stopped.
+Choose an interface and click **Start capture**. **Trace** retains the latest 512 frames in arrival
+order with UTC timestamps. **By CAN ID** retains the 512 most recently seen IDs, counts frames
+while each ID is retained, and highlights bytes that changed from its previous frame.
+Enter an exact hexadecimal ID to filter either view. **Pause display** freezes the view while
+capture continues. You can switch back to **Simulator** to send a UDS request during capture.
+**Stop capture** releases the socket and leaves the last results visible until the next capture.
+
 To run browser acceptance locally, install the dev and GUI extras, Playwright, and a Chromium browser. The suite discovers Google Chrome or Chromium on PATH, honors `ECU_GUI_CHROME` for an explicit executable, and otherwise uses Playwright's installed Chromium.
 
 ```sh

@@ -198,3 +198,54 @@ def test_gui_control_vcan_reply_via_returns_complete_payload(browser, vcan, tmp_
         send(page)
         expect(page.locator("#raw")).to_have_text("RX  59 02 8C 00 01 01 08 94 77 01 04")
         stop(page)
+
+
+def test_live_can_trace_and_groups_match_independent_capture(browser, vcan, tmp_path):
+    """Read-only capture spans ECU lifetime and preserves kernel frame order."""
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        page.goto(url)
+        expect(page.locator("#state")).to_have_text("Stopped")
+        page.get_by_role("button", name="Live CAN", exact=True).click(timeout=2000)
+        page.get_by_label("Capture interface").select_option(vcan)
+        page.get_by_role("button", name="Start capture").click()
+        expect(page.locator("#capture-status")).to_contain_text("Capturing")
+        with socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW) as raw:
+            raw.bind((vcan,))
+            def inject(value):
+                raw.send(struct.pack("=IB3x8s", 0x123, 2, bytes([0xA0, value])))
+            inject(1)
+            expect(page.locator("#frame-rows")).to_contain_text("A0 01")
+            page.get_by_role("button", name="Pause display").click()
+            inject(2)
+            page.wait_for_timeout(250)
+            expect(page.locator("#frame-rows")).not_to_contain_text("A0 02")
+            page.get_by_role("button", name="Resume display").click()
+            page.get_by_role("button", name="By CAN ID").click()
+            expect(page.locator("#frame-rows tr")).to_have_count(1)
+            expect(page.locator("#frame-rows td").nth(1)).to_have_text("2")
+            expect(page.locator("#frame-rows mark")).to_have_text("02")
+            page.get_by_role("button", name="Simulator", exact=True).click()
+            page.locator("#draft").fill(draft(default_profile_path().read_text(), two=True))
+            start(page)
+            send(page)
+            expect(page.locator("#raw")).to_have_text("RX  59 02 8C 00 01 01 08 94 77 01 04")
+            expect(page.locator("#records li")).to_have_count(2)
+            raw.settimeout(2)
+            wire = []
+            while len(wire) < 4:
+                can_id, length, payload = struct.unpack("=IB3x8s", raw.recv(16))
+                if can_id in (0x7E1, 0x7E9):
+                    wire.append((f"{can_id:03X}", str(length), payload[:length].hex(" ").upper()))
+            assert [data[:2] for _, _, data in wire] == ["03", "10", "30", "21"]
+            stop(page)
+            page.get_by_role("button", name="Live CAN", exact=True).click()
+            page.get_by_role("button", name="Trace", exact=True).click()
+            expect(page.locator("#frame-rows tr")).to_have_count(6)
+            rows = page.locator("#frame-rows tr").all()
+            assert [tuple(row.locator("td").all_text_contents()[1:]) for row in rows[2:]] == wire
+            page.get_by_label("Filter CAN ID").fill("0x7E9")
+            expect(page.locator("#frame-rows tr")).to_have_count(2)
+            page.get_by_role("button", name="Stop capture").click()
+            expect(page.locator("#capture-status")).to_contain_text("Stopped")
+        page.close()
