@@ -7,6 +7,8 @@ reaches no protocol at all and nothing is transmitted; an unknown service is sil
 too, which is the OBD convention for a broadcast.
 """
 
+import time
+
 import pytest
 
 from tests.integration.conftest import FunctionalTester, Simulator, assert_silent, open_tester_socket
@@ -94,9 +96,10 @@ def test_a_negative_response_from_an_enabled_protocol_is_transmitted(uds_physica
 
 
 def test_unknown_service_on_a_physical_address_gets_nrc_0x11(uds_physical):
-    # DEV-06 corrected, from the route's unsupported-service policy.
-    uds_physical.send(b"\x22\xf1\x90")
-    assert uds_physical.recv() == b"\x7f\x22\x11"
+    # DEV-06 corrected, from the route's unsupported-service policy. 0x28 is in no
+    # phase of the plan; 0x22 served as this probe until Phase 11 claimed it.
+    uds_physical.send(b"\x28\x01")
+    assert uds_physical.recv() == b"\x7f\x28\x11"
 
 
 def test_tester_present_is_answered_on_the_wire(uds_physical):
@@ -107,8 +110,8 @@ def test_tester_present_is_answered_on_the_wire(uds_physical):
 
 
 def test_tester_present_changes_nothing_a_later_request_can_see(uds_physical):
-    # Stateless on the wire, not just in the handler: the service is asked several times
-    # between two reads of the same data and the second read is byte-identical.
+    # The service is asked several times between two reads of the same data and the second
+    # read is byte-identical. Since Phase 11 it restarts S3, which changes no DTC data.
     uds_physical.send(b"\x19\x02\xff")
     before = uds_physical.recv()
     for _ in range(3):
@@ -140,7 +143,8 @@ def test_the_channel_still_works_after_a_suppressed_response(uds_physical):
 
 
 @pytest.mark.parametrize("request_hex", ["1083", "1181"], ids=["session", "reset"])
-def test_a_suppressed_service_that_is_not_tester_present_is_silent_too(uds_physical, request_hex):
+def test_a_suppressed_service_that_is_not_tester_present_is_silent_too(mutating, uds_physical, request_hex):
+    # Since Phase 11 both change the session, silently, so the simulator is replaced after.
     # The rule is generic, and the wire proves it for the two services DEV-07 named.
     assert_silent(uds_physical, bytes.fromhex(request_hex), OBD_PROBE, FUEL_RESPONSE)
 
@@ -185,3 +189,59 @@ def test_clearing_dtcs_is_not_mistaken_for_a_suppressed_request(mutating, uds_ph
 def test_tester_present_on_the_obd_broadcast_address_reaches_no_protocol(functional):
     # UDS is not enabled on 0x7DF, so claiming 0x3E does not make it answerable there.
     assert_silent(functional, b"\x3e\x00", OBD_PROBE, FUEL_RESPONSE)
+
+
+# --- Phase 11: session state, S3 and 0x22 on the wire -------------------------------------------
+#
+# A test that changes the session takes `mutating`, so the simulator is replaced after it
+# and no later test inherits a non-default session.
+
+
+def test_the_session_is_read_back_over_0x22(mutating, uds_physical):
+    uds_physical.send(b"\x22\xf1\x86")
+    assert uds_physical.recv() == b"\x62\xf1\x86\x01"
+    uds_physical.send(b"\x10\x03")
+    assert uds_physical.recv() == SESSION_RESPONSE.replace(b"\x50\x01", b"\x50\x03")
+    uds_physical.send(b"\x22\xf1\x86")
+    assert uds_physical.recv() == b"\x62\xf1\x86\x03"
+    uds_physical.send(b"\x11\x01")
+    assert uds_physical.recv() == b"\x51\x01"
+    uds_physical.send(b"\x22\xf1\x86")
+    assert uds_physical.recv() == b"\x62\xf1\x86\x01", "ECUReset returned to the default session"
+
+
+def test_the_vin_is_a_multi_frame_0x22_response(uds_physical):
+    # 3 + 17 = 20 bytes: a first frame and consecutive frames through the kernel ISO-TP path.
+    uds_physical.send(b"\x22\xf1\x90")
+    assert uds_physical.recv() == b"\x62\xf1\x90TESTVIN0123456789"
+
+
+def test_several_dids_and_an_unserved_one(uds_physical):
+    uds_physical.send(b"\x22\xf1\x86\xbe\xef\xf1\x90")
+    assert uds_physical.recv() == b"\x62\xf1\x86\x01\xf1\x90TESTVIN0123456789"
+    uds_physical.send(b"\x22\xbe\xef")
+    assert uds_physical.recv() == b"\x7f\x22\x31"
+
+
+def test_s3_returns_to_the_default_session_and_tester_present_prevents_it(mutating, uds_physical):
+    # Real time, so it waits out the default S3 of 5000 ms; AUTOSAR's range for S3 starts
+    # at 5 s ([ECUC_Dcm_01240]), so no profile can make this shorter.
+    uds_physical.send(b"\x10\x03")
+    uds_physical.recv()
+    for _ in range(3):
+        time.sleep(2.0)
+        uds_physical.send(b"\x3e\x00")
+        assert uds_physical.recv() == b"\x7e\x00"
+    uds_physical.send(b"\x22\xf1\x86")
+    assert uds_physical.recv() == b"\x62\xf1\x86\x03", "kept alive by TesterPresent past S3"
+    time.sleep(5.5)
+    uds_physical.send(b"\x22\xf1\x86")
+    assert uds_physical.recv() == b"\x62\xf1\x86\x01", "S3 expired"
+
+
+def test_dtc_count_and_supported_dtcs_on_the_wire(uds_physical):
+    # DEV-16, sub-function half, Phase 11. 19 0A is 11 bytes: multi-frame.
+    uds_physical.send(b"\x19\x01\xff")
+    assert uds_physical.recv() == bytes.fromhex("59018c040002")
+    uds_physical.send(b"\x19\x0a")
+    assert uds_physical.recv() == bytes.fromhex("590a8c" "9477010c" "0001010c")

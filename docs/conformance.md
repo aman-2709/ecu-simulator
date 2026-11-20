@@ -138,21 +138,49 @@ nothing varies over time until the Phase 7 scenario engine.
 
 | Service | Sub-function | Description | Implemented | Unit tested | Integration tested | Hardware validated | Standards validated |
 |---|---|---|---|---|---|---|---|
-| 0x10 | 0x01-0x04 | DiagnosticSessionControl | yes | yes | yes | no | no |
-| 0x11 | 0x01-0x05 | ECUReset | yes | yes | yes | no | no |
+| 0x10 | 0x01-0x04 | DiagnosticSessionControl; session state, per-session P2/P2* record (configurable) | yes | yes | **yes** | no | no |
+| 0x11 | 0x01-0x05 | ECUReset; 0x01-0x03 return to the default session | yes | yes | **yes** | no | no |
 | 0x14 | - | ClearDiagnosticInformation, groupOfDTC `FFFFFF` only | **yes** | yes | **yes** | no | no |
 | 0x19 | 0x02 | reportDTCByStatusMask, mask required and applied | yes | yes | **yes** | no | no |
-| 0x19 | 0x01, 0x0A | other report types | no | yes | no | n/a | no |
-| 0x22 | - | ReadDataByIdentifier | no | yes | yes | n/a | no |
+| 0x19 | 0x01 | reportNumberOfDTCByStatusMask, DTCFormatIdentifier `0x04` | **yes** | yes | **yes** | no | no |
+| 0x19 | 0x0A | reportSupportedDTCs | **yes** | yes | **yes** | no | no |
+| 0x22 | - | ReadDataByIdentifier, one or more DIDs; F186 active session, F190 VIN, profile DIDs | **yes** | yes | **yes** | no | no |
+| - | - | S3 timeout returns a non-default session to the default; any UDS request restarts it | **yes** | yes | **yes** | no | no |
 | 0x3E | 0x00 | TesterPresent, stateless | **yes** | yes | **yes** | no | no |
 | 0x3E | other | subFunctionNotSupported, `7F 3E 12` | **yes** | yes | **yes** | no | no |
 | - | - | NRC 0x11 for a service no enabled protocol serves | yes | yes | yes | no | no |
 | - | - | `suppressPosRspMsgIndicationBit` honoured for every sub-function service | **yes** | yes | **yes** | no | no |
 
-The session parameter record is still a placeholder: DEV-17. No session state is kept, and
-0x3E keeps none either -- it starts, reads and resets no timer, and claims no ISO 14229
-session compliance. S3, TesterPresent timing, the session state machine and Concurrent
-TesterPresent are Phase 11.
+Phase 11 added session handling, on branch `phase-11` (not merged into `modernization`
+until V1.0 is tagged, ruling Q1). Its integration tests passed on the kernel ISO-TP path:
+session entry and reset readback through F186, real-time S3 expiry and TesterPresent,
+single- and multi-frame 0x22, and 0x19/01 and /0A. The complete result is in
+[the Phase 11 completion report](validation/phase-11-completion.md).
+
+- One session per ECU, `0x01` at start, shared by both physical UDS endpoints of the
+  shipped profile. AUTOSAR ties the session to the connection that opened it
+  (`[SWS_Dcm_01667]`, `[SWS_Dcm_01669]`); this simulator deliberately does not (ruling Q2).
+- `10 xx` answers with the session's configured record -- P2 in 1 ms units, P2* in 10 ms
+  units -- and then enters it. The default record is still `00 1E 0B B8` (ruling Q3), so
+  DEV-17 is closed by making it configurable, not by changing it.
+- S3 defaults to 5000 ms (`[SWS_Dcm_01679]`), configurable from 5000 ms up
+  (`[ECUC_Dcm_01240]`). Every request the UDS protocol handles restarts it, positive,
+  negative or suppressed, because that parameter measures S3 "while not receiving any
+  diagnostic request message" (ruling Q4). A SID no UDS handler claims, answered `7F xx 11`
+  by the route, and OBD requests do not restart it. Expiry is evaluated before each request;
+  a gap of exactly S3 keeps the session.
+- `11 01`-`11 03` return to the default session; `11 04`/`11 05` do not. No post-reset dead
+  time is modelled (ruling Q8).
+- 0x22 omits a DID it does not serve and refuses only when none is served
+  (`[SWS_Dcm_00438]`); a response above 4095 bytes is `7F 22 14`. F190 is the VIN as
+  configured, unpadded.
+- Not in Phase 11: session- and security-gating NRCs (Phase 12), Concurrent TesterPresent
+  (no functional UDS route exists), NRC 0x78 and real response timing (Phase 10).
+
+Evidence for every row is in
+[decisions/0011](decisions/0011-phase-11-uds-session-handling.md). The deciding texts,
+ISO 14229-1:2026 and ISO 14229-2:2021, are licensed and unread, so none of it is
+`standards validated`.
 
 Phase 7 closed DEV-23 and DEV-07. `3E 00` is answered `7E 00`; a sub-function this server
 does not support is `7F 3E 12`; a request that is not two bytes is `7F 3E 13`. The
@@ -174,7 +202,9 @@ DTCStatusAvailabilityMask is `0x8C`, the three status bits this project models -
 pendingDTC, bit 3 confirmedDTC, bit 7 warningIndicatorRequested -- and each record's
 status is derived from the shared DTC store rather than fixed at `0x2F`. The third byte
 of the DTC number stays frozen at `0x01`: it is the J2012 failure-type byte and nothing
-supports any value for it. Sub-functions `0x01` and `0x0A` remain Phase 11.
+supports any value for it. Sub-functions `0x01` and `0x0A` were added in Phase 11 (DEV-16);
+advertising DTCFormatIdentifier `0x04` makes that frozen byte read as a failure type, which
+is recorded as the cost of ruling Q7.
 
 Interoperability evidence: `19 02 <mask>`, a mask matching nothing, `14 FF FF FF`, an
 unsupported group, and clearing in both directions between the OBD and UDS channels were
@@ -251,6 +281,7 @@ with CAN traces and the automated results, in
 
 **The shipped `ice_default.yaml` has no scenario**, so the default configuration answers
 exactly what it answered before Phase 7, and a profile without a scenario builds no runner,
-starts no tick and never reads the clock at all. The feature is demonstrated by
+starts no tick and never reads the clock for a scenario. Since Phase 11 an ECU serving UDS
+reads the clock on each UDS request, for S3. The feature is demonstrated by
 `profiles/ice_scenario.yaml`. See
 [decisions/0006-phase-7-scenario-and-testerpresent.md](decisions/0006-phase-7-scenario-and-testerpresent.md).

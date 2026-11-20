@@ -10,6 +10,7 @@ from ecu_simulator.protocols.uds.providers import (
     DtcRegistry,
     ProviderConflictError,
 )
+from ecu_simulator.protocols.uds.session import SessionTiming, UdsSession
 
 __all__ = [
     "SERVICE_IDS",
@@ -20,5 +21,7 @@ __all__ = [
     "DtcRegistry",
     "DtcStoreProvider",
     "ProviderConflictError",
+    "SessionTiming",
     "UdsProtocol",
+    "UdsSession",
 ]

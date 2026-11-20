@@ -302,3 +302,50 @@ def test_each_ecu_gets_a_dtc_store_built_from_its_profile_entry():
     assert tuple(s.code for s in store.confirmed) == ("B1477", "P0001")
     assert tuple(s.code for s in store.pending) == ("B1477", "P0001")
     assert store.indicator_on is False
+
+
+def test_the_uds_session_is_built_from_the_profile():
+    # Phase 11: each ECU's UDS session takes its timing from the profile's uds section.
+    from ecu_simulator.config import load_yaml
+
+    data = load_yaml(cli.default_profile_path())
+    data["ecus"]["engine"]["uds"] = {"sessions": [{"session": 1}, {"session": 3, "p2_ms": 50, "p2_star_ms": 5000}]}
+    dispatcher = app.build_dispatcher(app.RuntimeConfig.build(parse_profile(data)))
+    assert dispatcher(DiagnosticRequest(b"\x10\x03", 0x7E1)).payload.hex() == "5003003201f4"
+    assert dispatcher(DiagnosticRequest(b"\x10\x02", 0x7E1)).payload.hex() == "7f1012"
+
+
+def test_0x22_serves_the_session_the_vin_and_the_profile_dids():
+    from ecu_simulator.config import load_yaml
+
+    data = load_yaml(cli.default_profile_path())
+    data["vehicle"]["vin"] = "SHORTVIN"
+    data["ecus"]["engine"]["dids"] = {"F1A0": "0A 0B"}
+    dispatcher = app.build_dispatcher(app.RuntimeConfig.build(parse_profile(data)))
+
+    def ask(hex_request):
+        return dispatcher(DiagnosticRequest(bytes.fromhex(hex_request), 0x7E1)).payload
+
+    assert ask("22f186") == bytes.fromhex("62f18601")
+    # Ruling Q5: a short VIN is sent as configured, not padded the way Mode 09 pads it.
+    assert ask("22f190") == b"\x62\xf1\x90SHORTVIN"
+    assert ask("22f1a0") == bytes.fromhex("62f1a00a0b")
+    # Both physical routes enable UDS and share one session per ECU (ruling Q2).
+    assert dispatcher(DiagnosticRequest(b"\x10\x03", 0x7E0)).payload.hex() == "5003001e0bb8"
+    assert ask("22f186") == bytes.fromhex("62f18603")
+
+
+def test_s3_runs_on_the_runtime_clock():
+    from ecu_simulator.clock import SimulatedClock
+
+    clock = SimulatedClock()
+    dispatcher = app.build_runtime(shipped(), clock).dispatcher
+
+    def ask(hex_request):
+        return dispatcher(DiagnosticRequest(bytes.fromhex(hex_request), 0x7E1)).payload.hex()
+
+    ask("1003")
+    clock.advance(5.0)
+    assert ask("22f186") == "62f18603"
+    clock.advance(5.001)
+    assert ask("22f186") == "62f18601"

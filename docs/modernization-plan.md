@@ -376,6 +376,18 @@ Off by default, deterministic triggers.
 Session state machine, S3 timeout, TesterPresent timing, 0x22 with providers, 0x19/01 and
 /0A, configurable P2/P2* in the 0x10 record, 0x11 effects on session.
 
+Reviewed 2026-11-17 before implementation:
+[decisions/0011-phase-11-uds-session-handling.md](decisions/0011-phase-11-uds-session-handling.md).
+Rulings given 2026-11-18, all as recommended; Q4 settled from AUTOSAR `[ECUC_Dcm_01240]`.
+
+**Completed 2026-11-18 on branch `phase-11`.** By ruling Q1 the completed branch is not
+merged into `modernization` until V1.0 is tagged, because it changes the Phase 8b bench's
+unclaimed-service case. Delivered: session state machine, S3, TesterPresent timing,
+configurable P2/P2*, 0x11 session effects, 0x22 with F186, F190 and profile DIDs, 0x19/01
+and /0A. Closed: **DEV-17**, and **DEV-16**'s sub-function half. The full local suite,
+all 73 vcan/ISO-TP integration tests, `ruff`, `mypy`, and all four PR CI jobs passed. See
+[the Phase 11 completion report](validation/phase-11-completion.md).
+
 ### Phase 12 — UDS data and security (V1.2)
 
 0x2E for writable DIDs, 0x27 with a documented non-OEM mock strategy, session and security
@@ -477,20 +489,22 @@ a competing version table.
 | SAE J1979-DA | `J1979DA_202607`, revised 2026-07-16 (supersedes `J1979DA_202508`) | Licensed, **text unavailable** | Would settle the service 09 field layouts and the service 01 PID 01 monitor bits; DEV-03 and PID 0x01 deferred for want of it | Phases 5, 6 |
 | SAE J2012 | `J2012_202509`, revised 2025-09-01 (supersedes `J2012_201612`) | Licensed, **text unavailable** | Existing two-byte encoder retained; the third byte of the UDS DTC number stays frozen at 0x01 for want of the failure-type definition | Phase 6 |
 | SAE J2012-DA | Current revision **not established**: the publisher index returns `J2012DA_202403` as the latest catalogued entry and a 2025 edition appears in reseller listings. No `J2012DA_202607` exists; that identifier is J1979-DA's | Licensed, **text unavailable** | None. This project encodes whatever codes a profile declares and depends on no standardized code meaning | Phase 6, found not applicable |
-| ISO 14229-1 | **`ISO 14229-1:2026`, Edition 4, published 2026-06-05**; cancels and replaces `ISO 14229-1:2020` and its `Amd 1:2022` | Licensed, **text unavailable** | V1 services implemented, labelled; 0x14, 0x19/02, the DTC status byte, the availability mask and 0x3E rest on corroborating public material only. Clause 6.5 "Server response implementation rules" governs `suppressPosRspMsgIndicationBit`; the clause number is known only from AUTOSAR's citation of it | Phases 6, 7 |
+| ISO 14229-1 | **`ISO 14229-1:2026`, Edition 4, published 2026-06-05**; cancels and replaces `ISO 14229-1:2020` and its `Amd 1:2022` | Licensed, **text unavailable** | V1 services implemented, labelled; 0x14, 0x19/02, the DTC status byte, the availability mask and 0x3E rest on corroborating public material only. Clause 6.5 "Server response implementation rules" governs `suppressPosRspMsgIndicationBit`; the clause number is known only from AUTOSAR's citation of it | Phases 6, 7; re-confirmed current for Phase 11 |
+| ISO 14229-2 | **`ISO 14229-2:2021`, Edition 2, published 2021-10**; cancels and replaces `ISO 14229-2:2013` (withdrawn) | Licensed, **text unavailable** | Defines P2, P2*, S3 and when S3 starts and stops. AUTOSAR defers all of it to this document, so which requests restart S3 and the default P2/P2* values are put to the owner rather than implemented from memory | Phase 11 review |
 | SAE J1979-2, J1979-3 | not checked | Licensed, not public | Nothing implemented | — |
 | ISO 13400-2 | not checked | Licensed; layouts public | Experimental only | — |
 | ELM327 datasheet | ELM327DSJ | Public | Tester side; supplied the service 09 and service 01 captures behind the Phase 5 decisions, and the service 03 CAN framing, service 04 response and PID 01 first byte behind the Phase 6 ones | Phases 5, 6 |
-| AUTOSAR CP SWS Diagnostic Event Manager | **R25-11** (document ID 19). Supersedes R24-11, which the Phase 6 review cited | **Public** | Corroborates the UDS DTC status byte bit layout and the post-clear state. Not ISO 14229-1 and never a conformance claim | Phases 6, 7 |
-| AUTOSAR CP SWS Diagnostic Communication Manager | **R25-11** (document ID 18). Supersedes R24-11, which the Phase 6 review cited | **Public** | Corroborates the 0x14 and 0x19/02 request and response shapes, the status-mask AND rule, the 0x3E sub-function values, and the `suppressPosRspMsgIndicationBit` rules. Not ISO 14229-1 and never a conformance claim | Phases 6, 7 |
+| AUTOSAR CP SWS Diagnostic Event Manager | **R25-11** (document ID 19). Supersedes R24-11, which the Phase 6 review cited | **Public** | Corroborates the UDS DTC status byte bit layout and the post-clear state. Not ISO 14229-1 and never a conformance claim | Phases 6, 7, 11 review |
+| AUTOSAR CP SWS Diagnostic Communication Manager | **R25-11** (document ID 18). Supersedes R24-11, which the Phase 6 review cited | **Public** | Corroborates the 0x14 and 0x19/02 request and response shapes, the status-mask AND rule, the 0x3E sub-function values, and the `suppressPosRspMsgIndicationBit` rules. Not ISO 14229-1 and never a conformance claim | Phases 6, 7, 11 review |
 
 No **specification** in this table has been reviewed against its text by this project, and
 for those marked **text unavailable** an attempt was made and the document is paywalled.
 Nothing is `standards validated`. Per-phase evidence reviews live in `docs/decisions/`.
 
-ISO 14229-2, which defines the S3 session timer that TesterPresent exists to reset, is
-deliberately absent: no phase up to and including 7 implements a timer, so this project
-does not rely on it. It is named here only so that Phase 11 knows which document it needs.
+ISO 14229-2, which defines the S3 session timer that TesterPresent exists to reset, was
+absent until the Phase 11 review: no phase up to and including 7 implements a timer. Its
+row above records the current edition and that its text is unavailable. On 2026-11-17
+AUTOSAR R25-11 was confirmed still current: no R26-11 Dcm specification is published.
 
 The AUTOSAR revision was corrected from R24-11 to R25-11 on 2026-09-19. The Phase 6 and
 Phase 7 reviews were written against R24-11 without checking whether a newer release
@@ -672,6 +686,21 @@ Phase 8b — needs a bench; not started
 58. `test(hardware): record the bench and its acceptance results`
 59. `docs: first hardware-validated conformance rows, for exercised rows only`
 60. `release: v1.0.0`
+
+Phase 11 — on branch `phase-11`
+
+61. `docs(decisions): Phase 11 evidence and design review`
+61a. `docs(decisions): record the Phase 11 rulings`
+62. `test(uds): pin 22 F1 86, 22 and 19 81 FF before they change`
+63. `test: move the unclaimed-service probe from 0x22 to 0x28`
+64. `feat(config): uds timing and session configuration, validated at load`
+65. `feat(uds): session state machine and per-session parameter record (DEV-17)`
+66. `feat(uds): S3 timeout and TesterPresent timing`
+67. `feat(uds): ECUReset returns the ECU to the default session`
+68. `feat(uds): 0x22 ReadDataByIdentifier with F186, F190 and profile DIDs`
+69. `fix(uds): 0x19 report types 0x01 and 0x0A (DEV-16)`
+70. `docs: Phase 11 conformance, deviations, plan and decision outcome`
+71. `docs(validation): complete Phase 11 with vcan and CI evidence`
 
 V1.1 and later commits follow the phase list above with numbering continued.
 

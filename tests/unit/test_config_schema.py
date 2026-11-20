@@ -324,3 +324,75 @@ def test_the_error_names_the_profile_when_one_was_loaded_from_disk(tmp_path):
     bad.write_text("version: 1\n")
     with pytest.raises(ConfigError, match="bad.yaml"):
         load_profile(bad)
+
+
+# --- UDS session timing and DIDs (Phase 11) --------------------------------------------------
+
+
+def test_absent_uds_configuration_keeps_the_record_0x10_has_always_sent():
+    # Ruling Q3: P2 = 30 ms, P2* = 30 s for sessions 01-04, and S3 5000 ms ([SWS_Dcm_01679]).
+    uds = parse_profile(VALID).ecus["engine"].uds
+    assert uds.s3_ms == 5000
+    assert [(s.session, s.p2_ms, s.p2_star_ms) for s in uds.sessions] == [
+        (0x01, 30, 30000),
+        (0x02, 30, 30000),
+        (0x03, 30, 30000),
+        (0x04, 30, 30000),
+    ]
+
+
+def test_uds_sessions_and_timing_can_be_configured():
+    sessions = [{"session": 0x01}, {"session": 0x03, "p2_ms": 50, "p2_star_ms": 5000}]
+    uds = parse_profile(profile(**{"ecus.engine.uds": {"s3_ms": 8000, "sessions": sessions}})).ecus["engine"].uds
+    assert uds.s3_ms == 8000
+    assert [(s.session, s.p2_ms, s.p2_star_ms) for s in uds.sessions] == [(0x01, 30, 30000), (0x03, 50, 5000)]
+
+
+@pytest.mark.parametrize("s3", [4999, 0, -1])
+def test_s3_below_the_autosar_minimum_of_five_seconds_is_rejected(s3):
+    rejects(r"ecus\.engine\.uds\.s3_ms", **{"ecus.engine.uds": {"s3_ms": s3}})
+
+
+@pytest.mark.parametrize(
+    "entry, field",
+    [
+        ({"session": 0x03, "p2_ms": 1001}, "p2_ms"),
+        ({"session": 0x03, "p2_ms": -1}, "p2_ms"),
+        ({"session": 0x03, "p2_star_ms": 100010}, "p2_star_ms"),
+        ({"session": 0x03, "p2_star_ms": 5005}, "p2_star_ms"),
+        ({"session": 0x00}, "session"),
+        ({"session": 0x7F}, "session"),
+        ({"session": 0x03, "p2_ms": 12.5}, "p2_ms"),
+    ],
+)
+def test_out_of_range_session_timing_is_rejected_with_its_path(entry, field):
+    rejects(rf"ecus\.engine\.uds\.sessions\.1\.{field}", **{"ecus.engine.uds": {"sessions": [{"session": 1}, entry]}})
+
+
+def test_a_session_list_without_the_default_session_is_rejected():
+    rejects("default session 0x01", **{"ecus.engine.uds": {"sessions": [{"session": 0x03}]}})
+
+
+def test_a_duplicated_session_is_rejected():
+    rejects("duplicate session", **{"ecus.engine.uds": {"sessions": [{"session": 1}, {"session": 3}, {"session": 3}]}})
+
+
+def test_profile_dids_are_hex_bytes_served_verbatim():
+    engine = parse_profile(profile(**{"ecus.engine.dids": {"F1A0": "01 02 0a", "0x0100": "FF"}})).ecus["engine"]
+    assert engine.did_data == {0xF1A0: b"\x01\x02\x0a", 0x0100: b"\xff"}
+
+
+@pytest.mark.parametrize(
+    "dids, match",
+    [
+        ({"F186": "01"}, "served by the simulator itself"),
+        ({"F190": "41"}, "served by the simulator itself"),
+        ({"F400": "00"}, "OBD range"),
+        ({"F8FF": "00"}, "OBD range"),
+        ({"F1A0": "zz"}, "not hexadecimal bytes"),
+        ({"F1A0": ""}, "has no data"),
+        ({"F1A0": "01", "0xF1A0": "02"}, "duplicate did"),
+    ],
+)
+def test_bad_profile_dids_are_rejected(dids, match):
+    rejects(match, **{"ecus.engine.dids": dids})

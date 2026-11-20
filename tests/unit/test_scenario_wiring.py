@@ -52,7 +52,7 @@ RAMP = {"signals": [{"path": "vehicle.speed", "type": "ramp", "from": 0, "to": 1
 
 
 def test_the_shipped_profile_builds_no_runner():
-    # No scenario means no runner, no tick and no clock reading on the request path: the
+    # No scenario means no runner, no tick and no scenario clock reading on the request path: the
     # default configuration is exactly what it was, by construction and not by coincidence.
     built = runtime(shipped())
     assert built.runner is None and built.sync is None

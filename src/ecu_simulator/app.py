@@ -25,7 +25,8 @@ from ecu_simulator.config.schema import EcuConfig, EndpointConfigModel
 from ecu_simulator.dtc import DtcState, DtcStore
 from ecu_simulator.ecu import AddressRouter, Dispatcher, Ecu
 from ecu_simulator.protocols.obd import ObdProtocol
-from ecu_simulator.protocols.uds import UdsProtocol
+from ecu_simulator.protocols.uds import SessionTiming, UdsProtocol, UdsSession
+from ecu_simulator.protocols.uds.dids import SessionDidProvider, StaticDidProvider, VinDidProvider
 from ecu_simulator.protocols.uds.dtc import DtcStoreProvider
 from ecu_simulator.scenario import Scenario, ScenarioRunner, ScenarioSync
 from ecu_simulator.transport import TransportError
@@ -142,12 +143,23 @@ def build_dtc_store(ecu_config: EcuConfig) -> DtcStore:
     )
 
 
-def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None) -> list[Ecu]:
+def build_uds_session(ecu_config: EcuConfig, clock: Clock) -> UdsSession:
+    """The ECU's session state, from its validated ``uds`` configuration."""
+    return UdsSession(
+        {entry.session: SessionTiming(entry.p2_ms, entry.p2_star_ms) for entry in ecu_config.uds.sessions},
+        s3_ms=ecu_config.uds.s3_ms,
+        clock=clock,
+    )
+
+
+def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None, clock: Clock | None = None) -> list[Ecu]:
     """One Ecu per profile entry, with the protocols its endpoints reference registered.
 
-    Every ECU observes the same vehicle, so two ECUs report the same speed.
+    Every ECU observes the same vehicle, so two ECUs report the same speed. ``clock`` is the
+    UDS session's time source for S3; it defaults to real monotonic time.
     """
     vehicle = build_vehicle(config) if vehicle is None else vehicle
+    clock = MonotonicClock() if clock is None else clock
     ecus: list[Ecu] = []
     for ecu_name, ecu_config in config.profile.ecus.items():
         ecu = Ecu(ecu_name, dtc_store=build_dtc_store(ecu_config))
@@ -158,7 +170,21 @@ def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None) -> li
             if protocol_name == ObdProtocol.name:
                 ecu.register(ObdProtocol(vehicle, ecu_name=ecu_config.name, dtcs=ecu.dtc_store))
             elif protocol_name == UdsProtocol.name:
-                ecu.register(UdsProtocol(dtc_providers=ecu.dtc_providers, dtcs=ecu.dtc_store))
+                session = build_uds_session(ecu_config, clock)
+                # The DIDs 0x22 serves: F186 and F190 built in, then the profile's own,
+                # which the schema keeps off the built-in identifiers.
+                ecu.dids.register(SessionDidProvider(session))
+                ecu.dids.register(VinDidProvider(vehicle))
+                if ecu_config.dids:
+                    ecu.dids.register(StaticDidProvider(f"{ecu_name}.profile", ecu_config.did_data))
+                ecu.register(
+                    UdsProtocol(
+                        dtc_providers=ecu.dtc_providers,
+                        dtcs=ecu.dtc_store,
+                        session=session,
+                        dids=ecu.dids,
+                    )
+                )
             else:  # pragma: no cover - the schema rejects unknown protocol names
                 raise ValueError(f"no protocol implementation named {protocol_name!r}")
         ecus.append(ecu)
@@ -183,7 +209,7 @@ def build_runner(config: RuntimeConfig, vehicle: VehicleState, ecus: Iterable[Ec
     """The scenario writer, or ``None`` when the profile configures no scenario.
 
     ``None`` is not an optimisation. A profile without a scenario gets no runner, no tick
-    and no clock reading on the request path, so its behavior is what it was before this
+    and no scenario clock reading on the request path, so its behavior is what it was before this
     phase by construction rather than by a generator that happens to return a constant.
     """
     if not config.profile.has_scenario:
@@ -215,10 +241,11 @@ def build_runtime(config: RuntimeConfig, clock: Clock | None = None) -> Runtime:
     """Assemble the runtime. ``clock`` defaults to real monotonic time; tests pass their own."""
     clock = MonotonicClock() if clock is None else clock
     vehicle = build_vehicle(config)
-    ecus = tuple(build_ecus(config, vehicle))
+    ecus = tuple(build_ecus(config, vehicle, clock))
     runner = build_runner(config, vehicle, ecus)
     # The origin is read here, once, so scenario time starts at zero however the clock is
-    # counting. A profile with no scenario never reads the clock at all.
+    # counting. A profile with no scenario never reads the clock for the scenario; an ECU
+    # serving UDS reads it on every UDS request, for S3 (Phase 11).
     sync = ScenarioSync(runner, clock) if runner is not None else None
     router = build_router(config)
     return Runtime(

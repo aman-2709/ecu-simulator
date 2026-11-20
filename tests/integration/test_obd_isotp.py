@@ -111,7 +111,8 @@ def test_engine_rpm_is_answered_on_the_wire(functional):
 def test_uds_session_control_and_negative_response(uds):
     uds.send(b"\x10\x01")
     assert uds.recv() == bytes.fromhex("5001001e0bb8")
-    uds.send(b"\x19\x01")
+    # 19 03 since Phase 11; 19 01 was this probe until report type 0x01 was served.
+    uds.send(b"\x19\x03")
     assert uds.recv() == bytes.fromhex("7f1912")
 
 
