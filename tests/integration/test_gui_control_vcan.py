@@ -240,7 +240,7 @@ def test_live_can_trace_and_groups_match_independent_capture(browser, vcan, tmp_
             expect(page.locator("#frame-rows")).not_to_contain_text("A0 02")
             page.get_by_role("button", name="Resume display").click()
             page.get_by_role("button", name="By CAN ID").click()
-            expect(page.get_by_role("columnheader", name="Latest signal")).to_be_visible()
+            expect(page.get_by_role("columnheader", name="Latest signal / service", exact=True)).to_be_visible()
             expect(page.get_by_role("columnheader", name="Latest value")).to_be_visible()
             expect(page.locator("#byte-legend")).to_be_visible()
             expect(page.locator("#frame-rows tr")).to_have_count(1)
@@ -259,25 +259,49 @@ def test_live_can_trace_and_groups_match_independent_capture(browser, vcan, tmp_
                 if can_id in (0x7E1, 0x7E9):
                     wire.append((f"{can_id:03X}", str(length), payload[:length].hex(" ").upper()))
             assert [data[:2] for _, _, data in wire] == ["03", "10", "30", "21"]
-            stop(page)
             page.get_by_role("button", name="Live CAN", exact=True).click()
             page.get_by_role("button", name="Trace", exact=True).click()
             expect(page.locator("#byte-legend")).to_be_hidden()
-            expect(page.get_by_role("columnheader", name="Signal", exact=True)).to_be_visible()
+            expect(page.get_by_role("columnheader", name="Signal / service", exact=True)).to_be_visible()
             expect(page.locator("#frame-rows tr")).to_have_count(6)
             rows = page.locator("#frame-rows tr").all()
             assert [(cells[1], cells[-2], cells[-1]) for cells in
                     (row.locator("td").all_text_contents() for row in rows[2:])] == wire
+            expect(page.locator("#frame-rows .frame-type")).to_have_text(
+                ["Single frame", "First frame", "Flow control", "Consecutive frame"])
+            services = page.locator("#frame-rows tr td:nth-child(4)")
+            expect(services).to_have_text(["—", "—", "Read DTCs by status mask", "—", "—", "—"])
+            badges = page.locator("#frame-rows .frame-type")
+            expect(badges.nth(2)).to_have_css("background-color", "rgb(238, 230, 250)")
+            for index in (0, 1, 3):
+                expect(badges.nth(index)).to_have_css("background-color", "rgba(0, 0, 0, 0)")
+            page.get_by_role("button", name="By CAN ID").click()
+            expect(page.locator("#frame-rows .frame-type")).to_have_text(["Flow control", "Consecutive frame"])
+            page.get_by_role("button", name="Trace", exact=True).click()
+            page.get_by_role("button", name="Simulator", exact=True).click()
+            send(page, "3E 00")
+            expect(page.locator("#exchanges details:first-child .raw")).to_have_text("RX  7E 00")
+            send(page, "3E 80")
+            expect(page.locator("#exchanges details:first-child .outcome")).to_contain_text("suppression requested")
+            stop(page)
+            page.get_by_role("button", name="Live CAN", exact=True).click()
+            expect(services).to_have_text([
+                "—", "—", "Read DTCs by status mask", "—", "—", "—", "Tester Present",
+                "Tester Present · positive response", "Tester Present · suppression requested"])
+            page.get_by_role("button", name="By CAN ID").click()
+            expect(services).to_have_text(["—", "Tester Present · suppression requested", "Tester Present · positive response"])
+            page.get_by_role("button", name="Trace", exact=True).click()
             for frame_id, data in [(0x7DF, "02 01 0D"), (0x7E8, "03 41 0D 00"),
                                    (0x7DF, "02 01 10"), (0x7E8, "04 41 10 01 5E")]:
                 raw.send(struct.pack("=IB3x8s", frame_id, 8, bytes.fromhex(data)))
             expect(page.locator("#frame-rows .request .frame-type")).to_have_text(["Request", "Request"])
+            expect(page.locator("#frame-rows tr.request").first).to_have_css("display", "table-row")
             expect(page.locator("#frame-rows .reply strong")).to_have_text(["0 km/h", "3.50 g/s"])
             expect(page.locator("#frame-rows tr").last.locator(".padding-byte")).to_have_count(3)
             raw.send(struct.pack("=IB3x8s", 0x7E8, 8, bytes.fromhex("03 41 0D 2A")))
             expect(page.locator("#frame-rows .reply mark")).to_have_text("42 km/h")
             page.get_by_label("Filter CAN ID").fill("0x7E9")
-            expect(page.locator("#frame-rows tr")).to_have_count(2)
+            expect(page.locator("#frame-rows tr")).to_have_count(3)
             page.get_by_role("button", name="Stop capture").click()
             expect(page.locator("#capture-status")).to_contain_text("Stopped")
         page.close()

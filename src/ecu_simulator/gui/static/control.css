@@ -15,7 +15,7 @@ form, #result { margin-top: 1rem; }
 .row { margin-bottom: 1rem; }
 .row label, form label { flex: 1; }
 select, input, textarea, button { color: inherit; font: inherit; border: 1px solid #869f9b; border-radius: .3rem; padding: .5rem .7rem; background: white; }
-textarea, #payload, .raw, .request { font: .9rem/1.5 "IBM Plex Mono", ui-monospace, monospace; }
+textarea, #payload, #exchanges .raw, #exchanges .request { font: .9rem/1.5 "IBM Plex Mono", ui-monospace, monospace; }
 textarea { min-height: 15rem; width: 100%; resize: vertical; white-space: pre; background: #fafcfb; }
 button { font-weight: 650; cursor: pointer; }
 button.primary { background: #14635d; color: white; }
@@ -44,6 +44,7 @@ button[aria-pressed="true"] { background: #d9eee8; border-color: #14635d; color:
 #frame-scroll .frame-type { display: inline-block; padding: .1rem .45rem; border-radius: .25rem; font: 600 .8rem/1.4 system-ui, sans-serif; }
 #frame-scroll tr.request .frame-type { background: #dbe8fd; color: #183e70; }
 #frame-scroll tr.reply .frame-type { background: #ceeade; color: #114c38; }
+#frame-scroll tr.flow-control .frame-type { background: #eee6fa; color: #543580; }
 #frame-scroll tr.error .frame-type { background: #992e25; color: white; }
 #frame-scroll td strong, #frame-scroll td mark { font-weight: 750; }
 #frame-scroll td mark { padding: .04rem .14rem; border-radius: .15rem; }
@@ -55,4 +56,4 @@ button[aria-pressed="true"] { background: #d9eee8; border-color: #14635d; color:
 #exchanges details { border-top: 1px solid #c6d4d1; padding: .65rem 0; overflow-wrap: anywhere; }
 #exchanges summary { cursor: pointer; }
 .exchange-meta { font-size: .85rem; color: #42605d; }
-.request, .outcome { display: block; }
+#exchanges .request, #exchanges .outcome { display: block; }

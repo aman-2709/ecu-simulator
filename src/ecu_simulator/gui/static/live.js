@@ -63,16 +63,44 @@
     }
   }
 
-  // Interpret only recognized OBD single frames on the conventional 11-bit IDs.
+  // Interpret normal-addressed Classical CAN diagnostics on conventional 11-bit IDs.
   // Unknown traffic keeps its original bytes and neutral styling.
   function describe(frame) {
     if (frame.kind === "ERR") return {name: "CAN controller error", label: "Error", role: "error"};
     if (frame.kind === "RTR") return {label: "Remote"};
-    const [length, service, pid, a, b] = frame.bytes;
-    if (length > frame.bytes.length - 1 || frame.id.length !== 3) return {};
     const id = parseInt(frame.id, 16);
+    if (frame.id.length !== 3 || id < 0x7DF || id > 0x7EF || !frame.bytes.length) return {};
+    const [pci, service, pid, a, b] = frame.bytes;
+    const type = pci >> 4;
+    const length = pci & 0x0F;
+    if (type !== 0) {
+      if (id === 0x7DF) return {};
+      if (type === 1 && frame.bytes.length === 8) {
+        let size = length * 256 + service;
+        // A zero 12-bit length introduces a four-byte extended payload length.
+        if (size === 0) {
+          size = frame.bytes.slice(2, 6).reduce((total, byte) => total * 256 + byte, 0);
+          if (size <= 4095) return {};
+        }
+        if (size > 7) return {label: "First frame"};
+      }
+      if (type === 2 && frame.bytes.length >= 2) return {label: "Consecutive frame"};
+      if (type === 3 && length <= 2 && frame.bytes.length >= 3) return {label: "Flow control", role: "flow-control", end: 3};
+      return {};
+    }
+    if (!length || length >= frame.bytes.length) return {};
+    const single = {label: "Single frame", end: length + 1};
+    if (id <= 0x7E7 && length === 3 && service === 0x19 && pid === 0x02) {
+      return {...single, name: "Read DTCs by status mask"};
+    }
+    if (id <= 0x7E7 && length === 2 && service === 0x3E && (pid === 0 || pid === 0x80)) {
+      return {...single, name: pid === 0 ? "Tester Present" : "Tester Present · suppression requested"};
+    }
+    if (id >= 0x7E8 && length === 2 && service === 0x7E && pid === 0) {
+      return {...single, name: "Tester Present · positive response"};
+    }
     const speed = pid === 0x0D;
-    if (!speed && pid !== 0x10) return {};
+    if (!speed && pid !== 0x10) return single;
     const name = speed ? "Vehicle speed" : "Mass airflow";
     if (service === 0x01 && length === 2 && id >= 0x7DF && id <= 0x7E7) {
       return {name, label: "Request", role: "request", end: length + 1};
@@ -81,12 +109,12 @@
       const value = speed ? a + " km/h" : ((256 * a + b) / 100).toFixed(2) + " g/s";
       return {name, value, label: "Reply", role: "reply", end: length + 1};
     }
-    return {};
+    return single;
   }
 
   function render() {
     const snapshot = frozen || {trace, groups, total, dropped};
-    const headings = grouped ? ["CAN ID", "Count", "Type", "Latest signal", "Latest value", "Length", "Latest bytes"] : ["Time (UTC)", "CAN ID", "Type", "Signal", "Value", "Length", "Bytes"];
+    const headings = grouped ? ["CAN ID", "Count", "Type", "Latest signal / service", "Latest value", "Length", "Latest bytes"] : ["Time (UTC)", "CAN ID", "Type", "Signal / service", "Value", "Length", "Bytes"];
     byId("frame-head").replaceChildren(...headings.map(label => {
       const th = document.createElement("th"); th.textContent = label; return th;
     }));
