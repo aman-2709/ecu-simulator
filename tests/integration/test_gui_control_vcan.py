@@ -222,6 +222,9 @@ def test_live_can_trace_and_groups_match_independent_capture(browser, vcan, tmp_
             expect(page.locator("#frame-rows")).not_to_contain_text("A0 02")
             page.get_by_role("button", name="Resume display").click()
             page.get_by_role("button", name="By CAN ID").click()
+            expect(page.get_by_role("columnheader", name="Latest signal")).to_be_visible()
+            expect(page.get_by_role("columnheader", name="Latest value")).to_be_visible()
+            expect(page.locator("#byte-legend")).to_be_visible()
             expect(page.locator("#frame-rows tr")).to_have_count(1)
             expect(page.locator("#frame-rows td").nth(1)).to_have_text("2")
             expect(page.locator("#frame-rows mark")).to_have_text("02")
@@ -241,6 +244,8 @@ def test_live_can_trace_and_groups_match_independent_capture(browser, vcan, tmp_
             stop(page)
             page.get_by_role("button", name="Live CAN", exact=True).click()
             page.get_by_role("button", name="Trace", exact=True).click()
+            expect(page.locator("#byte-legend")).to_be_hidden()
+            expect(page.get_by_role("columnheader", name="Signal", exact=True)).to_be_visible()
             expect(page.locator("#frame-rows tr")).to_have_count(6)
             rows = page.locator("#frame-rows tr").all()
             assert [(cells[1], cells[-2], cells[-1]) for cells in

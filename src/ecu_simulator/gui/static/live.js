@@ -86,7 +86,7 @@
 
   function render() {
     const snapshot = frozen || {trace, groups, total, dropped};
-    const headings = grouped ? ["CAN ID", "Count", "Type", "Signal", "Value", "Length", "Latest bytes"] : ["Time (UTC)", "CAN ID", "Type", "Signal", "Value", "Length", "Bytes"];
+    const headings = grouped ? ["CAN ID", "Count", "Type", "Latest signal", "Latest value", "Length", "Latest bytes"] : ["Time (UTC)", "CAN ID", "Type", "Signal", "Value", "Length", "Bytes"];
     byId("frame-head").replaceChildren(...headings.map(label => {
       const th = document.createElement("th"); th.textContent = label; return th;
     }));
@@ -194,6 +194,7 @@
   };
   function view(byGroup) {
     grouped = byGroup;
+    byId("byte-legend").hidden = !grouped;
     byId("trace-view").setAttribute("aria-pressed", String(!grouped));
     byId("group-view").setAttribute("aria-pressed", String(grouped));
     render();

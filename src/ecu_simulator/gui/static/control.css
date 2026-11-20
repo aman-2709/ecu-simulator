@@ -36,7 +36,8 @@ button[aria-pressed="true"] { background: #d9eee8; border-color: #14635d; color:
 #frame-scroll th { position: sticky; top: 0; background: #eef4f2; font-size: .9rem; }
 #frame-scroll td, #frame-scroll th { padding: .4rem .65rem; border-bottom: 1px solid #e0e8e6; white-space: nowrap; }
 #frame-scroll td { font: .9rem/1.5 "IBM Plex Mono", ui-monospace, monospace; }
-#frame-scroll mark { background: #ffdda3; color: #4e3000; font-weight: bold; }
+#byte-legend { margin: 0 0 .5rem; font-size: .9rem; }
+#byte-legend mark, #frame-scroll mark { background: #ffdda3; color: #4e3000; font-weight: bold; }
 
 #frame-scroll tr.reply { background: #eef8f5; }
 #frame-scroll tr.error { background: #fce9e6; }
