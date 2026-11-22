@@ -81,3 +81,53 @@ async def test_one_exchange_and_stale_actions_leave_current_child_alone(monkeypa
     await manager.stop(current["id"])
     with pytest.raises(RunConflict, match="cancelled"):
         await send
+
+
+@pytest.mark.asyncio
+async def test_run_scoped_broadcast_control_is_acknowledged_by_the_child():
+    script = """
+import json, sys
+json.loads(sys.stdin.readline())
+print(json.dumps({"ready": True, "restbus": {"period_ms":20}}), flush=True)
+for line in sys.stdin:
+    print(line.strip(), flush=True)
+"""
+    manager = Manager(child_command=(sys.executable, "-c", script))
+    run = await manager.start(default_profile_path().read_text())
+    try:
+        await until(manager, "Running")
+        with pytest.raises(RunConflict, match="stale"):
+            await manager.broadcast("previous", True)
+        assert (await manager.broadcast(run["id"], True))["restbus"]["paused"] is True
+        assert (await manager.broadcast(run["id"], False))["restbus"]["paused"] is False
+    finally:
+        await manager.close()
+    assert manager.status()["restbus"] is None
+
+
+@pytest.mark.asyncio
+async def test_cancelled_pause_ack_cannot_complete_next_resume():
+    script = """
+import sys
+sys.stdin.readline()
+print('{"ready":true,"restbus":{"period_ms":20}}', flush=True)
+first = sys.stdin.readline()
+second = sys.stdin.readline()
+print(first, end='', flush=True)
+print(second, end='', flush=True)
+sys.stdin.read()
+"""
+    manager = Manager(child_command=(sys.executable, "-c", script))
+    run = await manager.start(default_profile_path().read_text())
+    try:
+        await until(manager, "Running")
+        pause = asyncio.create_task(manager.broadcast(run["id"], True))
+        async with asyncio.timeout(2):
+            while manager.broadcast_ack is None:
+                await asyncio.sleep(0)
+        pause.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await pause
+        assert (await manager.broadcast(run["id"], False))["restbus"]["paused"] is False
+    finally:
+        await manager.close()

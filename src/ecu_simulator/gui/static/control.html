@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>ECU Simulator · SocketCAN</title>
-  <link rel="stylesheet" href="/control.css"><script src="/control.js" defer></script><script src="/live.js" defer></script>
+  <link rel="stylesheet" href="/control.css"><script src="/control.js" defer></script><script src="/dbc.js" defer></script><script src="/live.js" defer></script>
 </head>
 <body>
 <header><h1>ECU Simulator</h1><span>SocketCAN</span></header>
@@ -12,37 +12,68 @@
   <button id="live-tab" aria-pressed="false" aria-controls="live-panel">Live CAN</button>
 </nav>
 <main id="sim-panel">
-  <section aria-labelledby="profile-heading">
-    <h2 id="profile-heading">Profile editor</h2>
-    <div class="row"><label>Profile<select id="profile"></select></label>
-      <label>CAN interface<select id="interface"></select></label></div>
-    <label>Working copy <textarea id="draft" spellcheck="false" rows="20"></textarea></label>
-    <form id="save-form"><label>Profile name<input id="name" required></label><button>Save as</button></form>
+  <section class="run-bar" aria-labelledby="run-heading">
+    <div><h2 id="run-heading">Simulator</h2>
+      <p role="status"><strong id="state">Connecting</strong> <span id="active"></span></p></div>
+    <label>Profile<select id="profile"></select></label>
+    <label>CAN interface<select id="interface"></select></label>
+    <div class="actions"><button id="start" class="primary" disabled>Start ECU</button><button id="stop" disabled>Stop ECU</button></div>
+    <button id="broadcast-toggle" hidden disabled>Pause broadcast</button>
+    <p id="run-error" role="alert"></p>
   </section>
-  <div class="right">
-    <section aria-labelledby="run-heading"><h2 id="run-heading">Simulator</h2>
-      <p role="status"><strong id="state">Connecting</strong> <span id="active"></span></p>
-      <p id="run-error" role="alert"></p>
-      <div class="actions"><button id="start" class="primary" disabled>Start ECU</button><button id="stop" disabled>Stop ECU</button></div>
-    </section>
-    <section aria-labelledby="tester-heading"><h2 id="tester-heading">UDS tester</h2>
+  <p id="notice" role="status"></p><p id="error" role="alert"></p>
+  <section aria-labelledby="tester-heading"><h2 id="tester-heading">Request builder</h2>
+    <form id="send-form">
       <label>Endpoint<select id="endpoint"></select></label>
-      <div id="presets" role="group" aria-label="Request presets">
-        <button data-payload="19 02 FF">Read DTCs</button>
-        <button data-payload="3E 00">Tester Present</button>
-        <button data-payload="3E 80">Tester Present · suppress positive response</button>
-      </div>
-      <form id="send-form"><label>Request bytes<input id="payload" value="19 02 FF" spellcheck="false" required></label>
-        <button id="send" class="primary" disabled>Send</button></form>
-      <div id="result" hidden><h3>Exchange history</h3>
+      <label>Service (SID)<select id="service"></select></label>
+      <label id="sub-field" hidden><span id="sub-label">Sub-function (optional)</span><input id="sub-byte" maxlength="2" pattern="[0-9A-Fa-f]{2}" placeholder="e.g., 01, 02, 03..." autocomplete="off" spellcheck="false" aria-describedby="byte-error"></label>
+      <label><span id="data-label">Data bytes</span><input id="payload" spellcheck="false" autocomplete="off" aria-describedby="byte-error"></label>
+      <p id="byte-error" hidden>Enter complete hexadecimal byte pairs.</p>
+      <fieldset id="samples"><legend>Service examples</legend><p id="sample-note"></p><div id="presets"></div></fieldset>
+      <div class="request-preview"><label for="preview">Request preview</label><output id="preview"></output></div>
+      <button id="send" class="primary" disabled>Send request</button>
+    </form>
+  </section>
+  <section class="terminal" aria-labelledby="terminal-heading">
+      <h2 id="terminal-heading">Terminal output</h2>
+      <p class="terminal-empty">Send a request to see the response bytes and decoded results.</p>
+      <div id="result" hidden>
         <div id="exchanges" aria-live="polite"></div></div>
       <template id="exchange-template"><details open>
         <summary><span class="exchange-meta"></span><code class="request"></code><span class="outcome"></span></summary>
         <div class="raw"></div><ul class="records"></ul>
       </details></template>
     </section>
-    <p id="notice" role="status"></p><p id="error" role="alert"></p>
-  </div>
+  <section class="profile-editor" aria-labelledby="dbc-heading">
+    <h2 id="dbc-heading">DBC messages</h2>
+    <button type="button" id="dbc-browse">Import DBC file…</button>
+    <input type="file" id="dbc-file" accept=".dbc" aria-label="DBC file" hidden>
+    <p class="dbc-links"><a href="https://github.com/commaai/opendbc/tree/master/opendbc/dbc" target="_blank" rel="noopener">Find a sample DBC</a> ·
+      <a href="https://raw.githubusercontent.com/commaai/opendbc/79ddcc7bb72d557fc5b20d038c0fad9c9d423446/opendbc/dbc/ford_fusion_2018_pt.dbc" target="_blank" rel="noopener">Open Ford Fusion 2018 sample</a>. Save the raw file with a .dbc extension, then import it here.</p>
+    <p id="dbc-status" role="status"></p>
+    <fieldset id="dbc-editor" hidden>
+      <legend id="dbc-database"></legend>
+      <details class="wheel-source"><summary>File identity</summary><dl><dt>SHA-256</dt><dd id="dbc-sha"></dd></dl></details>
+      <p id="dbc-guide"></p>
+      <div class="row"><label>Search messages (optional)<input id="dbc-search" type="search" placeholder="Message, signal or CAN ID"></label>
+        <label>Choose a message<select id="dbc-message"></select></label></div>
+      <p id="dbc-details"></p><p id="dbc-readonly-signals" hidden></p>
+      <div id="dbc-settings" hidden>
+        <label>Period (ms)<input id="dbc-period" type="number" required min="10" max="60000" step="1"></label>
+        <p>Enter a physical value or a scenario signal path such as <code>engine.rpm</code>. Empty fields use the displayed defaults.</p>
+        <div id="dbc-signals"></div>
+        <p class="request-preview">Raw preview <output id="dbc-raw"></output></p>
+        <button id="dbc-apply">Add message to working copy</button>
+      </div>
+      <h3>Messages in working copy</h3><ul id="dbc-configured"></ul>
+      <button id="dbc-attach">Use this DBC for decoding only</button>
+    </fieldset>
+  </section>
+  <section class="profile-editor" aria-labelledby="profile-heading">
+    <h2 id="profile-heading">Profile editor</h2>
+    <label>Working copy <textarea id="draft" spellcheck="false" rows="16"></textarea></label>
+    <form id="save-form"><label>Profile name<input id="name" required></label><button>Save as</button></form>
+  </section>
 </main>
 <main id="live-panel" hidden>
   <section aria-labelledby="capture-heading">
@@ -50,16 +81,57 @@
     <div class="row"><label>Capture interface<select id="capture-interface"></select></label>
       <button class="primary" id="capture-toggle" disabled>Start capture</button>
       <span id="capture-status" role="status">Stopped</span></div>
+    <details id="replay-panel" hidden><summary>Replay a CAN recording</summary>
+      <p>Play recorded frames on vcan0 at their original timing. Capture starts automatically.</p>
+      <label>Recording<select id="replay-source"><option value="kenworth-drive">2015 Kenworth T660 · driving excerpt</option>
+        <option value="kenworth">2014 Kenworth T270 · stationary engine readings</option>
+        <option value="file">Local candump log</option></select></label>
+      <label id="replay-input" hidden>Timestamped candump file<input type="file" id="replay-file" accept=".log,.candump,.txt"></label>
+      <label><input type="checkbox" id="replay-loop"> Repeat recording</label>
+      <button type="button" class="primary" id="replay-play">Play on vcan0</button>
+    </details>
+    <div class="replay-strip"><span id="replay-status" role="status"></span>
+      <button type="button" id="replay-stop" disabled hidden>Stop replay</button></div>
+    <details class="capture-dbc"><summary>DBC decoder</summary>
+      <label>Load a DBC for capture<input type="file" id="live-dbc-file" accept=".dbc"></label>
+      <button id="live-dbc-reset" hidden>Use simulator decoder selection</button>
+      <p id="live-dbc-status" role="status">Using the running profile decoder when available.</p>
+    </details>
+    <label class="j1939-mode"><input type="checkbox" id="j1939-mode"> Interpret extended CAN IDs as J1939</label>
     <div class="row">
       <div class="view-switch" aria-label="Frame view"><button id="trace-view" aria-pressed="true">Trace</button><button id="group-view" aria-pressed="false">By CAN ID</button></div>
-      <label>Filter CAN ID<input id="can-filter" placeholder="e.g. 7E8" spellcheck="false"></label>
+      <label><span id="filter-label">Filter CAN ID</span><input id="can-filter" placeholder="e.g. 7E8" spellcheck="false"></label>
       <button id="capture-pause" disabled>Pause display</button>
     </div>
+    <section id="wheel-monitor" aria-labelledby="wheel-heading" hidden>
+      <h3 id="wheel-heading">Wheel speeds <span id="wheel-state"></span></h3>
+      <dl class="wheel-readings">
+        <div><dt>Front right · km/h</dt><dd id="wheel-FR">—</dd></div>
+        <div><dt>Front left · km/h</dt><dd id="wheel-FL">—</dd></div>
+        <div><dt>Rear right · km/h</dt><dd id="wheel-RR">—</dd></div>
+        <div><dt>Rear left · km/h</dt><dd id="wheel-RL">—</dd></div>
+        <div><dt>Measured period</dt><dd id="wheel-period">—</dd></div>
+        <div><dt>Receive age</dt><dd id="wheel-age">—</dd></div>
+        <div><dt>Raw bytes · 0x0AA</dt><dd id="wheel-raw">—</dd></div>
+      </dl>
+      <details class="wheel-source"><summary>DBC details</summary>
+        <dl><dt>Database</dt><dd id="wheel-dbc"></dd>
+          <dt>Revision</dt><dd id="wheel-revision"></dd>
+          <dt>SHA-256</dt><dd id="wheel-sha256"></dd></dl>
+      </details>
+    </section>
+    <label class="j1939-mode" id="reading-filter" hidden><input type="checkbox" id="readings-only"> Vehicle readings only</label>
     <div id="frame-summary"></div>
-    <p id="byte-legend" hidden><mark>Highlighted bytes</mark> changed since the previous frame with the same CAN ID and frame type.</p>
+    <p id="byte-legend" hidden><mark>Highlighted bytes</mark> <span id="legend-context">changed since the previous frame with the same CAN ID and frame type.</span></p>
     <div id="frame-scroll" tabindex="0" aria-label="CAN frames"><table>
       <thead><tr id="frame-head"></tr></thead><tbody id="frame-rows"></tbody>
     </table></div>
   </section>
 </main>
+<dialog id="dbc-review" aria-labelledby="review-heading">
+  <h2 id="review-heading">Review simulated transmissions</h2>
+  <p id="review-target"></p><ul id="review-messages"></ul><p id="review-conflicts"></p>
+  <form method="dialog"><button value="cancel" autofocus>Cancel</button>
+    <button value="start" id="confirm-start" class="primary">Start ECU on this bench</button></form>
+</dialog>
 </body></html>

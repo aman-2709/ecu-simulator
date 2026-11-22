@@ -3,6 +3,7 @@
 import asyncio
 import json
 import sys
+import time
 from contextlib import suppress
 from typing import Any
 from uuid import uuid4
@@ -32,11 +33,16 @@ class Manager:
         self.process: asyncio.subprocess.Process | None = None
         self.watcher: asyncio.Task[None] | None = None
         self.exchange: asyncio.Task[dict[str, Any]] | None = None
+        self.restbus: dict[str, Any] | None = None
+        self.dbc: dict[str, Any] | None = None
+        self.broadcast_seq = 0
+        self.broadcast_ack: asyncio.Future[bool] | None = None
         self.cleanup: asyncio.Task[None] | None = None
 
     def status(self) -> dict[str, Any]:
         return dict(state=self.state, id=self.id, error=self.error, interface=self.interface,
-                    endpoints=list(self.endpoints))
+                    endpoints=list(self.endpoints), dbc=self.dbc if self.state == "Running" else None,
+                    restbus=self.restbus if self.state == "Running" else None)
 
     async def start(self, text: str) -> dict[str, Any]:
         async with self.lock:
@@ -47,19 +53,22 @@ class Manager:
             self.interface = profile.transport.interface
             self.endpoints = {endpoint_name(key, ep): ep for key, ecu in profile.ecus.items()
                               for ep in ecu.endpoints if not ep.functional and "uds" in ep.protocols}
+            self.restbus = None
+            self.dbc = None
             self.replies = {}
             for key, ecu in profile.ecus.items():
                 by_name = {ep.name: ep for ep in ecu.endpoints}
                 for ep in ecu.endpoints:
                     self.replies[endpoint_name(key, ep)] = by_name[ep.reply_via] if ep.reply_via else ep
             self.state, self.error = "Starting", ""
+            started_us = time.time_ns() // 1000
             try:
                 self.process = await asyncio.create_subprocess_exec(
                     *self.command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)
             except OSError as error:
                 self.state, self.error = "Failed", str(error)
             else:
-                self.watcher = asyncio.create_task(self._watch(self.process, self.id, text))
+                self.watcher = asyncio.create_task(self._watch(self.process, self.id, text, started_us))
             return self.status()
 
     async def _terminate(self, proc: asyncio.subprocess.Process) -> None:
@@ -73,15 +82,12 @@ class Manager:
                     proc.kill()
         await proc.wait()
 
-    async def _watch(self, proc: asyncio.subprocess.Process, run_id: str, text: str) -> None:
+    async def _watch(self, proc: asyncio.subprocess.Process, run_id: str, text: str, started_us: int) -> None:
         assert proc.stdin and proc.stdout
         try:
             async with asyncio.timeout(self.startup_timeout):
-                proc.stdin.write(text.encode("utf-8"))
-                try:
-                    await proc.stdin.drain()
-                finally:
-                    proc.stdin.close()
+                proc.stdin.write(json.dumps({"profile": text}).encode() + b"\n")
+                await proc.stdin.drain()
                 line = await proc.stdout.readline()
                 if not line:
                     raise RuntimeError("ECU exited before reporting readiness")
@@ -89,13 +95,27 @@ class Manager:
                 if event.get("ready") is not True:
                     raise RuntimeError(event.get("error") or "Invalid ECU startup status")
             if self.id == run_id and self.state == "Starting":
+                self.dbc = event.get("dbc")
+                if event.get("restbus"):
+                    self.restbus = {**event["restbus"], "paused": False, "started_us": started_us}
                 self.state = "Running"
-            code = await proc.wait()
-            reason = f"ECU exited with status {code}"
+            while line := await proc.stdout.readline():
+                event = json.loads(line)
+                if "error" in event:
+                    raise RuntimeError(event["error"])
+                if type(event.get("paused")) is bool and self.restbus is not None:
+                    self.restbus["paused"] = event["paused"]
+                    ack = self.broadcast_ack
+                    if event.get("sequence") == self.broadcast_seq and ack is not None and not ack.done():
+                        ack.set_result(event["paused"])
+            reason = f"ECU exited with status {await proc.wait()}"
         except TimeoutError:
             reason = "ECU startup timed out"
         except Exception as error:
             reason = str(error) or type(error).__name__
+        if self.broadcast_ack is not None and not self.broadcast_ack.done():
+            self.broadcast_ack.set_exception(RunConflict(reason))
+        proc.stdin.close()
         await self._terminate(proc)
         if self.id == run_id and self.state != "Stopping":
             self.state = "Stopping"
@@ -117,6 +137,29 @@ class Manager:
             self.cleanup = asyncio.create_task(self._stop())
         await asyncio.shield(self.cleanup)
         return self.status()
+
+    async def broadcast(self, run_id: str, paused: bool) -> dict[str, Any]:
+        async with self.lock:
+            self._require_current(run_id)
+            if self.state != "Running" or self.restbus is None:
+                raise RunConflict("This run has no active wheel-speed publisher")
+            assert self.process and self.process.stdin
+            self.broadcast_seq += 1
+            self.broadcast_ack = asyncio.get_running_loop().create_future()
+            try:
+                command = {"paused": paused, "sequence": self.broadcast_seq}
+                self.process.stdin.write(json.dumps(command).encode() + b"\n")
+                async with asyncio.timeout(self.stop_timeout):
+                    await self.process.stdin.drain()
+                    if await self.broadcast_ack is not paused:
+                        raise RunConflict("Unexpected publisher acknowledgement")
+            except (TimeoutError, ConnectionError) as error:
+                # Tear down an unresponsive child before any later command could consume its late reply.
+                await self._terminate(self.process)
+                raise RunConflict("ECU did not acknowledge the publisher command") from error
+            finally:
+                self.broadcast_ack = None
+            return self.status()
 
     async def send(self, run_id: str, endpoint: str, hex_text: str) -> dict[str, Any]:
         async with self.lock:

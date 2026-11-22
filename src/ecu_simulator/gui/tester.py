@@ -27,6 +27,25 @@ def decode(data: bytes) -> dict[str, Any]:
     result: dict[str, Any] = {"raw": data.hex(" ").upper(), "message": "", "records": []}
     if data.startswith(b"\x7f") and len(data) >= 3:
         result["message"] = f"Negative response · NRC {data[2]:02X}"
+    if data[:2] in (b"\x59\x04", b"\x59\x06"):
+        if len(data) < 6:
+            result["message"] = "Incomplete DTC response"
+            return result
+        high, low, failure, status = data[2:6]
+        code = f"{GROUPS[high >> 6]}{high & 0x3F:02X}{low:02X}"
+        kind = "Snapshot" if data[1] == 4 else "Extended data"
+        flags = ", ".join(label for bit, label in FLAGS.items() if status & bit) or "No flags"
+        result["message"] = f"{code} · {flags} · failure type {failure:02X}"
+        if len(data) == 6:
+            result["records"].append("No stored record")
+        elif data[1] == 6 and len(data) >= 8:
+            result["records"].append(f"{kind} {data[6]:02X} · data {data[7:].hex(' ').upper()}")
+        elif data[1] == 4 and len(data) >= 11 and data[7] == 1:
+            did = data[8:10].hex().upper()
+            result["records"].append(f"{kind} {data[6]:02X} · DID {did} · data {data[10:].hex(' ').upper()}")
+        else:
+            result["records"].append("Record data requires a matching ECU definition")
+        return result
     if not data.startswith(b"\x59\x02"):
         return result
     if len(data) < 3 or (len(data) - 3) % 4:
@@ -64,9 +83,12 @@ async def transact(sock: IsoTpSocket, payload: bytes, timeout: float,
             while not sock.send(payload):
                 await _ready(sock, write=True)
             sent = True
-            while (data := receiver.recv()) is None:
-                await _ready(receiver)
-            return decode(data)
+            while True:
+                data = receiver.recv()
+                if data is None:
+                    await _ready(receiver)
+                elif not (data.startswith(b"\x6a") and len(data) > 1):
+                    return decode(data)
     except TimeoutError:
         suppressed = len(payload) > 1 and payload[0] in SUB_FUNCTION_SERVICES
         if not sent:

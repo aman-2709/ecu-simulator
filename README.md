@@ -71,6 +71,23 @@ evidence its encoding rests on. Nothing is standards validated.
 | 0x22       | ReadDataByIdentifier     | one or more DIDs per request | F186 active session, F190 VIN, plus the profile's `dids:`. Unserved DIDs are omitted; NRC 0x31 only when none is served |
 | 0x3E       | TesterPresent            | 0x00 zeroSubFunction; anything else gets NRC 0x12 | `7E 00`. Restarts S3, as every UDS request does. No ISO 14229 session-compliance claim |
 
+The following services use per-ECU bench state. Each simulator launch starts fresh.
+
+| SID | Simulated behavior |
+| --- | --- |
+| `23`, `3D` | Read and write volatile RAM. Three independent 4 KiB regions start at `0x1000`, `0x100000`, and `0x200000`. An access must fit within one region. |
+| `34`, `35`, `36`, `37` | Download to RAM or upload a snapshot. Format `00` selects plain data, up to 64 data bytes per block. Counters begin at one. Retrying the last identical block returns the previous reply. A download becomes visible on successful transfer exit. The optional four-byte exit record is a big-endian CRC32. |
+| `28`, `2A` | Subscribe to periodic RPM (01), speed (02), or coolant (03) when the vehicle has that signal. The three rates are 1, 4 and 10 Hz. Reports carry `6A`, the periodic ID and the encoded value on the requesting endpoint's response route. Communication control stores RX/TX modes per traffic group. Disabling normal TX pauses these simulated reports. Diagnostic replies continue. |
+| `31` | Start, stop and query the example routine IDs. The result byte is 01 after start and 00 after stop. Actuator routines only change simulator state. Starting FF00 fills the simulated region at 0x1000 with FF. |
+| `83` | Read the configured or active timing record, set a four-byte timing record, or restore the profile default. This changes the timing values reported for the active session. |
+| `85` | Enable or suspend updates to the ECU's DTC flags. Reads still show stored faults and an explicit clear remains available. |
+
+A change of diagnostic session, S3 expiry, or simulated restart clears subscriptions, communication modes,
+routine status, timing overrides and unfinished transfers, and enables DTC updates. Committed RAM
+contents survive a simulated ECU reset within the same process. Unsupported formats, ranges,
+subfunctions or request sequences produce negative responses. These bench behaviors are simulator
+models. Only physical exchanges explicitly listed in the validation reports have hardware evidence.
+
 Every service above that has a sub-function honours the `suppressPosRspMsgIndicationBit`,
 bit 7 of the sub-function byte. It is handled once at the dispatch layer, not inside any
 handler: the bit is masked off before the service sees the sub-function, the service runs
@@ -108,7 +125,11 @@ ecu-simulator-gui
 
 Open the printed loopback address (default port 8766). Select a shipped profile, edit the YAML working copy, select an up CAN interface, and click **Start ECU**. The running interface and run ID appear when the child has opened its sockets. **Save as** keeps a named copy for the next launch. A validation or startup error leaves the draft in the editor.
 
-With `ice_default`, choose **engine.uds_physical**, choose **Read DTCs** to fill in `19 02 FF`, then press **Send**. You can edit the bytes from any preset before sending. **Exchange history** keeps requests made in this tab for the current run, newest first. Expand a request to inspect its complete response bytes and decoded trouble codes. Reloading the page clears the history. **Stop ECU** releases the sockets. The same controls use `vcan0` or a configured physical bench interface.
+The request builder has examples for 20 UDS service IDs. The simulated ECU handles all 20 on a UDS-enabled endpoint. Session, request data, profile, and prior exchanges determine whether a particular example receives a positive response. Selecting an example previews its bytes. Only **Send request** transmits it.
+
+For request bytes, prerequisites, expected bench responses and protocol sources for each SID, see the [UDS request builder examples](docs/examples/uds-request-builder.md).
+
+With `ice_default`, choose **engine.uds_physical**, select **0x19 · Read DTC information**, then choose **Read DTCs**. Edit the data bytes or use the example as written. Check the complete request (`19 02 FF`) in **Request preview** and press **Send request**. Select **Raw request (full payload)** to enter the SID yourself. **Terminal output** keeps requests made in this tab for the current run, newest first. Expand a request to inspect its complete response bytes and decoded trouble codes. Reloading the page clears the history. **Stop ECU** releases the sockets. The same controls use `vcan0` or a configured physical bench interface.
 
 **Live CAN** captures Classical CAN frames on the selected interface even while the ECU is stopped.
 Choose an interface and click **Start capture**. **Trace** retains the latest 512 frames in arrival
@@ -118,12 +139,46 @@ Enter an exact hexadecimal ID to filter either view. **Pause display** freezes t
 capture continues. You can switch back to **Simulator** to send a UDS request during capture.
 **Stop capture** releases the socket and leaves the last results visible until the next capture.
 
+### Replay a recorded drive
+
+Open **Live CAN → Replay a CAN recording**, choose the default **2015 Kenworth T660** driving excerpt and click **Play on vcan0**. Capture starts before the first frame. The Kenworth sample opens **By PGN and source**, with one row per J1939 parameter group and sender, its measured interarrival time, and the latest payload. Search for `rpm`, `EEC1`, `61444`, or `0CF00400` to follow engine speed (SPN 190). **Trace** retains chronological frame order. Select **Interpret extended CAN IDs as J1939** to use this view with a local recording or live capture. **Repeat recording** repeats a pass until you click **Stop replay**. No ECU profile is required. Other senders on the same bus also appear in the capture.
+
+EEC2 shows accelerator pedal position (SPN 91, byte 2) and percent engine load at current speed (SPN 92, byte 3). Hover over the value to see the byte mapping. Request messages show the requested PGN. The monitor distinguishes unavailable readings from zero and identifies groups without a signal decoder. **Last interval** measures the elapsed time between observations in that group. **Replay loop** marks an interval spanning the start of another pass on vcan0.
+
+The T660 excerpt uses the 12 seconds starting at timestamp 1604007304 in Colorado State University’s 2015 Kenworth T660 candump drive archive. It opens with **Vehicle readings only** selected. Clear that filter to inspect every captured group.
+
+The alternate T270 excerpt contains 7,098 frames and 104 identifiers from Colorado State University's [Heavy Vehicle CAN Data](https://systemscyber.engr.colostate.edu/research/HeavyVehicleCANData). It uses the interval from 1594702604 inclusive to 1594702616 exclusive in `CSU090AT.txt` from the 2014 Kenworth T270 Short archive. The original frames and timestamps are preserved.
+
+Choose **Local candump log** for your own recording. Use timestamped single-interface Classical CAN data in compact `candump -L` format or absolute-timestamp `[DLC]` byte-column format. Timestamps must be chronological. The GUI accepts files smaller than 16 MiB with up to 300,000 frames. Source interface names are remapped to virtual `vcan0`. Replay uses recorded time offsets at 1× speed with host scheduling precision. A matching DBC under **DBC decoder** enables signal decoding. The trace also displays unknown identifiers and raw payloads.
+
+### BMW demo drive
+
+Select **bmw_e9x_demo_drive** and **vcan0**, click **Start ECU**, then start capture on **Live CAN**. The bundled BMW E9x/E8x database decodes all four wheels (ID `0CE`) and battery voltage (ID `3B4`). This synthetic drive cycles through 0, 20, 40 and 20 km/h in three-second steps with a constant battery reading of 14. Eight messages repeat every 100 ms. The parking brake releases as the car starts moving, and automatic wiper mode switches on and off. Steering stays centered, indicators and cruise control stay idle, and the ignition stays on. The engine also follows an 800–2000 rpm scenario accessible through OBD request `01 0C`. Use **By CAN ID** to watch each broadcast update in place.
+
+### Import a Classical CAN DBC
+
+In **Simulator → DBC messages**, choose a standalone `.dbc` file or a generated opendbc database. The importer checks message and signal layouts, identifies unsupported transmissions and displays the file's SHA-256. Related opendbc source templates with `IMPORT` directives must first be flattened by their generator. Uploaded files are stored on the machine running the GUI under `$XDG_CONFIG_HOME/ecu-simulator/dbc` (normally `~/.config/ecu-simulator/dbc`). Named profiles reference the original bytes by hash. To move a profile to another bench, re-import the same DBC there.
+
+To try the [pinned Ford Fusion sample](https://raw.githubusercontent.com/commaai/opendbc/79ddcc7bb72d557fc5b20d038c0fad9c9d423446/opendbc/dbc/ford_fusion_2018_pt.dbc), start with the **ice_default** working copy. Select **EPAS_INFO**, enter **12** for **SteMdule_U_Meas** (the spelling in the DBC), set **100 ms**, and select **Add message to working copy**. Start the ECU on **vcan0**. In **Live CAN**, start capture on the same interface. Expect standard ID **082**, DLC **8**, data **80 00 14 00 78 00 00 00** and measured voltage **12 Volts**. **Save as** retains the configuration for another launch. A signal field also accepts an existing physical vehicle signal path such as `vehicle.battery_voltage`. Multiplexor selections are constants.
+
+For passive inspection only, open **Live CAN → DBC decoder**, choose a local database and start capture. A switch of decoder starts a fresh trace. Frames are matched by both ID and frame format. Unknown messages stay visible as raw traffic. Use **Use this DBC for decoding only** in the simulator editor to attach it to a profile without publishing imported messages.
+
+Starting from the GUI on a physical bench reviews message IDs, periods, preview bytes and values. The GUI reports matching IDs seen during a 500 ms observation window. A silent window can miss a slower or intermittent sender. The physical interface's bitrate comes from its existing SocketCAN configuration. CAN FD and generation of recognized OEM checksum/counter fields are outside this Classical CAN publisher's scope. A message passing the layout check still requires the vehicle program's specifications to establish ECU compatibility.
+
+### Wheel-speed demo
+
+Select **wheel_speed_demo**, choose **vcan0**, and click **Start ECU**. Under **Live CAN**, select the same interface and click **Start capture**. The simulator broadcasts the Toyota `WHEEL_SPEEDS` message (standard CAN ID `0AA`) every 20 ms. All four wheels follow `vehicle.speed`. The repeating scenario spends 10 seconds at each step: 0, 40, then 0 km/h. The two zero-speed steps at the cycle boundary run consecutively.
+
+Read the measured period, receive age and raw bytes in the wheel-speed panel. At 40 km/h the bytes are `2A 0F 2A 0F 2A 0F 2A 0F`. Under **Simulator**, send `01 0D` as a raw request to **engine.obd_physical** during that plateau to see `41 0D 28`. **Pause broadcast** keeps the scenario and diagnostic services running. The monitor marks the sample stale after 100 ms without a wheel frame. **Resume broadcast** publishes the current speed.
+
+The same profile runs on **can0** on a dedicated terminated bench at its configured bitrate. The publisher opens one raw SocketCAN socket. Other profiles enable this feature only if their YAML includes a supported `restbus` mapping. The [bench design](docs/superpowers/specs/2026-11-20-wheel-speed-restbus-design.md) identifies the pinned opendbc database and the [bundled license](src/ecu_simulator/_opendbc/LICENSE) covers the upstream assets.
+
 To run browser acceptance locally, install the dev and GUI extras, Playwright, and a Chromium browser. The suite discovers Google Chrome or Chromium on PATH, honors `ECU_GUI_CHROME` for an explicit executable, and otherwise uses Playwright's installed Chromium.
 
 ```sh
 python -m pip install -e ".[dev,gui,hardware]" playwright
 python -m playwright install chromium
-bash scripts/run_integration_tests.sh -k gui_control_vcan -q
+bash scripts/run_integration_tests.sh -k "gui_control_vcan or wheel_speed_demo" -q
 ```
 
 ## Usage

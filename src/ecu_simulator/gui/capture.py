@@ -4,6 +4,7 @@ import socket
 import struct
 import time
 
+from ecu_simulator.restbus import WheelCodec
 from ecu_simulator.transport.socketcan.interface import check_interface
 
 FRAME = struct.Struct("=IB3x8s")
@@ -61,3 +62,50 @@ def read_batch(sock: socket.socket) -> tuple[list[dict], int | None]:
             "bytes": [] if remote else list(payload[:length]),
         })
     return frames, dropped
+
+
+class WheelMonitor:
+    """Decode the active run's wheel frames on a single capture connection."""
+
+    def __init__(self, interface: str):
+        self.interface = interface
+        self.run_id: str | None = None
+        self.codec: WheelCodec | None = None
+        self.last_time: int | None = None
+        self.latest: dict = {}
+
+    def observe(self, run: dict, frames: list[dict], now_us: int) -> dict | None:
+        profile = run.get("restbus")
+        active = profile and run["state"] == "Running" and run["interface"] == self.interface
+        run_id = run["id"] if active else None
+        if run_id != self.run_id:
+            self.run_id = run_id
+            self.last_time = None
+            self.latest = {"bytes": [], "speeds": None, "period_ms": None}
+            self.codec = None
+        if not active or profile is None:
+            return None
+        if self.codec is None:
+            self.codec = WheelCodec()
+
+        for frame in frames:
+            if frame["time"] < profile["started_us"]:
+                continue
+            if frame["kind"] or frame["id"] != f'{profile["can_id"]:03X}':
+                continue
+            period = None if self.last_time is None else (frame["time"] - self.last_time) / 1000
+            self.last_time = frame["time"]
+            data = frame["bytes"]
+            speeds = self.codec.decode(bytes(data)) if frame["length"] == len(data) == 8 else None
+            frame["wheels"] = speeds
+            self.latest = {"bytes": data, "period_ms": period, "speeds": speeds}
+        age = None if self.last_time is None else max(0, (now_us - self.last_time) / 1000)
+        if age is None:
+            state = "Waiting"
+        elif age >= 5 * profile["period_ms"]:
+            state = "Stale"
+        elif self.latest["speeds"] is None:
+            state = "Malformed"
+        else:
+            state = "Live"
+        return {**self.latest, "run_id": run_id, "age_ms": age, "state": state}

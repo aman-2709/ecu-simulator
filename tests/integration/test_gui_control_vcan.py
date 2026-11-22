@@ -1,6 +1,7 @@
 """Operator acceptance, including an independent Classical CAN frame capture."""
 
 import os
+import re
 import shutil
 import socket
 import struct
@@ -66,6 +67,7 @@ def stop(page):
 
 
 def send(page, payload="19 02 FF"):
+    page.locator("#service").select_option("")
     page.locator("#payload").fill(payload)
     page.locator("#send").click()
 
@@ -100,16 +102,23 @@ def test_gui_control_vcan_profile_wire_and_persistence(browser, vcan, tmp_path):
         single = draft(base)
         page.locator("#draft").fill(single)
         start(page)
-        page.get_by_role("button", name="Tester Present", exact=True).click()
-        expect(page.locator("#payload")).to_have_value("3E 00")
-        page.get_by_role("button", name="Read DTCs").click()
-        expect(page.locator("#payload")).to_have_value("19 02 FF")
+        page.get_by_label("Service (SID)").select_option("22")
+        page.get_by_role("button", name="22 F1 86 Active session", exact=True).click()
+        expect(page.locator("#preview")).to_have_text("22 F1 86")
+        page.get_by_label("Service (SID)").select_option("19")
+        page.get_by_role("button", name="Confirmed DTCs").click()
+        expect(page.locator("#payload")).to_have_value("08")
+        page.locator("#payload").fill("F")
+        expect(page.locator("#send")).to_be_disabled()
+        page.locator("#payload").fill("ff")
+        expect(page.locator("#preview")).to_have_text("19 02 FF")
         expect(page.locator("#exchanges details")).to_have_count(0)
         page.locator("#send").click()
         expect(page.locator("#exchanges details:first-child .raw")).to_have_text("RX  59 02 8C 00 01 01 08")
         expect(page.locator("#exchanges details:first-child .records li")).to_have_text(["P0001 · Confirmed · failure type 01 · status 08"])
-        page.get_by_role("button", name="Tester Present · suppress positive response").click()
-        expect(page.locator("#payload")).to_have_value("3E 80")
+        page.get_by_label("Service (SID)").select_option("3E")
+        page.get_by_role("button", name="Suppress positive response").click()
+        expect(page.locator("#preview")).to_have_text("3E 80")
         page.locator("#send").click()
         expect(page.locator("#exchanges details")).to_have_count(2)
         first_read = page.locator("#exchanges details").last
@@ -305,3 +314,214 @@ def test_live_can_trace_and_groups_match_independent_capture(browser, vcan, tmp_
             page.get_by_role("button", name="Stop capture").click()
             expect(page.locator("#capture-status")).to_contain_text("Stopped")
         page.close()
+
+
+def test_request_builder_service_catalog(browser, tmp_path):
+    counts = {
+        "10": 7, "11": 8, "14": 8, "19": 12, "22": 12, "23": 7,
+        "27": 11, "28": 8, "2A": 7, "2E": 5, "2F": 2, "31": 10, "34": 5,
+        "35": 4, "36": 6, "37": 3, "3E": 3, "3D": 5, "83": 5, "85": 5,
+    }
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        page.goto(url)
+        services = page.get_by_label("Service (SID)")
+        expect(services.locator("option")).to_have_count(len(counts) + 1)
+        split_sids = {"10", "11", "19", "27", "28", "2A", "31", "3E", "83", "85"}
+        previous_sub = previous_data = ""
+        for sid, count in counts.items():
+            services.select_option(sid)
+            expect(page.locator("#payload")).to_have_value(previous_data)
+            expect(page.locator("#payload")).to_have_attribute("placeholder", "e.g., F1 90 or 00 01 02 03")
+            if sid in split_sids:
+                expect(page.locator("#sub-byte")).to_be_visible()
+                expect(page.locator("#sub-byte")).to_have_value(previous_sub)
+                expect(page.locator("#sub-byte")).to_have_attribute("placeholder", "e.g., 01, 02, 03...")
+            else:
+                previous_sub = ""
+                expect(page.locator("#sub-byte")).to_be_hidden()
+            expected_preview = " ".join(filter(None, (sid, previous_sub, previous_data)))
+            expect(page.locator("#preview")).to_have_text(expected_preview)
+            examples = page.locator("#presets button")
+            expect(examples).to_have_count(count)
+            for index in range(count):
+                button = examples.nth(index)
+                request = button.locator("code").inner_text()
+                button.click()
+                expect(page.locator("#preview")).to_have_text(request)
+                expect(services).to_have_value(request[:2])
+                split = request[:2] in split_sids
+                expect(page.locator("#sub-byte")).to_have_value(request[3:5] if split else "")
+                expect(page.locator("#payload")).to_have_value(request[6:] if split else request[3:])
+                previous_sub = request[3:5] if split else ""
+                previous_data = request[6:] if split else request[3:]
+                if request[:2] != sid:
+                    services.select_option(sid)
+        expect(page.locator("#exchanges details")).to_have_count(0)
+        page.close()
+
+
+def test_request_builder_documented_examples_on_wire(browser, vcan, tmp_path):
+    # Select actual cards, including prerequisite exchanges, rather than injecting raw bytes.
+    examples = [
+        ("11", "11 03", "51 03"),
+        ("27", "10 03", "50 03 00 1E 0B B8"),
+        ("27", "27 02 00 00 00 00", "7F 27 24"),
+        ("27", "27 01", "67 01 12 34 56 78"),
+        ("27", "27 02 DE AD BE EF", "7F 27 35"),
+        ("27", "27 02 B7 91 F3 DD", "67 02"),
+        ("22", "22 F1 86", "62 F1 86 03"),
+        ("2E", "2E F1 00 01", "7F 2E 31"),
+        ("28", "28 00 01", "68 00"),
+        ("2A", "2A 04", "6A"),
+        ("31", "31 01 01 00", "71 01 01 00"),
+        ("83", "83 04 00 32 01 F4", "C3 04"),
+        ("85", "85 01", "C5 01"),
+        ("3E", "3E 00", "7E 00"),
+        ("3D", "3D 24 00 10 00 00 00 04 AA BB CC DD", "7D 24 00 10 00 00 00 04"),
+        ("23", "23 24 00 10 00 00 00 04", "63 AA BB CC DD"),
+        ("34", "34 00 44 00 00 10 00 00 00 00 04", "74 10 42"),
+        ("36", "36 01 AA BB CC DD", "76 01"),
+        ("37", "37 55 B4 01 A7", "77"),
+        ("35", "35 00 44 00 00 10 00 00 00 00 04", "75 10 42"),
+        ("36", "36 01", "76 01 AA BB CC DD"),
+        ("37", "37", "77"),
+        ("14", "14 FF FF FF", "54"),
+        ("19", "19 02 FF", "59 02 8C"),
+    ]
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        page.goto(url)
+        page.locator("#interface").select_option(vcan)
+        start(page)
+        for service, payload, response in examples:
+            page.get_by_label("Service (SID)").select_option(service)
+            page.locator("#presets").get_by_text(payload, exact=True).click()
+            expect(page.locator("#preview")).to_have_text(payload)
+            page.locator("#send").click()
+            expect(page.locator("#exchanges details:first-child .raw")).to_have_text("RX  " + response)
+        stop(page)
+        page.close()
+
+
+def test_every_example_against_records_demo(browser, vcan, tmp_path):
+    """Every card reaches the child process. Tokens are expected response SIDs or NRCs."""
+    expected = {
+        "10": "50 50 50 50 silent silent -12",
+        "11": "51 51 51 51 51 silent silent -12",
+        "19": "59 59 59 59 59 59 59 59 -12 -12 -12 -12",
+        "22": "62 62 -31 -31 -31 -31 -31 -31 -31 -31 62 62",
+        "23": "63 63 63 63 63 63 -31",
+        "27": "50 67 67 -12 -12 -12 -12 -35 -24 silent silent",
+        "28": "68 68 68 68 68 68 silent silent",
+        "2A": "6A 6A 6A 6A 6A 6A 6A",
+        "2E": "-31 -31 -31 -31 -31",
+        "2F": "6F 6F",
+        "31": "71 71 71 71 71 71 71 71 71 71",
+        "34": "74 74 74 -31 -31",
+        "35": "75 75 75 -31",
+        "36": "76 76 76 76 76 -73",
+        "37": "77 77 77",
+        "3E": "7E silent -12",
+        "3D": "7D 7D 7D 7D 7D",
+        "83": "C3 C3 C3 C3 silent",
+        "85": "C5 C5 silent silent -12",
+        "14": "54 -31 -31 -31 -31 -31 -31 -13",
+    }
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        page.goto(url)
+        page.locator("#profile").select_option(label="uds_records_demo")
+        expect(page.locator("#draft")).to_have_value(re.compile(".*bench_output: true.*", re.S))
+        page.locator("#interface").select_option(vcan)
+        start(page)
+        latest = page.locator("#exchanges details:first-child")
+
+        def submit(request, prefix):
+            send(page, request)
+            expect(latest.locator(".raw")).to_have_text("RX  " + prefix)
+
+        assert set(page.locator("#service option").evaluate_all("(opts) => opts.map(x => x.value).filter(Boolean)")) == set(expected)
+        for sid, tokens in expected.items():
+            for index, token in enumerate(tokens.split()):
+                if sid == "27" and index in (7, 8):
+                    submit("11 01", "51 01")
+                    submit("10 03", "50 03 00 1E 0B B8")
+                    if index == 7:
+                        submit("27 01", "67 01 12 34 56 78")
+                if sid in ("34", "35", "37") or sid == "36" and index in (0, 3, 4, 5):
+                    submit("11 01", "51 01")
+                if sid == "36" and index in (0, 3, 5):
+                    submit("34 00 22 10 00 00 0C", "74 10 42")
+                if sid == "36" and index == 4:
+                    submit("35 00 22 10 00 00 04", "75 10 42")
+                if sid == "37":
+                    submit("34 00 22 10 00 00 04", "74 10 42")
+                    submit("36 01 AA BB CC DD", "76 01")
+                page.locator("#service").select_option(sid)
+                cards = page.locator("#presets button")
+                assert cards.count() == len(tokens.split())
+                cards.nth(index).click()
+                request = page.locator("#preview").inner_text()
+                page.locator("#send").click()
+                expect(latest.locator(".request")).to_contain_text(request)
+                if token == "silent":
+                    expect(latest.locator(".outcome")).to_have_text("No response received · positive response suppression requested.")
+                elif token.startswith("-"):
+                    expect(latest.locator(".raw")).to_have_text(f"RX  7F {sid} {token[1:]}")
+                else:
+                    expect(latest.locator(".raw")).to_have_text(re.compile(r"^RX\s+" + token + r"( |$)"))
+                if sid == "19" and index in (5, 6):
+                    expect(latest.locator(".outcome")).to_contain_text("P0001 · Pending, Confirmed")
+                    if index == 5:
+                        expect(latest.locator(".raw")).to_have_text("RX  59 04 00 01 01 0C 01 01 D1 01 03 20")
+                        expect(latest.locator(".records")).to_contain_text("Snapshot 01 · DID D101 · data 03 20")
+                    else:
+                        expect(latest.locator(".raw")).to_have_text("RX  59 06 00 01 01 0C 01 01")
+                        expect(latest.locator(".records")).to_contain_text("Extended data 01 · data 01")
+                if sid == "2F":
+                    value = "01" if index == 0 else "00"
+                    submit("22 D1 00", "62 D1 00 " + value)
+        submit("19 04 00 01 01 02", "7F 19 31")
+        submit("19 06 00 01 01 FF", "59 06 00 01 01 00")
+        stop(page)
+        page.close()
+
+
+def test_wheel_monitor_renders_silent_capture_and_run_switch(browser, tmp_path):
+    page = browser.new_page()
+    run = {"state": "Running", "id": "first-run", "interface": "vcan0", "endpoints": [], "error": "",
+           "restbus": {"can_id": 170, "period_ms": 20, "paused": False, "dbc": "test.dbc",
+                       "revision": "a" * 40, "sha256": "b" * 64}}
+    page.route("**/run", lambda route: route.fulfill(json=run))
+    page.route("**/profiles", lambda route: route.fulfill(json={"interfaces": ["vcan0"], "shipped": ["ice_default"], "user": []}))
+    page.add_init_script("""const fetchReal = window.fetch;
+      window.fetch = (...args) => args[0] !== '/capture' ? fetchReal(...args) :
+        Promise.resolve(new Response(new ReadableStream({start(controller) {
+          window.packet = obj => controller.enqueue(new TextEncoder().encode(JSON.stringify(obj) + '\\n'));
+          packet({ready:true});
+        }})));""")
+    with server(tmp_path) as url:
+        page.goto(url)
+        expect(page.locator("#broadcast-toggle")).to_have_text("Pause broadcast", timeout=1500)
+        page.locator("#live-tab").click()
+        page.locator("#capture-toggle").click()
+        expect(page.locator("#capture-status")).to_contain_text("Capturing")
+        page.get_by_text("DBC details", exact=True).click(timeout=1500)
+        expect(page.locator("#wheel-dbc")).to_have_text("test.dbc")
+        expect(page.locator("#wheel-revision")).to_have_text("a" * 40)
+        expect(page.locator("#wheel-sha256")).to_have_text("b" * 64)
+        wheels = {"run_id": "first-run", "period_ms": 21, "age_ms": 125,
+                  "speeds": {"FR": 1, "FL": 2, "RR": 3, "RL": 4},
+                  "bytes": [10, 11, 12, 13, 14, 15, 16, 17], "state": "Stale"}
+        page.evaluate("wheel => packet({wheel,frames:[]})", wheels)
+        expect(page.locator("#wheel-state")).to_have_text("Stale")
+        expect(page.locator("#wheel-raw")).to_have_text("0A 0B 0C 0D 0E 0F 10 11")
+        for key, speed in wheels["speeds"].items():
+            expect(page.locator(f"#wheel-{key}")).to_have_text(f"{speed:.2f}")
+        expect(page.locator("#wheel-period")).to_contain_text("21")
+        expect(page.locator("#wheel-age")).to_contain_text("125")
+        run["id"] = "second-run"
+        expect(page.locator("#wheel-state")).to_have_text("Waiting")
+        expect(page.locator("#wheel-raw")).to_have_text("—")
+    page.close()
