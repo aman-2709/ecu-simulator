@@ -176,3 +176,63 @@ def test_default_drive_shows_changing_readings(browser, vcan, tmp_path):  # noqa
         page.locator("#readings-only").uncheck()
         expect(page.locator("#frame-rows")).to_contain_text("No signal decoder")
         page.close()
+
+
+def test_drive_plot_uses_recorded_values_and_capture_clock(browser, vcan, tmp_path):  # noqa: F811
+    import gzip
+    from itertools import groupby
+    from pathlib import Path
+
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        # Inspect the data supplied to the actual renderer without changing the production API.
+        def observe_plot(route):
+            response = route.fetch()
+            probe = """;window.uPlot = new Proxy(uPlot, {construct(target, args) {
+              return window.testPlot = Reflect.construct(target, args);
+            }});"""
+            route.fulfill(response=response, body=response.text() + probe)
+
+        page.route("**/uPlot.iife.min.js", observe_plot)
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto(url)
+        page.locator("#live-tab").click()
+        page.locator("#replay-panel summary").click()
+        page.locator("#replay-play").click()
+        expect(page.locator("#trend-chart canvas")).to_be_visible()
+        expect(page.locator(".trend-controls output").first).to_contain_text("rpm")
+        expect(page.locator("#trend-source option")).to_have_count(2)
+        page.locator("#capture-pause").click()
+        frozen = page.evaluate("window.testPlot.data[0].at(-1)")
+        expect(page.locator("#capture-pause")).to_have_text("Resume display")
+        page.locator("#trend-source").select_option("49")
+        expect(page.locator("#trend-status")).to_contain_text("unavailable")
+        page.locator("#trend-source").select_option("0")
+        assert page.evaluate("window.testPlot.data[0].at(-1)") == frozen
+        page.locator("#capture-pause").click()
+        expect(page.locator("#capture-pause")).to_have_text("Pause display")
+        pedal = page.get_by_role("checkbox", name="Accelerator pedal")
+        pedal.uncheck()
+        assert not page.evaluate("window.testPlot.series[2].show")
+        pedal.check()
+        expect(page.locator("#replay-status")).to_contain_text("Finished", timeout=18000)
+        sample = Path(replay.__file__).parent / "samples" / "kenworth-t660.candump.gz"
+        recording = replay.parse_recording(gzip.decompress(sample.read_bytes()))
+        expected = [[], [], []]
+        for _, frame in recording.frames:
+            can_id, _, payload = struct.unpack("=IB3x8s", frame)
+            if can_id == 0x8CF00400:
+                expected[0].append(int.from_bytes(payload[3:5], "little") / 8)
+            elif can_id == 0x8CF00300:
+                expected[1].append(payload[1] * 4 / 10)
+                expected[2].append(payload[2])
+        assert page.evaluate("window.testPlot.data[0].at(-1)") > frozen
+        times, *series = page.evaluate("window.testPlot.data")
+        assert times == sorted(times)
+        assert 11.9 < times[-1] - times[0] < 12.2
+        for line, recorded in zip(series, expected, strict=True):
+            numeric = [v for v in line if v is not None]
+            assert [v for v, _ in groupby(numeric)] == [v for v, _ in groupby(recorded)]
+        assert not errors, errors
+        page.close()

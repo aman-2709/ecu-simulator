@@ -123,3 +123,14 @@ button[aria-pressed="true"] { background: #d9eee8; border-color: #14635d; color:
   white-space: normal; min-width: 8ch; max-width: 26ch; overflow-wrap: anywhere;
 }
 #frame-scroll.j1939-table small { display: block; color: #435b58; }
+
+#trends { margin: .8rem 0 1.2rem; border-block: 1px solid #d8e3df; padding-block: .65rem; }
+#trends summary { cursor: pointer; font-weight: 650; }
+.trend-controls { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem 1.2rem; margin: .8rem 0; }
+.trend-controls label { display: inline-flex; align-items: center; gap: .35rem; }
+.trend-controls output { font-variant-numeric: tabular-nums; }
+.trend-controls label:nth-child(2) { color: #00655d; }
+.trend-controls label:nth-child(3) { color: #914600; }
+.trend-controls label:nth-child(4) { color: #5b48aa; }
+#trend-chart { width: 100%; min-width: 0; }
+#trend-status:empty { display: none; }

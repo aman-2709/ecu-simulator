@@ -49,6 +49,19 @@
   window.addEventListener("run-update", renderWheel);
   select.onchange = () => { wheel = null; renderWheel(); };
 
+  let trendModule = null, trends = null;
+  async function loadTrends() {
+    const script = document.createElement("script");
+    script.src = "/uPlot.iife.min.js";
+    const ready = new Promise((resolve, reject) => {script.onload = resolve; script.onerror = reject;});
+    const css = document.createElement("link");
+    css.rel = "stylesheet"; css.href = "/uPlot.min.css";
+    document.head.append(css, script);
+    await ready;
+    trends = (await import("/trends.js")).liveTrends;
+    byId("trends").hidden = !jMode.checked;
+  }
+
   async function showTab(live) {
     byId("live-panel").hidden = !live;
     byId("sim-panel").hidden = live;
@@ -61,6 +74,14 @@
     try {
       const catalog = await api("/profiles");
       if (version !== catalogVersion || session) return;
+      if (catalog.signal_plot) {
+        trendModule ??= loadTrends().catch(() => {
+          trendModule = null;
+          byId("trend-status").textContent = "Could not load the plot.";
+        });
+        await trendModule;
+        if (version !== catalogVersion || session) return;
+      }
       byId("replay-panel").hidden = !catalog.replay;
       if (!catalog.kenworth_drive) byId("replay-source").querySelector('[value="kenworth-drive"]')?.remove();
       if (catalog.replay) refreshReplay();
@@ -98,24 +119,30 @@
     const directed = ((id >>> 16) & 255) < 240;
     const pgn = (id >>> 8) & (directed ? 0x3FF00 : 0x3FFFF);
     const sa = id & 255;
-    let value;
+    let value, measurements;
     if (pgn === 0xF004) {
       const raw = frame.bytes[3] + 256 * frame.bytes[4];
+      measurements = {rpm: frame.length === 8 && raw <= 0xFAFF ? raw / 8 : null};
       if (frame.length !== 8) value = "Engine speed · malformed EEC1";
       else if (raw >= 0xFF00) value = "Engine speed · unavailable";
       else if (raw >= 0xFE00) value = "Engine speed · error";
       else if (raw > 0xFAFF) value = "Engine speed · outside defined range";
-      else value = "Engine speed " + (raw / 8) + " rpm";
+      else value = "Engine speed " + measurements.rpm + " rpm";
     }
     if (pgn === 0xF003) {
-      const percent = (raw, scale) => {
+      measurements = {
+        pedal: frame.length === 8 && frame.bytes[1] <= 250 ? frame.bytes[1] * 4 / 10 : null,
+        load: frame.length === 8 && frame.bytes[2] <= 250 ? frame.bytes[2] : null,
+      };
+      const percent = (raw, number) => {
         if (raw === 255) return "unavailable";
         if (raw === 254) return "error";
         if (raw > 250) return "outside defined range";
-        return Number((raw * scale).toFixed(1)) + "%";
+        return number + "%";
       };
       value = frame.length !== 8 ? "Malformed EEC2" :
-        "Accelerator pedal " + percent(frame.bytes[1], 0.4) + " · Engine load " + percent(frame.bytes[2], 1);
+        "Accelerator pedal " + percent(frame.bytes[1], measurements.pedal) +
+        " · Engine load " + percent(frame.bytes[2], measurements.load);
     }
     if (pgn === 0xEB00) {
       value = frame.length === 8 && frame.bytes[0] ? "Multipacket message · fragment " + frame.bytes[0] :
@@ -127,7 +154,7 @@
       value = frame.length !== 3 || requested > 0x3FFFF ? "Malformed request" :
         (target ? "Request " + target + " · " : "Request ") + "PGN " + requested;
     }
-    return {pgn, sa, da: directed ? (id >>> 8) & 255 : null, name: pgnNames.get(pgn), value};
+    return {pgn, sa, da: directed ? (id >>> 8) & 255 : null, name: pgnNames.get(pgn), value, measurements};
   }
 
   function addBatch(batch) {
@@ -160,6 +187,7 @@
       if (groups.size > limit) groups.delete(groups.keys().next().value);
       trace.push(frame);
     }
+    trends?.observe(batch);
     total += batch.frames.length;
     if (trace.length > limit) trace.splice(0, trace.length - limit);
     if (batch.frames.length && !frozen && !byId("live-panel").hidden && !renderTimer) {
@@ -357,6 +385,7 @@
           buffer = buffer.slice(newline + 1);
           if (packet.error) throw Error(packet.error);
           if (packet.ready) {
+            trends?.reset();
             wheel = null; trace = []; groups = new Map(); pgnGroups = new Map(); previousValues.clear(); total = 0; dropped = 0; frozen = null;
             pause.disabled = false; pause.textContent = "Pause display";
             status.textContent = "Capturing on " + select.value;
@@ -370,6 +399,7 @@
       status.textContent = controller.signal.aborted ? "Stopped" : error.message;
     } finally {
       controller.abort();
+      trends?.pause(false);
       session = null; captureReady = null; wheel = null; select.disabled = false; frozen = null; pause.disabled = true;
       pause.textContent = "Pause display"; toggle.textContent = "Start capture"; render();
       if (reconnect) {
@@ -456,6 +486,7 @@
       if (!response.ok) throw Error(data.error);
       if (source.value !== "file") {
         byId("readings-only").checked = true;
+        if (trends) byId("trends").open = true;
         automaticJ1939 = !jMode.checked || automaticJ1939;
         setJ1939(true, true);
       }
@@ -473,6 +504,7 @@
   };
   pause.onclick = () => {
     frozen = frozen ? null : {trace: trace.slice(), groups: new Map(groups), pgnGroups: new Map(pgnGroups), total, dropped, wheel};
+    trends?.pause(Boolean(frozen));
     pause.textContent = frozen ? "Resume display" : "Pause display";
     render();
   };
@@ -485,6 +517,8 @@
   }
   function setJ1939(enabled, showGroups) {
     jMode.checked = enabled;
+    byId("trends").hidden = !(enabled && trends);
+    trends?.refresh();
     byId("legend-context").textContent = enabled ?
       "changed since the previous frame with the same PGN and source (CAN ID and type for other traffic)." :
       "changed since the previous frame with the same CAN ID and frame type.";

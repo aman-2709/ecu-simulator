@@ -120,6 +120,16 @@
           <dt>SHA-256</dt><dd id="wheel-sha256"></dd></dl>
       </details>
     </section>
+    <details id="trends" hidden><summary>Signal plot</summary>
+      <div class="trend-controls">
+        <label>Source address<select id="trend-source"></select></label>
+        <label><input type="checkbox" checked> Engine speed <output>—</output></label>
+        <label><input type="checkbox" checked> Accelerator pedal <output>—</output></label>
+        <label><input type="checkbox" checked> Engine load <output>—</output></label>
+      </div>
+      <div id="trend-chart" role="img" aria-label="Selected J1939 signals over elapsed capture time"></div>
+      <p id="trend-status" role="status"></p>
+    </details>
     <label class="j1939-mode" id="reading-filter" hidden><input type="checkbox" id="readings-only"> Vehicle readings only</label>
     <div id="frame-summary"></div>
     <p id="byte-legend" hidden><mark>Highlighted bytes</mark> <span id="legend-context">changed since the previous frame with the same CAN ID and frame type.</span></p>

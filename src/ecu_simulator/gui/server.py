@@ -197,6 +197,8 @@ def application(directory: Path | None = None) -> web.Application:
                     wheel = monitor.observe(run, frames, time.time_ns() // 1000)
                     if frames or wheel is not None:
                         batch = json.dumps({"frames": frames, "dropped": dropped, "wheel": wheel,
+                                            "pass_start_us": max(replay.started_us, replay.loop_boundary_us)
+                                            if interface == "vcan0" else 0,
                                             "loop_boundary_us": replay.loop_boundary_us if interface == "vcan0" else 0},
                                            separators=(",", ":"))
                         await asyncio.wait_for(response.write((batch + "\n").encode()), timeout=3)
@@ -224,7 +226,7 @@ def application(directory: Path | None = None) -> web.Application:
                 continue
             interfaces.append(name)
         return web.json_response({**profiles.names(), "interfaces": interfaces, "dbc_import": True, "replay": True,
-                                  "kenworth_drive": True})
+                                  "kenworth_drive": True, "signal_plot": True})
 
     @routes.get("/profiles/{source}/{name}")
     async def read(request: web.Request) -> web.Response:
@@ -294,8 +296,12 @@ def application(directory: Path | None = None) -> web.Application:
 
     app.add_routes(routes)
     static = Path(__file__).with_name("static")
+    observer_assets = static.parents[1] / "api" / "static"
     for route, filename in (("/", "control.html"), ("/control.js", "control.js"), ("/control.css", "control.css"),
-                            ("/live.js", "live.js"), ("/dbc.js", "dbc.js")):
+                            ("/live.js", "live.js"), ("/dbc.js", "dbc.js"), ("/trends.js", "trends.js"),
+                            ("/uPlot.iife.min.js", observer_assets / "uPlot.iife.min.js"),
+                            ("/uPlot.min.css", observer_assets / "uPlot.min.css"),
+                            ("/uPlot-LICENSE.txt", observer_assets / "uPlot-LICENSE.txt")):
         async def asset(request: web.Request, path: Path = static / filename) -> web.FileResponse:
             return web.FileResponse(path, headers=FRONTEND_HEADERS)
         app.router.add_get(route, asset)

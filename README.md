@@ -145,6 +145,8 @@ Open **Live CAN → Replay a CAN recording**, choose the default **2015 Kenworth
 
 EEC2 shows accelerator pedal position (SPN 91, byte 2) and percent engine load at current speed (SPN 92, byte 3). Hover over the value to see the byte mapping. Request messages show the requested PGN. The monitor distinguishes unavailable readings from zero and identifies groups without a signal decoder. **Last interval** measures the elapsed time between observations in that group. **Replay loop** marks an interval spanning the start of another pass on vcan0.
 
+**Signal plot** graphs engine speed (rpm), accelerator pedal (%) and engine load (%) for one J1939 source address on a shared elapsed-time axis. Choose the source and signals above the plot. Unavailable readings leave gaps. **Pause display** freezes both the table and plot while capture continues. A new capture or replay pass starts a fresh timeline. The rolling plot retains up to 30 seconds or 8,192 signal-bearing frames.
+
 The T660 excerpt uses the 12 seconds starting at timestamp 1604007304 in Colorado State University’s 2015 Kenworth T660 candump drive archive. It opens with **Vehicle readings only** selected. Clear that filter to inspect every captured group.
 
 The alternate T270 excerpt contains 7,098 frames and 104 identifiers from Colorado State University's [Heavy Vehicle CAN Data](https://systemscyber.engr.colostate.edu/research/HeavyVehicleCANData). It uses the interval from 1594702604 inclusive to 1594702616 exclusive in `CSU090AT.txt` from the 2014 Kenworth T270 Short archive. The original frames and timestamps are preserved.

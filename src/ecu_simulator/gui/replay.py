@@ -75,6 +75,7 @@ def parse_recording(raw: bytes) -> Recording:
 class Replay:
     def __init__(self) -> None:
         self.loop_boundary_us = 0
+        self.started_us = 0
         self.task: asyncio.Task | None = None
         self.info: dict = {"state": "Idle"}
 
@@ -91,6 +92,7 @@ class Replay:
             sock.close()
             raise
         self.loop_boundary_us = 0
+        self.started_us = time.time_ns() // 1000
         self.info = {"id": uuid.uuid4().hex, "state": "Playing", "name": name, "sent": 0,
                      "frames": len(recording.frames), "ids": recording.ids,
                      "duration": recording.frames[-1][0] / 1e9, "lap": 1}
