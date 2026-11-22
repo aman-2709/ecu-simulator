@@ -58,7 +58,7 @@ def test_the_list_is_sorted_and_immutable():
 # (vehicle.type aside, which picks the powertrain and is not a signal).
 HEV_VALUES = {
     "vehicle": {"vin": "PINNEDVIN98765432", "speed": 87, "ambient_temp": -7.5, "battery_voltage": 13.9,
-                "obd_standard": 6},
+                "obd_standard": 6, "parking_brake_active": 1, "auto_wipers_on": 1},
     "engine": {"fuel_level": 33, "fuel_type": 8, "rpm": 2345, "coolant_temp": 91.5, "intake_temp": 41.25,
                "engine_load": 62.5, "throttle": 27.5, "maf": 18.75, "map": 87, "timing_advance": 12.5,
                "short_fuel_trim": -3.125, "long_fuel_trim": 4.6875, "runtime": 1234},

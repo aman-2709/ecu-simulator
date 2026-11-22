@@ -1,0 +1,84 @@
+# Synthetic straight-line drive. BMW DBC from opendbc revision 79ddcc7bb72d557fc5b20d038c0fad9c9d423446.
+version: 1
+transport:
+  interface: vcan0
+vehicle:
+  vin: BMWE9XDEMODRIVE01
+  type: ice
+  speed: 0
+  battery_voltage: 14
+scenario:
+  signals:
+    - path: vehicle.speed
+      type: stepped
+      interval: 3
+      values: [0, 20, 40, 20]
+    - path: vehicle.parking_brake_active
+      type: stepped
+      interval: 3
+      values: [1, 0, 0, 0]
+    - path: vehicle.auto_wipers_on
+      type: stepped
+      interval: 3
+      values: [0, 1, 1, 0]
+    - path: engine.rpm
+      type: stepped
+      interval: 3
+      values: [800, 1600, 2000, 1200]
+dbc:
+  filename: bmw_e9x_e8x.dbc
+  sha256: c238d3938e4dc461b96b5055e790ccea01d03fc8c84d44ebeb35446654988f07
+  messages:
+    - name: WheelSpeeds
+      period_ms: 100
+      values:
+        Wheel_FL: vehicle.speed
+        Wheel_FR: vehicle.speed
+        Wheel_RL: vehicle.speed
+        Wheel_RR: vehicle.speed
+    - name: PowerBatteryVoltage
+      period_ms: 100
+      values:
+        BatteryVoltage: vehicle.battery_voltage
+    - name: InstrumentClusterStatus_KOMBI
+      period_ms: 100
+      values:
+        HandbrakeActive: vehicle.parking_brake_active
+    - name: WiperSwitch
+      period_ms: 100
+      values:
+        AutoWipersOn: vehicle.auto_wipers_on
+    - name: SteeringWheelAngle
+      period_ms: 100
+      values:
+        SteeringPosition: 0
+        SteeringSpeed: 0
+    - name: TurnSignals
+      period_ms: 100
+      values:
+        TurnSignalIdle: 1
+    - name: CruiseControlStatus
+      period_ms: 100
+      values:
+        CruiseControlInactiveFlag: 1
+    - name: GWS_ShiftLeverHeartbeat
+      period_ms: 100
+      values:
+        IgnOff: 0
+ecus:
+  engine:
+    name: ENGINE
+    endpoints:
+      - name: obd_physical
+        rx: 0x7E0
+        tx: 0x7E8
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: true
+      - name: obd_functional
+        rx: 0x7DF
+        tx: 0x7E8
+        addressing: functional
+        protocols: [obd]
+        reply_via: obd_physical
+        tx_padding: true

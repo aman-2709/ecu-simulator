@@ -108,6 +108,8 @@ class BatteryConfig(Base):
 
 
 class VehicleConfig(Base):
+    parking_brake_active: Literal[0, 1] = 0
+    auto_wipers_on: Literal[0, 1] = 0
     vin: str = Field(min_length=1, max_length=VIN_MAX_LENGTH)
     type: Literal["ice", "hev", "bev"]
     engine: EngineConfig | None = None
@@ -204,6 +206,15 @@ class EndpointConfigModel(Base):
         return not self.functional
 
 
+# A fixture contains one captured DID per snapshot and one opaque extended record.
+RecordData = Annotated[list[Byte], Field(min_length=1, max_length=4085)]
+
+
+class SnapshotConfig(Base):
+    did: Annotated[int, Field(ge=0, le=0xFFFF)]
+    data: RecordData
+
+
 class DtcConfigModel(Base):
     """One configured trouble code and the state the simulator starts it in.
 
@@ -218,6 +229,8 @@ class DtcConfigModel(Base):
     pending: bool = True
     confirmed: bool = True
     indicator_requested: bool = False
+    snapshot: SnapshotConfig | None = None
+    extended_record: RecordData | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -279,6 +292,7 @@ class UdsConfig(Base):
     """UDS session handling for one ECU. Absent means the defaults, which answer 0x10 exactly
     as it was answered before Phase 11."""
 
+    bench_output: bool = False
     s3_ms: Annotated[int, Field(ge=S3_MIN_MS)] = S3_DEFAULT_MS
     sessions: list[UdsSessionConfig] = Field(default_factory=_default_sessions, min_length=1)
 
@@ -434,6 +448,8 @@ class EcuConfig(Base):
 
     @model_validator(mode="after")
     def endpoints_are_consistent(self) -> EcuConfig:
+        if self.uds.bench_output and 0xD100 in self.did_data:
+            raise ValueError("D100 is owned by the configured bench output")
         names = [e.name for e in self.endpoints]
         duplicate_names = sorted({n for n in names if names.count(n) > 1})
         if duplicate_names:
@@ -498,12 +514,58 @@ class EcuConfig(Base):
         return self
 
 
+class RestbusConfig(Base):
+    """One supported straight-line wheel-speed mapping on Classical CAN."""
+
+    dbc: Literal["toyota_nodsu_pt"]
+    message: Literal["WHEEL_SPEEDS"]
+    source: Literal["vehicle.speed"]
+    signals: tuple[
+        Literal["WHEEL_SPEED_FR"], Literal["WHEEL_SPEED_FL"], Literal["WHEEL_SPEED_RR"], Literal["WHEEL_SPEED_RL"]
+    ]
+    period_ms: Literal[20]
+
+
+DbcValue = Annotated[int, Field(strict=True)] | Annotated[float, Field(strict=True, allow_inf_nan=False)] | str
+
+
+class DbcMessageConfig(Base):
+    name: str = Field(min_length=1)
+    period_ms: int = Field(strict=True, ge=10, le=60_000)
+    values: dict[str, DbcValue] = Field(default_factory=dict)
+
+
+class DbcConfig(Base):
+    filename: str = Field(min_length=1, max_length=255)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    messages: list[DbcMessageConfig] = Field(default_factory=list)
+
+
 class Profile(Base):
     version: Literal[1]
     transport: TransportConfig
     vehicle: VehicleConfig
+    restbus: RestbusConfig | None = None
+    dbc: DbcConfig | None = None
     scenario: ScenarioConfig = Field(default_factory=ScenarioConfig)
     ecus: dict[str, EcuConfig] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_dbc_selection(self) -> Profile:
+        if self.dbc is None:
+            return self
+        if self.restbus is not None:
+            raise ValueError("choose either restbus or dbc")
+        available = signal_types(self.vehicle.type)
+        names: set[str] = set()
+        for message in self.dbc.messages:
+            if message.name in names:
+                raise ValueError(f"duplicate dbc message {message.name!r}")
+            names.add(message.name)
+            for signal, source in message.values.items():
+                if isinstance(source, str) and available.get(source) not in (int, float):
+                    raise ValueError(f"dbc {message.name}.{signal}: {source!r} is not a numeric vehicle signal")
+        return self
 
     @property
     def has_scenario(self) -> bool:
@@ -544,6 +606,12 @@ class Profile(Base):
         owners: dict[tuple[AddressingMode, int], str] = {}
         for ecu_name, ecu in self.ecus.items():
             for endpoint in ecu.endpoints:
+                if (
+                    self.restbus is not None
+                    and endpoint.mode is AddressingMode.NORMAL_11BIT
+                    and 0xAA in (endpoint.rx, endpoint.tx)
+                ):
+                    raise ValueError(f"{ecu_name}.{endpoint.name} conflicts with restbus WHEEL_SPEEDS on 0x0AA")
                 key = (endpoint.mode, endpoint.rx)
                 owner = owners.get(key)
                 if owner is not None and owner != ecu_name and endpoint.addressing == "physical":

@@ -116,7 +116,7 @@ class Ecu:
         if not request.payload:
             logger.warning("%s: empty request on 0x%X ignored", self.name, request.target_address)
             return None
-        service = ServiceRequest(request.payload, functional=request.functional)
+        service = ServiceRequest(request.payload, functional=request.functional, endpoint=route.endpoint_name or "")
         logger.info(
             "%s rx 0x%X %s request %s",
             self.name,

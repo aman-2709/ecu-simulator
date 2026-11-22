@@ -38,11 +38,12 @@ def test_the_protocol_claims_the_services_the_legacy_table_claimed():
     assert frozenset({0x10, 0x11, 0x14, 0x19}) <= proto.service_ids
 
 
-def test_the_protocol_also_claims_tester_present():
-    # Phase 7 added 0x3E, Phase 11 added 0x22, and Phase 12 added 0x27/0x2E. Nothing the
-    # legacy table claimed was dropped.
+def test_the_protocol_claims_the_twenty_request_builder_services():
     proto, _ = protocol()
-    assert proto.service_ids == frozenset({0x10, 0x11, 0x14, 0x19, 0x22, 0x27, 0x2E, 0x3E})
+    assert proto.service_ids == {
+        0x10, 0x11, 0x14, 0x19, 0x22, 0x23, 0x27, 0x28, 0x2A, 0x2E, 0x2F, 0x31,
+        0x34, 0x35, 0x36, 0x37, 0x3D, 0x3E, 0x83, 0x85,
+    }
 
 
 # --- 0x10 DiagnosticSessionControl ------------------------------------------------------------
@@ -205,7 +206,7 @@ def test_0x14_on_an_empty_store_still_acknowledges():
 # --- unsupported and malformed -------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("request_hex", ["2801", "8301", "3101"])
+@pytest.mark.parametrize("request_hex", ["9901", "8701", "3801"])
 def test_services_this_protocol_does_not_claim_are_not_answered(request_hex):
     # The ECU's route policy answers these, not the protocol; it must not claim them.
     proto, _ = protocol()
@@ -273,7 +274,7 @@ def test_0x3e_does_not_disturb_the_dtc_store():
 def test_the_services_declared_to_have_a_subfunction_are_listed_explicitly():
     from ecu_simulator.protocols.uds.protocol import SUB_FUNCTION_SERVICES
 
-    assert SUB_FUNCTION_SERVICES == frozenset({0x10, 0x11, 0x19, 0x27, 0x3E})
+    assert SUB_FUNCTION_SERVICES == frozenset({0x10, 0x11, 0x19, 0x27, 0x28, 0x31, 0x3E, 0x83, 0x85})
 
 
 @pytest.mark.parametrize("session", ["01", "02", "03", "04"])
@@ -362,7 +363,7 @@ def test_0x19_is_declared_as_a_subfunction_service():
     assert READ_DTC_INFORMATION in SUB_FUNCTION_SERVICES
     # 0x22 joined 0x14 in Phase 11: ReadDataByIdentifier has no sub-function, and a DID's
     # high byte, such as the F1 of F190, has bit 7 set exactly where the bit would be.
-    assert SERVICE_IDS - SUB_FUNCTION_SERVICES == frozenset({0x14, 0x22, 0x2E})
+    assert SERVICE_IDS - SUB_FUNCTION_SERVICES == frozenset({0x14, 0x22, 0x23, 0x2A, 0x2E, 0x2F, 0x34, 0x35, 0x36, 0x37, 0x3D})
 
 
 def test_0x19_02_is_unchanged_by_any_of_this():
@@ -894,3 +895,84 @@ def test_0x19_01_and_0a_honour_the_suppress_bit(request_hex):
 @pytest.mark.parametrize("request_hex", ["1901", "190100ff", "190aff"])
 def test_0x19_01_and_0a_each_have_their_own_length_rule(request_hex):
     assert ask(request_hex).hex() == "7f1913"
+
+
+def test_disabling_dtc_setting_inhibits_store_updates_until_reenabled():
+    store = DtcStore([DtcState("P0001")])
+    protocol = UdsProtocol(dtcs=store)
+    assert protocol.handle(ServiceRequest(bytes.fromhex("85 82"))) is None
+    store.update("P0001", confirmed=True)
+    assert not store.confirmed
+    assert protocol.handle(ServiceRequest(bytes.fromhex("85 01"))) == bytes.fromhex("C5 01")
+    store.update("P0001", confirmed=True)
+    assert len(store.confirmed) == 1
+
+
+def test_ecu_reset_aborts_transfer_without_replacing_committed_memory():
+    ecu = UdsProtocol()
+    for request, expected in [
+        ("3D 12 10 00 02 AA BB", "7D 12 10 00 02"),
+        ("34 00 12 10 00 02", "74 10 42"),
+        ("36 01 55 66", "76 01"),
+        ("11 01", "51 01"),
+        ("37", "7F 37 24"),
+        ("23 12 10 00 02", "63 AA BB"),
+    ]:
+        assert ecu.handle(ServiceRequest(bytes.fromhex(request))) == bytes.fromhex(expected)
+    other = UdsProtocol()
+    assert other.handle(ServiceRequest(bytes.fromhex("23 12 10 00 02"))) == bytes.fromhex("63 00 00")
+
+
+@pytest.mark.parametrize("payload_hex,reply", [
+    ("23 00", "7F 23 31"), ("23 24 00", "7F 23 13"),
+    ("23 22 1F FF 00 02", "7F 23 31"), ("23 22 10 00 10 00", "7F 23 14"),
+    ("34 10 12 10 00 02", "7F 34 31"), ("3D 12 10 00 02 FF", "7F 3D 13"),
+    ("2A 04 FF", "7F 2A 31"), ("28 83 00", "7F 28 31"),
+    ("31 01 FF", "7F 31 13"), ("83 04 00", "7F 83 13"), ("85 83", "7F 85 12"),
+])
+def test_bench_controls_reject_invalid_requests(payload_hex, reply):
+    assert UdsProtocol().handle(ServiceRequest(bytes.fromhex(payload_hex))) == bytes.fromhex(reply)
+
+
+def test_output_override_validates_before_mutation_and_releases_on_reset_and_session_change():
+    proto = UdsProtocol(bench_output=True)
+
+    def exchange(request, response):
+        assert proto.handle(ServiceRequest(bytes.fromhex(request))) == bytes.fromhex(response)
+
+    exchange("2F D1 00 03 01", "7F 2F 7F")
+    exchange("10 03", "50 03 00 1E 0B B8")
+    for request, expected in [
+        ("2F D1 00 03 01", "6F D1 00 03 01"),
+        ("2F D1 00 03 02", "7F 2F 31"),
+        ("2F D1 00 03", "7F 2F 13"),
+        ("2F D1 00 00 01", "7F 2F 13"),
+        ("2F D1 01 03 00", "7F 2F 31"),
+        ("22 D1 00", "62 D1 00 01"),
+        ("11 01", "51 01"),
+        ("22 D1 00", "62 D1 00 00"),
+        ("10 03", "50 03 00 1E 0B B8"),
+        ("2F D1 00 03 01", "6F D1 00 03 01"),
+        ("10 01", "50 01 00 1E 0B B8"),
+        ("22 D1 00", "62 D1 00 00"),
+    ]:
+        exchange(request, expected)
+
+
+def test_stored_records_survive_flag_changes_until_cleared_and_can_be_recaptured():
+    proto, store = protocol((DtcState("P0001", snapshot=(0xD101, b"\x03\x20"), extended_record=b"\x01"),))
+
+    def exchange(request, response):
+        assert proto.handle(ServiceRequest(bytes.fromhex(request))) == bytes.fromhex(response)
+
+    exchange("19 04 00 01 01 01", "59 04 00 01 01 00")
+    store.update("P0001", confirmed=True)
+    exchange("19 04 00 01 01 FF", "59 04 00 01 01 08 01 01 D1 01 03 20")
+    store.update("P0001", confirmed=False)
+    exchange("19 06 00 01 01 01", "59 06 00 01 01 00 01 01")
+    store.clear()
+    exchange("19 06 00 01 01 01", "59 06 00 01 01 00")
+    store.update("P0001", pending=True)
+    exchange("19 06 00 01 01 FF", "59 06 00 01 01 04 01 01")
+    exchange("19 04 00 01 01", "7F 19 13")
+    exchange("19 04 00 01 02 01", "7F 19 31")

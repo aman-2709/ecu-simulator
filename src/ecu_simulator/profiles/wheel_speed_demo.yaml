@@ -1,0 +1,37 @@
+# All four wheels follow the same simulated vehicle speed on the bench.
+version: 1
+transport:
+  interface: vcan0
+vehicle:
+  vin: WHEELSPEEDDEMO001
+  type: ice
+  speed: 0
+scenario:
+  signals:
+    - path: vehicle.speed
+      type: stepped
+      interval: 10
+      values: [0, 40, 0]
+restbus:
+  dbc: toyota_nodsu_pt
+  message: WHEEL_SPEEDS
+  source: vehicle.speed
+  signals: [WHEEL_SPEED_FR, WHEEL_SPEED_FL, WHEEL_SPEED_RR, WHEEL_SPEED_RL]
+  period_ms: 20
+ecus:
+  engine:
+    name: ENGINE
+    endpoints:
+      - name: obd_physical
+        rx: 0x7E0
+        tx: 0x7E8
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: true
+      - name: obd_functional
+        rx: 0x7DF
+        tx: 0x7E8
+        addressing: functional
+        protocols: [obd]
+        reply_via: obd_physical
+        tx_padding: true

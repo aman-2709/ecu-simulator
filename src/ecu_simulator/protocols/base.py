@@ -31,6 +31,7 @@ class ServiceRequest:
 
     payload: bytes
     functional: bool = False
+    endpoint: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.payload, bytes | bytearray):

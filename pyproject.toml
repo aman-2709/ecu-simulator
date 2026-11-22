@@ -24,9 +24,9 @@ classifiers = [
     "Topic :: System :: Hardware",
 ]
 # can-isotp 2.x drives the kernel CAN_ISOTP socket (docs/decisions/0001-isotp-binding.md).
-# It is the only runtime dependency; raw CAN capture is left to candump.
 dependencies = [
     "can-isotp>=2.0,<3",
+    "cantools>=42,<43",
     # Profile schema validation. See docs/decisions/0002-configuration-format-and-validation.md.
     "pydantic>=2.13,<3",
     # YAML 1.2 safe loading; rejects duplicate keys instead of silently keeping the last.

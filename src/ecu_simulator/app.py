@@ -15,16 +15,19 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import math
 import signal
+import socket
 from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ecu_simulator.api.options import ApiOptions, ApiStartupError
 from ecu_simulator.clock import Clock, MonotonicClock
-from ecu_simulator.config import Profile
+from ecu_simulator.config import ConfigError, Profile
 from ecu_simulator.config.schema import (
     CorruptFaultConfig,
+    DbcValue,
     DelayFaultConfig,
     DropFaultConfig,
     EcuConfig,
@@ -53,10 +56,24 @@ from ecu_simulator.protocols.obd import ObdProtocol
 from ecu_simulator.protocols.uds import SessionTiming, UdsProtocol, UdsSession
 from ecu_simulator.protocols.uds.dids import SessionDidProvider, StaticDidProvider, VinDidProvider
 from ecu_simulator.protocols.uds.dtc import DtcStoreProvider
+from ecu_simulator.publisher import CyclicFrame, publish_frames, publish_wheels
 from ecu_simulator.scenario import Scenario, ScenarioRunner, ScenarioSync
+from ecu_simulator.scenario.generators import (
+    ConstantSignal,
+    RampSignal,
+    SequenceSignal,
+    SignalScenario,
+    SineSignal,
+    SteppedSignal,
+    TimelineSignal,
+)
 from ecu_simulator.transport import AddressingMode, TransportError
 from ecu_simulator.transport.socketcan import EndpointConfig, IsoTpAddress, IsoTpOptions, IsoTpTransport
 from ecu_simulator.vehicle import POWERTRAINS, CommonState, IceState, TractionBattery, VehicleState
+
+if TYPE_CHECKING:
+    from ecu_simulator.dbc import ImportedDb
+    from ecu_simulator.restbus import WheelCodec
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +143,8 @@ def build_vehicle(config: RuntimeConfig) -> VehicleState:
         ambient_temp=vehicle.ambient_temp,
         battery_voltage=vehicle.battery_voltage,
         obd_standard=vehicle.obd_standard,
+        parking_brake_active=vehicle.parking_brake_active,
+        auto_wipers_on=vehicle.auto_wipers_on,
     )
     powertrain_type = POWERTRAINS[vehicle.type]
     fields: dict[str, object] = {}
@@ -153,6 +172,103 @@ def build_vehicle(config: RuntimeConfig) -> VehicleState:
     return VehicleState(common, powertrain_type(**fields))  # type: ignore[arg-type]
 
 
+@dataclass
+class PreparedDbc:
+    metadata: dict[str, Any]
+    frames: list[CyclicFrame]
+
+
+def _scenario_limits(generator: SignalScenario) -> tuple[float, float]:
+    values: tuple[float, ...]
+    if isinstance(generator, ConstantSignal):
+        values = (generator.value,)
+    elif isinstance(generator, RampSignal):
+        values = (generator.start, generator.to)
+    elif isinstance(generator, SineSignal):
+        if not math.isfinite(generator.phase):
+            raise ValueError(f"{generator.path} has a non-finite phase")
+        values = (generator.centre - abs(generator.amplitude), generator.centre + abs(generator.amplitude))
+    elif isinstance(generator, SteppedSignal):
+        values = tuple(generator.values)
+    elif isinstance(generator, SequenceSignal):
+        values = tuple(step.value for step in generator.steps)
+    else:
+        assert isinstance(generator, TimelineSignal)
+        values = tuple(point.value for point in generator.points)
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError(f"{generator.path} has a non-finite scenario value")
+    return min(values), max(values)
+
+
+def _dbc_values(sources: dict[str, DbcValue], vehicle: VehicleState) -> dict[str, float]:
+    return {signal: vehicle.get(source) if isinstance(source, str) else source for signal, source in sources.items()}
+
+
+def prepare_dbc(
+    config: RuntimeConfig, vehicle: VehicleState | None = None, *, database: ImportedDb | None = None,
+    sync: Callable[[], None] | None = None,
+) -> PreparedDbc | None:
+    """Resolve the selected bytes and validate every cyclic frame before opening sockets."""
+    selection = config.profile.dbc
+    if selection is None:
+        return None
+    if database is None:
+        from ecu_simulator.dbc import DbcStore
+
+        try:
+            database = DbcStore().load(selection.sha256)
+        except (ValueError, OSError) as error:
+            raise ConfigError(f"dbc {selection.filename!r}: {error}") from error
+    vehicle = build_vehicle(config) if vehicle is None else vehicle
+    generators = {signal.path: signal for signal in config.profile.scenario.signals}
+    occupied = {
+        (can_id, endpoint.mode is not AddressingMode.NORMAL_11BIT): f"{ecu_name}.{endpoint.name}"
+        for ecu_name, ecu in config.profile.ecus.items() for endpoint in ecu.endpoints
+        for can_id in (endpoint.rx, endpoint.tx)
+    }
+    frames = []
+    messages = []
+    for selected in selection.messages:
+        try:
+            message = database.message(selected.name)
+            if message.get("tx_issue"):
+                raise ValueError(message["tx_issue"])
+            key = (message["id"], message["extended"])
+            if key in occupied:
+                raise ValueError(f"conflicts with {occupied[key]} on 0x{key[0]:X}")
+            occupied[key] = selected.name
+            initial = _dbc_values(selected.values, vehicle)
+            for signal, source in selected.values.items():
+                if isinstance(source, str) and source in generators:
+                    first = generators[source].value_at(0)
+                    if not math.isfinite(first):
+                        raise ValueError(f"{source} has a non-finite scenario value")
+                    initial[signal] = int(first) if isinstance(initial[signal], int) else first
+            database.encode(selected.name, initial)
+            selectors = {field["name"] for field in message["signals"] if field.get("is_mux")}
+            for signal, source in selected.values.items():
+                if signal in selectors and isinstance(source, str):
+                    raise ValueError(f"multiplexer selector {signal} requires an integer constant")
+                if isinstance(source, str) and source in generators:
+                    low, high = _scenario_limits(generators[source])
+                    integral = isinstance(initial[signal], int)
+                    for limit in (low, high):
+                        database.encode(selected.name, {**initial, signal: int(limit) if integral else limit})
+
+            def sample(name: str = selected.name, sources: dict[str, DbcValue] = selected.values) -> bytes:
+                if sync is not None:
+                    sync()
+                return database.encode(name, _dbc_values(sources, vehicle))
+
+            can_id = key[0] | (socket.CAN_EFF_FLAG if key[1] else 0)
+            frames.append(CyclicFrame(selected.name, can_id, selected.period_ms / 1000, sample))
+            messages.append({**selected.model_dump(), "id": key[0], "extended": key[1], "dlc": message["dlc"]})
+        except (KeyError, ValueError, OverflowError) as error:
+            raise ConfigError(f"dbc message {selected.name!r}: {error}") from error
+    metadata = {"filename": selection.filename, "sha256": selection.sha256, "messages": messages}
+    return PreparedDbc(metadata, frames)
+
+
 def build_dtc_store(ecu_config: EcuConfig) -> DtcStore:
     """The trouble codes this ECU starts with, in the order the profile lists them.
 
@@ -165,6 +281,9 @@ def build_dtc_store(ecu_config: EcuConfig) -> DtcStore:
             pending=dtc.pending,
             confirmed=dtc.confirmed,
             indicator_requested=dtc.indicator_requested,
+            snapshot=(dtc.snapshot.did, bytes(dtc.snapshot.data)) if dtc.snapshot else None,
+            extended_record=bytes(dtc.extended_record) if dtc.extended_record else None,
+            records_stored=dtc.pending or dtc.confirmed,
         )
         for dtc in ecu_config.dtcs
     )
@@ -248,6 +367,9 @@ def build_ecus(config: RuntimeConfig, vehicle: VehicleState | None = None, clock
                         dtcs=ecu.dtc_store,
                         session=session,
                         dids=ecu.dids,
+                        bench_output=ecu_config.uds.bench_output,
+                        vehicle=vehicle,
+                        clock=clock,
                     )
                 )
             else:  # pragma: no cover - the schema rejects unknown protocol names
@@ -434,6 +556,9 @@ async def run(
     clock: Clock | None = None,
     api: ApiOptions | None = None,
     ready: Callable[[], None] | None = None,
+    broadcast_paused: Callable[[], bool] | None = None,
+    wheel_codec: WheelCodec | None = None,
+    dbc_ready: Callable[[dict[str, Any]], None] | None = None,
 ) -> None:
     """Start the transport, wait for ``stop`` (or SIGINT/SIGTERM), then shut down.
 
@@ -443,6 +568,14 @@ async def run(
     endpoints = build_endpoints(config)
     runtime = build_runtime(config, clock)
     check_routes(runtime.router, endpoints)  # before any socket is opened
+    dbc = prepare_dbc(config, runtime.vehicle, sync=runtime.sync)
+    restbus = config.profile.restbus
+    if restbus is not None:
+        if wheel_codec is None:
+            from ecu_simulator.restbus import WheelCodec
+
+            wheel_codec = WheelCodec()
+        logger.info("wheel-speed publisher database %s", wheel_codec.metadata())
     server = _api_server(runtime, endpoints, api) if api is not None else None
     handler = server.handler if server is not None else runtime.dispatcher
     # Constructed before the API starts, so a constructor error leaves nothing to clean up;
@@ -461,11 +594,42 @@ async def run(
             for sig in (signal.SIGINT, signal.SIGTERM):
                 loop.add_signal_handler(sig, _request_stop, stop, sig)
                 installed.append(sig)
-        logger.info("ecu-simulator ready on %s", config.interface)
-        async with scenario_tick(runtime.sync, config.profile.scenario.tick):
+        uds_protocols = [
+            protocol for ecu in runtime.ecus for protocol in ecu.protocols if isinstance(protocol, UdsProtocol)
+        ]
+
+        def publish_periodic() -> None:
+            for protocol in uds_protocols:
+                if protocol.controls.periodic or not protocol.dtcs.setting_enabled:
+                    protocol.expire_session()
+                for endpoint, payload in protocol.controls.reports():
+                    transport.publish_periodic(endpoint, payload)
+
+        def announce_ready() -> None:
+            logger.info("ecu-simulator ready on %s", config.interface)
+            if dbc is not None and dbc_ready is not None:
+                dbc_ready(dbc.metadata)
             if ready is not None:
                 ready()
-            await stop.wait()
+
+        async with scenario_tick(runtime.sync, config.profile.scenario.tick), scenario_tick(publish_periodic, 0.05):
+            if dbc is not None and dbc.frames:
+                await publish_frames(config.interface, dbc.frames, broadcast_paused, announce_ready, stop)
+            elif restbus is None:
+                announce_ready()
+                await stop.wait()
+            else:
+                assert wheel_codec is not None
+                encode = wheel_codec.encode
+
+                def sample() -> bytes:
+                    if runtime.sync is not None:
+                        runtime.sync()
+                    return encode(runtime.vehicle.common.speed)
+
+                await publish_wheels(
+                    config.interface, restbus.period_ms / 1000, sample, broadcast_paused, announce_ready, stop
+                )
     finally:
         for sig in installed:
             loop.remove_signal_handler(sig)
@@ -485,7 +649,7 @@ def main(config: RuntimeConfig, api: ApiOptions | None = None) -> int:
     """Run to completion; exit status 0 on clean shutdown, 2 on a transport/startup failure."""
     try:
         asyncio.run(run(config, api=api))
-    except (TransportError, ApiStartupError) as error:
+    except (TransportError, ApiStartupError, ConfigError) as error:
         logger.error("%s", error)
         return 2
     return 0

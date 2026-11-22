@@ -1,0 +1,61 @@
+# Synthetic stored records and a simulated output for SocketCAN testing.
+version: 1
+
+transport:
+  interface: vcan0
+
+vehicle:
+  vin: TESTVIN0123456789
+  type: ice
+  speed: 0                  # km/h
+  ambient_temp: 20          # degrees Celsius
+  battery_voltage: 14.1     # V, the control-module supply
+  obd_standard: 1           # coded value reported by PID 0x1C
+  engine:
+    rpm: 800
+    coolant_temp: 90        # degrees Celsius
+    intake_temp: 25         # degrees Celsius
+    engine_load: 22.0       # per cent
+    throttle: 14.0          # per cent
+    maf: 3.5                # g/s
+    map: 33                 # kPa, intake manifold absolute pressure
+    timing_advance: 10.0    # degrees before top dead centre
+    short_fuel_trim: 0.0    # per cent
+    long_fuel_trim: 1.5     # per cent
+    runtime: 600            # seconds since engine start
+    fuel_level: 50          # per cent
+    fuel_type: 1            # SAE J1979 fuel type coding; 1 is gasoline
+
+ecus:
+  engine:
+    name: ECU_SIMULATOR
+    dtcs:
+      - B1477
+      - code: P0001
+        snapshot: {did: 0xD101, data: [0x03, 0x20]}  # bench RPM, big-endian, 800 rpm
+        extended_record: [0x01]  # bench fixture occurrence count
+    uds: {bench_output: true}
+    dids: {}
+    endpoints:
+      - name: obd_functional
+        rx: 0x7DF
+        tx: 0x7E8
+        addressing: functional
+        protocols: [obd]
+        answer_unsupported: false
+        tx_padding: true
+        pad_byte: 0x00
+        reply_via: obd_physical
+      - name: obd_physical
+        rx: 0x7E0
+        tx: 0x7E8
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: true
+        pad_byte: 0x00
+      - name: uds_physical
+        rx: 0x7E1
+        tx: 0x7E9
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: false

@@ -78,6 +78,9 @@ def main(argv: list[str] | None = None) -> int:
     path = Path(args.profile) if args.profile else default_profile_path()
     try:
         profile = load_profile(path)
+        config = app.RuntimeConfig.build(profile, args.interface)
+        if args.command == "validate-config":
+            app.prepare_dbc(config)
     except ConfigError as error:
         log.error("%s", error)
         return 2
@@ -110,7 +113,6 @@ def main(argv: list[str] | None = None) -> int:
         if importlib.util.find_spec("aiohttp") is None:
             log.error("--api needs the optional [gui] extra: pip install 'ecu-simulator[gui]'")
             return 2
-    config = app.RuntimeConfig.build(profile, args.interface)
     try:
         return app.main(config, api)
     except KeyboardInterrupt:

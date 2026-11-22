@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import logging
 
-from ecu_simulator.dtc import DtcStore
+from ecu_simulator.clock import Clock, MonotonicClock
+from ecu_simulator.dtc import DtcStore, code_number
 from ecu_simulator.protocols.base import (
     NEGATIVE_RESPONSE_SID,
     NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT,
@@ -31,10 +32,12 @@ from ecu_simulator.protocols.base import (
     negative_response,
     positive_response_sid,
 )
-from ecu_simulator.protocols.uds.dtc import AVAILABILITY_MASK
+from ecu_simulator.protocols.uds.control import ADDITIONAL_SERVICES, CONTROL_SUBFUNCTIONS, BenchControls
+from ecu_simulator.protocols.uds.dtc import AVAILABILITY_MASK, FAILURE_TYPE_BYTE, status_byte
 from ecu_simulator.protocols.uds.providers import DidRegistry, DtcRegistry
 from ecu_simulator.protocols.uds.security import MOCK_KEY, UdsSecurity
 from ecu_simulator.protocols.uds.session import DEFAULT_SESSION, UdsSession
+from ecu_simulator.vehicle import VehicleState
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +50,7 @@ SECURITY_ACCESS = 0x27
 WRITE_DATA_BY_IDENTIFIER = 0x2E
 TESTER_PRESENT = 0x3E
 
-SERVICE_IDS = frozenset(
+SERVICE_IDS = ADDITIONAL_SERVICES | frozenset(
     {
         DIAGNOSTIC_SESSION_CONTROL,
         ECU_RESET,
@@ -55,6 +58,7 @@ SERVICE_IDS = frozenset(
         READ_DTC_INFORMATION,
         READ_DATA_BY_IDENTIFIER,
         SECURITY_ACCESS,
+        0x2F,
         WRITE_DATA_BY_IDENTIFIER,
         TESTER_PRESENT,
     }
@@ -111,7 +115,7 @@ CLEAR_REQUEST_LENGTH = 4
 # ReadDTCInformation does have a sub-function, the report type, whatever Phase 6 answered
 # for 19 82 FF before this rule existed; declaring it otherwise would keep those bytes by
 # recording something untrue about the service.
-SUB_FUNCTION_SERVICES = frozenset(
+SUB_FUNCTION_SERVICES = CONTROL_SUBFUNCTIONS | frozenset(
     {DIAGNOSTIC_SESSION_CONTROL, ECU_RESET, READ_DTC_INFORMATION, SECURITY_ACCESS, TESTER_PRESENT}
 )
 
@@ -125,6 +129,32 @@ SUB_FUNCTION_VALUE_MASK = 0x7F
 # service sees the byte. Nothing here needs to know about it.
 ZERO_SUB_FUNCTION = 0x00
 TESTER_PRESENT_REQUEST_LENGTH = 2
+
+
+class BenchOutput:
+    """One simulated lamp. ECU control defaults to off. DID D100 is profile-specific."""
+
+    name = "bench-output"
+    data_identifiers = frozenset({0xD100})
+
+    def __init__(self) -> None:
+        self.override: int | None = None
+
+    def read(self, did: int) -> bytes | None:
+        if did != 0xD100:
+            return None
+        return bytes([self.override or 0])
+
+    def control(self, request: bytes) -> bytes:
+        operation = request[3]
+        if operation not in (0, 3):
+            return negative_response(0x2F, NRC_REQUEST_OUT_OF_RANGE)
+        if len(request) != (5 if operation == 3 else 4):
+            return negative_response(0x2F, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
+        if operation == 3 and request[4] > 1:
+            return negative_response(0x2F, NRC_REQUEST_OUT_OF_RANGE)
+        self.override = request[4] if operation == 3 else None
+        return bytes([0x6F]) + request[1:4] + bytes([self.override or 0])
 
 
 class UdsProtocol:
@@ -141,6 +171,9 @@ class UdsProtocol:
         session: UdsSession | None = None,
         security: UdsSecurity | None = None,
         dids: DidRegistry | None = None,
+        bench_output: bool = False,
+        clock: Clock | None = None,
+        vehicle: VehicleState | None = None,
     ) -> None:
         # Reads go through the provider registry (plan rule 6); the clear goes straight to
         # the shared store, which is the same object OBD Mode 04 clears (plan rule 7).
@@ -148,7 +181,11 @@ class UdsProtocol:
         self.dtcs = dtcs if dtcs is not None else DtcStore()
         self.session = session if session is not None else UdsSession()
         self.security = security if security is not None else UdsSecurity()
+        self.controls = BenchControls(self.dtcs, self.session, clock or MonotonicClock(), vehicle)
         self.dids = dids if dids is not None else DidRegistry()
+        self.output = BenchOutput() if bench_output else None
+        if self.output:
+            self.dids.register(self.output)
 
     def handle(self, request: ServiceRequest) -> bytes | None:
         """Apply the sub-function framing rules, run the service, then decide what goes out.
@@ -177,17 +214,18 @@ class UdsProtocol:
         unread; the rule above is taken from three named AUTOSAR requirements, which is
         documentary evidence and not a conformance claim. See docs/decisions/0006, row W2.
         """
-        active_before_expiry = self.session.active
-        self.session.expire_if_idle()
-        if active_before_expiry != self.session.active:
-            self.security.lock("S3 returned the ECU to the default session")
+        self.expire_session()
         payload = request.payload
         sid = payload[0]
         suppress = False
         if sid in SUB_FUNCTION_SERVICES and len(payload) > 1:
             suppress = bool(payload[1] & SUPPRESS_POS_RSP_MSG_INDICATION_BIT)
             payload = bytes([sid, payload[1] & SUB_FUNCTION_VALUE_MASK]) + payload[2:]
-        response = self._serve(sid, payload)
+        response: bytes | None
+        if sid in ADDITIONAL_SERVICES:
+            response = self.controls.handle(payload, request.endpoint)
+        else:
+            response = self._serve(sid, payload)
         # Every request this protocol handles restarts S3, positive, negative or suppressed:
         # [ECUC_Dcm_01240] measures S3 "while not receiving any diagnostic request message".
         self.session.note_request()
@@ -196,9 +234,24 @@ class UdsProtocol:
             return None
         return response
 
+    def expire_session(self) -> None:
+        active_before_expiry = self.session.active
+        self.session.expire_if_idle()
+        if active_before_expiry != self.session.active:
+            self.security.lock("S3 returned the ECU to the default session")
+            self._reset_controls()
+
     def _serve(self, sid: int, payload: bytes) -> bytes | None:
         if sid in {SECURITY_ACCESS, WRITE_DATA_BY_IDENTIFIER} and self.session.active == DEFAULT_SESSION:
             return self._nrc(sid, NRC_SERVICE_NOT_SUPPORTED_IN_ACTIVE_SESSION)
+        if sid == 0x2F:
+            if len(payload) < 4:
+                return self._nrc(sid, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
+            if self.output is None or payload[1:3] != bytes.fromhex("D100"):
+                return self._nrc(sid, NRC_REQUEST_OUT_OF_RANGE)
+            if self.session.active != 3:
+                return self._nrc(sid, NRC_SERVICE_NOT_SUPPORTED_IN_ACTIVE_SESSION)
+            return self.output.control(payload)
         if sid == DIAGNOSTIC_SESSION_CONTROL:
             return self._session_control(payload)
         if sid == ECU_RESET:
@@ -216,6 +269,11 @@ class UdsProtocol:
         if sid == TESTER_PRESENT:
             return self._tester_present(payload)
         return None  # pragma: no cover - the ECU only routes claimed SIDs here
+
+    def _reset_controls(self) -> None:
+        self.controls.reset()
+        if self.output:
+            self.output.override = None
 
     # -- 0x10 ------------------------------------------------------------------------------------
 
@@ -235,7 +293,9 @@ class UdsProtocol:
         if session not in self.session.supported:
             return self._nrc(DIAGNOSTIC_SESSION_CONTROL, NRC_SUB_FUNCTION_NOT_SUPPORTED)
         response = bytes([positive_response_sid(DIAGNOSTIC_SESSION_CONTROL), session])
-        response += self.session.timing(session).record()
+        if session != self.session.active:
+            self._reset_controls()
+        response += self.controls.timing or self.session.timing(session).record()
         previous_session = self.session.active
         self.session.enter(session)
         if previous_session != DEFAULT_SESSION:
@@ -267,6 +327,7 @@ class UdsProtocol:
             return self._nrc(ECU_RESET, NRC_SUB_FUNCTION_NOT_SUPPORTED)
         response = bytes([positive_response_sid(ECU_RESET), reset_type])
         if reset_type in RESETS_THAT_RESTART:
+            self._reset_controls()
             self.session.return_to_default(f"ECUReset 0x{reset_type:02X}")
             self.security.lock(f"ECUReset 0x{reset_type:02X}")
         if reset_type == RESET_ENABLE_RAPID_POWER_SHUT_DOWN:
@@ -316,7 +377,7 @@ class UdsProtocol:
         sub-function behind a length error. **The order is a project choice**, made in
         Phase 6 and kept: no accessible source states it.
 
-        Three report types are served, each opening with the DTCStatusAvailabilityMask
+        The three list/count report types each open with the DTCStatusAvailabilityMask
         0x8C (DEV-16):
 
         * **0x02** reportDTCByStatusMask (DEV-05): the records with
@@ -334,6 +395,8 @@ class UdsProtocol:
         if len(payload) < 2:
             return self._nrc(READ_DTC_INFORMATION, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
         report_type = payload[1]
+        if report_type in (4, 6):
+            return self._read_stored_record(payload)
         required_length = REPORT_REQUEST_LENGTHS.get(report_type)
         if required_length is None:
             return self._nrc(READ_DTC_INFORMATION, NRC_SUB_FUNCTION_NOT_SUPPORTED)
@@ -346,6 +409,26 @@ class UdsProtocol:
         if report_type == REPORT_NUMBER_OF_DTC_BY_STATUS_MASK:
             return header + bytes([DTC_FORMAT_IDENTIFIER]) + len(records).to_bytes(2, "big")
         return header + b"".join(record.to_bytes() for record in records)
+
+    def _read_stored_record(self, payload: bytes) -> bytes:
+        if len(payload) != 6:
+            return self._nrc(READ_DTC_INFORMATION, NRC_INCORRECT_MESSAGE_LENGTH_OR_INVALID_FORMAT)
+        number = int.from_bytes(payload[2:4], "big")
+        for state in self.dtcs:
+            if code_number(state.code) != number or payload[4] != FAILURE_TYPE_BYTE:
+                continue
+            if payload[5] not in (1, 0xFF):
+                break
+            header = bytes([0x59]) + payload[1:5] + bytes([status_byte(state)])
+            if payload[1] == 4 and state.snapshot:
+                did, data = state.snapshot
+                record = bytes([1, 1]) + did.to_bytes(2, "big") + data
+            elif payload[1] == 6 and state.extended_record:
+                record = bytes([1]) + state.extended_record
+            else:
+                break
+            return header + record if state.records_stored else header
+        return self._nrc(READ_DTC_INFORMATION, NRC_REQUEST_OUT_OF_RANGE)
 
     # -- 0x22 ------------------------------------------------------------------------------------
 

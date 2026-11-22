@@ -209,6 +209,16 @@ class IsoTpTransport:
         for follow_up in response.follow_ups:
             self._schedule(via, follow_up)
 
+    def publish_periodic(self, name: str, payload: bytes) -> None:
+        source = self._by_name[name]
+        target = self._by_name[source.config.reply_via or name]
+        # Samples are replaceable. A busy socket skips a sample instead of accumulating stale data.
+        if not target.pending:
+            try:
+                target.socket.send(payload)
+            except TransportIOError as error:
+                logger.warning("%s: periodic send failed: %s", name, error)
+
     def _schedule(self, endpoint: _Endpoint, response: DiagnosticResponse) -> None:
         if response.delay == 0:
             self._send(endpoint, response.payload)

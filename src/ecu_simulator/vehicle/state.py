@@ -29,6 +29,8 @@ class CommonState:
     # Which OBD standard the vehicle reports conforming to. A coded value, not a claim
     # this project makes about itself; 1 is the value commonly reported for OBD-II.
     obd_standard: int = 1
+    parking_brake_active: int = 0  # switch state, 0 released or 1 applied
+    auto_wipers_on: int = 0  # automatic wiper mode selected (0 or 1)
 
 
 @dataclass(slots=True)

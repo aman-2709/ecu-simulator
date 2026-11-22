@@ -39,8 +39,13 @@ class DtcState:
     confirmed: bool = False
     indicator_requested: bool = False
 
+    snapshot: tuple[int, bytes] | None = None
+    extended_record: bytes | None = None
+    records_stored: bool = False
+
     def clear(self) -> None:
         """Reset every runtime flag; the identity is untouched."""
+        self.records_stored = False
         self.pending = False
         self.confirmed = False
         self.indicator_requested = False
@@ -55,6 +60,7 @@ class DtcStore:
         A :class:`DtcState` is mutable and the store mutates it; aliasing one would let a
         reused template, or two ECUs built from one list, share flags and clear each other.
         """
+        self.setting_enabled = True
         self._entries: dict[str, DtcState] = {}
         for entry in entries:
             if entry.code in self._entries:
@@ -117,12 +123,16 @@ class DtcStore:
         entry = self._entries.get(code)
         if entry is None:
             raise KeyError(f"trouble code {code!r} is not configured on this ECU")
+        if not self.setting_enabled:
+            return entry
         if pending is not None:
             entry.pending = pending
         if confirmed is not None:
             entry.confirmed = confirmed
         if indicator_requested is not None:
             entry.indicator_requested = indicator_requested
+        if entry.pending or entry.confirmed:
+            entry.records_stored = True
         return entry
 
     def clear(self) -> None:
