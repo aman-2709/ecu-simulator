@@ -6,6 +6,7 @@ import gzip
 import json
 import socket
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -165,6 +166,16 @@ def application(directory: Path | None = None) -> web.Application:
     async def stop_recording(request: web.Request) -> web.Response:
         return web.json_response(await replay.stop(request.match_info["id"]))
 
+    # Per-browser streams can finish after draining frames queued before Stop.
+    capture_cutoffs: dict[str, int] = {}
+
+    @routes.post("/capture/{id}/finish")
+    async def finish_capture(request: web.Request) -> web.Response:
+        key = request.match_info["id"]
+        if key in capture_cutoffs and not capture_cutoffs[key]:
+            capture_cutoffs[key] = time.time_ns() // 1000
+        return web.json_response({})
+
     @routes.post("/capture")
     async def capture(request: web.Request) -> web.StreamResponse:
         settings = await json_body(request)
@@ -177,14 +188,20 @@ def application(directory: Path | None = None) -> web.Application:
         previous: dict[tuple[int, bool], int] = {}
         monitor = WheelMonitor(interface)
         with open_capture(interface) as sock:
+            key = uuid.uuid4().hex
             response = web.StreamResponse(headers={
-                "Content-Type": "application/x-ndjson", "Cache-Control": "no-store",
+                "Content-Type": "application/x-ndjson", "Cache-Control": "no-store", "X-Capture-Id": key,
             })
             await response.prepare(request)
             try:
+                capture_cutoffs[key] = 0
                 await response.write(b'{"ready":true}\n')
                 while not shutting_down.is_set() and request.transport and not request.transport.is_closing():
+                    cutoff = capture_cutoffs[key]
                     frames, dropped = read_batch(sock)
+                    drained = cutoff and (len(frames) < BATCH_LIMIT or frames[-1]["time"] > cutoff)
+                    if cutoff:
+                        frames = [frame for frame in frames if frame["time"] <= cutoff]
                     run = manager.status()
                     active = run.get("dbc") if run["state"] == "Running" and run["interface"] == interface else None
                     wanted = selected or (active and active["sha256"])
@@ -202,12 +219,17 @@ def application(directory: Path | None = None) -> web.Application:
                                             "loop_boundary_us": replay.loop_boundary_us if interface == "vcan0" else 0},
                                            separators=(",", ":"))
                         await asyncio.wait_for(response.write((batch + "\n").encode()), timeout=3)
+                    if drained:
+                        await response.write(b'{"finished":true}\n')
+                        break
                     # Drain a busy socket promptly, yielding between bounded batches.
                     await asyncio.sleep(0 if len(frames) == BATCH_LIMIT else 0.05)
             except (ConnectionError, TimeoutError):
                 pass
             except OSError as error:
                 await response.write((json.dumps({"error": str(error)}) + "\n").encode())
+            finally:
+                capture_cutoffs.pop(key, None)
             return response
 
     async def end_captures(app: web.Application) -> None:

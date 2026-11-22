@@ -145,9 +145,10 @@ def test_replay_recorded_timing_and_stop(browser, vcan, tmp_path):  # noqa: F811
         page.locator("#replay-play").click()
         expect(page.locator("#replay-status")).to_contain_text("Line 2")
         assert not read_batch(listener)[0]
+        expect(page.locator("#capture-toggle")).to_have_text("Start capture")
         page.locator(".capture-dbc summary").click()
-        with page.expect_response(lambda r: r.url.endswith("/capture") and r.request.method == "POST" and r.ok):
-            page.locator("#live-dbc-file").set_input_files(FORD)
+        page.locator("#live-dbc-file").set_input_files(FORD)
+        expect(page.locator("#live-dbc-status")).to_contain_text(FORD.name)
         content = b"(123.000) can0 321#11\n(123.120) can0 00000321#2233\n(123.120) can0 082 [8] 80 00 14 00 78 00 00 00"
         file_input.set_input_files({"name": "drive.log", "mimeType": "text/plain", "buffer": content})
         page.locator("#replay-play").click()

@@ -82,7 +82,7 @@
       <button class="primary" id="capture-toggle" disabled>Start capture</button>
       <span id="capture-status" role="status">Stopped</span></div>
     <details id="replay-panel" hidden><summary>Replay a CAN recording</summary>
-      <p>Play recorded frames on vcan0 at their original timing. Capture starts automatically.</p>
+      <p>Play recorded frames on vcan0 at their original timing. Play starts capture if needed. That capture stops when replay ends. A capture you started yourself stays on.</p>
       <label>Recording<select id="replay-source"><option value="kenworth-drive">2015 Kenworth T660 · driving excerpt</option>
         <option value="kenworth">2014 Kenworth T270 · stationary engine readings</option>
         <option value="file">Local candump log</option></select></label>

@@ -70,7 +70,7 @@
     const version = ++catalogVersion;
     if (!live) return;
     render();
-    if (session) return;
+    if (session) { refreshReplay(); return; }
     try {
       const catalog = await api("/profiles");
       if (version !== catalogVersion || session) return;
@@ -359,20 +359,40 @@
     if (follow && !grouped) scroll.scrollTop = scroll.scrollHeight;
   }
 
-  let captureReady = null;
+  let captureReady = null, captureId = null;
+  let linkedRun = null, closingCapture = false;
+
+  async function finishLinkedCapture() {
+    if (closingCapture || !session) return;
+    closingCapture = true;
+    reconnect = false;
+    const current = session;
+    toggle.disabled = true;
+    play.disabled = true;
+    try {
+      if (current && captureId) await api("/capture/" + captureId + "/finish", {});
+      else if (current) {
+        // Older local servers lack the drain endpoint. Let the final capture batch arrive.
+        setTimeout(() => current.abort(), 150);
+      }
+    } catch {
+      current?.abort();
+    }
+  }
   async function capture() {
     if (session) { session.abort(); return; }
     const controller = new AbortController();
     session = controller;
     let signalReady;
     captureReady = new Promise(resolve => { signalReady = resolve; });
-    toggle.textContent = "Stop capture";
+    toggle.textContent = linkedRun ? "Stop capture and replay" : "Stop capture";
     select.disabled = true;
     status.textContent = "Connecting";
     try {
       const response = await fetch("/capture", {method: "POST", headers: {"Content-Type": "application/json"},
         body: JSON.stringify({interface: select.value, sha256: (dbcAvailable && dbcEditor.captureSha) || undefined}), signal: controller.signal});
       if (!response.ok) throw Error((await response.json()).error || response.statusText);
+      captureId = response.headers.get("X-Capture-Id");
       const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = "";
       while (true) {
@@ -384,6 +404,10 @@
           const packet = JSON.parse(buffer.slice(0, newline));
           buffer = buffer.slice(newline + 1);
           if (packet.error) throw Error(packet.error);
+          if (packet.finished) {
+            status.textContent = "Stopped";
+            return;
+          }
           if (packet.ready) {
             trends?.reset();
             wheel = null; trace = []; groups = new Map(); pgnGroups = new Map(); previousValues.clear(); total = 0; dropped = 0; frozen = null;
@@ -400,15 +424,23 @@
     } finally {
       controller.abort();
       trends?.pause(false);
+      captureId = null;
+      if (!reconnect) linkedRun = null;
+      closingCapture = false;
+      toggle.disabled = false;
       session = null; captureReady = null; wheel = null; select.disabled = false; frozen = null; pause.disabled = true;
       pause.textContent = "Pause display"; toggle.textContent = "Start capture"; render();
+      if (!busy && stopReplay.disabled) play.disabled = source.value === "file" && !file.files.length;
       if (reconnect) {
         reconnect = false;
         capture();
       }
     }
   }
-  toggle.onclick = () => capture();
+  toggle.onclick = () => {
+    if (linkedRun) stopRun(linkedRun);
+    else capture();
+  };
   const panel = byId("replay-panel");
   const play = byId("replay-play");
   const stopReplay = byId("replay-stop");
@@ -417,11 +449,14 @@
   const report = byId("replay-status");
   let replayId = null, compactedRun = null, polling = null, busy = false;
 
+  let lastReplayState = "";
   function showReplay(data) {
+    lastReplayState = JSON.stringify([data.id, data.state, data.lap]);
     const playing = data.state === "Playing";
+    if (linkedRun && (!playing || linkedRun !== data.id)) finishLinkedCapture();
     replayId = data.id;
     play.textContent = data.state === "Finished" ? "Play again on vcan0" : "Play on vcan0";
-    play.disabled = playing || (source.value === "file" && !file.files.length);
+    play.disabled = busy || closingCapture || playing || (source.value === "file" && !file.files.length);
     if (!playing && !stopReplay.disabled) panel.open = true;
     stopReplay.disabled = !playing;
     stopReplay.hidden = !playing;
@@ -430,24 +465,27 @@
       panel.open = false;
     }
     if (playing) {
+      if (linkedRun === data.id) toggle.textContent = "Stop capture and replay";
       report.textContent = "Playing · " + data.name + " · " + data.duration.toFixed(1) + " s recording · pass " + data.lap;
       return;
     }
     report.textContent = data.state === "Idle" ? "" :
-      data.state + " · " + data.name + " · " + data.sent + "/" + data.frames +
+      "Replay " + data.state + " · " + data.name + " · " + data.sent + "/" + data.frames +
       " frames · " + data.ids + " IDs · " + data.duration.toFixed(2) + " s · pass " + data.lap +
       (data.error ? " · " + data.error : "");
   }
   let pollVersion = 0;
-  async function refreshReplay() {
+  async function refreshReplay(onlyIfChanged = false) {
     const version = ++pollVersion;
     clearTimeout(polling);
     if (panel.hidden || busy) return;
     try {
       const data = await api("/replay");
       if (version !== pollVersion || busy) return;
-      showReplay(data);
-      if (data.state === "Playing") polling = setTimeout(refreshReplay, 300);
+      if (onlyIfChanged !== true || lastReplayState !== JSON.stringify([data.id, data.state, data.lap])) showReplay(data);
+      if (!byId("live-panel").hidden || linkedRun) {
+        polling = setTimeout(() => refreshReplay(true), data.state === "Playing" ? 300 : 1500);
+      }
     } catch (error) { report.textContent = error.message; }
   }
   panel.ontoggle = refreshReplay;
@@ -466,6 +504,8 @@
     ++pollVersion;
     clearTimeout(polling);
     play.disabled = true;
+    const openingCapture = !session;
+    toggle.disabled = true;
     try {
       if (session && select.value !== "vcan0") throw Error("Stop the current capture to switch to vcan0.");
       if (!session) {
@@ -484,6 +524,7 @@
       if (response.status === 413) throw Error("Choose a recording smaller than 16 MiB.");
       const data = await response.json();
       if (!response.ok) throw Error(data.error);
+      if (openingCapture) linkedRun = data.id;
       if (source.value !== "file") {
         byId("readings-only").checked = true;
         if (trends) byId("trends").open = true;
@@ -493,15 +534,24 @@
       showReplay(data);
       busy = false;
       refreshReplay();
-    } catch (error) { report.textContent = error.message; play.disabled = false; }
-    finally { busy = false; }
+    } catch (error) {
+      if (openingCapture) session?.abort();
+      report.textContent = error.message;
+      play.disabled = false;
+      polling = setTimeout(() => refreshReplay(true), 1500);
+    } finally {
+      busy = false;
+      toggle.disabled = closingCapture || !select.value;
+    }
   };
-  stopReplay.onclick = async () => {
+  async function stopRun(id) {
     ++pollVersion;
     clearTimeout(polling);
-    try { showReplay(await api("/replay/" + replayId + "/stop", {})); }
+    try { showReplay(await api("/replay/" + id + "/stop", {})); }
     catch (error) { report.textContent = error.message; }
-  };
+    refreshReplay(true);
+  }
+  stopReplay.onclick = () => stopRun(replayId);
   pause.onclick = () => {
     frozen = frozen ? null : {trace: trace.slice(), groups: new Map(groups), pgnGroups: new Map(pgnGroups), total, dropped, wheel};
     trends?.pause(Boolean(frozen));

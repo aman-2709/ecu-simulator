@@ -172,6 +172,8 @@ def test_default_drive_shows_changing_readings(browser, vcan, tmp_path):  # noqa
         first = speed.inner_text()
         expect(speed).not_to_have_text(first)
         expect(page.locator("#replay-status")).to_contain_text("Finished", timeout=18000)
+        expect(page.locator("#capture-toggle")).to_have_text("Start capture")
+        expect(page.locator("#frame-summary")).to_contain_text("4205 frames received")
         expect(page.locator("#frame-rows")).not_to_contain_text("No signal decoder")
         page.locator("#readings-only").uncheck()
         expect(page.locator("#frame-rows")).to_contain_text("No signal decoder")
@@ -235,4 +237,38 @@ def test_drive_plot_uses_recorded_values_and_capture_clock(browser, vcan, tmp_pa
             numeric = [v for v in line if v is not None]
             assert [v for v, _ in groupby(numeric)] == [v for v, _ in groupby(recorded)]
         assert not errors, errors
+        page.close()
+
+
+def test_replay_owns_only_its_automatic_capture(browser, vcan, tmp_path):  # noqa: F811
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        page.goto(url)
+        page.locator("#live-tab").click()
+        page.locator("#replay-panel summary").click()
+        page.locator("#replay-loop").check()
+        play = page.locator("#replay-play")
+        capture = page.locator("#capture-toggle")
+        stop_replay = page.locator("#replay-stop")
+        observer = browser.new_page()
+        observer.goto(url)
+        observer.locator("#live-tab").click()
+        expect(observer.locator("#capture-toggle")).to_be_enabled()
+        play.click()
+        expect(stop_replay).to_be_visible()
+        expect(observer.locator("#capture-toggle")).to_have_text("Start capture")
+        observer.locator("#replay-stop").click()
+        observer.close()
+        expect(capture).to_have_text("Start capture", timeout=2000)
+        expect(page.locator("#capture-status")).to_have_text("Stopped")
+        play.click()
+        capture.click()
+        expect(stop_replay).to_be_hidden()
+        expect(capture).to_have_text("Start capture")
+        capture.click()
+        expect(page.locator("#capture-status")).to_contain_text("Capturing")
+        play.click()
+        stop_replay.click()
+        expect(capture).to_have_text("Stop capture")
+        capture.click()
         page.close()
