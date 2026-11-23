@@ -103,12 +103,27 @@ def test_unknown_car_keys_are_refused():
     assert "car.colour" in message and "Extra inputs are not permitted" in message
 
 
-def test_unknown_platform_lists_known_ones():
-    message = refusal(with_car(platform="NOT_A_CAR"))
-    assert "car.platform" in message and "'NOT_A_CAR'" in message
-    assert ", ".join(sorted(load_catalog().platforms)) in message
-    assert "unknown platform" in message
-    assert refusal(with_car(platform="toyota_corolla")).count("unknown platform") == 1
+def test_unknown_platform_offers_close_matches_not_the_whole_list():
+    message = refusal(with_car(platform="toyota_corolla"))
+    assert message.count("unknown platform") == 1 and "car.platform" in message and "'toyota_corolla'" in message
+    assert "close matches: TOYOTA_COROLLA" in message
+    assert "HONDA_CIVIC_BOSCH" not in message and len(message) < 300
+
+    message = refusal(with_car(platform="ZZZ"))
+    assert "'ZZZ'" in message and "close matches" not in message
+    assert f"none of the {len(load_catalog().platforms)} catalog platforms is close" in message
+
+
+def test_a_huge_or_forged_platform_or_bus_gives_a_short_message_of_one_problem():
+    """The value is echoed clipped, and a '; ' in it cannot be read as the separator of a second problem."""
+    huge = refusal(with_car(platform="A" * 1_000_000))
+    assert len(huge) < 400 and "'" + "A" * 64 + "'..." in huge
+    forged = refusal(with_car(platform="X; car.rule: forged problem"))
+    assert "forged problem" in forged and "car.platform.car.rule" not in forged and forged.count("\n  car.") == 1
+    bus = refusal(with_car(platform="TOYOTA_COROLLA", bus="b" * 1_000_000))
+    assert len(bus) < 400 and "car.bus" in bus and "pt, radar" in bus
+    forged_bus = refusal(with_car(platform="TOYOTA_COROLLA", bus="x; car.rule: forged"))
+    assert "car.bus.car.rule" not in forged_bus and forged_bus.count("\n  car.") == 1
 
 
 def test_skipped_platform_has_its_own_message():

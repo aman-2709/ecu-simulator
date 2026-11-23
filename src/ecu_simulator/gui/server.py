@@ -285,10 +285,12 @@ def application(directory: Path | None = None) -> web.Application:
         text = data.get("text")
         if not isinstance(text, str):
             raise ValueError("Expected a working copy")
-        profile = load_profile_text(text)
+        profile = await asyncio.to_thread(load_profile_text, text)
         iface = profile.transport.interface
         manual = bool(profile.dbc and profile.dbc.messages)
         if (manual or profile.car) and not await asyncio.to_thread(dbc_workflow.virtual_can, iface):
+            # For a car, transmittable raises ConfigError when no message can be sent, which is reported instead of
+            # the review; when it returns, the list is never empty and the review token is required.
             if manual or bool(await asyncio.to_thread(car_workflow.transmittable, text)):
                 token = data.get("review")
                 reviews.consume(token if isinstance(token, str) else "", text, socket.if_nametoindex(iface))

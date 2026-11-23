@@ -22,6 +22,10 @@ from ecu_simulator.gui import car_workflow, dbc_workflow
 from ecu_simulator.gui.manager import Manager
 
 MAX_UNMATCHED = 50
+# A car working copy is a few kilobytes (the demo is under 1 KiB; 2000 period overrides are 89 KB). The draft's ruamel
+# round trip costs about 2.6 s per MiB on the development machine (10 MB took 51 s), so 256 KiB bounds one request to
+# well under a second of a worker thread.
+MAX_WORKING_COPY_BYTES = 256 * 1024
 MAX_ECHOED = 100
 READ_CHUNK = 64 * 1024
 _FILE_NAME = TypeAdapter(PlainFileName)
@@ -38,11 +42,19 @@ async def json_object(request: web.Request) -> dict[str, Any]:
     return body
 
 
-async def working_copy(request: web.Request) -> str:
-    text = (await json_object(request)).get("text")
+async def working_copy(request: web.Request) -> tuple[str, dict[str, Any]]:
+    """The body's working copy, at most ``MAX_WORKING_COPY_BYTES`` of UTF-8, and the body's other fields."""
+    body = await json_object(request)
+    text = body.pop("text", None)
     if not isinstance(text, str):
         raise ValueError("Expected a profile working copy")
-    return text
+    size = len(text.encode("utf-8", "surrogatepass"))
+    if size > MAX_WORKING_COPY_BYTES:
+        raise ValueError(
+            f"The working copy is {size} bytes; the Car panel takes at most {MAX_WORKING_COPY_BYTES} "
+            f"({MAX_WORKING_COPY_BYTES // 1024} KiB)"
+        )
+    return text, body
 
 
 def display_name(value: str) -> str:
@@ -100,11 +112,7 @@ def install_car_routes(
 
     @routes.post("/car/draft")
     async def draft(request: web.Request) -> web.Response:
-        data = await json_object(request)
-        text = data.get("text")
-        if not isinstance(text, str):
-            raise ValueError("Expected a profile working copy")
-        selection = {key: value for key, value in data.items() if key != "text"}
+        text, selection = await working_copy(request)
         drafted = await asyncio.to_thread(car_workflow.car_draft, text, selection)
         if isinstance(selection.get("sha256"), str):
             await stored_dbc(store, selection["sha256"])
@@ -112,7 +120,7 @@ def install_car_routes(
 
     @routes.post("/car/check")
     async def check(request: web.Request) -> web.Response:
-        text = await working_copy(request)
+        text, _ = await working_copy(request)
         return web.json_response(await asyncio.to_thread(car_workflow.check, text))
 
     @routes.post("/car/rule")
@@ -146,8 +154,8 @@ def install_car_routes(
 
     @routes.post("/car/review")
     async def review(request: web.Request) -> web.Response:
-        text = await working_copy(request)
-        profile = load_profile_text(text)
+        text, _ = await working_copy(request)
+        profile = await asyncio.to_thread(load_profile_text, text)
         interface = profile.transport.interface
         if profile.car is None or await asyncio.to_thread(dbc_workflow.virtual_can, interface):
             return web.json_response({"required": False, "interface": interface, "messages": [], "conflicts": []})

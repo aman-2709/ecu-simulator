@@ -174,6 +174,51 @@ async def test_check_warns_about_a_misspelled_period_name(home):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/car/draft", "/car/check", "/car/review"])
+async def test_a_working_copy_over_the_cap_is_refused_before_it_is_parsed(home, monkeypatch, path):
+    """One cap, in the helper the three routes share: ruamel would spend seconds on a working copy of megabytes."""
+    parsed: list[int] = []
+    real = car_routes.load_profile_text
+    monkeypatch.setattr(car_routes, "load_profile_text", lambda text: parsed.append(len(text)) or real(text))
+    monkeypatch.setattr(car_workflow, "car_draft", lambda text, selection: parsed.append(len(text)) or text)
+    monkeypatch.setattr(car_workflow, "check", lambda text: parsed.append(len(text)) or {})
+    bench(monkeypatch, virtual=True)
+    text = demo_text()
+    at_cap = text + "#" * (car_routes.MAX_WORKING_COPY_BYTES - len(text.encode()) - 1) + "\n"
+    assert len(at_cap.encode()) == car_routes.MAX_WORKING_COPY_BYTES
+    async with serving(home) as page:
+        assert (await page.post(path, json={"text": at_cap}))[0] == 200
+        assert parsed, "the text at the cap was parsed"
+        parsed.clear()
+        over = at_cap.replace("\n#", "\né", 1)  # one byte more in UTF-8, the same number of characters
+        status, body = await page.post(path, json={"text": over})
+        assert status == 400 and parsed == []
+        assert body["error"] == (
+            f"The working copy is {car_routes.MAX_WORKING_COPY_BYTES + 1} bytes; the Car panel takes at most 262144 "
+            "(256 KiB)"
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/car/review", "/run"])
+async def test_the_working_copy_is_parsed_off_the_event_loop(home, monkeypatch, path):
+    threads: list[bool] = []
+    for module in (car_routes, server):
+        real = module.load_profile_text
+        monkeypatch.setattr(module, "load_profile_text", lambda text, real=real: (
+            threads.append(threading.current_thread() is threading.main_thread()), real(text))[1])
+    bench(monkeypatch, virtual=True)
+    simulator(monkeypatch)
+    async with serving(home) as page:
+        status, body = await page.post(path, json={"text": demo_text()})
+        assert status in (200, 202), body
+        if path == "/run":
+            await running(page)
+            assert (await page.post(f"/run/{body['id']}/stop", json={}))[0] == 200
+    assert threads and not any(threads), "load_profile_text ran on the event loop's thread"
+
+
+@pytest.mark.asyncio
 async def test_draft_keeps_the_comments_of_the_working_copy(home):
     text = default_profile_path().read_text() + "\n# my bench notes\n"
     async with serving(home) as page:

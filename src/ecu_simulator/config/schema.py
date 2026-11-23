@@ -16,6 +16,7 @@ by adding a key under `ecus`.
 
 from __future__ import annotations
 
+import difflib
 import re
 import unicodedata
 from typing import Annotated, Any, Literal
@@ -80,6 +81,8 @@ CAN_PERIOD_MAX_MS = 60_000
 CAR_DEFAULT_BUS = "pt"
 CAR_MESSAGE_NAME_MAX_LENGTH = 128
 CAR_MAX_PERIOD_ENTRIES = 5000
+# How much of a platform or bus a refusal repeats.
+CAR_ECHO_MAX_LENGTH = 64
 FILE_NAME_MAX_LENGTH = 255
 
 CanId = Annotated[int, Field(ge=0)]
@@ -596,8 +599,14 @@ class CarConfig(Base):
         if value in catalog.platforms:
             return value
         if value in catalog.skipped:
-            raise ValueError(f"{value!r} is not supported ({catalog.skipped[value]})")
-        raise ValueError(f"unknown platform {value!r}, known platforms: {', '.join(sorted(catalog.platforms))}")
+            raise ValueError(f"{value!r} is not supported ({catalog.skipped[value]})")  # a catalog ID: short, plain
+        close = difflib.get_close_matches(value[:CAR_ECHO_MAX_LENGTH].upper(), catalog.platforms, n=3)
+        known = (
+            f"close matches: {', '.join(close)}"
+            if close
+            else f"none of the {len(catalog.platforms)} catalog platforms is close (the Car panel lists them)"
+        )
+        raise ValueError(f"unknown platform {_echo(value)}, {known}")
 
     @field_validator("periods", "log_periods")
     @classmethod
@@ -621,7 +630,8 @@ class CarConfig(Base):
             buses = load_catalog().platforms[self.platform].buses
             if self.bus not in buses:
                 raise ValueError(
-                    f"bus: platform {self.platform!r} has no bus {self.bus!r}, its buses: {', '.join(sorted(buses))}"
+                    f"bus: platform {self.platform!r} has no bus {_echo(self.bus)}, "
+                    f"its buses: {', '.join(sorted(buses))}"
                 )
             return self
         if self.filename is None:
@@ -629,7 +639,9 @@ class CarConfig(Base):
         if self.sha256 is None:
             raise ValueError("sha256: an uploaded DBC needs sha256 together with filename")
         if self.bus != CAR_DEFAULT_BUS:
-            raise ValueError(f"bus: an upload carries one DBC, so its bus is {CAR_DEFAULT_BUS!r}, not {self.bus!r}")
+            raise ValueError(
+                f"bus: an upload carries one DBC, so its bus is {CAR_DEFAULT_BUS!r}, not {_echo(self.bus)}"
+            )
         return self
 
 
@@ -724,6 +736,13 @@ class Profile(Base):
                 if endpoint.addressing == "physical":
                     owners[key] = ecu_name
         return self
+
+
+def _echo(value: str) -> str:
+    """``value`` quoted for a message: at most ``CAR_ECHO_MAX_LENGTH`` characters, and with every ';' escaped, so the
+    value can neither make a message long nor be split by ``_split_problems`` into a forged second problem."""
+    shown = repr(value[:CAR_ECHO_MAX_LENGTH]).replace(";", "\\x3b")
+    return shown + "..." if len(value) > CAR_ECHO_MAX_LENGTH else shown
 
 
 def _has_control_character(text: str) -> bool:
