@@ -131,3 +131,46 @@ sys.stdin.read()
         assert (await manager.broadcast(run["id"], False))["restbus"]["paused"] is False
     finally:
         await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_status_includes_car_metadata_while_running():
+    car = {"platform": "TOYOTA_COROLLA", "dbc": {"filename": "c.dbc", "sha256": "ab" * 32, "name": "c"}, "messages": []}
+    script = f"""
+import json, sys
+sys.stdin.readline()
+car = {car!r}
+print(json.dumps({{"ready": True, "car": car, "dbc": {{**car["dbc"], "messages": []}}}}), flush=True)
+sys.stdin.read()
+"""
+    manager = Manager(child_command=(sys.executable, "-c", script))
+    assert manager.status()["car"] is None
+    run = await manager.start(default_profile_path().with_name("car_toyota_demo.yaml").read_text())
+    assert run["car"] is None
+    try:
+        await until(manager, "Running")
+        status = manager.status()
+        assert status["car"] == car
+        assert status["dbc"]["sha256"] == "ab" * 32
+    finally:
+        await manager.close()
+    assert manager.status()["car"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_large_car_ready_event_is_read_whole():
+    # About 220 bytes of metadata per message: a 1000-message bus is over asyncio's default 64 KiB line limit.
+    script = """
+import json, sys
+sys.stdin.readline()
+messages = [{"name": f"MSG_{i:04d}", "skipped": None, "pad": "x" * 200} for i in range(1000)]
+print(json.dumps({"ready": True, "car": {"messages": messages}}), flush=True)
+sys.stdin.read()
+"""
+    manager = Manager(child_command=(sys.executable, "-c", script))
+    await manager.start(default_profile_path().with_name("car_toyota_demo.yaml").read_text())
+    try:
+        await until(manager, "Running")
+        assert len(manager.status()["car"]["messages"]) == 1000
+    finally:
+        await manager.close()

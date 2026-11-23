@@ -43,10 +43,15 @@ async def publish_wheels(
     await publish_frames(interface, [CyclicFrame("WHEEL_SPEEDS", 0xAA, period, sample)], paused, ready, stop)
 
 
+def wire_id(can_id: int, extended: bool) -> int:
+    """The identifier word of a raw CAN frame: a 29-bit ``can_id`` carries ``CAN_EFF_FLAG``."""
+    return can_id | (socket.CAN_EFF_FLAG if extended else 0)
+
+
 @dataclass(frozen=True)
 class CyclicFrame:
     name: str
-    can_id: int
+    can_id: int  # as wire_id gives it
     period: float
     sample: Callable[[], bytes]
 

@@ -17,7 +17,6 @@ import contextlib
 import logging
 import math
 import signal
-import socket
 from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -56,7 +55,7 @@ from ecu_simulator.protocols.obd import ObdProtocol
 from ecu_simulator.protocols.uds import SessionTiming, UdsProtocol, UdsSession
 from ecu_simulator.protocols.uds.dids import SessionDidProvider, StaticDidProvider, VinDidProvider
 from ecu_simulator.protocols.uds.dtc import DtcStoreProvider
-from ecu_simulator.publisher import CyclicFrame, publish_frames, publish_wheels
+from ecu_simulator.publisher import CyclicFrame, publish_frames, publish_wheels, wire_id
 from ecu_simulator.scenario import Scenario, ScenarioRunner, ScenarioSync
 from ecu_simulator.scenario.generators import (
     ConstantSignal,
@@ -204,6 +203,18 @@ def _dbc_values(sources: dict[str, DbcValue], vehicle: VehicleState) -> dict[str
     return {signal: vehicle.get(source) if isinstance(source, str) else source for signal, source in sources.items()}
 
 
+def diagnostic_ids(config: RuntimeConfig) -> dict[tuple[int, bool], str]:
+    """The ``(can_id, extended)`` every diagnostic endpoint receives or sends on, naming its ``ecu.endpoint``.
+
+    A new dict on each call, so a caller may add its own frames to it.
+    """
+    return {
+        (can_id, endpoint.mode is not AddressingMode.NORMAL_11BIT): endpoint_name(ecu_name, endpoint)
+        for ecu_name, ecu in config.profile.ecus.items() for endpoint in ecu.endpoints
+        for can_id in (endpoint.rx, endpoint.tx)
+    }
+
+
 def prepare_dbc(
     config: RuntimeConfig, vehicle: VehicleState | None = None, *, database: ImportedDb | None = None,
     sync: Callable[[], None] | None = None,
@@ -221,11 +232,7 @@ def prepare_dbc(
             raise ConfigError(f"dbc {selection.filename!r}: {error}") from error
     vehicle = build_vehicle(config) if vehicle is None else vehicle
     generators = {signal.path: signal for signal in config.profile.scenario.signals}
-    occupied = {
-        (can_id, endpoint.mode is not AddressingMode.NORMAL_11BIT): f"{ecu_name}.{endpoint.name}"
-        for ecu_name, ecu in config.profile.ecus.items() for endpoint in ecu.endpoints
-        for can_id in (endpoint.rx, endpoint.tx)
-    }
+    occupied = diagnostic_ids(config)
     frames = []
     messages = []
     for selected in selection.messages:
@@ -260,8 +267,7 @@ def prepare_dbc(
                     sync()
                 return database.encode(name, _dbc_values(sources, vehicle))
 
-            can_id = key[0] | (socket.CAN_EFF_FLAG if key[1] else 0)
-            frames.append(CyclicFrame(selected.name, can_id, selected.period_ms / 1000, sample))
+            frames.append(CyclicFrame(selected.name, wire_id(*key), selected.period_ms / 1000, sample))
             messages.append({**selected.model_dump(), "id": key[0], "extended": key[1], "dlc": message["dlc"]})
         except (KeyError, ValueError, OverflowError) as error:
             raise ConfigError(f"dbc message {selected.name!r}: {error}") from error
@@ -559,8 +565,11 @@ async def run(
     broadcast_paused: Callable[[], bool] | None = None,
     wheel_codec: WheelCodec | None = None,
     dbc_ready: Callable[[dict[str, Any]], None] | None = None,
+    car_ready: Callable[[dict[str, Any]], None] | None = None,
 ) -> None:
     """Start the transport, wait for ``stop`` (or SIGINT/SIGTERM), then shut down.
+
+    A profile with a ``car`` publishes the car's frames; ``car_ready`` receives its metadata when it is ready.
 
     Raises :class:`TransportError` if the transport cannot start; the caller reports it.
     Raises :class:`ApiStartupError` if ``api`` is given and the observer API cannot start.
@@ -569,6 +578,11 @@ async def run(
     runtime = build_runtime(config, clock)
     check_routes(runtime.router, endpoints)  # before any socket is opened
     dbc = prepare_dbc(config, runtime.vehicle, sync=runtime.sync)
+    car = None
+    if config.profile.car is not None:
+        from ecu_simulator.car.run import prepare_car  # car.run imports this module
+
+        car = prepare_car(config, runtime.vehicle, runtime.clock, sync=runtime.sync)
     restbus = config.profile.restbus
     if restbus is not None:
         if wheel_codec is None:
@@ -609,11 +623,15 @@ async def run(
             logger.info("ecu-simulator ready on %s", config.interface)
             if dbc is not None and dbc_ready is not None:
                 dbc_ready(dbc.metadata)
+            if car is not None and car_ready is not None:
+                car_ready(car.metadata)
             if ready is not None:
                 ready()
 
         async with scenario_tick(runtime.sync, config.profile.scenario.tick), scenario_tick(publish_periodic, 0.05):
-            if dbc is not None and dbc.frames:
+            if car is not None:
+                await publish_frames(config.interface, car.frames, broadcast_paused, announce_ready, stop)
+            elif dbc is not None and dbc.frames:
                 await publish_frames(config.interface, dbc.frames, broadcast_paused, announce_ready, stop)
             elif restbus is None:
                 announce_ready()
