@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Export comma.ai opendbc's car catalog for Toyota, Honda and Hyundai (dev-only).
 
-Run it on a maintainer's machine against a pinned opendbc checkout, with a Python that has opendbc installed.
-Nothing in the ecu_simulator package imports this script or opendbc.
+Run it on a maintainer's machine against a pinned opendbc checkout, with a Python that has both opendbc and
+ecu_simulator installed. Nothing in the ecu_simulator package imports this script or opendbc.
 
     python scripts/extract_opendbc.py --opendbc <opendbc checkout> [--out src/ecu_simulator/_opendbc]
 
@@ -11,6 +11,12 @@ directory, such as the wheel-speed adapter's pinned DBC, are never touched.
 
 A bus whose DBC is CAN FD (a message over 8 bytes, or "canfd" in the name) is dropped, because the run publisher is
 Classical CAN. A platform left with no bus is listed under `skipped`.
+
+opendbc reads DBCs with its own tolerant parser, and cantools (behind ecu_simulator.dbc.ImportedDb) rejects some of
+them as published. Two mechanical repairs make them loadable: malformed `CM_` comment statements are dropped, and
+message ids above 0x7FF get the extended-frame flag. Both are recorded per DBC in `cars.json` (`normalised`,
+`source_sha256`), and the run fails unless ImportedDb's reading of every shipped file matches opendbc's reading of the
+source: message ids and sizes, and each signal's name, start, length, byte order, factor, offset and signedness.
 """
 
 import argparse
@@ -23,6 +29,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from ecu_simulator.dbc import ImportedDb
+
 PINNED_REVISION = "af54130d51111197d34384e7dad9ace229b724e4"
 RATES_SOURCE = "opendbc safety RX tables (expected frequency, approximate)"
 BRANDS = ("toyota", "honda", "hyundai")
@@ -33,6 +41,19 @@ DEFAULT_OUT = Path(__file__).resolve().parent.parent / "src" / "ecu_simulator" /
 # has no frequency field, so it does not match.
 _RX_CHECK = re.compile(r"\{\s*(0x[0-9A-Fa-f]+)\s*,\s*[^,{}]+,\s*\d+\s*,\s*(\d+)U\b")
 _C_COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
+
+# A DBC comment statement as cantools reads it: CM_ [BU_ node | BO_ id | SG_ id signal | EV_ name] "text"; with
+# optional line breaks inside the text. Anything else that starts a line with CM_ is malformed.
+_COMMENT = re.compile(r'^CM_[ \t]+(?P<head>[^"\n;]*?)[ \t]*"(?:\\"|[^"])*?"[ \t]*;[ \t]*(?:\r?\n|$)', re.M)
+_COMMENT_HEAD = re.compile(r"(?:BU_ \w+|BO_ \d+|SG_ \d+ \w+|EV_ \w+)?")
+_COMMENT_START = re.compile(r"^CM_\b", re.M)
+_MESSAGE_LINE = re.compile(r"^BO_ (\d+) ", re.M)
+# Statements that name a message id and are rewritten with it, and the ones that would need a rewrite this script
+# does not implement.
+_ID_REFERENCES = tuple(re.compile(rf"^({head} )(\d+)(?= )", re.M) for head in ("BO_", "VAL_", "CM_ BO_", "CM_ SG_"))
+_UNHANDLED_ID_STATEMENTS = re.compile(r"^(?:BA_|BA_REL_|SIG_VALTYPE_|SG_MUL_VAL_|BO_TX_BU_|SIG_GROUP_)\b", re.M)
+EXTENDED_FLAG = 0x80000000
+MAX_STANDARD_ID = 0x7FF
 
 
 def _rule(dbc_name: str) -> str | None:
@@ -72,6 +93,104 @@ def _dbc_bytes(opendbc: Any, name: str) -> bytes:
     if name in generated:
         return generated[name].encode("utf-8")
     return (Path(opendbc.DBC_PATH) / f"{name}.dbc").read_bytes()
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _drop_malformed_comments(name: str, text: str) -> tuple[str, list[str]]:
+    dropped: list[str] = []
+
+    def keep_well_formed(match: re.Match[str]) -> str:
+        if _COMMENT_HEAD.fullmatch(match["head"]):
+            return match[0]
+        dropped.append(match[0].strip())
+        return ""
+
+    text = _COMMENT.sub(keep_well_formed, text)
+    if len(_COMMENT_START.findall(text)) != len(_COMMENT.findall(text)):
+        raise SystemExit(f"{name}: a CM_ statement has no text or terminator, so it cannot be repaired mechanically")
+    return text, dropped
+
+
+def _set_extended_flags(name: str, text: str) -> tuple[str, int]:
+    """Give message ids above 0x7FF the extended-frame flag, and carry it to the statements that name them."""
+    flagged = {
+        int(found) for found in _MESSAGE_LINE.findall(text) if MAX_STANDARD_ID < int(found) < EXTENDED_FLAG
+    }
+    if not flagged:
+        return text, 0
+    if _UNHANDLED_ID_STATEMENTS.search(text):
+        raise SystemExit(f"{name}: statements that name message ids need the extended flag too, not implemented")
+
+    def flag(match: re.Match[str]) -> str:
+        message_id = int(match[2])
+        return f"{match[1]}{message_id | EXTENDED_FLAG if message_id in flagged else message_id}"
+
+    for pattern in _ID_REFERENCES:
+        text = pattern.sub(flag, text)
+    return text, len(flagged)
+
+
+def normalise_dbc(name: str, source: bytes) -> tuple[bytes, list[str]]:
+    """Repair what stops cantools reading an opendbc DBC, without touching any signal or message layout."""
+    try:
+        text = source.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise SystemExit(f"{name}: not UTF-8, cannot normalise: {exc}") from exc
+    changes: list[str] = []
+    text, dropped = _drop_malformed_comments(name, text)
+    if dropped:
+        changes.append(f"dropped {_plural(len(dropped), 'malformed CM_ line')}")
+        for statement in dropped:
+            print(f"  {name}: dropped {statement[:80]}")
+    text, flagged = _set_extended_flags(name, text)
+    if flagged:
+        changes.append(f"set the extended-frame flag on {_plural(flagged, 'message id')} above 0x7FF")
+    return (text.encode("utf-8") if changes else source), changes
+
+
+def _differences(name: str, source_messages: list[Any], shipped: bytes) -> list[str]:
+    """Where ImportedDb's reading of the shipped bytes differs from opendbc's reading of the source."""
+    try:
+        frames = ImportedDb(shipped, hashlib.sha256(shipped).hexdigest())._frames
+    except ValueError as exc:
+        return [f"{name}: ImportedDb rejects the shipped bytes: {exc}"]
+    found: list[str] = []
+    expected = {(m.address & ~EXTENDED_FLAG, m.address > MAX_STANDARD_ID): m for m in source_messages}
+    for key in sorted(set(expected) ^ set(frames)):
+        side = "source" if key in expected else "shipped file"
+        found.append(f"{name}: message id 0x{key[0]:X} extended={key[1]} is only in the {side}")
+    for key in sorted(set(expected) & set(frames)):
+        message, frame = expected[key], frames[key]
+        label = f"{name} {message.name} 0x{key[0]:X}"
+        if (message.name, message.size) != (frame.name, frame.length):
+            found.append(f"{label}: name or size {(message.name, message.size)} != {(frame.name, frame.length)}")
+        signals = {signal.name: signal for signal in frame.signals}
+        if set(message.sigs) != set(signals):
+            found.append(f"{label}: signal names differ: {sorted(set(message.sigs) ^ set(signals))}")
+        for signal_name in sorted(set(message.sigs) & set(signals)):
+            ours, theirs = message.sigs[signal_name], signals[signal_name]
+            wanted = (
+                ours.start_bit,
+                ours.size,
+                ours.is_little_endian,
+                float(ours.factor),
+                float(ours.offset),
+                ours.is_signed,
+            )
+            got = (
+                theirs.start,
+                theirs.length,
+                theirs.byte_order == "little_endian",
+                float(theirs.scale),
+                float(theirs.offset),
+                theirs.is_signed,
+            )
+            if wanted != got:
+                found.append(f"{label} {signal_name}: {wanted} != {got}")
+    return found
 
 
 def _safety_frequencies(modes_dir: Path, filenames: tuple[str, ...]) -> dict[int, set[float]]:
@@ -141,7 +260,7 @@ def build(opendbc: Any, checkout: Path) -> tuple[dict[str, Any], dict[str, bytes
         fw_versions = importlib.import_module(f"opendbc.car.{brand}.fingerprints").FW_VERSIONS
         for platform in values.CAR:
             buses = {str(bus): name for bus, name in platform.config.dbc_dict.items() if name}
-            names = [doc.name for doc in platform.config.car_docs]
+            names = [doc.name for doc in platform.config.car_docs] or [platform.name]
             candidates.append((brand, platform.name, names, buses, fw_versions.get(platform, {})))
         queries[brand] = [
             {
@@ -159,8 +278,7 @@ def build(opendbc: Any, checkout: Path) -> tuple[dict[str, Any], dict[str, bytes
     can_fd: set[str] = set()
     for dbc_name in sorted({name for *_, buses, _ in candidates for name in buses.values()}):
         raw[dbc_name] = _dbc_bytes(opendbc, dbc_name)
-        # opendbc's own reader, not ecu_simulator's ImportedDb: cantools rejects most Honda DBCs and
-        # hyundai_can_generated as published (malformed CM_ lines, 29-bit IDs without the extended flag).
+        # opendbc's own reader: cantools rejects several of these files as published, see normalise_dbc.
         messages[dbc_name] = list(DBC(dbc_name).msgs.values())
         if "canfd" in dbc_name or any(message.size > 8 for message in messages[dbc_name]):
             can_fd.add(dbc_name)
@@ -185,10 +303,17 @@ def build(opendbc: Any, checkout: Path) -> tuple[dict[str, Any], dict[str, bytes
         }
 
     shipped = sorted({name for platform in platforms.values() for name in platform["buses"].values()})
+    normalised = {name: normalise_dbc(name, raw[name]) for name in shipped}
+    differences = [line for name in shipped for line in _differences(name, messages[name], normalised[name][0])]
+    if differences:
+        print("\n".join(differences), file=sys.stderr)
+        raise SystemExit(f"{len(differences)} difference(s) between opendbc's reading and ImportedDb's reading")
     dbcs = {
         name: {
             "file": f"cars/{name}.dbc",
-            "sha256": hashlib.sha256(raw[name]).hexdigest(),
+            "sha256": hashlib.sha256(normalised[name][0]).hexdigest(),
+            "source_sha256": hashlib.sha256(raw[name]).hexdigest(),
+            "normalised": normalised[name][1],
             "rule": _rule(name),
         }
         for name in shipped
@@ -218,7 +343,7 @@ def build(opendbc: Any, checkout: Path) -> tuple[dict[str, Any], dict[str, bytes
         "rates_hz": rates,
         "skipped": skipped,
     }
-    return catalog, {name: raw[name] for name in shipped}
+    return catalog, {name: normalised[name][0] for name in shipped}
 
 
 def render(catalog: dict[str, Any]) -> str:

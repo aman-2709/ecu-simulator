@@ -12,11 +12,13 @@ from pathlib import Path
 
 import pytest
 
+from ecu_simulator.dbc import ImportedDb
+
 REVISION = "af54130d51111197d34384e7dad9ace229b724e4"
 RATES_SOURCE = "opendbc safety RX tables (expected frequency, approximate)"
 BRANDS = {"toyota", "honda", "hyundai"}
 MAX_DATA_BYTES = 5 * 1024 * 1024
-# opendbc's own message line reader. Cantools rejects several shipped DBCs as published, so this does not use it.
+# opendbc's own message line reader, for checks that must not depend on how ImportedDb reads a file.
 BO_LINE = re.compile(r"^BO_ (\w+) (\w+) *: (\w+)", re.M)
 
 
@@ -47,6 +49,27 @@ def test_every_dbc_file_matches_its_sha256(root: Path, catalog: dict) -> None:
     for name, entry in catalog["dbcs"].items():
         assert entry["file"] == f"cars/{name}.dbc"
         assert hashlib.sha256((root / entry["file"]).read_bytes()).hexdigest() == entry["sha256"], name
+
+
+def test_every_shipped_dbc_loads_in_imported_db(root: Path, catalog: dict) -> None:
+    for name, entry in catalog["dbcs"].items():
+        raw = (root / entry["file"]).read_bytes()
+        assert ImportedDb(raw, entry["sha256"]).catalog(name)["messages"], name
+
+
+def test_normalised_dbcs_record_their_source_hash(catalog: dict) -> None:
+    for name, entry in catalog["dbcs"].items():
+        assert all(isinstance(change, str) and change for change in entry["normalised"]), name
+        if entry["normalised"]:
+            assert entry["source_sha256"] != entry["sha256"], name
+        else:
+            assert entry["source_sha256"] == entry["sha256"], name
+
+
+def test_every_platform_has_a_display_name(catalog: dict) -> None:
+    for platform_id, platform in catalog["platforms"].items():
+        assert platform["names"], platform_id
+        assert all(isinstance(name, str) and name for name in platform["names"]), platform_id
 
 
 def test_every_platform_bus_names_a_listed_dbc(catalog: dict) -> None:

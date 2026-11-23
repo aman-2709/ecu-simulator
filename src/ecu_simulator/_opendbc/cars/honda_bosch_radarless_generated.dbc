@@ -208,8 +208,6 @@ BO_ 1302 ODOMETER: 8 XXX
  SG_ COUNTER : 61|2@0+ (1,0) [0|3] "" EON
  SG_ CHECKSUM : 59|4@0+ (1,0) [0|3] "" EON
 
-CM_ SG_ 304 "Seems to be platform-agnostic";
-CM_ SG_ 316 "Should exist on Nidec";
 CM_ SG_ 420 BRAKE_HOLD_RELATED "On when Brake Hold engaged";
 CM_ SG_ 427 UNKNOWN_TORQUE_STATE_BIT "Might signal driver input above threshold, for driver inactivity detection";
 CM_ SG_ 490 LONG_ACCEL "wheel speed derivative, noisy and zero snapping";
@@ -389,7 +387,7 @@ BO_ 927 RADAR_HUD: 8 RADAR
  SG_ COUNTER : 61|2@0+ (1,0) [0|3] "" XXX
  SG_ CHECKSUM : 59|4@0+ (1,0) [0|15] "" XXX
 
-BO_ 13274 LKAS_HUD_A: 5 ADAS
+BO_ 2147496922 LKAS_HUD_A: 5 ADAS
  SG_ LKAS_READY : 0|1@0+ (1,0) [0|127] "" BDY
  SG_ LKAS_STATE_CHANGE : 6|1@0+ (1,0) [0|1] "" XXX
  SG_ CAM_TEMP_HIGH : 7|1@0+ (1,0) [0|255] "" BDY
@@ -411,7 +409,7 @@ BO_ 13274 LKAS_HUD_A: 5 ADAS
  SG_ CHECKSUM : 35|4@0+ (1,0) [0|15] "" BDY
  SG_ COUNTER : 37|2@0+ (1,0) [0|3] "" BDY
 
-BO_ 13275 LKAS_HUD_B: 8 ADAS
+BO_ 2147496923 LKAS_HUD_B: 8 ADAS
  SG_ LKAS_READY : 0|1@0+ (1,0) [0|127] "" BDY
  SG_ LKAS_STATE_CHANGE : 6|1@0+ (1,0) [0|1] "" XXX
  SG_ CAM_TEMP_HIGH : 7|1@0+ (1,0) [0|255] "" BDY
@@ -578,7 +576,7 @@ BO_ 495 SPEED_LIMIT_DASH_DISPLAY: 8 ADAS
  SG_ CHECKSUM : 59|4@0+ (1,0) [0|15] "" XXX
  SG_ COUNTER : 61|2@0+ (1,0) [0|3] "" XXX
 
-BO_ 254913108 LKAS_HUD_2: 8 ADAS
+BO_ 2402396756 LKAS_HUD_2: 8 ADAS
  SG_ COUNTER_2 : 7|2@0+ (1,0) [0|3] "" XXX
  SG_ SET_ME_X01 : 5|1@0+ (1,0) [0|1] "" XXX
  SG_ LKAS_BOH_1 : 15|6@0+ (1,0) [0|63] "" XXX
