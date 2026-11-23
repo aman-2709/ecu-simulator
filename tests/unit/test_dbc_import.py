@@ -1,9 +1,15 @@
 import hashlib
+import json
 from importlib.resources import files
+from pathlib import Path
 
 import pytest
+from cantools.database.can import Database
 
+from ecu_simulator.car.catalog import bundled_dbc_path, load_catalog
 from ecu_simulator.dbc import DbcStore
+
+VECTORS = Path(__file__).parents[1] / "fixtures" / "car" / "integrity_vectors.json"
 
 SIMPLE = b'''BO_ 257 Climate: 4 XXX
  SG_ Mode M : 0|4@1+ (1,0) [0|15] "" XXX
@@ -104,3 +110,100 @@ BA_ "GenMsgCycleTime" BO_ 2147483905 25;
 def test_invalid_dimensions_rejected_before_compiling(tmp_path, bad):
     with pytest.raises(ValueError, match="CAN FD dimensions"):
         DbcStore(tmp_path).import_file("invalid.dbc", bad)
+
+
+def _catalog_db(tmp_path, name):
+    return DbcStore(tmp_path).load(load_catalog().dbcs[name].sha256)
+
+
+def test_signal_layout_is_exposed(tmp_path):
+    toyota = _catalog_db(tmp_path, "toyota_nodsu_pt_generated")
+    message = toyota.message("STEERING_LKA")
+    counter = next(s for s in message["signals"] if s["name"] == "COUNTER")
+    assert (counter["start"], counter["length"], counter["little_endian"]) == (6, 6, False)
+    assert message["integrity_fields"] == ["COUNTER", "CHECKSUM"]
+
+    store = DbcStore(tmp_path)
+    simple = store.load(store.import_file("climate.dbc", SIMPLE)["sha256"]).message("Climate")
+    layout = {s["name"]: (s["start"], s["length"], s["little_endian"]) for s in simple["signals"]}
+    assert layout == {"Mode": (0, 4, True), "Indoor": (15, 16, False), "Outdoor": (8, 16, True), "Voltage": (24, 8, True)}
+    assert simple["integrity_fields"] == [] and simple["layout_issue"] is None
+    json.dumps(simple)
+
+
+def test_manual_path_still_refuses_counter_checksum_messages(tmp_path):
+    message = _catalog_db(tmp_path, "toyota_nodsu_pt_generated").message("STEERING_LKA")
+    assert message["tx_issue"] == "Counter/checksum generation is unsupported for COUNTER, CHECKSUM"
+    assert message["issues"] == [message["tx_issue"]]
+    assert message["layout_issue"] is None
+    with pytest.raises(ValueError, match="Counter/checksum generation is unsupported"):
+        _catalog_db(tmp_path, "toyota_nodsu_pt_generated").encode("STEERING_LKA", {})
+
+
+def test_car_encode_allows_integrity_only_messages(tmp_path):
+    db = _catalog_db(tmp_path, "toyota_nodsu_pt_generated")
+    payload = db.encode("STEERING_LKA", {}, integrity_ok=True)
+    assert isinstance(payload, bytes) and len(payload) == db.message("STEERING_LKA")["dlc"]
+    fields = db.decode(740, False, payload)["signals"]
+    defaults = {s["name"]: s["default"] for s in db.message("STEERING_LKA")["signals"]}
+    assert fields["COUNTER"]["value"] == defaults["COUNTER"] and fields["CHECKSUM"]["value"] == defaults["CHECKSUM"]
+    assert db.encode("STEERING_LKA", {"STEER_REQUEST": 1}, integrity_ok=True) != payload
+    with pytest.raises(ValueError, match="Unknown signal"):
+        db.encode("STEERING_LKA", {"Missing": 1}, integrity_ok=True)
+
+
+def test_integrity_ok_does_not_bypass_layout_errors(tmp_path):
+    raw = SIMPLE + b'''BO_ 1 Overlap: 2 XXX
+ SG_ A : 0|8@1+ (1,0) [0|0] "" XXX
+ SG_ B : 0|8@1+ (1,0) [0|0] "" XXX
+ SG_ Seq_No_Cnt : 8|4@1+ (1,0) [0|0] "" XXX
+BO_ 2 Wide: 12 XXX
+ SG_ Seq_No_Cnt : 0|8@1+ (1,0) [0|0] "" XXX
+'''
+    store = DbcStore(tmp_path)
+    db = store.load(store.import_file("mixed.dbc", raw)["sha256"])
+    for name, issue in (("Overlap", "overlap"), ("Wide", "CAN FD transmission is unsupported")):
+        message = db.message(name)
+        assert message["integrity_fields"] == ["Seq_No_Cnt"]
+        assert issue in message["layout_issue"]
+        assert "Counter/checksum" not in message["layout_issue"] and "Counter/checksum" in message["tx_issue"]
+        with pytest.raises(ValueError) as default:
+            db.encode(name, {})
+        with pytest.raises(ValueError) as car:
+            db.encode(name, {}, integrity_ok=True)
+        assert str(car.value) == str(default.value) == message["tx_issue"]
+
+
+def _layouts(db, message, name, cantools_db):
+    """Signal layouts by name: ImportedDb's own, or cantools' for a message ImportedDb refuses to describe."""
+    if message["signals"]:
+        return {s["name"]: (s["start"], s["length"], s["little_endian"]) for s in message["signals"]}
+    assert message["layout_issue"], f"{name} has no signals and no layout issue"
+    frame = cantools_db.get_message_by_name(message["name"])
+    return {s.name: (s.start, s.length, s.byte_order == "little_endian") for s in frame.signals}
+
+
+def test_layout_matches_the_oracle_fixture(tmp_path):
+    vectors = [v for v in json.loads(VECTORS.read_text()) if v["variant"] == 0]
+    assert vectors
+    loaded: dict[str, tuple] = {}
+    compared = refused = 0
+    for vector in vectors:
+        name = vector["dbc"]
+        if name not in loaded:
+            entry = load_catalog().dbcs[name]
+            catalog = _catalog_db(tmp_path, name).catalog(name)
+            reference = Database(strict=False)
+            reference.add_dbc_file(str(bundled_dbc_path(entry.sha256)))
+            loaded[name] = ({(m["id"], m["extended"]): m for m in catalog["messages"]}, reference)
+        messages, reference = loaded[name]
+        message = messages[vector["address"], vector["extended"]]
+        assert message["name"] == vector["message"]
+        layouts = _layouts(name, message, vector["message"], reference)
+        refused += not message["signals"]
+        for field in vector["counters"] + vector["checksums"]:
+            assert layouts[field["signal"]] == (field["start"], field["size"], field["little_endian"]), (
+                name, vector["message"], field["signal"],
+            )
+            compared += 1
+    assert compared and refused < len(vectors)
