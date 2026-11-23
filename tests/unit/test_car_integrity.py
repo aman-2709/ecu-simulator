@@ -253,6 +253,32 @@ def test_nibble_aligned_checksum_does_not_disturb_neighbouring_bits(tmp_path: Pa
         assert frame[7] & 0xF == honda_checksum(400, cleared, BitField(59, 4, False), "CHECKSUM")
 
 
+def test_checksum_field_is_zeroed_before_the_rule_reads_it() -> None:
+    # Toyota sums every byte but the last, so a CHECKSUM in byte 0 is read by its own rule.
+    plan = plan_message(_synthetic([("CHECKSUM", 7, 8, False)], 4), rule="toyota")
+    field = plan.checksums[0].field
+    expected = toyota_checksum(plan.address, bytearray(4), field, "CHECKSUM")
+    for data in (bytes(4), b"\xff\x00\x00\x00", b"\x5a\x00\x00\x00"):
+        assert Stamper(plan).stamp(data) == bytes([expected, 0, 0, 0]), data.hex()
+
+
+def test_each_checksum_is_written_before_the_next_is_computed() -> None:
+    first, second = BitField(0, 8, True), BitField(8, 8, True)
+    seen: list[tuple[str, bytes]] = []
+
+    def recording(address: int, data: bytearray, field: BitField, signal: str) -> int:
+        seen.append((signal, bytes(data)))
+        return 0xA5 if signal == "FIRST" else 0x3C
+
+    plan = dataclasses.replace(
+        plan_message(_synthetic([], 4), rule="toyota"),
+        checksums=(ChecksumField("FIRST", first, recording), ChecksumField("SECOND", second, recording)),
+    )
+    frame = Stamper(plan).stamp(b"\x11\x22\x33\x44")
+    assert seen == [("FIRST", b"\x00\x00\x33\x44"), ("SECOND", b"\xa5\x00\x33\x44")]
+    assert frame == b"\xa5\x3c\x33\x44"
+
+
 OVERLAP = b"""BO_ 1 Overlap: 2 XXX
  SG_ A : 0|8@1+ (1,0) [0|0] "" XXX
  SG_ COUNTER : 0|8@1+ (1,0) [0|0] "" XXX
