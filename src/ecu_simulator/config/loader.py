@@ -7,8 +7,10 @@ whose whole purpose is to be validated (docs/decisions/0002-configuration-format
 validation.md). Nothing else in the project imports a YAML library.
 
 A file that arrives from outside, such as an uploaded rule file, is read with ``untrusted=True``: it may not use
-anchors, aliases or merge keys (an alias can expand a few bytes into an enormous structure) or nest deeper than
-``MAX_UNTRUSTED_DEPTH``, and a value the YAML constructor cannot build is a refusal rather than an escaping exception.
+anchors, aliases, merge keys or explicit tags (an alias can expand a few bytes into an enormous structure, and a tag
+can make the constructor build something else or fail with an exception that is not a ``YAMLError``) or nest deeper
+than ``MAX_UNTRUSTED_DEPTH``, and a value the YAML constructor cannot build is a refusal rather than an escaping
+exception.
 """
 
 from __future__ import annotations
@@ -51,12 +53,20 @@ def read_yaml(text: str, source: str, *, kind: str = "profile", untrusted: bool 
     """Parse ``text`` into a mapping, or raise :class:`ConfigError` that names ``kind`` and ``source``.
 
     ``kind`` words the errors (``profile`` unless the caller reads something else, such as a rule file); an empty
-    ``source`` leaves it out. ``untrusted`` applies the extra refusals described in the module docstring.
+    ``source`` leaves it out.
+
+    ``untrusted`` is for text that came from outside: it refuses anchors, aliases, merge keys, explicit tags and
+    nesting deeper than ``MAX_UNTRUSTED_DEPTH`` from the parser's events before anything is built, and turns an
+    exception the constructor raises for a value it cannot build into a ``ConfigError``. It reads the text twice,
+    once to scan the events and once to load it, and the parser is pure Python and holds the GIL. Measured on the
+    development machine, a dense file at the 256 KiB rule-file limit (about 131,000 one-byte scalars) took 7.7 to
+    10.5 s, and a realistic 1000-rule file (170 KB) about 3 s. A caller on an async server must run this in a
+    worker thread and serialise uploads, so that one hostile file cannot occupy every worker.
     """
     subject = f"{kind} {source}" if source else kind
     try:
         if untrusted:
-            _refuse_expanding_structure(text, subject)
+            _refuse_expanding_structure(text, subject, kind)
         document = _reader().load(text)
     except DuplicateKeyError as error:
         raise ConfigError(f"{subject} has a duplicate key: {_first_line(error)}") from error
@@ -64,11 +74,11 @@ def read_yaml(text: str, source: str, *, kind: str = "profile", untrusted: bool 
         raise ConfigError(f"{subject} is not valid YAML: {_first_line(error)}") from error
     except ConfigError:
         raise  # a refusal by the scan above
-    except ValueError as error:
-        # A number with thousands of digits, or a date such as 2001-13-45, makes the constructor raise ValueError.
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError) as error:
+        # Defence in depth: the safe constructor raises these, not a YAMLError, for a value it cannot build.
         if not untrusted:
             raise
-        raise ConfigError(f"{subject} has a value that cannot be read: {_first_line(error)}") from error
+        raise ConfigError(f"{subject} has a value that cannot be read{_unreadable(error)}") from error
     if document is None:
         raise ConfigError(f"{subject} is empty")
     if not isinstance(document, dict):
@@ -76,8 +86,15 @@ def read_yaml(text: str, source: str, *, kind: str = "profile", untrusted: bool 
     return document
 
 
-def _refuse_expanding_structure(text: str, subject: str) -> None:
-    """Refuse anchors, aliases, merge keys and deep nesting, from the parser's events before anything is built.
+def _unreadable(error: Exception) -> str:
+    """Why the constructor failed, said without echoing the interpreter's own text, which can be long or internal."""
+    if isinstance(error, ValueError) and "integer string conversion" in str(error):
+        return ": an integer in it is too large"
+    return ""
+
+
+def _refuse_expanding_structure(text: str, subject: str, kind: str) -> None:
+    """Refuse anchors, aliases, tags, merge keys and deep nesting, from the parser's events before anything is built.
 
     The parser works from a state stack, so a deeply nested file is counted here rather than recursed into, and no
     alias has been expanded yet. A syntax error propagates as the parser's own ``YAMLError``.
@@ -89,6 +106,8 @@ def _refuse_expanding_structure(text: str, subject: str) -> None:
             raise ConfigError(f"{subject} uses a YAML alias at line {line}, which it may not")
         if isinstance(event, NodeEvent) and event.anchor is not None:
             raise ConfigError(f"{subject} uses a YAML anchor at line {line}, which it may not")
+        if isinstance(event, ScalarEvent | CollectionStartEvent) and event.tag is not None:
+            raise ConfigError(f"{subject} uses a YAML tag at line {line}; tags are not allowed in a {kind}")
         if isinstance(event, ScalarEvent) and _is_merge_key(event):
             raise ConfigError(f"{subject} uses a YAML merge key (<<) at line {line}, which it may not")
         if isinstance(event, CollectionStartEvent):
@@ -100,8 +119,8 @@ def _refuse_expanding_structure(text: str, subject: str) -> None:
 
 
 def _is_merge_key(event: ScalarEvent) -> bool:
-    # A bare << (or an explicit !!merge) is the merge key; a quoted '<<' is an ordinary string.
-    return event.tag == "tag:yaml.org,2002:merge" or (event.value == "<<" and not event.style)
+    # A bare << is the merge key; a quoted '<<' is an ordinary string. (An explicit !!merge tag is refused as a tag.)
+    return event.value == "<<" and not event.style
 
 
 def _first_line(error: Exception) -> str:

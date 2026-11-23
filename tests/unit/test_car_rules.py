@@ -17,6 +17,11 @@ import pytest
 from ecu_simulator.car.bits import BitField
 from ecu_simulator.car.integrity import IntegrityState, Stamper, plan_message
 from ecu_simulator.car.rules import (
+    MAX_COUNTER_MAX,
+    MAX_COVERS,
+    MAX_COVERS_INDEX,
+    MAX_DATA_ID,
+    MAX_ECHOED_CHARS,
     MAX_RULE_BYTES,
     MAX_RULES,
     RuleError,
@@ -168,6 +173,23 @@ BILLION_LAUGHS = 'a: &a ["lol", "lol", "lol", "lol", "lol", "lol", "lol", "lol",
     f"{nxt}: &{nxt} [{', '.join(['*' + prev] * 9)}]\n" for prev, nxt in zip("abcdefghi", "bcdefghij", strict=True)
 )
 BIG_INT = "9" * 5000
+DECIMAL_4000 = "9" * 4000  # under the interpreter's 4300-digit conversion limit, so the YAML loader reads it
+HEX_5000 = "0x" + "f" * 5000  # about 6000 decimal digits: read as an int, but not printable with str()
+TAGS_REFUSED = "tags are not allowed in a rule file"
+LONG = "k" * 5000
+
+
+def _tagged(value: str) -> str:
+    """A rule file whose counter ``max`` is written as ``value``, normally a tagged scalar."""
+    return _doc(f"messages: [Gearbox]\ncounter:\n  signal: ALIVE\n  max: {value}\n")
+
+
+def _huge(field: str, value: str, algorithm: str = "crc8") -> str:
+    """A checksum rule whose ``field`` is ``value``; the other fields are valid for ``algorithm``."""
+    fields: dict[str, Any] = {"poly": 1} if algorithm.startswith("crc") else {}
+    return _doc(_checksum(algorithm=algorithm, **(fields | {field: value})))
+
+
 DEEP = "a: " + "[" * 500 + "]" * 500 + "\n"
 
 REJECTS = [
@@ -424,26 +446,129 @@ REJECTS = [
     pytest.param(
         "version: 1\nrules:\n  - messages: !!python/object/apply:os.system ['true']\n",
         "",
-        "not valid YAML",
+        TAGS_REFUSED,
         id="python-object-tag",
     ),
     pytest.param(
-        "version: 1\nrules:\n  - messages: [!!python/name:os.system ]\n", "", "not valid YAML", id="python-name-tag"
+        "version: 1\nrules:\n  - messages: [!!python/name:os.system ]\n", "", TAGS_REFUSED, id="python-name-tag"
     ),
     pytest.param(
         "version: 1\nrules:\n  - messages: !!binary Z2Vhcm5ib3g=\n    counter: {signal: A}\n",
-        "rules.0.messages",
-        "valid list",
-        id="binary-tag-is-not-a-list",
+        "",
+        TAGS_REFUSED,
+        id="binary-tag",
     ),
     pytest.param(
         GEARBOX_RULES + "---\nversion: 1\nrules: []\n", "", "not valid YAML", id="second-document-in-the-stream"
     ),
     pytest.param(
         "version: 1\nrules:\n  - messages: !!set {Gearbox}\n    counter: {signal: A}\n",
-        "rules.0.messages",
-        "valid list",
-        id="set-tag-is-not-a-list",
+        "",
+        TAGS_REFUSED,
+        id="set-tag",
+    ),
+    # Any explicit tag is refused before anything is constructed: the safe constructor raises KeyError for
+    # `!!bool foo` and IndexError for `!!int ''`, neither a YAMLError nor a ValueError.
+    pytest.param(_tagged("!!bool foo"), "", TAGS_REFUSED, id="tag-bool-foo"),
+    pytest.param(_tagged("!!int ''"), "", TAGS_REFUSED, id="tag-int-empty"),
+    pytest.param(_tagged("!!float ''"), "", TAGS_REFUSED, id="tag-float-empty"),
+    pytest.param(_tagged("!!timestamp 2001-01-01"), "", TAGS_REFUSED, id="tag-timestamp"),
+    pytest.param(_tagged("!!binary Z2Vhcm5ib3g="), "", TAGS_REFUSED, id="tag-binary-on-a-number-field"),
+    pytest.param(_tagged("!!set {a}"), "", TAGS_REFUSED, id="tag-set-on-a-number-field"),
+    pytest.param(_tagged("!!str x"), "", TAGS_REFUSED, id="tag-str"),
+    pytest.param(_tagged("!!map {a: 1}"), "", TAGS_REFUSED, id="tag-map"),
+    pytest.param(_tagged("!!seq [1]"), "", TAGS_REFUSED, id="tag-seq"),
+    pytest.param(_tagged("! 3"), "", TAGS_REFUSED, id="non-specific-tag"),
+    pytest.param(_tagged("!<tag:yaml.org,2002:int> 3"), "", TAGS_REFUSED, id="verbatim-tag"),
+    pytest.param(
+        GEARBOX_RULES.replace("signal: ALIVE", "signal: !!str ALIVE"), "", TAGS_REFUSED, id="tag-on-an-otherwise-valid-value"
+    ),
+    pytest.param(
+        _doc("messages: [Gearbox]\ncounter: !!map\n  signal: ALIVE\n"),
+        "",
+        TAGS_REFUSED,
+        id="tag-on-a-mapping",
+    ),
+    # Integers are bounded at parse time, and no message shows a number wider than 64 bits.
+    pytest.param(
+        _huge("poly", DECIMAL_4000), "rules.0.checksum.poly", "does not fit an 8-bit CRC", id="poly-4000-digit-decimal"
+    ),
+    pytest.param(
+        _huge("poly", HEX_5000), "rules.0.checksum.poly", "does not fit an 8-bit CRC", id="poly-5000-digit-hex"
+    ),
+    pytest.param(
+        _huge("poly", "-" + DECIMAL_4000), "rules.0.checksum.poly", "does not fit", id="poly-negative-4000-digit"
+    ),
+    pytest.param(
+        _huge("init", HEX_5000), "rules.0.checksum.init", "does not fit an 8-bit CRC", id="init-5000-digit-hex"
+    ),
+    pytest.param(
+        _huge("xorout", DECIMAL_4000, "crc16"), "rules.0.checksum.xorout", "does not fit a 16-bit CRC", id="xorout-4000-digit"
+    ),
+    pytest.param(
+        _huge("init", HEX_5000, "nibble_sum"), "rules.0.checksum.init", "does not fit a 4-bit nibble_sum", id="nibble-init-hex"
+    ),
+    pytest.param(
+        _doc(_checksum(algorithm="sum8", data_id=HEX_5000)),
+        "rules.0.checksum.data_id",
+        "less than or equal to 255",
+        id="data-id-5000-digit-hex",
+    ),
+    pytest.param(
+        _doc(_checksum(algorithm="sum8", covers=f"[{HEX_5000}]")),
+        "rules.0.checksum.covers.0",
+        "less than or equal to 63",
+        id="covers-item-5000-digit-hex",
+    ),
+    pytest.param(
+        _doc(_checksum(algorithm="sum8", covers=f"[0, {DECIMAL_4000}]")),
+        "rules.0.checksum.covers.1",
+        "less than or equal to 63",
+        id="covers-item-4000-digit-decimal",
+    ),
+    pytest.param(
+        _doc(_checksum(algorithm="sum8", covers="[64]")),
+        "rules.0.checksum.covers.0",
+        "less than or equal to 63",
+        id="covers-item-first-past-the-bound",
+    ),
+    pytest.param(
+        _tagged(HEX_5000),
+        "rules.0.counter.max",
+        "less than or equal to 18446744073709551615",
+        id="counter-max-5000-digit-hex",
+    ),
+    pytest.param(
+        _tagged(DECIMAL_4000), "rules.0.counter.max", "less than or equal to 18446744073709551615", id="counter-max-4000-digit"
+    ),
+    pytest.param(
+        _tagged(str(2**64)),
+        "rules.0.counter.max",
+        "less than or equal to 18446744073709551615",
+        id="counter-max-first-past-the-bound",
+    ),
+    pytest.param(
+        "version: " + DECIMAL_4000 + "\nrules: []\n", "version", "unsupported version", id="version-4000-digit-decimal"
+    ),
+    pytest.param("version: " + HEX_5000 + "\nrules: []\n", "version", "unsupported version", id="version-5000-digit-hex"),
+    pytest.param(
+        "version: 1\nrules:\n  - messages: [Gearbox]\n    counter: {signal: ALIVE}\n    ? " + LONG + "\n    : 1\n",
+        "rules.0." + "k" * MAX_ECHOED_CHARS + "...",
+        "Extra inputs are not permitted",
+        id="very-long-unknown-key-is-clipped",
+    ),
+    pytest.param(
+        _doc("messages: [Gearbox]\ncounter:\n  signal: " + LONG + "\nchecksum:\n  signal: " + LONG + "\n  algorithm: xor\n"),
+        "rules.0",
+        "the same signal",
+        id="very-long-shared-signal-is-clipped",
+    ),
+    pytest.param(
+        "version: 1\nrules:\n  - messages: [Gearbox]\n    checksum:\n      signal: CRC\n      algorithm: crc8\n"
+        "      poly: " + "9" * 5000 + "\n",
+        "",
+        "an integer in it is too large",
+        id="decimal-integer-over-the-loader-limit",
     ),
     pytest.param("version: 1\n" + DEEP, "", "nested more than", id="deeply-nested-flow"),
     pytest.param(
@@ -491,6 +616,9 @@ def test_rejects(text: str, path: str, needle: str) -> None:
     assert needle in message, message
     assert "profile" not in message, message
     assert isinstance(error, ValueError)
+    # Whatever the file says, the refusal is short and carries no interpreter internals.
+    assert len(message) <= 300, len(message)
+    assert "set_int_max_str_digits" not in message and "Exceeds the limit" not in message, message
 
 
 def test_a_rule_file_of_exactly_256_kib_is_accepted_and_one_byte_more_is_refused() -> None:
@@ -692,6 +820,13 @@ RESOLVE_REJECTS = [
         id="unknown-checksum-signal",
     ),
     pytest.param(
+        _doc("messages: [Gearbox]\nchecksum:\n  signal: " + LONG + "\n  algorithm: xor\n"),
+        [_message()],
+        "rules.0.checksum.signal",
+        "no signal named '" + "k" * MAX_ECHOED_CHARS + "...'",
+        id="unknown-long-signal-is-clipped",
+    ),
+    pytest.param(
         _doc("messages: [Gearbox]\ncounter:\n  signal: ALIVE\n  max: 16\n"),
         [_message()],
         "rules.0.counter.max",
@@ -753,6 +888,7 @@ def test_resolve_rejects(text: str, messages: list[dict[str, Any]], path: str, n
     assert message.startswith(f"{path}: "), message
     assert needle in message, message
     assert "profile" not in message
+    assert len(message) <= 300, len(message)
 
 
 def test_rule_for_rejects_an_invalid_match_with_the_same_path() -> None:
@@ -915,3 +1051,88 @@ def test_rule_error_carries_its_path() -> None:
     assert error.path == "rules.2.glob"
     whole = RuleError("", "rule file is empty")
     assert str(whole) == "rule file is empty" and whole.path == ""
+
+
+# --- Bounds on every integer, stated once as a named constant each ---------------------------------------------------
+
+
+def test_the_bounds_are_the_documented_ones() -> None:
+    assert (MAX_COVERS, MAX_COVERS_INDEX, MAX_COUNTER_MAX, MAX_DATA_ID) == (64, 63, 2**64 - 1, 255)
+
+
+ACCEPTED_ON_THE_BOUND = [
+    pytest.param(_checksum(algorithm="sum8", covers=f"[0, {MAX_COVERS_INDEX}]"), id="covers-63"),
+    pytest.param(_checksum(algorithm="sum8", covers=f"[{', '.join(str(i) for i in range(MAX_COVERS))}]"), id="64-covers"),
+    pytest.param("messages: [Gearbox]\ncounter:\n  signal: ALIVE\n  max: 18446744073709551615\n", id="counter-max-2-64-1"),
+    pytest.param("messages: [Gearbox]\ncounter:\n  signal: ALIVE\n  max: 0\n", id="counter-max-0"),
+    pytest.param(_checksum(algorithm="crc16", poly="0xFFFF", init="0xFFFF", xorout="0xFFFF"), id="crc16-all-ones"),
+    pytest.param(_checksum(algorithm="crc16", poly=1, init=0, xorout=0), id="crc16-poly-1"),
+    pytest.param(_checksum(algorithm="crc8", poly="0xFF", init="0xFF", xorout="0xFF"), id="crc8-all-ones"),
+    pytest.param(_checksum(algorithm="xor", init=255, xorout=255), id="xor-255"),
+    pytest.param(_checksum(algorithm="sum8", init=255, xorout=255), id="sum8-255"),
+    pytest.param(_checksum(algorithm="nibble_sum", init=15, xorout=15), id="nibble-sum-15"),
+    pytest.param(_checksum(algorithm="sum8", data_id=255), id="data-id-255"),
+    pytest.param(_checksum(algorithm="sum8", data_id=0), id="data-id-0"),
+]
+
+
+@pytest.mark.parametrize("rule", ACCEPTED_ON_THE_BOUND)
+def test_a_value_on_each_bound_is_accepted(rule: str) -> None:
+    assert len(parse_rule_text(_doc(rule)).rules) == 1
+
+
+PAST_THE_BOUND = [
+    pytest.param(_checksum(algorithm="sum8", covers=f"[{MAX_COVERS_INDEX + 1}]"), "rules.0.checksum.covers.0", id="covers-64"),
+    pytest.param(_checksum(algorithm="sum8", covers=f"[{', '.join(['0'] * (MAX_COVERS + 1))}]"), "rules.0.checksum.covers", id="65-covers"),
+    pytest.param("messages: [Gearbox]\ncounter:\n  signal: ALIVE\n  max: 18446744073709551616\n", "rules.0.counter.max", id="counter-max-2-64"),
+    pytest.param("messages: [Gearbox]\ncounter:\n  signal: ALIVE\n  max: -1\n", "rules.0.counter.max", id="counter-max-minus-1"),
+    pytest.param(_checksum(algorithm="crc16", poly="0x10000"), "rules.0.checksum.poly", id="crc16-poly-17-bits"),
+    pytest.param(_checksum(algorithm="crc16", poly=1, init="0x10000"), "rules.0.checksum.init", id="crc16-init-17-bits"),
+    pytest.param(_checksum(algorithm="crc16", poly=1, xorout="0x10000"), "rules.0.checksum.xorout", id="crc16-xorout-17-bits"),
+    pytest.param(_checksum(algorithm="crc8", poly="0x100"), "rules.0.checksum.poly", id="crc8-poly-9-bits"),
+    pytest.param(_checksum(algorithm="xor", init=256), "rules.0.checksum.init", id="xor-init-256"),
+    pytest.param(_checksum(algorithm="sum8", xorout=256), "rules.0.checksum.xorout", id="sum8-xorout-256"),
+    pytest.param(_checksum(algorithm="nibble_sum", init=16), "rules.0.checksum.init", id="nibble-init-16"),
+    pytest.param(_checksum(algorithm="sum8", data_id=256), "rules.0.checksum.data_id", id="data-id-256"),
+]
+
+
+@pytest.mark.parametrize(("rule", "path"), PAST_THE_BOUND)
+def test_the_first_value_past_each_bound_is_refused(rule: str, path: str) -> None:
+    with pytest.raises(RuleError) as caught:
+        parse_rule_text(_doc(rule))
+    assert caught.value.path == path
+    assert str(caught.value).startswith(f"{path}: ")
+
+
+def test_a_counter_max_of_2_to_64_minus_1_fits_a_64_bit_signal() -> None:
+    message = _message(signals=[("WIDE", 0, 64, True)])
+    rule_file = parse_rule_text(_doc("messages: [Gearbox]\ncounter:\n  signal: WIDE\n  max: 18446744073709551615\n"))
+    assert rule_file.resolve([message])["Gearbox"].counters[0].max_value == MAX_COUNTER_MAX
+    # The same max on a 4-bit signal is the resolve-time refusal, and its 20 digits are still shown.
+    narrow = parse_rule_text(_doc("messages: [Gearbox]\ncounter:\n  signal: ALIVE\n  max: 18446744073709551615\n"))
+    with pytest.raises(RuleError, match="value 18446744073709551615 does not fit the 4-bit signal ALIVE"):
+        narrow.resolve([_message()])
+
+
+def test_huge_hex_covers_and_counter_max_are_refused_at_parse_time_not_at_resolve() -> None:
+    # Before the bounds, a 5000-digit hex covers item or counter max parsed fine and then raised a bare ValueError
+    # (the interpreter's 4300-digit limit) from an f-string at resolve time, with no path.
+    for text, path in [
+        (_doc(_checksum(algorithm="sum8", covers=f"[{HEX_5000}]")), "rules.0.checksum.covers.0"),
+        (_doc("messages: [Gearbox]\ncounter:\n  signal: ALIVE\n  max: " + HEX_5000 + "\n"), "rules.0.counter.max"),
+    ]:
+        with pytest.raises(RuleError) as caught:
+            parse_rule_text(text)
+        assert caught.value.path == path
+        assert str(caught.value).startswith(f"{path}: ") and len(str(caught.value)) <= 300
+
+
+def test_a_huge_integer_used_as_a_key_is_refused_with_a_short_message() -> None:
+    text = "version: 1\nrules:\n  - messages: [Gearbox]\n    counter: {signal: ALIVE}\n    ? " + HEX_5000 + "\n    : 1\n"
+    with pytest.raises(RuleError) as caught:
+        parse_rule_text(text)
+    message = str(caught.value)
+    assert caught.value.path.startswith("rules.0.") and message.startswith("rules.0.")
+    assert "Keys should be strings" in message or "Extra inputs are not permitted" in message
+    assert len(message) <= 300 and "set_int_max_str_digits" not in message

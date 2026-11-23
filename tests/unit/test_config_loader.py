@@ -99,3 +99,70 @@ def test_untrusted_text_with_a_value_the_constructor_cannot_build_is_a_config_er
     with pytest.raises(ValueError) as caught:
         read_yaml("a: 2001-13-45\n", "p")
     assert not isinstance(caught.value, ConfigError)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "a: !!bool foo\n",  # the safe constructor raises KeyError
+        "a: !!int ''\n",  # IndexError
+        "a: !!float ''\n",  # IndexError
+        "a: !!str x\n",
+        "a: !!binary Z2Vhcm5ib3g=\n",
+        "a: !!set {x}\n",
+        "a: !!timestamp 2001-01-01\n",
+        "a: !!map {b: 1}\n",
+        "a: !!seq [1]\n",
+        "a: !!python/object/apply:os.system ['true']\n",
+        "a: ! x\n",
+        "a: !<tag:yaml.org,2002:int> 3\n",
+        "!!str a: 1\n",
+        "a: [!!int 1]\n",
+    ],
+)
+def test_untrusted_text_may_not_carry_a_tag(text):
+    with pytest.raises(ConfigError, match=r"^rule file uses a YAML tag at line 1; tags are not allowed in a rule file$"):
+        read_yaml(text, "", kind="rule file", untrusted=True)
+
+
+def test_a_profile_may_still_carry_a_tag():
+    # The profile path is as it was: tags the safe constructor knows are read, and its own failures are not rewritten.
+    assert read_yaml("a: !!str 3\nb: !!binary aGk=\n", "p") == {"a": "3", "b": b"hi"}
+    with pytest.raises(KeyError):
+        read_yaml("a: !!bool foo\n", "p")
+    with pytest.raises(IndexError):
+        read_yaml("a: !!int ''\n", "p")
+
+
+class _FailingReader:
+    """A reader whose scan passes and whose load raises ``error``, standing in for a constructor failure."""
+
+    def __init__(self, error):
+        self.error = error
+
+    def parse(self, text):
+        return iter(())
+
+    def load(self, text):
+        raise self.error
+
+
+@pytest.mark.parametrize(
+    "error",
+    [ValueError("month must be in 1..12"), KeyError("foo"), IndexError("string index out of range"), TypeError("x"), AttributeError("x")],
+    ids=lambda e: type(e).__name__,
+)
+def test_any_constructor_failure_in_untrusted_text_is_a_config_error_and_in_a_profile_is_not(monkeypatch, error):
+    monkeypatch.setattr("ecu_simulator.config.loader._reader", lambda: _FailingReader(error))
+    with pytest.raises(ConfigError, match=r"^rule file has a value that cannot be read$") as caught:
+        read_yaml("a: 1\n", "", kind="rule file", untrusted=True)
+    assert caught.value.__cause__ is error
+    with pytest.raises(type(error)) as raised:
+        read_yaml("a: 1\n", "p")
+    assert raised.value is error
+
+
+def test_an_integer_over_the_interpreter_limit_is_said_to_be_too_large_without_its_internals():
+    with pytest.raises(ConfigError) as caught:
+        read_yaml("a: " + "9" * 5000 + "\n", "", kind="rule file", untrusted=True)
+    assert str(caught.value) == "rule file has a value that cannot be read: an integer in it is too large"

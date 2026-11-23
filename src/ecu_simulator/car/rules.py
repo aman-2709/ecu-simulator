@@ -58,6 +58,14 @@ MAX_RULES = 1000
 MAX_GLOB_CHARS = 64
 # A CAN FD frame has at most 64 bytes, so no honest ``covers`` list is longer.
 MAX_COVERS = 64
+MAX_COVERS_INDEX = MAX_COVERS - 1
+# No signal is wider than 64 bits, so no counter counts past 2**64 - 1.
+MAX_COUNTER_MAX = 2**64 - 1
+MAX_DATA_ID = 255
+# A message shows a number only up to this width, and a name or key only up to this many characters, however much
+# the file puts there: a refusal stays short, and a number is never formatted past the interpreter's own digit limit.
+MAX_ECHOED_BITS = 64
+MAX_ECHOED_CHARS = 40
 
 
 class RuleError(ValueError):
@@ -73,12 +81,18 @@ def _refuse(reason: str) -> PydanticCustomError:
     return PydanticCustomError("rule_file", reason)
 
 
+def _clip(text: str) -> str:
+    """``text`` as a refusal may show it: cut to ``MAX_ECHOED_CHARS`` characters, with ``...`` where it was cut."""
+    return text if len(text) <= MAX_ECHOED_CHARS else text[:MAX_ECHOED_CHARS] + "..."
+
+
 def _fit(value: int, algorithm: Algorithm) -> int:
     """``value`` if it fits the result width of ``algorithm``, which bounds its ``poly``, ``init`` and ``xorout``."""
     bits = ALGORITHM_BITS[algorithm]
     if not 0 <= value < 1 << bits:
         noun = "CRC" if algorithm in CRC_ALGORITHMS else algorithm
-        raise _refuse(f"value {value} does not fit {'an' if bits == 8 else 'a'} {bits}-bit {noun}")
+        shown = f"value {value}" if value.bit_length() <= MAX_ECHOED_BITS else "a value this large"
+        raise _refuse(f"{shown} does not fit {'an' if bits == 8 else 'a'} {bits}-bit {noun}")
     return value
 
 
@@ -89,11 +103,12 @@ class _Model(BaseModel):
 
 
 _Name = Annotated[str, Field(min_length=1)]
+_Covers = Annotated[list[Annotated[int, Field(ge=0, le=MAX_COVERS_INDEX)]], Field(max_length=MAX_COVERS)]
 
 
 class CounterSpec(_Model):
     signal: _Name
-    max: Annotated[int, Field(ge=0)] | None = None
+    max: Annotated[int, Field(ge=0, le=MAX_COUNTER_MAX)] | None = None
 
 
 class ChecksumSpec(_Model):
@@ -103,8 +118,8 @@ class ChecksumSpec(_Model):
     init: int = 0
     xorout: int = 0
     reflect: bool = False
-    covers: Annotated[list[Annotated[int, Field(ge=0)]], Field(max_length=MAX_COVERS)] | None = None
-    data_id: Annotated[int, Field(ge=0, le=255)] | None = None
+    covers: _Covers | None = None
+    data_id: Annotated[int, Field(ge=0, le=MAX_DATA_ID)] | None = None
 
     @field_validator("poly")
     @classmethod
@@ -150,7 +165,7 @@ class Rule(_Model):
         if self.counter is None and self.checksum is None:
             raise _refuse("a rule needs a counter, a checksum or both")
         if self.counter is not None and self.checksum is not None and self.counter.signal == self.checksum.signal:
-            raise _refuse(f"the counter and the checksum are the same signal, {self.counter.signal!r}")
+            raise _refuse(f"the counter and the checksum are the same signal, {_clip(self.counter.signal)!r}")
         return self
 
 
@@ -184,7 +199,8 @@ class RuleFile(_Model):
         if type(value) is not int:
             raise _refuse("version must be the integer 1")
         if value != 1:
-            raise _refuse(f"unsupported version {value}; this reader reads only version 1")
+            shown = f"version {value}" if value.bit_length() <= MAX_ECHOED_BITS else "version (too large to show)"
+            raise _refuse(f"unsupported {shown}; this reader reads only version 1")
         return value
 
     @field_validator("rules", mode="before")
@@ -270,10 +286,12 @@ def _bind(position: int, rule: Rule, message: Mapping[str, Any]) -> UserRule:
     def locate(key: str, signal: str) -> BitField:
         field = fields.get(signal)
         if field is None:
-            raise RuleError(f"rules.{position}.{key}.signal", f"message {name!r} has no signal named {signal!r}")
+            raise RuleError(
+                f"rules.{position}.{key}.signal", f"message {_clip(name)!r} has no signal named {_clip(signal)!r}"
+            )
         if not field.fits(size):
             raise RuleError(
-                f"rules.{position}.{key}.signal", f"signal {signal!r} reaches outside the {size}-byte frame"
+                f"rules.{position}.{key}.signal", f"signal {_clip(signal)!r} reaches outside the {size}-byte frame"
             )
         return field
 
@@ -305,7 +323,13 @@ def parse_rule_text(text: str) -> RuleFile:
     """The validated ``RuleFile`` in ``text``, or ``RuleError`` for a file that is too large, not YAML, or not valid.
 
     The text is at most ``MAX_RULE_BYTES`` bytes of UTF-8 with at most ``MAX_RULES`` rules. It may not use YAML
-    anchors, aliases or merge keys, and every key and number must be of the kind the rule schema names.
+    anchors, aliases, merge keys or tags, and every key and number must be of the kind the rule schema names, within
+    the bounds named by ``MAX_COVERS_INDEX``, ``MAX_COUNTER_MAX`` and ``MAX_DATA_ID`` and the algorithm's width.
+
+    Cost: the pure-Python YAML parser reads the text twice and holds the GIL. Measured on the development machine, a
+    dense file at the size limit (about 131,000 one-byte scalars) took 7.7 to 10.5 s, and a realistic 1000-rule file
+    (170 KB) about 3 s. A caller on an async server must run this in a worker thread and serialise uploads (one at a
+    time), never on the event loop.
     """
     try:
         size = len(text.encode("utf-8"))
@@ -321,7 +345,7 @@ def parse_rule_text(text: str) -> RuleFile:
         return RuleFile.model_validate(document)
     except ValidationError as error:
         first = error.errors(include_url=False, include_context=False, include_input=False)[0]
-        raise RuleError(".".join(str(part) for part in first["loc"]), first["msg"]) from error
+        raise RuleError(".".join(_clip(str(part)) for part in first["loc"]), first["msg"]) from error
 
 
 class RuleStore:
@@ -335,6 +359,10 @@ class RuleStore:
         """Validate ``text``, store it as ``<sha256>.yaml``, and return the SHA-256 of its UTF-8 bytes.
 
         A file that is refused is never written, and the directory is not created for it.
+
+        Cost: this runs ``parse_rule_text``, which takes 7.7 to 10.5 s for a dense file at the 256 KiB limit and about
+        3 s for a realistic 1000-rule file, in pure Python holding the GIL. A caller on an async server must run it in
+        a worker thread and serialise uploads (one at a time), never on the event loop.
         """
         parse_rule_text(text)
         raw = text.encode("utf-8")
@@ -347,6 +375,7 @@ class RuleStore:
         return digest
 
     def load(self, sha256: str) -> RuleFile:
+        """The ``RuleFile`` stored under ``sha256``; it is parsed again, at the cost ``import_text`` describes."""
         if not isinstance(sha256, str) or not re.fullmatch("[0-9a-f]{64}", sha256):
             raise ValueError("Expected a lowercase SHA-256 rule file digest")
         try:
