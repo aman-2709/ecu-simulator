@@ -14,10 +14,15 @@ from pathlib import Path
 
 import pytest
 
+from ecu_simulator import app
 from ecu_simulator.car.catalog import load_catalog
 from ecu_simulator.cli import default_profile_path
 from ecu_simulator.config import ConfigError, load_profile, load_yaml, parse_profile
+from ecu_simulator.dtc import DtcStore
 from ecu_simulator.gui.profiles import Profiles
+from ecu_simulator.protocols.base import ServiceRequest
+from ecu_simulator.protocols.obd import ObdProtocol
+from ecu_simulator.protocols.obd.protocol import VIN_LENGTH
 
 PROFILES = default_profile_path().parent
 DEMO = PROFILES / "car_toyota_demo.yaml"
@@ -47,6 +52,15 @@ def refusal(data: dict) -> str:
 
 def a_period_map(name: str, value) -> dict:
     return {"platform": "TOYOTA_COROLLA", "periods": {name: value}}
+
+
+def mode09_vin_reply(profile) -> bytes:
+    """What a scan tool reads for OBD service 09 PID 02 from a simulator running this profile."""
+    vehicle = app.build_vehicle(app.RuntimeConfig.build(profile))
+    protocol = ObdProtocol(vehicle, ecu_name="ECU_SIMULATOR", dtcs=DtcStore([]))
+    reply = protocol.handle(ServiceRequest(bytes.fromhex("0902")))
+    assert reply is not None
+    return reply
 
 
 # --- the source: a catalog platform or an upload ---------------------------------------------
@@ -300,6 +314,14 @@ def test_demo_profile_parses_and_names_corolla():
     assert [driven[path].interval for path in driven] == [10, 10]
     assert list(driven["vehicle.speed"].values) == [0, 40, 0]
     assert list(driven["engine.rpm"].values) == [800, 2000, 800]
+
+    # A VIN shorter than 17 characters is left-padded with NUL bytes in the mode 09 reply, so
+    # every shipped profile must carry a full one, and the demo is one of them.
+    assert len(profile.vehicle.vin) == VIN_LENGTH
+    for path in sorted(PROFILES.glob("*.yaml")):
+        vin = load_profile(path).vehicle.vin
+        assert len(vin) == VIN_LENGTH, f"{path.name}: VIN {vin!r} has {len(vin)} characters, not {VIN_LENGTH}"
+        assert mode09_vin_reply(load_profile(path)) == b"\x49\x02\x01" + vin.encode(), path.name
 
 
 def test_demo_profile_is_listed_and_packaged_like_the_others(tmp_path):

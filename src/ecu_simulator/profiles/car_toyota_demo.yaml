@@ -4,7 +4,7 @@ version: 1
 transport:
   interface: vcan0
 vehicle:
-  vin: CARTOYOTADEMO001
+  vin: CARTOYOTADEMO0001
   type: ice
   speed: 0
 scenario:
