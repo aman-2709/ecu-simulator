@@ -11,16 +11,20 @@ import socket
 from typing import Any
 
 from aiohttp import web
+from pydantic import TypeAdapter, ValidationError
 
 from ecu_simulator.car.busload import read_link, read_link_stats
 from ecu_simulator.car.rules import MAX_RULE_BYTES, RuleError, RuleStore
 from ecu_simulator.config import load_profile_text
+from ecu_simulator.config.schema import PlainFileName
 from ecu_simulator.dbc import DbcStore, ImportedDb
 from ecu_simulator.gui import car_workflow, dbc_workflow
 from ecu_simulator.gui.manager import Manager
 
 MAX_UNMATCHED = 50
+MAX_ECHOED = 100
 READ_CHUNK = 64 * 1024
+_FILE_NAME = TypeAdapter(PlainFileName)
 REVIEW_NOTE = (
     "This car is generated from its DBC, not a recording. Each message below shows one stamped sample, the first "
     "frame the run will send; from there counters advance and signal values follow the simulated drive."
@@ -39,6 +43,20 @@ async def working_copy(request: web.Request) -> str:
     if not isinstance(text, str):
         raise ValueError("Expected a profile working copy")
     return text
+
+
+def display_name(value: str) -> str:
+    """``value`` if a profile would accept it as ``car.filename``, else a ``ValueError`` with the reason, cut short.
+
+    A name is display text. It is checked so that a path or control characters never travel as one, and it is not
+    used to build a path.
+    """
+    try:
+        return _FILE_NAME.validate_python(value)
+    except ValidationError as error:
+        reason = error.errors(include_url=False, include_context=False, include_input=False)[0]["msg"]
+        shown = reason if len(reason) <= MAX_ECHOED else reason[:MAX_ECHOED] + "..."
+        raise ValueError(f"filename: {shown}") from None
 
 
 async def read_limited(request: web.Request, limit: int) -> bytes:
@@ -99,6 +117,8 @@ def install_car_routes(
 
     @routes.post("/car/rule")
     async def upload_rule(request: web.Request) -> web.Response:
+        for name in request.query.getall("filename", []):
+            display_name(name)
         body = await read_limited(request, MAX_RULE_BYTES)
         try:
             text = body.decode("utf-8")

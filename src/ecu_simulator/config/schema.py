@@ -20,7 +20,7 @@ import re
 import unicodedata
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from ecu_simulator.car.catalog import load_catalog
 from ecu_simulator.config.errors import ConfigError
@@ -87,6 +87,19 @@ Byte = Annotated[int, Field(ge=0, le=0xFF)]
 Percent = Annotated[int, Field(ge=0, le=100)]
 CanPeriodMs = Annotated[int, Field(strict=True, ge=CAN_PERIOD_MIN_MS, le=CAN_PERIOD_MAX_MS)]
 Sha256Hex = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
+def _plain_file_name(value: str) -> str:
+    if _has_control_character(value):
+        raise ValueError(f"file name {value!r} contains a control character")
+    if "/" in value or "\\" in value:
+        raise ValueError(f"file name {value!r} is a path, give the file name only")
+    return value
+
+
+# A file name that is display text: 1 to 255 characters, no control character, no path separator. The profile's
+# `car.filename` and the GUI's rule-file upload both use it, so there is one definition of what such a name is.
+PlainFileName = Annotated[str, Field(min_length=1, max_length=FILE_NAME_MAX_LENGTH), AfterValidator(_plain_file_name)]
 
 
 class Base(BaseModel):
@@ -567,7 +580,7 @@ class CarConfig(Base):
 
     platform: str | None = None
     bus: str = CAR_DEFAULT_BUS
-    filename: str | None = Field(default=None, min_length=1, max_length=FILE_NAME_MAX_LENGTH)
+    filename: PlainFileName | None = None
     sha256: Sha256Hex | None = None
     rule: Literal["toyota", "honda", "hyundai_can"] | None = None
     rule_file: Sha256Hex | None = None
@@ -585,16 +598,6 @@ class CarConfig(Base):
         if value in catalog.skipped:
             raise ValueError(f"{value!r} is not supported ({catalog.skipped[value]})")
         raise ValueError(f"unknown platform {value!r}, known platforms: {', '.join(sorted(catalog.platforms))}")
-
-    @field_validator("filename")
-    @classmethod
-    def filename_is_a_plain_name(cls, value: str | None) -> str | None:
-        if value is not None:
-            if _has_control_character(value):
-                raise ValueError(f"file name {value!r} contains a control character")
-            if "/" in value or "\\" in value:
-                raise ValueError(f"file name {value!r} is a path, give the file name only")
-        return value
 
     @field_validator("periods", "log_periods")
     @classmethod

@@ -22,6 +22,7 @@ import pytest
 
 pytest.importorskip("aiohttp")
 from aiohttp import web
+from aiohttp.streams import StreamReader
 from aiohttp.test_utils import TestClient, TestServer
 
 from ecu_simulator.car import busload
@@ -245,6 +246,96 @@ async def test_rule_upload_stores_a_valid_file_by_digest(home):
     digest = hashlib.sha256(RULE_FILE.encode()).hexdigest()
     assert (status, body) == (200, {"sha256": digest, "rules": 1})
     assert (home / "ecu-simulator" / "rules" / f"{digest}.yaml").read_text() == RULE_FILE
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("params", [
+    pytest.param({}, id="absent"), pytest.param({"filename": "mine.yaml"}, id="plain"),
+    pytest.param({"filename": "my rules (2019).yaml"}, id="spaces-and-brackets"),
+    pytest.param({"filename": "schönes_auto.yaml"}, id="unicode"), pytest.param({"filename": "x" * 255}, id="255-chars"),
+])
+async def test_rule_upload_takes_a_plain_filename_or_none(home, params):
+    async with serving(home) as page:
+        status, body = await page.post("/car/rule", params=params, data=RULE_FILE.encode())
+    assert (status, body["rules"]) == (200, 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", [
+    pytest.param("../../etc/passwd", id="traversal"), pytest.param("a/b.yaml", id="separator"),
+    pytest.param("a\\b.yaml", id="backslash"), pytest.param("bad\nname.yaml", id="newline"),
+    pytest.param("bad\x00name.yaml", id="nul"), pytest.param("x" * 256, id="256-chars"),
+    pytest.param("", id="empty"), pytest.param("a/" + "x" * 253, id="255-char-path"),
+])
+async def test_rule_upload_refuses_a_bad_filename_and_stores_nothing(home, monkeypatch, name):
+    calls: list[str] = []
+
+    def imported(self: RuleStore, text: str):
+        calls.append(text)
+        return "0" * 64, SimpleNamespace(rules=[])
+
+    monkeypatch.setattr(RuleStore, "import_parsed", imported)
+    monkeypatch.setattr(RuleStore, "import_text", imported)
+    async with serving(home) as page:
+        status, body = await page.post("/car/rule", params={"filename": name}, data=RULE_FILE.encode())
+    assert status == 400 and "filename" in body["error"]
+    assert len(body["error"]) < 200 and (len(name) < 100 or name not in body["error"])
+    assert calls == [] and not (home / "ecu-simulator" / "rules").exists()
+
+
+@pytest.mark.asyncio
+async def test_rule_upload_refuses_a_bad_name_among_several(home):
+    async with serving(home) as page:
+        status, body = await page.post("/car/rule", params=[("filename", "ok.yaml"), ("filename", "../x")],
+                                       data=RULE_FILE.encode())
+    assert status == 400 and "filename" in body["error"]
+
+
+@pytest.fixture
+def body_reads(monkeypatch):
+    """The number of calls that take bytes out of a request body while a handler is running, and the middleware."""
+    state = {"inside": False, "calls": 0}
+
+    def counting(name: str) -> None:
+        real = getattr(StreamReader, name)
+
+        async def counted(self: StreamReader, *args: Any, **kwargs: Any) -> Any:
+            state["calls"] += state["inside"]
+            return await real(self, *args, **kwargs)
+
+        monkeypatch.setattr(StreamReader, name, counted)
+
+    for method in ("read", "readany", "readchunk", "readexactly"):
+        counting(method)
+
+    @web.middleware
+    async def watch(request: web.Request, handler: Any) -> web.StreamResponse:
+        state["inside"] = True
+        try:
+            return await handler(request)
+        finally:
+            state["inside"] = False
+
+    return state, watch
+
+
+@pytest.mark.asyncio
+async def test_a_bad_filename_is_refused_before_the_body_is_read(home, body_reads):
+    state, watch = body_reads
+
+    async def ten_mebibytes():
+        for _ in range(160):
+            yield b"x" * 65536
+            await asyncio.sleep(0)
+
+    async with serving(home, watch=watch) as page:
+        status, error = await page.post("/car/rule", params={"filename": "../../etc/passwd"}, data=ten_mebibytes())
+        assert status == 400 and "filename" in error["error"]
+        assert state["calls"] == 0, "the handler read the body of a request it was going to refuse"
+        # the same body with a good name is read (and cut off at the limit), so the count above can be nonzero
+        status, error = await page.post("/car/rule", params={"filename": "ok.yaml"}, data=ten_mebibytes())
+        assert status == 400 and "256 KiB" in error["error"]
+        assert state["calls"] > 0
 
 
 @pytest.mark.asyncio
@@ -483,12 +574,13 @@ async def test_run_on_physical_requires_review_token(home, monkeypatch):
         status, body = await page.post("/run", json={"text": text + "# edited\n", "review": other["token"]})
         assert status == 400 and "review" in body["error"], "a token for a different working copy was accepted"
         status, body = await page.post("/run", json={"text": text, "review": other["token"]})
+        assert status == 400 and "review" in body["error"], "a token spent on another working copy was accepted again"
 
         _, review = await page.post("/car/review", json={"text": text})
         status, body = await page.post("/run", json={"text": text, "review": review["token"]})
         assert status == 202 and body["state"] == "Starting"
         status, body = await page.post("/run", json={"text": text, "review": review["token"]})
-        assert status == 400
+        assert status == 400 and "review" in body["error"], "a token that started a run was accepted again"
         await running(page)
 
 
@@ -574,8 +666,9 @@ async def test_run_status_carries_a_summary_and_car_run_the_whole_list(home, mon
 async def test_car_posts_need_the_local_origin(home):
     async with serving(home) as page:
         for path in ("/car/draft", "/car/check", "/car/review", "/car/rule", "/car/log"):
-            response = await page.client.post(path, data=b"x", headers={"Origin": "http://foreign.test"})
-            assert response.status == 403, path
+            for origin in ("http://foreign.test", "null", None):
+                response = await page.client.post(path, data=b"x", headers={} if origin is None else {"Origin": origin})
+                assert response.status == 403, (path, origin)
         response = await page.client.get("/car/catalog", headers={"Host": "foreign.test"})
         assert response.status == 421
 
