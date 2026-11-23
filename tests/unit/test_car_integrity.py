@@ -31,7 +31,8 @@ from ecu_simulator.dbc import DbcStore, ImportedDb
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "car" / "integrity_vectors.json"
 VECTORS: list[dict[str, Any]] = json.loads(FIXTURE.read_text(encoding="utf-8"))
 
-# The messages whose catalog DBC has a layout ImportedDb refuses; every variant of each is a vector.
+# The fixture's messages whose layout ImportedDb refuses, every variant of each a vector. These are the four that
+# the fixture holds, not every layout error in the catalog (38 messages across the 21 DBCs; see README.md).
 LAYOUT_ERRORS = {
     ("acura_ilx_2016_can_generated", "KINEMATICS"),
     ("acura_ilx_2016_can_generated", "KINEMATICS_ALT"),

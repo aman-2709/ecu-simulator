@@ -47,7 +47,8 @@
 
   // --- the banner: the cause first, the next step second --------------------------------------------------------------
 
-  // ``kind`` marks a banner that a later action may withdraw: "refusal" (the bus-load refusal of the checked car).
+  // ``kind`` marks a banner that a later event may withdraw: "refusal" (the checked car's bus-load refusal, withdrawn
+  // by a source switch) and "unreadable" (a failed link poll, withdrawn when a later poll succeeds).
   function problem(cause, next, kind = "") {
     const previous = banner.textContent;
     const first = document.createElement("p");

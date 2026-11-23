@@ -22,7 +22,9 @@ BRAKE_PAYLOAD = bytes([0, 0, 0x10, 0x27])
 
 
 def fenced(language: str) -> str:
-    section = README.read_text().split("### Rule files", 1)[1]
+    text = README.read_text()
+    assert "### Rule files" in text, "README.md has no 'Rule files' heading; this test reads its example from there"
+    section = text.split("### Rule files", 1)[1]
     found = re.search(rf"^```{language}\n(.*?)^```", section, re.M | re.S)
     assert found is not None, f"no ```{language} block under 'Rule files' in README.md"
     return found.group(1)
