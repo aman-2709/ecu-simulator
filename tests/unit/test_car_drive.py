@@ -20,10 +20,16 @@ from ecu_simulator.vehicle import BevPowertrain, CommonState, HevPowertrain, Ice
 
 
 def signal(
-    name: str, unit: str = "", low: float | None = None, high: float | None = None, *, is_mux: bool = False
+    name: str,
+    unit: str = "",
+    low: float | None = None,
+    high: float | None = None,
+    *,
+    is_mux: bool = False,
+    mux: str | None = None,
 ) -> dict[str, Any]:
-    """The part of ``ImportedDb``'s signal dict the drive reads."""
-    return {"name": name, "unit": unit, "min": low, "max": high, "default": 0.0, "is_mux": is_mux}
+    """The part of ``ImportedDb``'s signal dict the drive reads: ``is_mux`` marks a selector, ``mux`` a branch member."""
+    return {"name": name, "unit": unit, "min": low, "max": high, "default": 0.0, "is_mux": is_mux, "mux": mux}
 
 
 def message(*signals: dict[str, Any]) -> dict[str, Any]:
@@ -77,6 +83,53 @@ class Clock:
         ("VEHICLE_SPEED", "m/s2", None),
         ("VEHICLE_SPEED", "", None),
         ("VEHICLE_SPEED", "km", None),
+        # speed and rpm that are not the vehicle's own: a whole name token marks a set-point, target, limit or offset
+        ("SET_SPEED", "km/h", None),
+        ("UI_SET_SPEED", "mph", None),
+        ("set_speed", "kph", None),
+        ("REL_SPEED", "m/s", None),
+        ("LEAD_REL_SPEED", "m/s", None),
+        ("REL_SPEED", "km/h", None),
+        ("TGT_SPEED", "kph", None),
+        ("TARGET_SPEED", "kph", None),
+        ("CF_RSPA_Trgt_Spd", "km/h", None),
+        ("SPEED_REQ", "km/h", None),
+        ("SPEED_LIMIT", "km/h", None),
+        ("CRUISE_SPEED_OFFSET", "kph", None),
+        ("SPEED_OFFSET", "mph", None),
+        ("VS_TCU_DECIMAL", "km/h", None),
+        ("CRUISE_SPEED", "kph", None),
+        ("HUD_CRUISE", "kph", None),
+        ("N_TGT_LUP", "rpm", None),
+        ("CR_Tcu_IsgTgtRPM", "rpm", None),
+        ("ENGINE_RPM_TARGET", "rpm", None),
+        ("RPM_SET", "rpm", None),
+        # tokens come from underscores and camelCase boundaries, compared upper-cased
+        ("HDA_VSetReq", "km/h", None),
+        ("SetSpeed", "kph", None),
+        ("vSetSpeed", "kph", None),
+        ("ABSSetSpeed", "kph", None),
+        ("WheelSpeedLimit", "kph", None),
+        ("CruiseSpeed", "kph", None),
+        ("TgtRPM", "rpm", None),
+        # ... and only whole tokens count, so a name that merely contains one is still a vehicle speed
+        ("RESET_SPEED", "km/h", DriveRole.SPEED),
+        ("PRESET_SPEED", "kph", DriveRole.SPEED),
+        ("ASSET_SPEED", "mph", DriveRole.SPEED),
+        ("RELEASE_SPEED", "km/h", DriveRole.SPEED),
+        ("REQUEST_SPEED", "km/h", DriveRole.SPEED),
+        ("LIMITED_SPEED", "km/h", DriveRole.SPEED),
+        ("CRUISER_SPEED", "kph", DriveRole.SPEED),
+        ("TARGETS_SPEED", "kph", DriveRole.SPEED),
+        ("OFFSETS_SPEED", "kph", DriveRole.SPEED),
+        ("DECIMALS_SPEED", "kph", DriveRole.SPEED),
+        ("RESET_RPM", "rpm", DriveRole.RPM),
+        ("WheelSpeedFL", "kph", DriveRole.SPEED),
+        ("ResetSpeed", "kph", DriveRole.SPEED),
+        ("VehicleSpeed", "m/s", DriveRole.SPEED),
+        ("ABSWheelSpeed", "kph", DriveRole.SPEED),
+        ("SPEED_1", "kph", DriveRole.SPEED),
+        ("N", "rpm", DriveRole.RPM),
         # rpm
         ("ENGINE_RPM", "rpm", DriveRole.RPM),
         ("RPM", "RPM", DriveRole.RPM),
@@ -91,6 +144,9 @@ class Clock:
         ("STEER_ANGLE", "rad", None),
         ("STEER_ANGLE", "", None),
         ("ROAD_WHEEL_ANGLE", "deg", None),
+        # the set-point tokens apply to speed and rpm only
+        ("STEER_ANGLE_OFFSET", "deg", DriveRole.STEERING),
+        ("GAS_PEDAL_SET", "%", DriveRole.PEDAL),
         # pedal: % and PEDAL in the name, never a brake
         ("GAS_PEDAL", "%", DriveRole.PEDAL),
         ("accel_pedal_pos", "%", DriveRole.PEDAL),
@@ -117,6 +173,42 @@ def test_classify_speed_rpm_steering_pedal_and_nothing_else(name: str, unit: str
 def test_a_multiplexer_selector_is_never_driven() -> None:
     assert classify_signal(signal("SPEED_SELECTOR", "km/h", is_mux=True)) is None
     assert classify_signal(signal("SPEED_SELECTOR", "km/h", is_mux=False)) is DriveRole.SPEED
+
+
+@pytest.mark.parametrize(
+    ("name", "unit"),
+    [
+        ("WHEEL_SPEED_A", "km/h"),
+        ("VEHICLE_SPEED", "m/s"),
+        ("ENGINE_RPM", "rpm"),
+        ("STEER_ANGLE", "deg"),
+        ("GAS_PEDAL", "%"),
+    ],
+)
+def test_a_multiplexed_branch_member_is_never_driven(name: str, unit: str) -> None:
+    assert classify_signal(signal(name, unit)) is not None
+    assert classify_signal(signal(name, unit, mux="SELECTOR")) is None
+
+
+MULTIPLEXED = b"""BO_ 100 MULTIPLEXED: 8 XXX
+ SG_ SEL M : 0|8@1+ (1,0) [0|1] "" XXX
+ SG_ WHEEL_SPEED_A m0 : 8|16@1+ (0.01,0) [0|250] "km/h" XXX
+ SG_ WHEEL_SPEED_B m1 : 8|16@1+ (0.01,0) [0|250] "km/h" XXX
+ SG_ SPEED : 24|16@1+ (0.01,0) [0|250] "km/h" XXX
+"""
+
+
+def test_multiplexed_branch_members_are_left_out_so_the_encoder_accepts_the_sample(tmp_path: Path) -> None:
+    db = DbcStore(tmp_path).load(DbcStore(tmp_path).import_file("multiplexed.dbc", MULTIPLEXED)["sha256"])
+    info = db.message("MULTIPLEXED")
+    by_name = {sig["name"]: sig for sig in info["signals"]}
+    assert (by_name["SEL"]["is_mux"], by_name["SEL"]["mux"]) == (True, None)
+    assert (by_name["WHEEL_SPEED_B"]["is_mux"], by_name["WHEEL_SPEED_B"]["mux"]) == (False, "SEL")
+
+    values = drive_sampler(info, ice(speed=60), Clock())()
+
+    assert values == {"SPEED": 60.0}
+    assert db.decode(100, False, db.encode("MULTIPLEXED", values))["signals"]["SPEED"]["value"] == pytest.approx(60.0)
 
 
 def test_the_roles_are_named_speed_rpm_steering_pedal() -> None:
@@ -295,8 +387,16 @@ def test_importing_the_drive_does_not_create_an_import_cycle() -> None:
     assert result.returncode == 0, result.stderr
 
 
-# Platforms picked from the catalog: one per brand, each with a powertrain DBC the catalog ships.
-REAL_PLATFORMS = ["TOYOTA_COROLLA", "HONDA_CIVIC_BOSCH", "HYUNDAI_ELANTRA"]
+# Platforms picked from the catalog: one per brand, each with a powertrain DBC the catalog ships. The signals named for
+# each are the vehicle's own speed and engine speed, which the drive must keep.
+REAL_PLATFORMS = {
+    "TOYOTA_COROLLA": {"WHEEL_SPEEDS.WHEEL_SPEED_FL", "SPEED.SPEED", "ENGINE_RPM.RPM"},
+    "HONDA_CIVIC_BOSCH": {"WHEEL_SPEEDS.WHEEL_SPEED_FL", "CAR_SPEED.CAR_SPEED", "ENGINE_DATA.ENGINE_RPM"},
+    "HYUNDAI_ELANTRA": {"WHL_SPD11.WHL_SPD_FL", "EMS11.VS", "EMS11.N"},
+}
+# Set-points, relative speeds and targets that carry a speed unit but are not the vehicle's own speed.
+NOT_EGO_SPEEDS = ["SET_SPEED", "UI_SET_SPEED", "REL_SPEED", "LEAD_REL_SPEED", "CRUISE_SPEED"]
+SPEED_UNITS = {"km/h", "kph", "m/s", "mph"}
 
 
 @pytest.mark.parametrize("platform_id", REAL_PLATFORMS)
@@ -316,6 +416,22 @@ def test_the_shipped_powertrain_dbcs_have_speed_signals_and_no_brake_pedal(platf
                 assert role is not DriveRole.PEDAL, (info["name"], sig["name"])
 
     assert roles[DriveRole.SPEED], f"{platform_id}: no signal followed the vehicle speed"
+    assert REAL_PLATFORMS[platform_id] <= {*roles[DriveRole.SPEED], *roles[DriveRole.RPM]}
+    assert not {name for names in roles.values() for name in names if name.split(".")[1] in NOT_EGO_SPEEDS}
+
+
+def test_no_set_point_or_relative_speed_of_the_shipped_dbcs_is_driven(tmp_path: Path) -> None:
+    store = DbcStore(tmp_path)
+    occurrences: dict[str, list[tuple[str, str]]] = {name: [] for name in NOT_EGO_SPEEDS}
+    for entry in load_catalog().dbcs.values():
+        for info in store.load(entry.sha256).catalog(entry.name)["messages"]:
+            for sig in info["signals"]:
+                if sig["name"] in occurrences and sig["unit"].strip().lower() in SPEED_UNITS:
+                    occurrences[sig["name"]].append((entry.name, info["name"]))
+                    assert classify_signal(sig) is None, (entry.name, info["name"], sig["name"], sig["unit"])
+
+    # each of them really has a speed unit somewhere in the catalog, so the loop above compared something
+    assert all(found for found in occurrences.values()), occurrences
 
 
 @pytest.mark.parametrize("platform_id", REAL_PLATFORMS)
