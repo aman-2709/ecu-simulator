@@ -205,3 +205,19 @@ The run shows the DBC SHA-256, the upstream revision and each message's integrit
 - Own-network users get a declarative rule file (checksum and CRC building blocks plus E2E profiles 1 and 2), never uploaded code.
 - Bundled DBCs: the existing two plus the three brands. Other brands upload.
 - No runtime opendbc; the extractor and the oracle test are the only users.
+
+## Changes during implementation
+
+Where the built system differs from, or refines, what is written above. The text above is unchanged.
+
+1. **Period source 4.** The frequencies come from opendbc's safety receive tables (`opendbc/safety/modes/*.h`), because the per-brand `carstate.py` tables no longer exist at the pinned revision. The values are approximate and ambiguous addresses are left out, so 16 messages get one (Toyota 3, Honda 5, Hyundai 8). The UI labels the source "opendbc safety table, approximate".
+2. **Shipped DBCs.** The catalog DBCs are under `src/ecu_simulator/_opendbc/cars/`. 13 of the 21 needed normalising (malformed comment lines dropped, ids above 0x7FF flagged extended). Each `cars.json` entry records the source and shipped SHA-256 and what changed, and the extractor checks message and signal equality against opendbc's own parse.
+3. **More than one checksum.** Hyundai 0x386 has two checksum signals (`WHL_SPD_Checksum_LSB` and `_MSB`) computed in sequence, so integrity plans and the oracle fixture hold a list of checksums. The fixture has four payload variants per layout (740 vectors) so that each checksum signal takes more than one value.
+4. **Generated drive.** It excludes names with SET, REL, TGT, TARGET, TRGT, REQ, LIMIT, OFFSET, DECIMAL or CRUISE as whole words, and multiplexed members. The brake pedal is not animated, and gear and brake keep their DBC defaults.
+5. **Encode failures.** Each driven signal is trial-encoded at its limits when the run is prepared, and a failing message is skipped. At run time an encode error stops the run with its error; nothing is resent silently.
+6. **AUTOSAR E2E.** The facts differ from the assumptions above. Profile 1 hashes the Data ID first, its effective CRC start and final XOR are 0x00, its counter wraps at 14, and `nibble` mode feeds the low byte and then a zero byte. Profile 2's first protected frame carries counter 1 in AUTOSAR's reference, while this stamper starts at 0. The presets follow AUTOSAR PRS_E2EProtocol R22-11. Its disclaimer permits reproduction "for informational purposes only" and requires a licence for commercial exploitation. Whether that covers the presets is undecided and is for the owner.
+7. **GUI routes.** The status poll (`GET /run`) carries only a car summary, and the full message list is `GET /car/run`. Rule and log uploads are parsed off the event loop, one rule parse at a time, with caps of 256 KiB for a rule file and 16 MiB or 300,000 frames for a log. A car run on a physical interface goes through the transmission review, which needed its own gate because the existing one looked only at `dbc` messages.
+8. **Measured period.** The live panel shows the median of the last 100 intervals between a message's frames, taken from the capture's kernel timestamps, with the shortest and longest. The first build showed a mean, which equals the set period whatever the jitter.
+9. **Bus-load check.** It treats only an interface in state STOPPED as down. BUS-OFF is not refused at start; the run surfaces it.
+
+Verification item 5 (physical acceptance) has not been run. [docs/validation/car-from-dbc.md](../../validation/car-from-dbc.md) holds the evidence from `vcan0` and the procedure with empty result fields.
