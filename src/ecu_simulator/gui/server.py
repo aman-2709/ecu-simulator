@@ -14,9 +14,10 @@ from aiohttp import web
 
 from ecu_simulator.api.options import allowed_hosts
 from ecu_simulator.api.server import FRONTEND_HEADERS
+from ecu_simulator.car.rules import RuleStore
 from ecu_simulator.config import ConfigError, load_profile_text
 from ecu_simulator.dbc import DbcStore
-from ecu_simulator.gui import dbc_workflow
+from ecu_simulator.gui import car_routes, car_workflow, dbc_workflow
 from ecu_simulator.gui.capture import BATCH_LIMIT, WheelMonitor, open_capture, read_batch
 from ecu_simulator.gui.manager import Manager, RunConflict
 from ecu_simulator.gui.profiles import Profiles, change_interface
@@ -136,6 +137,7 @@ def application(directory: Path | None = None) -> web.Application:
     routes = web.RouteTableDef()
 
     install_dbc_routes(routes, store, reviews)
+    car_routes.install_car_routes(routes, store, RuleStore(), reviews, manager)
     shutting_down = asyncio.Event()
 
     replay = Replay()
@@ -275,7 +277,7 @@ def application(directory: Path | None = None) -> web.Application:
 
     @routes.get("/run")
     async def status(request: web.Request) -> web.Response:
-        return web.json_response(manager.status(), headers={"Cache-Control": "no-store"})
+        return web.json_response(car_workflow.run_status(manager.status()), headers={"Cache-Control": "no-store"})
 
     @routes.post("/run")
     async def start(request: web.Request) -> web.Response:
@@ -283,11 +285,15 @@ def application(directory: Path | None = None) -> web.Application:
         text = data.get("text")
         if not isinstance(text, str):
             raise ValueError("Expected a working copy")
-        profile = load_profile_text(text)
+        profile = await asyncio.to_thread(load_profile_text, text)
         iface = profile.transport.interface
-        if profile.dbc and profile.dbc.messages and not await asyncio.to_thread(dbc_workflow.virtual_can, iface):
-            token = data.get("review")
-            reviews.consume(token if isinstance(token, str) else "", text, socket.if_nametoindex(iface))
+        manual = bool(profile.dbc and profile.dbc.messages)
+        if (manual or profile.car) and not await asyncio.to_thread(dbc_workflow.virtual_can, iface):
+            # For a car, transmittable raises ConfigError when no message can be sent, which is reported instead of
+            # the review; when it returns, the list is never empty and the review token is required.
+            if manual or bool(await asyncio.to_thread(car_workflow.transmittable, text)):
+                token = data.get("review")
+                reviews.consume(token if isinstance(token, str) else "", text, socket.if_nametoindex(iface))
         return web.json_response(await manager.start(text), status=202)
 
     @routes.post("/run/send")
@@ -320,7 +326,8 @@ def application(directory: Path | None = None) -> web.Application:
     static = Path(__file__).with_name("static")
     observer_assets = static.parents[1] / "api" / "static"
     for route, filename in (("/", "control.html"), ("/control.js", "control.js"), ("/control.css", "control.css"),
-                            ("/live.js", "live.js"), ("/dbc.js", "dbc.js"), ("/trends.js", "trends.js"),
+                            ("/live.js", "live.js"), ("/dbc.js", "dbc.js"), ("/car.js", "car.js"),
+                            ("/trends.js", "trends.js"),
                             ("/uPlot.iife.min.js", observer_assets / "uPlot.iife.min.js"),
                             ("/uPlot.min.css", observer_assets / "uPlot.min.css"),
                             ("/uPlot-LICENSE.txt", observer_assets / "uPlot-LICENSE.txt")):

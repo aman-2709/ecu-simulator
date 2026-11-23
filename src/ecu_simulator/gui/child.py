@@ -21,9 +21,15 @@ async def serve(text: str) -> None:
     stop = asyncio.Event()
 
     dbc_metadata: dict[str, Any] = {}
+    car_metadata: dict[str, Any] = {}
 
     def report_ready() -> None:
-        event = {"ready": True, "restbus": codec.metadata() if codec else None, "dbc": dbc_metadata or None}
+        dbc = dbc_metadata or None
+        if car_metadata:
+            # The capture decoder selects the run's DBC by this hash; the car's messages are in "car".
+            dbc = {"filename": car_metadata["dbc"]["filename"], "sha256": car_metadata["dbc"]["sha256"], "messages": []}
+        event = {"ready": True, "restbus": codec.metadata() if codec else None, "dbc": dbc,
+                 "car": car_metadata or None}
         print(json.dumps(event), flush=True)
 
     reader = asyncio.StreamReader()
@@ -46,7 +52,7 @@ async def serve(text: str) -> None:
     try:
         await app.run(
             config, stop=stop, ready=report_ready, wheel_codec=codec,
-            dbc_ready=dbc_metadata.update, broadcast_paused=lambda: paused,
+            dbc_ready=dbc_metadata.update, car_ready=car_metadata.update, broadcast_paused=lambda: paused,
         )
     finally:
         listener.cancel()

@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 import struct
 from unittest.mock import Mock
 
@@ -51,6 +52,60 @@ def test_schedule_preserves_phase_and_skips_elapsed_slots():
     assert next_deadline(1, 1.015, 0.02) == pytest.approx(1.02)
     assert next_deadline(1, 1.099, 0.02) == pytest.approx(1.10)
     assert next_deadline(1, 1.100, 0.02) == pytest.approx(1.12)
+
+
+def test_first_offsets_spread_each_period_group_across_its_period():
+    from ecu_simulator.publisher import first_offsets
+
+    periods = [0.1] * 55 + [0.012, 0.05, 0.05, 0.1, 0.012]
+    offsets = first_offsets(periods)
+    assert offsets == first_offsets(periods)  # deterministic: no randomness, no clock
+    assert len(offsets) == len(periods)
+    assert all(0 <= offset < period for offset, period in zip(offsets, periods, strict=True))
+    for period in set(periods):
+        group = [offset for offset, p in zip(offsets, periods, strict=True) if p == period]
+        assert len(set(group)) == len(group), period  # no two frames of one period share a first deadline
+    hundred = sorted(offset for offset, p in zip(offsets, periods, strict=True) if p == 0.1)
+    assert hundred == pytest.approx([0.1 * k / 56 for k in range(56)])  # evenly spread, in list order
+    assert first_offsets([0.02]) == [0.0] and first_offsets([]) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("stagger", "first_tick"), [(False, ["A", "B"]), (True, ["A"])])
+async def test_publish_frames_staggers_first_deadlines_only_when_asked(monkeypatch, stagger, first_tick):
+    """Two frames of one period start together by default (every existing profile); a staggered car run sends the
+    second half a period later, and both keep their period afterwards."""
+    from ecu_simulator import publisher
+
+    loop = asyncio.get_running_loop()
+    sent: list[tuple[str, float]] = []
+    stop = asyncio.Event()
+    start = loop.time()
+
+    def sample(name: str):
+        def payload() -> bytes:
+            sent.append((name, loop.time() - start))
+            if len(sent) == 6:
+                stop.set()
+            return b"\x01"
+
+        return payload
+
+    sock = Mock()
+    sock.send.side_effect = lambda data: len(data)
+    monkeypatch.setattr(publisher, "open_broadcast", lambda _: sock)
+    frames = [publisher.CyclicFrame(name, 0x100 + i, 0.04, sample(name)) for i, name in enumerate("AB")]
+    ready = Mock(side_effect=lambda: sent.append(("ready", loop.time() - start)))
+    await asyncio.wait_for(publisher.publish_frames("vcan0", frames, None, ready, stop, stagger=stagger), 2)
+    names = [name for name, _ in sent]
+    assert names[: names.index("ready")] == first_tick  # what the first tick sent, before ready is announced
+    sent = [entry for entry in sent if entry[0] != "ready"]
+    times = {name: [at for n, at in sent if n == name] for name in "AB"}
+    b_start = times["B"][0] - times["A"][0]
+    assert b_start == pytest.approx(0.02 if stagger else 0.0, abs=0.012)
+    for name in "AB":
+        intervals = [later - earlier for earlier, later in itertools.pairwise(times[name])]
+        assert intervals and all(interval == pytest.approx(0.04, abs=0.015) for interval in intervals), intervals
 
 
 @pytest.mark.asyncio

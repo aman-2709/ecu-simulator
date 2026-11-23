@@ -121,6 +121,8 @@ module = [
     "ecu_simulator.logging",
     "ecu_simulator.app",
     "ecu_simulator.cli",
+    "ecu_simulator.car",
+    "ecu_simulator.car.*",
 ]
 disallow_untyped_defs = true
 check_untyped_defs = true

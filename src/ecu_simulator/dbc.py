@@ -14,6 +14,8 @@ from cantools.database.can import Database, Message, Signal
 from cantools.database.can.formats.dbc import DbcParser
 from cantools.database.errors import Error as CanDatabaseError
 
+from ecu_simulator.car.catalog import bundled_dbc_path
+
 # Common integrity field names in opendbc. A DBC describes the field layout,
 # but does not supply the ECU-specific algorithm for generating these values.
 _INTEGRITY = re.compile(r"checksum|counter|alivecount|chksum|chksm|crc|(?:^|_)(?:cnt|ctr|cs|cntr)(?:_|$)", re.I)
@@ -67,6 +69,7 @@ def _signal_info(signal: Signal, branches: set[int]) -> dict[str, Any]:
     return {
         "name": signal.name, "unit": signal.unit or "", "min": low, "max": high, "default": default,
         "mux": signal.multiplexer_signal, "mux_ids": signal.multiplexer_ids, "is_mux": signal.is_multiplexer,
+        "start": signal.start, "length": signal.length, "little_endian": signal.byte_order == "little_endian",
     }
 
 
@@ -110,12 +113,13 @@ class ImportedDb:
             if frame.is_fd or frame.length > 8:
                 issues.append("CAN FD transmission is unsupported")
             protected = [s.name for s in frame.signals if _INTEGRITY.search(s.name)]
+            layout_issue = "; ".join(issues) or None
             if protected:
                 issues.append(f"Counter/checksum generation is unsupported for {', '.join(protected)}")
             self._messages[frame.name] = {
                 "name": frame.name, "id": key[0], "extended": key[1], "dlc": frame.length,
                 "period_ms": frame.cycle_time or None, "issues": issues, "tx_issue": "; ".join(issues) or None,
-                "signals": signals,
+                "signals": signals, "integrity_fields": protected, "layout_issue": layout_issue,
             }
         if len(self._layout_errors) == len(self._frames):
             reason = next(iter(self._layout_errors.values()), "No messages defined")
@@ -130,10 +134,12 @@ class ImportedDb:
         except KeyError as exc:
             raise ValueError(f"Unknown DBC message {name!r}") from exc
 
-    def encode(self, name: str, values: dict[str, float]) -> bytes:
+    def encode(self, name: str, values: dict[str, float], *, integrity_ok: bool = False) -> bytes:
+        """Encode ``values``; ``integrity_ok`` accepts counter/checksum fields and leaves them at their defaults."""
         info = self.message(name)
-        if info["tx_issue"]:
-            raise ValueError(info["tx_issue"])
+        blocking = info["layout_issue"] if integrity_ok else info["tx_issue"]
+        if blocking:
+            raise ValueError(blocking)
         frame = self._frames[info["id"], info["extended"]]
         fields = {s["name"]: s for s in info["signals"]}
         selected = {s: f["default"] for s, f in fields.items()}
@@ -204,10 +210,12 @@ class DbcStore:
         try:
             raw = (self.directory / f"{sha256}.dbc").read_bytes()
         except FileNotFoundError as exc:
-            bundled = _BUNDLED_DATABASES.get(sha256)
+            bundled = bundled_dbc_path(sha256)
+            if bundled is None and sha256 in _BUNDLED_DATABASES:
+                bundled = Path(__file__).with_name("_opendbc") / _BUNDLED_DATABASES[sha256]
             if bundled is None:
                 raise ValueError(f"Missing DBC artifact {sha256}. Re-import the original DBC.") from exc
-            raw = (Path(__file__).with_name("_opendbc") / bundled).read_bytes()
+            raw = bundled.read_bytes()
         if hashlib.sha256(raw).hexdigest() != sha256:
             raise ValueError("Stored DBC hash mismatch. Re-import the original DBC.")
         return _compiled(raw, sha256)

@@ -12,6 +12,10 @@ from ecu_simulator.app import endpoint_name
 from ecu_simulator.config import EndpointConfigModel, load_profile_text
 from ecu_simulator.gui.tester import exchange
 
+# The child reports a car run's metadata in its ready line, about 220 bytes per message: past asyncio's default 64 KiB
+# for a bus of about 300 messages. 16 MiB holds about 70,000.
+EVENT_LINE_LIMIT = 16 * 1024 * 1024
+
 
 class RunConflict(ValueError):
     """The requested operation conflicts with the active run."""
@@ -35,6 +39,7 @@ class Manager:
         self.exchange: asyncio.Task[dict[str, Any]] | None = None
         self.restbus: dict[str, Any] | None = None
         self.dbc: dict[str, Any] | None = None
+        self.car: dict[str, Any] | None = None
         self.broadcast_seq = 0
         self.broadcast_ack: asyncio.Future[bool] | None = None
         self.cleanup: asyncio.Task[None] | None = None
@@ -42,7 +47,8 @@ class Manager:
     def status(self) -> dict[str, Any]:
         return dict(state=self.state, id=self.id, error=self.error, interface=self.interface,
                     endpoints=list(self.endpoints), dbc=self.dbc if self.state == "Running" else None,
-                    restbus=self.restbus if self.state == "Running" else None)
+                    restbus=self.restbus if self.state == "Running" else None,
+                    car=self.car if self.state == "Running" else None)
 
     async def start(self, text: str) -> dict[str, Any]:
         async with self.lock:
@@ -55,6 +61,7 @@ class Manager:
                               for ep in ecu.endpoints if not ep.functional and "uds" in ep.protocols}
             self.restbus = None
             self.dbc = None
+            self.car = None
             self.replies = {}
             for key, ecu in profile.ecus.items():
                 by_name = {ep.name: ep for ep in ecu.endpoints}
@@ -64,7 +71,8 @@ class Manager:
             started_us = time.time_ns() // 1000
             try:
                 self.process = await asyncio.create_subprocess_exec(
-                    *self.command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)
+                    *self.command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                    limit=EVENT_LINE_LIMIT)
             except OSError as error:
                 self.state, self.error = "Failed", str(error)
             else:
@@ -96,6 +104,7 @@ class Manager:
                     raise RuntimeError(event.get("error") or "Invalid ECU startup status")
             if self.id == run_id and self.state == "Starting":
                 self.dbc = event.get("dbc")
+                self.car = event.get("car")
                 if event.get("restbus"):
                     self.restbus = {**event["restbus"], "paused": False, "started_us": started_us}
                 self.state = "Running"

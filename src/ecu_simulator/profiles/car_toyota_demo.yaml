@@ -1,0 +1,39 @@
+# A whole 2017-19 Toyota Corolla on its powertrain bus, from the bundled catalog.
+# The simulated vehicle speed and engine speed drive the car's own signals.
+version: 1
+transport:
+  interface: vcan0
+vehicle:
+  vin: CARTOYOTADEMO0001
+  type: ice
+  speed: 0
+scenario:
+  signals:
+    - path: vehicle.speed
+      type: stepped
+      interval: 10
+      values: [0, 40, 0]
+    - path: engine.rpm
+      type: stepped
+      interval: 10
+      values: [800, 2000, 800]
+car:
+  platform: TOYOTA_COROLLA
+  bus: pt
+ecus:
+  engine:
+    name: ENGINE
+    endpoints:
+      - name: obd_physical
+        rx: 0x7E0
+        tx: 0x7E8
+        addressing: physical
+        protocols: [obd, uds]
+        tx_padding: true
+      - name: obd_functional
+        rx: 0x7DF
+        tx: 0x7E8
+        addressing: functional
+        protocols: [obd]
+        reply_via: obd_physical
+        tx_padding: true

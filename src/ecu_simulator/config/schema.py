@@ -16,11 +16,14 @@ by adding a key under `ecus`.
 
 from __future__ import annotations
 
+import difflib
 import re
+import unicodedata
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from ecu_simulator.car.catalog import load_catalog
 from ecu_simulator.config.errors import ConfigError
 from ecu_simulator.scenario.events import DtcEvent
 from ecu_simulator.scenario.generators import SignalScenario
@@ -69,9 +72,37 @@ DEFAULT_SESSIONS = (0x01, 0x02, 0x03, 0x04)
 BUILT_IN_DIDS = (0xF186, 0xF190)
 OBD_DID_RANGE = (0xF400, 0xF8FF)
 
+# The period of one cyclic CAN message, in whole milliseconds, wherever a profile gives one.
+CAN_PERIOD_MIN_MS = 10
+CAN_PERIOD_MAX_MS = 60_000
+
+# The `car:` section. The entry cap is far above any DBC's message count: it only stops a
+# generated profile from growing a period map without bound.
+CAR_DEFAULT_BUS = "pt"
+CAR_MESSAGE_NAME_MAX_LENGTH = 128
+CAR_MAX_PERIOD_ENTRIES = 5000
+# How much of a platform or bus a refusal repeats.
+CAR_ECHO_MAX_LENGTH = 64
+FILE_NAME_MAX_LENGTH = 255
+
 CanId = Annotated[int, Field(ge=0)]
 Byte = Annotated[int, Field(ge=0, le=0xFF)]
 Percent = Annotated[int, Field(ge=0, le=100)]
+CanPeriodMs = Annotated[int, Field(strict=True, ge=CAN_PERIOD_MIN_MS, le=CAN_PERIOD_MAX_MS)]
+Sha256Hex = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
+def _plain_file_name(value: str) -> str:
+    if _has_control_character(value):
+        raise ValueError(f"file name {value!r} contains a control character")
+    if "/" in value or "\\" in value:
+        raise ValueError(f"file name {value!r} is a path, give the file name only")
+    return value
+
+
+# A file name that is display text: 1 to 255 characters, no control character, no path separator. The profile's
+# `car.filename` and the GUI's rule-file upload both use it, so there is one definition of what such a name is.
+PlainFileName = Annotated[str, Field(min_length=1, max_length=FILE_NAME_MAX_LENGTH), AfterValidator(_plain_file_name)]
 
 
 class Base(BaseModel):
@@ -531,14 +562,87 @@ DbcValue = Annotated[int, Field(strict=True)] | Annotated[float, Field(strict=Tr
 
 class DbcMessageConfig(Base):
     name: str = Field(min_length=1)
-    period_ms: int = Field(strict=True, ge=10, le=60_000)
+    period_ms: CanPeriodMs
     values: dict[str, DbcValue] = Field(default_factory=dict)
 
 
 class DbcConfig(Base):
-    filename: str = Field(min_length=1, max_length=255)
-    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    filename: str = Field(min_length=1, max_length=FILE_NAME_MAX_LENGTH)
+    sha256: Sha256Hex
     messages: list[DbcMessageConfig] = Field(default_factory=list)
+
+
+class CarConfig(Base):
+    """A whole car on its CAN bus: a catalog platform, or one uploaded DBC given by digest.
+
+    Exactly one source is named: `platform`, or `sha256` together with `filename`. `periods` are
+    the operator's overrides and `log_periods` are the values measured from an uploaded log at
+    draft time; both are milliseconds keyed by DBC message name. Which value wins, and whether
+    a name exists in the DBC, is for the run to decide: only the DBC knows its messages.
+    """
+
+    platform: str | None = None
+    bus: str = CAR_DEFAULT_BUS
+    filename: PlainFileName | None = None
+    sha256: Sha256Hex | None = None
+    rule: Literal["toyota", "honda", "hyundai_can"] | None = None
+    rule_file: Sha256Hex | None = None
+    periods: dict[str, CanPeriodMs] = Field(default_factory=dict, max_length=CAR_MAX_PERIOD_ENTRIES)
+    log_periods: dict[str, CanPeriodMs] = Field(default_factory=dict, max_length=CAR_MAX_PERIOD_ENTRIES)
+
+    @field_validator("platform")
+    @classmethod
+    def platform_is_one_the_catalog_can_run(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        catalog = load_catalog()
+        if value in catalog.platforms:
+            return value
+        if value in catalog.skipped:
+            raise ValueError(f"{value!r} is not supported ({catalog.skipped[value]})")  # a catalog ID: short, plain
+        close = difflib.get_close_matches(value[:CAR_ECHO_MAX_LENGTH].upper(), catalog.platforms, n=3)
+        known = (
+            f"close matches: {', '.join(close)}"
+            if close
+            else f"none of the {len(catalog.platforms)} catalog platforms is close (the Car panel lists them)"
+        )
+        raise ValueError(f"unknown platform {_echo(value)}, {known}")
+
+    @field_validator("periods", "log_periods")
+    @classmethod
+    def period_names_are_plain(cls, value: dict[str, int]) -> dict[str, int]:
+        for name in value:
+            if not name or len(name) > CAR_MESSAGE_NAME_MAX_LENGTH or _has_control_character(name):
+                raise ValueError(
+                    f"message name {name[:CAR_MESSAGE_NAME_MAX_LENGTH]!r} must be 1 to {CAR_MESSAGE_NAME_MAX_LENGTH} "
+                    "characters without control characters"
+                )
+        return value
+
+    @model_validator(mode="after")
+    def source_and_bus_are_consistent(self) -> CarConfig:
+        upload = self.sha256 is not None or self.filename is not None
+        if self.platform is not None and upload:
+            raise ValueError("give platform or sha256 together with filename, not both")
+        if self.platform is None and not upload:
+            raise ValueError("give platform, or sha256 together with filename")
+        if self.platform is not None:
+            buses = load_catalog().platforms[self.platform].buses
+            if self.bus not in buses:
+                raise ValueError(
+                    f"bus: platform {self.platform!r} has no bus {_echo(self.bus)}, "
+                    f"its buses: {', '.join(sorted(buses))}"
+                )
+            return self
+        if self.filename is None:
+            raise ValueError("filename: an uploaded DBC needs filename together with sha256")
+        if self.sha256 is None:
+            raise ValueError("sha256: an uploaded DBC needs sha256 together with filename")
+        if self.bus != CAR_DEFAULT_BUS:
+            raise ValueError(
+                f"bus: an upload carries one DBC, so its bus is {CAR_DEFAULT_BUS!r}, not {_echo(self.bus)}"
+            )
+        return self
 
 
 class Profile(Base):
@@ -547,15 +651,25 @@ class Profile(Base):
     vehicle: VehicleConfig
     restbus: RestbusConfig | None = None
     dbc: DbcConfig | None = None
+    car: CarConfig | None = None
     scenario: ScenarioConfig = Field(default_factory=ScenarioConfig)
     ecus: dict[str, EcuConfig] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_bus_source_selection(self) -> Profile:
+        chosen = [
+            name
+            for name, section in (("restbus", self.restbus), ("dbc", self.dbc), ("car", self.car))
+            if section is not None
+        ]
+        if len(chosen) > 1:
+            raise ValueError("choose either restbus, dbc or car")
+        return self
 
     @model_validator(mode="after")
     def validate_dbc_selection(self) -> Profile:
         if self.dbc is None:
             return self
-        if self.restbus is not None:
-            raise ValueError("choose either restbus or dbc")
         available = signal_types(self.vehicle.type)
         names: set[str] = set()
         for message in self.dbc.messages:
@@ -622,6 +736,17 @@ class Profile(Base):
                 if endpoint.addressing == "physical":
                     owners[key] = ecu_name
         return self
+
+
+def _echo(value: str) -> str:
+    """``value`` quoted for a message: at most ``CAR_ECHO_MAX_LENGTH`` characters, and with every ';' escaped, so the
+    value can neither make a message long nor be split by ``_split_problems`` into a forged second problem."""
+    shown = repr(value[:CAR_ECHO_MAX_LENGTH]).replace(";", "\\x3b")
+    return shown + "..." if len(value) > CAR_ECHO_MAX_LENGTH else shown
+
+
+def _has_control_character(text: str) -> bool:
+    return any(unicodedata.category(character) == "Cc" for character in text)
 
 
 def _is_encodable_dtc(dtc: str) -> bool:

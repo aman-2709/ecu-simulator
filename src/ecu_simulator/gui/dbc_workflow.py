@@ -10,6 +10,7 @@ import re
 import secrets
 import subprocess
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from ruamel.yaml import YAML
@@ -61,26 +62,44 @@ class ReviewTokens:
             raise ValueError("Complete the physical CAN transmission review for this working copy")
 
 
-def changed_draft(text: str, mapping: dict | None) -> str:
-    if isinstance(mapping, dict) and isinstance(mapping.get("messages"), list):
-        for message in mapping["messages"]:
-            if isinstance(message, dict) and isinstance(message.get("values"), dict):
-                message["values"] = numeric_inputs(message["values"])
+def edit_draft(text: str, edit: Callable[[Any, Callable[[str], Any]], None],
+               indent: tuple[int, int, int] | None = None) -> str:
+    """Apply ``edit`` to a working copy, keeping its comments and key order, and return the new text.
+
+    ``edit(root, parse)`` runs twice: on a plain parse of the text and on the round-trip document that is written
+    back. ``parse(snippet)`` reads a YAML mapping in the form of whichever it is editing. The written text must read
+    back as the plain parse became, so that an edit a shared YAML alias would carry to another field is refused.
+    ``indent`` is ``(mapping, sequence, offset)`` for the written text, the library's own layout when None.
+    """
     original = read_yaml(text, "working copy")
     yaml = YAML()
     yaml.preserve_quotes = True
+    if indent is not None:
+        yaml.indent(mapping=indent[0], sequence=indent[1], offset=indent[2])
     document = yaml.load(text)
-    if mapping is None:
-        document.pop("dbc", None)
-        original.pop("dbc", None)
-    else:
-        document["dbc"] = mapping
-        original["dbc"] = mapping
+    edit(original, lambda snippet: read_yaml(snippet, "working copy"))
+    edit(document, yaml.load)
     output = io.StringIO()
     yaml.dump(document, output)
     result = output.getvalue()
     if read_yaml(result, "working copy") != original:
         raise ValueError("Edit this mapping in the YAML working copy")
+    return result
+
+
+def changed_draft(text: str, mapping: dict | None) -> str:
+    if isinstance(mapping, dict) and isinstance(mapping.get("messages"), list):
+        for message in mapping["messages"]:
+            if isinstance(message, dict) and isinstance(message.get("values"), dict):
+                message["values"] = numeric_inputs(message["values"])
+
+    def edit(root: Any, _parse: Callable[[str], Any]) -> None:
+        if mapping is None:
+            root.pop("dbc", None)
+        else:
+            root["dbc"] = mapping
+
+    result = edit_draft(text, edit)
     load_profile_text(result)
     return result
 
