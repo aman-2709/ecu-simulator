@@ -14,6 +14,8 @@ from cantools.database.can import Database, Message, Signal
 from cantools.database.can.formats.dbc import DbcParser
 from cantools.database.errors import Error as CanDatabaseError
 
+from ecu_simulator.car.catalog import bundled_dbc_path
+
 # Common integrity field names in opendbc. A DBC describes the field layout,
 # but does not supply the ECU-specific algorithm for generating these values.
 _INTEGRITY = re.compile(r"checksum|counter|alivecount|chksum|chksm|crc|(?:^|_)(?:cnt|ctr|cs|cntr)(?:_|$)", re.I)
@@ -204,10 +206,12 @@ class DbcStore:
         try:
             raw = (self.directory / f"{sha256}.dbc").read_bytes()
         except FileNotFoundError as exc:
-            bundled = _BUNDLED_DATABASES.get(sha256)
+            bundled = bundled_dbc_path(sha256)
+            if bundled is None and sha256 in _BUNDLED_DATABASES:
+                bundled = Path(__file__).with_name("_opendbc") / _BUNDLED_DATABASES[sha256]
             if bundled is None:
                 raise ValueError(f"Missing DBC artifact {sha256}. Re-import the original DBC.") from exc
-            raw = (Path(__file__).with_name("_opendbc") / bundled).read_bytes()
+            raw = bundled.read_bytes()
         if hashlib.sha256(raw).hexdigest() != sha256:
             raise ValueError("Stored DBC hash mismatch. Re-import the original DBC.")
         return _compiled(raw, sha256)
