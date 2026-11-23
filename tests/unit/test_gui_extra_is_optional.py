@@ -35,13 +35,25 @@ def test_aiohttp_is_neither_a_runtime_nor_a_dev_dependency():
         assert "aiohttp" not in spec, spec
 
 
-def test_only_the_two_optional_server_modules_import_aiohttp():
+# gui/car_routes.py is the Car panel's half of gui/server.py: only gui/server.py imports it.
+SERVER_MODULES = {SRC / "api" / "server.py", SRC / "gui" / "server.py", SRC / "gui" / "car_routes.py"}
+
+
+def test_only_the_optional_server_modules_import_aiohttp():
     offenders = [
         str(path.relative_to(SRC)) for path in SRC.rglob("*.py")
         if ("import aiohttp" in path.read_text() or "from aiohttp" in path.read_text())
-        and path not in {SRC / "api" / "server.py", SRC / "gui" / "server.py"}
+        and path not in SERVER_MODULES
     ]
     assert offenders == [], offenders
+
+
+def test_only_the_gui_server_imports_the_car_routes():
+    importers = [
+        str(path.relative_to(SRC)) for path in SRC.rglob("*.py")
+        if "car_routes" in path.read_text() and path != SRC / "gui" / "car_routes.py"
+    ]
+    assert importers == ["gui/server.py"], importers
 
 
 def test_the_simulator_validates_a_profile_with_aiohttp_unavailable():
