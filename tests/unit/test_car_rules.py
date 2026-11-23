@@ -1136,3 +1136,166 @@ def test_a_huge_integer_used_as_a_key_is_refused_with_a_short_message() -> None:
     assert caught.value.path.startswith("rules.0.") and message.startswith("rules.0.")
     assert "Keys should be strings" in message or "Extra inputs are not permitted" in message
     assert len(message) <= 300 and "set_int_max_str_digits" not in message
+
+
+# --- The AUTOSAR E2E presets: their fields, and the positions they fix -------------------------------------------------
+
+# Four bytes laid out as E2E Profiles 1 and 2 require: CRC in byte 0, the counter in the low nibble of byte 1.
+E2E_SIGNALS = [("CRC", 0, 8, True), ("ALIVE", 8, 4, True), ("DATA", 16, 16, True)]
+P01 = "algorithm: e2e_p01\n  data_id: 0x123\n  data_id_mode: both\n"
+P02_LIST = "[" + ", ".join(str(k) for k in range(16)) + "]"
+P02 = f"algorithm: e2e_p02\n  data_id_list: {P02_LIST}\n"
+
+
+def _e2e(checksum: str, *, counter: str = "counter:\n  signal: ALIVE\n") -> str:
+    """A rule file of one E2E rule for Gearbox; ``checksum`` is the lines after ``signal: CRC``, indented by two."""
+    return _doc("messages: [Gearbox]\n" + counter + "checksum:\n  signal: CRC\n  " + checksum)
+
+
+def _e2e_message(signals: Sequence[tuple[str, int, int, bool]] = tuple(E2E_SIGNALS), dlc: int = 4) -> dict[str, Any]:
+    return _message(signals=signals, dlc=dlc)
+
+
+E2E_REJECTS = [
+    pytest.param(_e2e("algorithm: e2e_p01\n  data_id_mode: both\n"), "rules.0.checksum.data_id", "e2e_p01 needs a data_id",
+                 id="p01-without-data-id"),
+    pytest.param(_e2e("algorithm: e2e_p01\n  data_id: 1\n"), "rules.0.checksum.data_id_mode",
+                 "e2e_p01 needs a data_id_mode", id="p01-without-data-id-mode"),
+    pytest.param(_e2e("algorithm: e2e_p01\n  data_id: 1\n  data_id_mode: high\n"), "rules.0.checksum.data_id_mode",
+                 "'nibble'", id="p01-unknown-data-id-mode"),
+    pytest.param(_e2e(P01.replace("0x123", "0x10000")), "rules.0.checksum.data_id", "less than or equal to 65535",
+                 id="p01-data-id-17-bits"),
+    pytest.param(_e2e(P01.replace("0x123", "-1")), "rules.0.checksum.data_id", "greater than or equal to 0",
+                 id="p01-data-id-negative"),
+    pytest.param(_e2e(P01.replace("0x123", HEX_5000)), "rules.0.checksum.data_id", "less than or equal to 65535",
+                 id="p01-data-id-5000-digit-hex"),
+    pytest.param(_e2e(P01.replace("0x123", "0x100").replace("both", "low")), "rules.0.checksum.data_id",
+                 "less than or equal to 255", id="p01-low-data-id-over-8-bits"),
+    pytest.param(_e2e(P01.replace("0x123", "0x1000").replace("both", "nibble")), "rules.0.checksum.data_id",
+                 "less than or equal to 4095", id="p01-nibble-data-id-over-12-bits"),
+    pytest.param(_e2e(P01 + "  poly: 0x1D\n"), "rules.0.checksum.poly", "e2e_p01 fixes its poly", id="p01-poly"),
+    pytest.param(_e2e(P01 + "  init: 0\n"), "rules.0.checksum.init", "e2e_p01 fixes its init", id="p01-init"),
+    pytest.param(_e2e(P01 + "  xorout: 0\n"), "rules.0.checksum.xorout", "e2e_p01 fixes its xorout", id="p01-xorout"),
+    pytest.param(_e2e(P01 + "  reflect: false\n"), "rules.0.checksum.reflect", "e2e_p01 fixes its reflect",
+                 id="p01-reflect"),
+    pytest.param(_e2e(P01 + "  covers: [1, 2]\n"), "rules.0.checksum.covers", "e2e_p01 fixes the bytes it covers",
+                 id="p01-covers"),
+    pytest.param(_e2e(P01 + f"  data_id_list: {P02_LIST}\n"), "rules.0.checksum.data_id_list",
+                 "data_id_list applies only to e2e_p02", id="p01-data-id-list"),
+    pytest.param(_e2e("algorithm: e2e_p02\n"), "rules.0.checksum.data_id_list", "e2e_p02 needs a data_id_list",
+                 id="p02-without-data-id-list"),
+    pytest.param(_e2e("algorithm: e2e_p02\n  data_id_list: [1, 2, 3]\n"), "rules.0.checksum.data_id_list",
+                 "at least 16 items", id="p02-short-data-id-list"),
+    pytest.param(_e2e("algorithm: e2e_p02\n  data_id_list: [" + ", ".join(["1"] * 17) + "]\n"),
+                 "rules.0.checksum.data_id_list", "at most 16 items", id="p02-long-data-id-list"),
+    pytest.param(_e2e("algorithm: e2e_p02\n  data_id_list: [" + ", ".join(["1"] * 5000) + "]\n"),
+                 "rules.0.checksum.data_id_list", "at most 16 items", id="p02-5000-entry-data-id-list"),
+    pytest.param(_e2e(P02.replace("[0,", "[256,")), "rules.0.checksum.data_id_list.0", "less than or equal to 255",
+                 id="p02-data-id-list-entry-over-8-bits"),
+    pytest.param(_e2e(P02.replace("[0,", f"[{HEX_5000},")), "rules.0.checksum.data_id_list.0",
+                 "less than or equal to 255", id="p02-data-id-list-entry-5000-digit-hex"),
+    pytest.param(_e2e(P02.replace("[0,", "[true,")), "rules.0.checksum.data_id_list.0", "valid integer",
+                 id="p02-data-id-list-bool-entry"),
+    pytest.param(_e2e(P02 + "  data_id: 1\n"), "rules.0.checksum.data_id", "e2e_p02 takes a data_id_list, not a data_id",
+                 id="p02-data-id"),
+    pytest.param(_e2e(P02 + "  data_id_mode: both\n"), "rules.0.checksum.data_id_mode",
+                 "data_id_mode applies only to e2e_p01", id="p02-data-id-mode"),
+    pytest.param(_e2e(P02 + "  poly: 0x2F\n"), "rules.0.checksum.poly", "e2e_p02 fixes its poly", id="p02-poly"),
+    pytest.param(_e2e(P02 + "  init: 0xFF\n"), "rules.0.checksum.init", "e2e_p02 fixes its init", id="p02-init"),
+    pytest.param(_e2e(P02 + "  xorout: 0xFF\n"), "rules.0.checksum.xorout", "e2e_p02 fixes its xorout", id="p02-xorout"),
+    pytest.param(_e2e(P02 + "  reflect: false\n"), "rules.0.checksum.reflect", "e2e_p02 fixes its reflect",
+                 id="p02-reflect"),
+    pytest.param(_e2e(P02 + "  covers: [1]\n"), "rules.0.checksum.covers", "e2e_p02 fixes the bytes it covers",
+                 id="p02-covers"),
+    pytest.param(_doc(_checksum(algorithm="crc8", poly=7, data_id_mode="both")), "rules.0.checksum.data_id_mode",
+                 "data_id_mode applies only to e2e_p01, not crc8", id="generic-data-id-mode"),
+    pytest.param(_doc(_checksum(algorithm="sum8", data_id_list=P02_LIST)), "rules.0.checksum.data_id_list",
+                 "data_id_list applies only to e2e_p02, not sum8", id="generic-data-id-list"),
+    pytest.param(_e2e(P01, counter=""), "rules.0", "e2e_p01 needs a counter in the low nibble of byte 1",
+                 id="p01-without-a-counter"),
+    pytest.param(_e2e(P02, counter=""), "rules.0", "e2e_p02 needs a counter in the low nibble of byte 1",
+                 id="p02-without-a-counter"),
+]
+
+
+@pytest.mark.parametrize(("text", "path", "needle"), E2E_REJECTS)
+def test_e2e_rejects(text: str, path: str, needle: str) -> None:
+    test_rejects(text, path, needle)
+
+
+def test_p01_requires_data_id_and_p02_requires_sixteen_entries() -> None:
+    p01 = parse_rule_text(_e2e(P01)).rules[0].checksum
+    assert p01 is not None and (p01.algorithm, p01.data_id, p01.data_id_mode) == ("e2e_p01", 0x123, "both")
+    assert p01.data_id_list is None
+    p02 = parse_rule_text(_e2e(P02)).rules[0].checksum
+    assert p02 is not None and (p02.algorithm, p02.data_id_list, p02.data_id) == ("e2e_p02", list(range(16)), None)
+    assert p02.data_id_mode is None
+
+
+E2E_ACCEPTED_ON_THE_BOUND = [
+    pytest.param(_e2e(P01.replace("0x123", "0xFFFF")), id="p01-both-data-id-65535"),
+    pytest.param(_e2e(P01.replace("0x123", "0xFFFF").replace("both", "alt")), id="p01-alt-data-id-65535"),
+    pytest.param(_e2e(P01.replace("0x123", "0xFF").replace("both", "low")), id="p01-low-data-id-255"),
+    pytest.param(_e2e(P01.replace("0x123", "0xFFF").replace("both", "nibble")), id="p01-nibble-data-id-4095"),
+    pytest.param(_e2e(P01.replace("0x123", "0")), id="p01-data-id-0"),
+    pytest.param(_e2e(P02.replace("[0,", "[255,")), id="p02-data-id-list-entry-255"),
+]
+
+
+@pytest.mark.parametrize("text", E2E_ACCEPTED_ON_THE_BOUND)
+def test_e2e_values_on_each_bound_are_accepted(text: str) -> None:
+    assert parse_rule_text(text).resolve([_e2e_message()])["Gearbox"].checksums
+
+
+E2E_RESOLVE_REJECTS = [
+    pytest.param(_e2e(P01), [_e2e_message([("CRC", 16, 8, True), ("ALIVE", 8, 4, True)])], "rules.0.checksum.signal",
+                 "e2e_p01 needs the checksum in byte 0 (bits 0 to 7)", id="p01-crc-in-byte-2"),
+    pytest.param(_e2e(P02), [_e2e_message([("CRC", 0, 4, True), ("ALIVE", 8, 4, True)])], "rules.0.checksum.signal",
+                 "e2e_p02 needs the checksum in byte 0 (bits 0 to 7)", id="p02-crc-4-bits"),
+    pytest.param(_e2e(P01), [_e2e_message([("CRC", 16, 16, True), ("ALIVE", 8, 4, True)])], "rules.0.checksum.signal",
+                 "e2e_p01 needs the checksum in byte 0 (bits 0 to 7)", id="p01-crc-16-bits"),
+    pytest.param(_e2e(P01), [_e2e_message([("CRC", 0, 8, True), ("ALIVE", 12, 4, True)])], "rules.0.counter.signal",
+                 "e2e_p01 needs the counter in the low nibble of byte 1 (bits 8 to 11)", id="p01-counter-high-nibble"),
+    pytest.param(_e2e(P02), [_e2e_message([("CRC", 0, 8, True), ("ALIVE", 16, 4, True)])], "rules.0.counter.signal",
+                 "e2e_p02 needs the counter in the low nibble of byte 1 (bits 8 to 11)", id="p02-counter-in-byte-2"),
+    pytest.param(_e2e(P02), [_e2e_message([("CRC", 0, 8, True), ("ALIVE", 8, 8, True)])], "rules.0.counter.signal",
+                 "e2e_p02 needs the counter in the low nibble of byte 1 (bits 8 to 11)", id="p02-counter-8-bits"),
+    pytest.param(_e2e(P01), [_e2e_message([("CRC", 0, 8, True)], dlc=1)], "rules.0.checksum.signal",
+                 "e2e_p01 needs a message of at least 2 bytes", id="p01-one-byte-message"),
+    pytest.param(_e2e(P02), [_e2e_message([("CRC", 0, 8, True)], dlc=1)], "rules.0.checksum.signal",
+                 "e2e_p02 needs a message of at least 2 bytes", id="p02-one-byte-message"),
+    pytest.param(_e2e(P01), [_e2e_message(dlc=48)], "rules.0.checksum.signal",
+                 "e2e_p01 covers at most 32 bytes", id="p01-48-byte-message"),
+    pytest.param(_e2e(P01, counter="counter:\n  signal: ALIVE\n  max: 15\n"), [_e2e_message()], "rules.0.counter.max",
+                 "e2e_p01 counts 0 to 14", id="p01-counter-max-15"),
+    pytest.param(_e2e(P02, counter="counter:\n  signal: ALIVE\n  max: 14\n"), [_e2e_message()], "rules.0.counter.max",
+                 "e2e_p02 counts 0 to 15", id="p02-counter-max-14"),
+]
+
+
+@pytest.mark.parametrize(("text", "messages", "path", "needle"), E2E_RESOLVE_REJECTS)
+def test_e2e_resolve_rejects(text: str, messages: list[dict[str, Any]], path: str, needle: str) -> None:
+    test_resolve_rejects(text, messages, path, needle)
+    # rule_for refuses the same match in the same words.
+    with pytest.raises(RuleError) as caught:
+        parse_rule_text(text).rule_for(messages[0])
+    assert caught.value.path == path and needle in str(caught.value)
+
+
+def test_e2e_positions_hold_in_either_byte_order() -> None:
+    # Byte 0 and the low nibble of byte 1 written Motorola style (@0): the start is the most significant bit.
+    message = _e2e_message([("CRC", 7, 8, False), ("ALIVE", 11, 4, False), ("DATA", 23, 16, False)])
+    user = parse_rule_text(_e2e(P01)).resolve([message])["Gearbox"]
+    assert [c.signal for c in user.checksums] == ["CRC"]
+
+
+def test_e2e_counters_wrap_where_the_profile_says() -> None:
+    p01 = parse_rule_text(_e2e(P01)).resolve([_e2e_message()])["Gearbox"]
+    assert [c.max_value for c in p01.counters] == [14]
+    p02 = parse_rule_text(_e2e(P02)).resolve([_e2e_message()])["Gearbox"]
+    assert [c.max_value for c in p02.counters] == [15]
+    # Stating the profile's own maximum is accepted.
+    stated = _e2e(P01, counter="counter:\n  signal: ALIVE\n  max: 14\n")
+    assert parse_rule_text(stated).resolve([_e2e_message()])["Gearbox"].counters[0].max_value == 14
+    # Profile 1 covers up to 32 bytes (DataLength <= 256 bits).
+    assert parse_rule_text(_e2e(P01)).resolve([_e2e_message(dlc=32)])["Gearbox"].checksums
