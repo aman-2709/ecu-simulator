@@ -86,6 +86,7 @@ async function loadProfile(value) {
   if (dbcAvailable) dbcEditor.refreshPreview();
   el("interface").value = [...el("interface").options].some(o => o.value === data.interface) ? data.interface : "";
   selected = el("profile").value = value;
+  window.dispatchEvent(new Event("working-copy"));
 }
 el("profile").onchange = action(async () => {
   const next = el("profile").value;
@@ -100,7 +101,10 @@ el("interface").onchange = action(async () => {
   const iface = el("interface").value;
   if (!iface) return;
   busyEditor(true);
-  try { el("draft").value = (await api("/draft/interface",{text: el("draft").value, interface: iface})).text; }
+  try {
+    el("draft").value = (await api("/draft/interface",{text: el("draft").value, interface: iface})).text;
+    window.dispatchEvent(new Event("working-copy"));
+  }
   catch (error) { el("interface").value = ""; throw error; }
   finally { busyEditor(false); }
 });
