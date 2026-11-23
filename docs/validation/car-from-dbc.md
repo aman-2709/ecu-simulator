@@ -12,9 +12,9 @@ Measured on 2026-11-22 on a Linux 6.8.0-138-generic host (12 CPUs, Python 3.12.1
 
 | Check | Observed result | Source and where measured |
 | --- | --- | --- |
-| Counters and checksums equal opendbc's packer (verification 1) | 740 stored vectors (185 message layouts, four payload variants each) from opendbc `CANPacker` at revision `af54130d`. Replayed through the integrity engine, 724 were compared and every frame was byte-identical: 19,035 frames (Toyota 336 vectors and 17,595 frames, Honda 236 and 882, Hyundai classic 24 and 142, no rule 128 and 416). The other 16 vectors (4 messages with layout errors, four variants each) are refused as unsupported. The checksum functions alone reproduce 612 vectors that have a rule: 17,418 Toyota, 942 Honda and 115 Hyundai checksum evaluations. | Unit tests `tests/unit/test_car_checksums.py` and `tests/unit/test_car_integrity.py`; counts from the task notes. No bus involved. A reviewer also compared the ported rules with the upstream functions on 60,000 generated cases with no difference (notes). |
+| Counters and checksums equal opendbc's packer (verification 1) | 740 stored vectors (185 message layouts, four payload variants each) from opendbc `CANPacker` at revision `af54130d`. Replayed through the integrity engine, 724 were compared and every frame was byte-identical: 19,035 frames (Toyota 336 vectors and 17,595 frames, Honda 236 and 882, Hyundai classic 24 and 142, no rule 128 and 416). The other 16 vectors (4 distinct messages with layout errors in the fixture, four variants each) are refused as unsupported. Across all 21 shipped DBCs 38 messages have such errors; see the README's known limits. The checksum functions alone reproduce 612 vectors that have a rule: 17,418 Toyota, 942 Honda and 115 Hyundai checksum evaluations. | Unit tests `tests/unit/test_car_checksums.py` and `tests/unit/test_car_integrity.py`; counts from the task notes. No bus involved. A reviewer also compared the ported rules with the upstream functions on 60,000 generated cases with no difference (notes). |
 | Independent receiver: opendbc `CANParser`, Toyota (verification 3) | TOYOTA_COROLLA, powertrain bus, 7.0 s on `vcan0` through the GUI's child process, captured by a raw socket with no receive-queue overflow. All 13 messages the integrity engine marks `valid` (12 with a checksum, 1 with a 6-bit counter and a checksum) were accepted frame by frame: 1,424 frames, at least 71 per message. The parser's own count of counter misses stayed 0 after each message's first frame. The parser and the engine named the same counter and checksum signals in every message. | `tests/integration/test_car_oracle_receiver.py`, run on `vcan0`. opendbc revision `af54130d`; its DBC bytes match the catalog's recorded source hash. |
-| Independent receiver: opendbc `CANParser`, Honda (verification 3) | HONDA_CIVIC_BOSCH (DBC `honda_civic_hatchback_ex_2017_can_generated`), 7.0 s. All 47 `valid` messages were accepted frame by frame: 4,988 of 4,988 captured frames, at least 71 per message. 46 messages carry a counter and a checksum, and two (LKAS_HUD_A, LKAS_HUD_B) have 29-bit identifiers, which exercises Honda's extended-identifier rule. This platform was chosen because its powertrain DBC has 46 messages with both a counter and a checksum, which is many, and includes two extended-identifier messages. Six platforms share that DBC (among them HONDA_ACCORD and HONDA_CRV_5G). One other Honda DBC, `honda_bosch_radarless_generated`, has 49 such messages; it was not run. | Same test, same run. |
+| Independent receiver: opendbc `CANParser`, Honda (verification 3) | HONDA_CIVIC_BOSCH (DBC `honda_civic_hatchback_ex_2017_can_generated`), 7.0 s. All 47 `valid` messages were accepted frame by frame: 4,988 of 4,988 captured frames, at least 71 per message. 46 messages carry a counter and a checksum, and two (LKAS_HUD_A, LKAS_HUD_B) have 29-bit identifiers, which exercises Honda's extended-identifier rule. The car lists 50 messages and transmits 47: KINEMATICS_ALT, KINEMATICS and BRAKE_HOLD are skipped with `layout error: Invalid physical range for ...` (see the README's known limits), so a receiver that expects those three will not see them. This platform was chosen because its powertrain DBC has 46 messages with both a counter and a checksum, which is many, and includes two extended-identifier messages. Six platforms share that DBC (among them HONDA_ACCORD and HONDA_CRV_5G). One other Honda DBC, `honda_bosch_radarless_generated`, has 49 such messages; it was not run. | Same test, same run. |
 | That receiver test can fail | One checksum bit of one captured frame changed in memory (frame 10 of Toyota SPEED `0xB4`, of Honda GAS_PEDAL_2 `0x130`): the parser rejected exactly that frame and accepted the rest. A counter frozen after frame 10 (STEERING_LKA `0x2E4`, GAS_PEDAL_2 `0x130`): the parser rejected 56 of 71 frames from frame 15 and `can_valid` turned false. Mutating the production code instead made the acceptance test fail for both cars: the Toyota sum off by one together with Honda's extended-identifier term removed (the Honda failure began at LKAS_HUD_A `0x33DA`, the first extended message), and separately the counter advancing by 2 (STEERING_LKA and GAS_PEDAL_2 from their fifth frame). The code was restored afterwards. | The two control tests in the same file, and mutations run once by hand. |
 | Hyundai classic CAN | Not checked by an independent receiver. opendbc's parser sets `ignore_checksum` and `ignore_counter` for `hyundai_can_generated`, so it would accept any bytes. Hyundai "valid" means equal to opendbc's packer for the signals it names, which rests on the first row alone. | opendbc's own `opendbc/can/dbc.py` at revision `af54130d` (not part of this repository). |
 | Corolla period on `vcan0` (verification 2) | 7.0 s capture, 5,064 frames, no overflow. Busiest message WHEEL_SPEEDS (12 ms, from the opendbc safety table): 586 frames, median 12.254 ms (2.1% over), p95 12.673 ms, maximum 13.601 ms. A 100 ms message: 71 frames, median 100.010 ms, p95 100.736 ms, maximum 100.976 ms. The design's bound is a median within 10%. Earlier runs gave WHEEL_SPEEDS medians of 12.278 and 12.267 ms (notes). | `tests/integration/test_car_vcan.py::test_corolla_run_on_vcan_matches_independent_capture_and_holds_period`, `vcan0`. |
@@ -42,7 +42,7 @@ Measured on 2026-11-22 on a Linux 6.8.0-138-generic host (12 CPUs, Python 3.12.1
 
 > **Status: NOT RUN: no physical bench result exists yet.** Every result field below is empty on purpose. Only a run on the bench fills them. The design gate for this part reads: a full Toyota car on the dedicated terminated bench, captured by a separate receiver, with the figures below recorded, and the same with opendbc's `CANParser` on the receiving side for Toyota and Honda.
 
-The design sets one expected value, a bus-off count of zero, and expects the parser to report valid frames. It sets no numeric limit for the periods or the error counters, so record the numbers and let the owner judge them. The `vcan0` figures in Part A are for comparison only.
+The design sets one expected value, a bus-off count of zero, and expects the parser to report valid frames. This record also expects no error frames at the receiver. The design sets no numeric limit for the periods or the error counters, so record the numbers and let the owner judge them. The `vcan0` figures in Part A are for comparison only.
 
 ### Bench
 
@@ -59,11 +59,11 @@ Run the Toyota car first. Then repeat steps 3 to 10 for the Honda car with its o
 1. Note the commit and the host. `git rev-parse HEAD` and `git status --short` in the repository, and `uname -r`. The tested tree should be clean.
 2. Configure both interfaces: `sudo scripts/setup_can.sh can0 500000`, and `sudo scripts/setup_can.sh can1 500000` on the receiving host. (The command is the one under Usage in the README and is covered by `tests/unit/test_setup_can_script.py`. It was not run for this record because it needs root and would reconfigure a real adapter.)
 3. Record `ip -details -statistics link show can0` and the same for `can1`, before. Keep the full text. Confirm the state is `ERROR-ACTIVE`, the bitrate is 500000, and all counters are readable.
-4. Start the capture on the receiver, before the car: `candump -L can1 > receiver-toyota.log`. Capture on `can1`, not on `can0`: a local transmit echo does not establish external reception. If `can0` is also captured, treat it as the echo.
-5. Start the GUI on the simulator host: `ecu-simulator-gui --port 8766`, and open the printed address. Use the **Car** panel: platform `TOYOTA_COROLLA`, bus `pt`, generated drive, interface `can0`. Write down the Check chips and the bus-load estimate against the bitrate, and the message count.
+4. Start the capture on the receiver, before the car: `candump -L can1,0:0,#FFFFFFFF > receiver-toyota.log` (the filter with the error mask makes `candump` log error frames as well as data frames). Capture on `can1`, not on `can0`: a local transmit echo does not establish external reception. If `can0` is also captured, treat it as the echo.
+5. Start the GUI on the simulator host: `ecu-simulator-gui --port 8766`, and open the printed address. Use the **Car** panel: platform `TOYOTA_COROLLA`, bus `pt`, generated drive, interface `can0`. Write down the Check chips and the bus-load estimate against the bitrate, and the message count. On `vcan0` the Corolla lists 58 messages and transmits 57 (`PCS_HUD` is skipped), and `HONDA_CIVIC_BOSCH` lists 50 and transmits 47 (`KINEMATICS`, `KINEMATICS_ALT` and `BRAKE_HOLD` are skipped), so the receiver should not be expected to show the skipped ones.
 6. Press **Play**. The transmission review dialog opens. Write down the identifiers it reports as already seen on the bus (none are expected) and confirm. Let the run go for at least 60 seconds, which is about 5,000 frames of the busiest message. Write down the live panel's bus load seen, bus errors, bus-off and tx dropped (kernel) readings, then press **Stop**.
 7. Stop the capture with Ctrl-C. Record `ip -details -statistics link show can0` and `can1` again, after.
-8. Count the frames received per identifier and compute the busiest message's median, p95 and maximum period, and the bus load, with the first script below: `python3 bench_stats.py receiver-toyota.log 500000`.
+8. Count the frames received per identifier and the error frames, and compute the busiest message's median, p95 and maximum period and the bus load, with the first script below: `python3 bench_stats.py receiver-toyota.log 500000`.
 9. Check the same log with opendbc's `CANParser`, using the second script below in a virtual environment that has opendbc: `python opendbc_receiver.py receiver-toyota.log toyota_new_mc_pt_generated`. For Honda, use the DBC name `honda_civic_hatchback_ex_2017_can_generated`.
 10. Compare the bus-load estimate from step 5 with the figures the script computes. The estimate counts worst-case stuff bits. The script prints the load without stuff bits and with worst-case stuff bits, and the real load lies between them over a long enough window.
 
@@ -102,6 +102,7 @@ All fields are empty until someone runs the procedure.
 | Live panel at Stop: bus load seen, bus errors, bus-off, tx dropped (kernel) | | | none set |
 | Bus load: estimate in the GUI, receiver without stuff bits, receiver with worst-case stuffing (%) | | | none set; the receiver's two figures bracket the real load |
 | Frames per identifier on `can0` (echo) against `can1`, if both were captured | | | none set |
+| Error frames at the receiver (the script's count) | | | 0 (this record's expectation; the design names only bus-off) |
 | opendbc `CANParser`: messages seen, frames accepted, frames rejected | | | valid (no rejected frames) |
 | Anomalies (errors, review conflicts, banners, restarts) | | | none set |
 
@@ -112,7 +113,7 @@ All fields are empty until someone runs the procedure.
 
 ### Analysis scripts
 
-Save each script below under the name given before it. The two were run for this record on `candump -L` captures of the Toyota and Honda demos on `vcan0` (not bench results). On the 2.56 s Toyota capture the first printed `1853 frames, 57 identifiers` and `busiest 0xAA: median 12.288 ms, p95 12.603 ms, max 13.533 ms`. Use a window of at least 60 s for the load figures: on a short window the frames at its edges weigh too much. The second, with opendbc installed (`uv pip install --python <venv python> -e <opendbc checkout at af54130d51111197d34384e7dad9ace229b724e4>`, which was run in a fresh virtual environment for this record), printed `13 messages with a counter or checksum seen, 0 frames rejected` for the Toyota capture and `47 messages ... 0 frames rejected` for a 7.5 s Honda capture. With one checksum bit flipped in the Toyota log it printed `0xB4 SPEED: 25 of 26 frames accepted` and exited with status 1.
+Save each script below under the name given before it. The two were run for this record on `candump -L` captures of the Toyota and Honda demos on `vcan0` (not bench results). On the 2.56 s Toyota capture the first printed `1853 frames, 57 identifiers` and `busiest 0xAA: median 12.288 ms, p95 12.603 ms, max 13.533 ms`. Use a window of at least 60 s for the load figures: on a short window the frames at its edges weigh too much. The second, with opendbc installed (`uv pip install --python <venv python> -e <opendbc checkout at af54130d51111197d34384e7dad9ace229b724e4>`, which was run in a fresh virtual environment for this record), printed `13 messages with a counter or checksum seen, 0 frames rejected` for the Toyota capture and `47 messages ... 0 frames rejected` for a 7.5 s Honda capture. With one checksum bit flipped in the Toyota log it printed `0xB4 SPEED: 25 of 26 frames accepted` and exited with status 1. The error-mask form of `candump` was checked on a private `vcan0` with `cansend` (three data frames, one remote frame and the error frame `20000004#0000000000000000`). The log held lines such as `(1795421725.006386) vcan0 20000004#0000000000000000`, and the first script printed `3 frames, 2 identifiers, 0.00 s, 1 error frames`. Adding one such line to the Toyota capture changed only the error count.
 
 `bench_stats.py` (standard library only; `candump -L` logs; the argument after the log is the bitrate):
 
@@ -156,14 +157,18 @@ for key in sorted(times):
     print(f"  0x{key:X}{' (extended)' if extended[key] else ''}: {len(times[key])} frames")
 busiest = max(times, key=lambda key: len(times[key]))
 intervals = [(b - a) * 1000 for a, b in pairwise(times[busiest])]
-print(
-    f"busiest 0x{busiest:X}: median {statistics.median(intervals):.3f} ms, "
-    f"p95 {statistics.quantiles(intervals, n=100, method='inclusive')[94]:.3f} ms, max {max(intervals):.3f} ms"
-)
-print(
-    f"bus load at {bitrate} bit/s: {100 * unstuffed / seconds / bitrate:.1f}% without stuff bits, "
-    f"{100 * worst / seconds / bitrate:.1f}% with worst-case stuffing"
-)
+if len(intervals) >= 2:
+    print(
+        f"busiest 0x{busiest:X}: median {statistics.median(intervals):.3f} ms, "
+        f"p95 {statistics.quantiles(intervals, n=100, method='inclusive')[94]:.3f} ms, max {max(intervals):.3f} ms"
+    )
+else:
+    print(f"busiest 0x{busiest:X}: too few frames for a period statistic")
+if seconds > 0:
+    print(
+        f"bus load at {bitrate} bit/s: {100 * unstuffed / seconds / bitrate:.1f}% without stuff bits, "
+        f"{100 * worst / seconds / bitrate:.1f}% with worst-case stuffing"
+    )
 ```
 
 `opendbc_receiver.py` (needs opendbc; the arguments are the log and opendbc's DBC name):
@@ -205,4 +210,4 @@ print(f"{len(seen)} messages with a counter or checksum seen, {bad} frames rejec
 sys.exit(1 if bad else 0)
 ```
 
-The second script registers every message of the DBC that has a counter or checksum signal and counts the frames of those that appear in the log. The parser starts with a previous counter of 0, so a log that begins mid-run counts one counter miss for each message and still passes. The `candump -L` format does not log error frames; the adapter's error counters cover them.
+The second script registers every message of the DBC that has a counter or checksum signal and counts the frames of those that appear in the log. The parser starts with a previous counter of 0, so a log that begins mid-run counts one counter miss for each message and still passes. With the error mask from step 4 (`,0:0,#FFFFFFFF`), `candump -L` logs an error frame as a line whose identifier has the `0x20000000` flag and eight hex digits, for example `20000004#0000000000000000`. `bench_stats.py` counts those lines and leaves them out of the per-identifier table and the load figures; this script skips them. Whether an adapter reports error frames to the socket depends on its driver, so a count of 0 means none were reported to the capture. The adapter's error counters from steps 3 and 7 are the other evidence.
