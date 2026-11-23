@@ -115,7 +115,7 @@ def test_toyota_corolla_lists_valid_messages_and_skip_reasons():
     metadata = prepared.metadata
     catalog = load_catalog()
     entry = catalog.dbcs["toyota_new_mc_pt_generated"]
-    assert metadata["platform"] == "TOYOTA_COROLLA"
+    assert metadata["platform"] == "TOYOTA_COROLLA" and metadata["bus"] == "pt"
     assert metadata["dbc"] == {"filename": Path(entry.file).name, "sha256": entry.sha256, "name": entry.name}
     assert metadata["revision"] == catalog.revision
     assert metadata["rule"] == "toyota"
@@ -498,6 +498,7 @@ def test_counter_only_message_of_an_upload_without_rule_is_sent_and_labelled():
     prepared = prepare(upload(raw), database=database(raw))
     message = by_name(prepared)["A"]
     assert prepared.metadata["rule"] is None and prepared.metadata["platform"] is None
+    assert prepared.metadata["bus"] is None  # an upload is one DBC, not a catalog bus
     assert (message["integrity"], message["counters"], message["checksums"]) == ("counter_only", ["COUNTER"], [])
     assert message["detail"] == "checksum not computed"
     counter = field(database(raw), "A", "COUNTER")

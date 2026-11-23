@@ -555,11 +555,11 @@ def test_measured_period_waits_for_five_intervals(browser, tmp_path):  # noqa: F
         page.close()
 
 
-def describe_running_corolla(page, run_status, where: str) -> None:
-    """What an adopted Corolla run must show, from the run's own status. The status names no bus, so ``where`` is the
-    bus when the working copy names it, else the run's DBC file."""
+def describe_running_corolla(page, run_status) -> None:
+    """What an adopted Corolla run must show, from the run's own status, which names its bus."""
+    assert run_status["car"]["bus"] == "pt"
     expect(page.locator("#car-step-1")).to_have_attribute("data-state", "done")
-    expect(page.locator("#car-summary-1")).to_have_text(f"Toyota Corolla 2017-19 · {where} · generated drive")
+    expect(page.locator("#car-summary-1")).to_have_text("Toyota Corolla 2017-19 · pt bus · generated drive")
     expect(page.locator("#car-step-2")).to_have_attribute("data-state", "done")
     counts = run_status["car"]["counts"]
     expect(page.locator("#car-summary-2")).to_be_visible()
@@ -588,7 +588,7 @@ def test_reload_while_a_car_runs_describes_the_run(browser, vcan, tmp_path):  # 
         page.reload()
         expect(page.locator("#state")).to_have_text("Running")
         run_status = page.evaluate("async () => (await fetch('/run')).json()")
-        describe_running_corolla(page, run_status, run_status["car"]["dbc"]["filename"])
+        describe_running_corolla(page, run_status)
         status = page.locator("#car-run-status")
         expect(status).to_contain_text(f"Running on {vcan} · generated drive")
         expect(status).to_contain_text("since this page opened")
@@ -607,9 +607,13 @@ def test_run_bar_start_of_a_car_profile_is_described(browser, vcan, tmp_path):  
         page.locator("#start").click()
         expect(page.locator("#state")).to_have_text("Running", timeout=15000)
         run_status = page.evaluate("async () => (await fetch('/run')).json()")
-        describe_running_corolla(page, run_status, "pt bus")
+        describe_running_corolla(page, run_status)
         expect(page.locator("#car-run-status")).to_contain_text(f"Running on {vcan} · generated drive")
         expect(page.locator("#car-run-status")).to_contain_text("elapsed")  # seen while Starting
+        draft = page.locator("#draft")
+        draft.fill(draft.input_value().replace("bus: pt", "bus: radar"))  # an edit does not change what runs
+        page.wait_for_timeout(400)
+        expect(page.locator("#car-summary-1")).to_have_text("Toyota Corolla 2017-19 · pt bus · generated drive")
         stop(page)
         page.close()
 
@@ -618,8 +622,8 @@ def test_run_bar_start_of_a_car_profile_is_described(browser, vcan, tmp_path):  
 
 
 def probe_car(interface: str = "vcan0", bitrate: int | None = 500000) -> dict:
-    return {"platform": None, "dbc": {"filename": "probe.dbc", "sha256": "c" * 64}, "revision": None, "rule": None,
-            "bus_load": {"estimate": 0.01, "bitrate": bitrate, "assumed": interface.startswith("vcan"),
+    return {"platform": None, "bus": None, "dbc": {"filename": "probe.dbc", "sha256": "c" * 64}, "revision": None,
+            "rule": None, "bus_load": {"estimate": 0.01, "bitrate": bitrate, "assumed": interface.startswith("vcan"),
                          "worst_case": True},
             "counts": {"valid": 0, "counter_only": 0, "user_rule": 0, "none": 1, "skipped": 0}}
 

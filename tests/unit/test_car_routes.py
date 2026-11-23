@@ -86,7 +86,7 @@ def home(tmp_path, monkeypatch):
 def reported_car() -> str:
     """The car metadata a simulator child reports in its ready line, as JSON."""
     car = car_workflow.check(demo_text(), VCAN)
-    return json.dumps({key: car[key] for key in ("platform", "dbc", "revision", "rule", "bus_load", "messages")})
+    return json.dumps({key: car[key] for key in ("platform", "bus", "dbc", "revision", "rule", "bus_load", "messages")})
 
 
 def simulator(monkeypatch, car: str | None = None) -> None:
@@ -645,14 +645,15 @@ async def test_run_status_carries_a_summary_and_car_run_the_whole_list(home, mon
         assert (await page.get("/car/run"))[0] == 404  # still starting
         state = await running(page)
         assert state["car"] == {
-            "platform": "TOYOTA_COROLLA", "dbc": {"filename": car["dbc"]["filename"], "sha256": car["dbc"]["sha256"]},
-            "revision": car["revision"], "rule": "toyota", "bus_load": car["bus_load"], "counts": car["counts"],
+            "platform": "TOYOTA_COROLLA", "bus": "pt",
+            "dbc": {"filename": car["dbc"]["filename"], "sha256": car["dbc"]["sha256"]}, "revision": car["revision"], "rule": "toyota", "bus_load": car["bus_load"], "counts": car["counts"],
         }
         assert "messages" not in state["car"]
         assert len(json.dumps(state)) < 1500
 
         status, whole = await page.get("/car/run")
         assert status == 200 and whole["messages"] == car["messages"] and whole["dbc"] == car["dbc"]
+        assert whole["bus"] == "pt"
 
         assert (await page.post(f"/run/{state['id']}/stop", json={}))[0] == 200
         assert (await page.get("/car/run"))[0] == 404

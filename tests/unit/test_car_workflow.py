@@ -209,8 +209,8 @@ def test_check_counts_a_counter_without_a_rule_as_counter_only(tmp_path, monkeyp
 
 def test_check_lists_what_the_table_needs_and_nothing_bulky():
     result = check(profile_text("car_toyota_demo"), VCAN)
-    assert set(result) == {"platform", "dbc", "revision", "rule", "messages", "counts", "bus_load", "warnings"}
-    assert result["platform"] == "TOYOTA_COROLLA" and result["rule"] == "toyota"
+    assert set(result) == {"platform", "bus", "dbc", "revision", "rule", "messages", "counts", "bus_load", "warnings"}
+    assert result["platform"] == "TOYOTA_COROLLA" and result["bus"] == "pt" and result["rule"] == "toyota"
     assert set(result["messages"][0]) == {
         "name", "id", "extended", "dlc", "period_ms", "period_source", "clamped", "integrity", "detail",
         "counters", "checksums", "skipped",
@@ -323,14 +323,14 @@ def test_transmittable_refuses_a_car_that_sends_nothing(tmp_path, monkeypatch):
 
 def test_run_status_keeps_a_summary_and_drops_the_message_list():
     messages = check(profile_text("car_toyota_demo"), VCAN)["messages"]
-    car = {"platform": "TOYOTA_COROLLA", "dbc": {"filename": "x.dbc", "sha256": "f" * 64, "name": "x"},
+    car = {"platform": "TOYOTA_COROLLA", "bus": "radar", "dbc": {"filename": "x.dbc", "sha256": "f" * 64, "name": "x"},
            "revision": "r", "rule": "toyota", "bus_load": {"estimate": 0.1}, "messages": messages}
     status = {"state": "Running", "id": "1", "car": car}
     summary = car_workflow.run_status(status)
     assert status["car"] is car  # the Manager's own copy keeps the whole list
     assert summary["car"] == {
-        "platform": "TOYOTA_COROLLA", "dbc": {"filename": "x.dbc", "sha256": "f" * 64}, "revision": "r",
-        "rule": "toyota", "bus_load": {"estimate": 0.1}, "counts": car_workflow.integrity_counts(messages),
+        "platform": "TOYOTA_COROLLA", "bus": "radar", "dbc": {"filename": "x.dbc", "sha256": "f" * 64},
+        "revision": "r", "rule": "toyota", "bus_load": {"estimate": 0.1}, "counts": car_workflow.integrity_counts(messages),
     }
     assert summary["state"] == "Running" and "messages" not in json.dumps(summary["car"])
     assert car_workflow.run_status({"state": "Stopped", "car": None})["car"] is None

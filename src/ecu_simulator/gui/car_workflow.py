@@ -222,8 +222,9 @@ def check(text: str, link: LinkInfo | None = None) -> dict[str, Any]:
     messages = metadata["messages"]
     assert config.profile.car is not None
     return {
-        "platform": metadata["platform"], "dbc": metadata["dbc"], "revision": metadata["revision"],
-        "rule": metadata["rule"], "messages": messages, "counts": integrity_counts(messages),
+        "platform": metadata["platform"], "bus": metadata["bus"], "dbc": metadata["dbc"],
+        "revision": metadata["revision"], "rule": metadata["rule"],
+        "messages": messages, "counts": integrity_counts(messages),
         "bus_load": _bus_load(config.interface, messages, link),
         "warnings": _unknown_periods(config.profile.car.periods, messages),
     }
@@ -259,7 +260,8 @@ def run_status(status: Mapping[str, Any]) -> dict[str, Any]:
     if not car:
         return dict(status)
     summary = {
-        "platform": car["platform"], "dbc": {"filename": car["dbc"]["filename"], "sha256": car["dbc"]["sha256"]},
+        "platform": car["platform"], "bus": car["bus"],
+        "dbc": {"filename": car["dbc"]["filename"], "sha256": car["dbc"]["sha256"]},
         "revision": car["revision"], "rule": car["rule"], "bus_load": car["bus_load"],
         "counts": integrity_counts(car["messages"]),
     }

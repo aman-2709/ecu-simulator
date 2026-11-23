@@ -614,7 +614,7 @@
     const [brand, platform] = findPlatform(checked.platform);
     $("car-brand").value = brand;
     fillPlatforms(brand, platform?.id);
-    fillBuses(platform, /^ {2}bus: (\w+)/m.exec(draft.value)?.[1]);
+    fillBuses(platform, checked.bus);
     render();
   }
 
@@ -877,18 +877,13 @@
     const car = active?.kind === "run" ? active.car : null;
     if (car) {
       const [, platform] = findPlatform(car.platform);
-      // The status names no bus: take it from a working copy of the same platform, or from a one-bus platform;
-      // otherwise the summary names the run's DBC file instead.
-      const drafted = new RegExp("^ {2}platform: " + car.platform + "$", "m").test(draft.value);
-      const bus = !platform ? null : drafted ? /^ {2}bus: (\w+)/m.exec(draft.value)?.[1] || platform.buses[0] :
-        platform.buses.length === 1 ? platform.buses[0] : null;
-      return {platform, bus, dbc: car.dbc, revision: car.revision, rule: car.rule, counts: car.counts,
+      return {platform, bus: car.bus, dbc: car.dbc, revision: car.revision, rule: car.rule, counts: car.counts,
         source: "generated"};
     }
     if (!checked) return null;
     const [, platform] = findPlatform(checked.platform);
-    return {platform, bus: /^ {2}bus: (\w+)/m.exec(draft.value)?.[1] || "pt", dbc: checked.dbc,
-      revision: checked.revision, rule: checked.rule, counts: checked.counts, source: source()};
+    return {platform, bus: checked.bus, dbc: checked.dbc, revision: checked.revision, rule: checked.rule,
+      counts: checked.counts, source: source()};
   }
   function summary() {
     const info = described();

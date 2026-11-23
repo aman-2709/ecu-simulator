@@ -250,6 +250,7 @@ def prepare_car(
 
     metadata: dict[str, Any] = {
         "platform": source.platform.id if source.platform is not None else None,
+        "bus": car.bus if source.platform is not None else None,  # the catalog bus; an upload is one DBC
         "dbc": {"filename": source.filename, "sha256": source.sha256,
                 "name": source.entry.name if source.entry is not None else None},
         "revision": catalog.revision if source.entry is not None else None,
