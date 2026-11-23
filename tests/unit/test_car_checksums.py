@@ -208,6 +208,31 @@ def test_bitfield_matches_opendbc_signal(size: int, little_endian: bool) -> None
     assert checked > 0
 
 
+def test_bitfield_fits_says_whether_every_bit_lies_inside_the_frame() -> None:
+    # (start, size, little_endian, the smallest frame in bytes that holds every bit)
+    cases = [
+        (0, 8, True, 1),
+        (4, 8, True, 2),
+        (56, 8, True, 8),
+        (63, 1, True, 8),
+        (7, 8, False, 1),
+        (7, 16, False, 2),
+        (3, 8, False, 2),
+        (15, 12, False, 3),
+        (61, 2, False, 8),
+        (0, 1, False, 1),
+    ]
+    for start, size, little_endian, needed in cases:
+        field = BitField(start, size, little_endian)
+        assert field.fits(needed), (start, size, little_endian)
+        assert field.fits(needed + 1), (start, size, little_endian)
+        assert not field.fits(needed - 1), (start, size, little_endian)
+        # fits agrees with write: a field that does not fit loses bits that a write would have set.
+        short = bytearray(needed - 1)
+        field.write(short, (1 << size) - 1)
+        assert field.read(short) != (1 << size) - 1
+
+
 def test_bitfield_msb_lsb_for_big_endian_signals_that_cross_a_byte() -> None:
     # `7|16@0` is bits 7..0 of byte 0 then 15..8 of byte 1 in significance order; `3|8@0` ends at bit 12.
     assert (BitField(7, 16, False).msb, BitField(7, 16, False).lsb) == (7, 8)

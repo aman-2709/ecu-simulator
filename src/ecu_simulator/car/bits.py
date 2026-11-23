@@ -45,6 +45,10 @@ class BitField:
         object.__setattr__(self, "msb", msb)
         object.__setattr__(self, "lsb", lsb)
 
+    def fits(self, size_bytes: int) -> bool:
+        """Whether every bit of the field lies inside a frame of ``size_bytes`` bytes."""
+        return max(self.msb, self.lsb) // 8 < size_bytes
+
     def read(self, data: bytes | bytearray) -> int:
         """The field's value in ``data``."""
         value = 0
