@@ -9,6 +9,7 @@
   const FIRST_ROWS = 25;
   const KEPT_INTERVALS = 100;   // bus-timestamp intervals kept per message for the measured period
   const MIN_INTERVALS = 5;      // fewer than this shows "measuring..."
+  const LOAD_WINDOW_US = 2e6;   // bus time the "bus load seen" figure covers once the run is that old
   const MEASURED_TITLE = "Median of the intervals between this message's last " + KEPT_INTERVALS +
     " frames, from the capture's kernel timestamps, with the shortest and longest interval. Nothing is smoothed.";
   const MAX_LOG_BYTES = 16 * 1024 * 1024;
@@ -46,7 +47,8 @@
 
   // --- the banner: the cause first, the next step second --------------------------------------------------------------
 
-  function problem(cause, next) {
+  // ``kind`` marks a banner that a later action may withdraw: "refusal" (the bus-load refusal of the checked car).
+  function problem(cause, next, kind = "") {
     const previous = banner.textContent;
     const first = document.createElement("p");
     first.className = "cause";
@@ -55,9 +57,13 @@
     second.className = "next";
     second.textContent = "Next: " + next;
     banner.replaceChildren(first, second);
+    banner.dataset.kind = kind;
     if (banner.textContent !== previous) banner.focus();
   }
-  function clearProblem() { banner.replaceChildren(); }
+  function clearProblem() {
+    banner.replaceChildren();
+    banner.dataset.kind = "";
+  }
 
   function failure(error, iface) {
     const text = error || "the run ended without giving a reason";
@@ -91,7 +97,7 @@
     const over = load.over.map(item => item.name + " " + (item.share * 100).toFixed(1) + "%").join(", ");
     problem("Play is refused: " + load.refused + (over ? " (largest shares: " + over + ")" : ""),
       "lengthen the periods of the heaviest messages or use an interface with a higher bitrate, then press Play " +
-      "again.");
+      "again.", "refusal");
   }
 
   // --- requests --------------------------------------------------------------------------------------------------------
@@ -209,7 +215,7 @@
   for (const id of ["car-source-generated", "car-source-recorded"]) {
     $(id).onchange = () => {
       editing = "";
-      clearProblem();
+      if (banner.dataset.kind === "refusal") clearProblem();  // a run failure stays until it is dealt with
       if (checked?.bus_load.refused && source() === "generated") refusal(checked.bus_load);
       render();
     };
@@ -275,7 +281,7 @@
   function integrityText(m) {
     if (source() === "recorded") return "as recorded";
     if (m.skipped) return "skipped: " + m.skipped;
-    if (m.integrity === "counter_only") return "counter only: " + (m.detail || "checksum not computed");
+    if (m.integrity === "counter_only") return "counter only" + (m.detail ? ": " + m.detail : "");
     if (m.integrity === "user_rule") return "valid (user rule): " + (m.detail || "computed as the supplied rule says");
     const label = SHORT_INTEGRITY[m.integrity] || m.integrity;
     return m.detail ? label + ": " + m.detail : label;
@@ -617,8 +623,8 @@
   function openLive(iface, sha256, messages, bitrate, recorded = false) {
     endLive();
     const session = {controller: new AbortController(), captureId: null, rows: new Map(), frames: 0,
-      carFrames: 0, errorFrames: 0, bits: [], link: null, baseline: null, paused: false, bitrate, iface,
-      linkTimer: null, linkNotice: "", recorded};
+      carFrames: 0, errorFrames: 0, bits: [], firstTime: null, link: null, baseline: null, paused: false, bitrate,
+      iface, linkTimer: null, linkNotice: "", recorded};
     live = session;
     lastLive = null;
     let signalReady;
@@ -645,7 +651,7 @@
   }
   function buildRows(session, messages) {
     for (const m of messages) {
-      if (m.skipped) continue;
+      if (m.skipped && !session.recorded) continue;  // a recorded log still carries the frames of a skipped message
       const row = document.createElement("tr");
       row.dataset.message = m.name;
       row.dataset.id = Number(m.id).toString(16).toUpperCase();
@@ -664,7 +670,8 @@
         m.period_ms + " ms · " + (PERIOD_SOURCES[m.period_source] || m.period_source);
       cells["measured-period"].title = MEASURED_TITLE;
       cells.integrity.textContent = session.recorded ? "as recorded" : SHORT_INTEGRITY[m.integrity] || m.integrity;
-      session.rows.set(m.name, {message: m, row, cells, signals: null, last: null, intervals: [], dirty: false});
+      session.rows.set(m.name, {message: m, row, cells, signals: null, undecoded: null, last: null, intervals: [],
+        dirty: false});
     }
     $("car-live-rows").replaceChildren(...[...session.rows.values()].map(entry => entry.row));
     filterRows();
@@ -686,11 +693,13 @@
           const packet = JSON.parse(buffer.slice(0, newline));
           buffer = buffer.slice(newline + 1);
           if (packet.error) throw Error(packet.error);
-          if (packet.finished) return;
+          if (packet.finished) return;  // sent only after endLive asked the server to finish a replay's stream
           if (packet.ready) signalReady(null);
           else observe(session, packet);
         }
       }
+      // The server ended the stream on its own: it is shutting down, or this page fell 3 s behind (a throttled tab).
+      throw Error("the server ended the live data stream");
     } catch (error) {
       signalReady(error);
       if (!session.controller.signal.aborted && live === session) {
@@ -701,13 +710,13 @@
     }
   }
   function observe(session, batch) {
-    const now = Date.now();
     for (const frame of batch.frames) {
       session.frames += 1;
       if (frame.kind === "ERR") { session.errorFrames += 1; continue; }
-      session.bits.push([now, (frame.id.length === 8 ? 67 : 47) + 8 * frame.length]);
-      const decoded = frame.dbc;
-      const entry = decoded && !decoded.error ? session.rows.get(decoded.name) : null;
+      session.firstTime ??= frame.time;
+      session.bits.push([frame.time, (frame.id.length === 8 ? 67 : 47) + 8 * frame.length]);
+      // A frame the DBC cannot decode (a skipped message's layout error, in a recorded log) still counts and times.
+      const entry = frame.dbc ? session.rows.get(frame.dbc.name) : null;
       if (!entry) continue;
       session.carFrames += 1;
       if (entry.last != null) {
@@ -715,10 +724,20 @@
         if (entry.intervals.length > KEPT_INTERVALS) entry.intervals.shift();
       }
       entry.last = frame.time;
-      entry.signals = decoded.signals;
+      entry.signals = frame.dbc.error ? null : frame.dbc.signals;
+      entry.undecoded = frame.dbc.error || null;
       entry.dirty = true;
     }
-    while (session.bits.length && session.bits[0][0] < now - 2000) session.bits.shift();
+    const {since} = loadWindow(session);
+    while (session.bits.length && session.bits[0][0] <= since) session.bits.shift();
+  }
+  // The bus time the "bus load seen" figure covers, from the frames' own timestamps (microseconds): the last
+  // LOAD_WINDOW_US, or less while the run is younger. The frame at its start opens the window and is not counted.
+  function loadWindow(session) {
+    if (session.firstTime == null) return {span: 0, since: 0};
+    const last = session.bits.length ? session.bits[session.bits.length - 1][0] : session.firstTime;
+    const span = Math.min(LOAD_WINDOW_US, last - session.firstTime);
+    return {span, since: last - span};
   }
   function number(value) {
     return typeof value === "number" && !Number.isInteger(value) ? String(Number(value.toFixed(3))) : String(value);
@@ -746,27 +765,34 @@
       for (const entry of session.rows.values()) {
         if (!entry.dirty) continue;
         entry.dirty = false;
-        const {message: m, cells, signals} = entry;
+        const {message: m, cells, undecoded} = entry;
+        const signals = entry.signals || {};
         const integrity = new Set([...m.counters, ...m.checksums]);
-        cells.values.textContent = Object.entries(signals).filter(([name]) => !integrity.has(name))
+        cells.values.textContent = undecoded ? "not decoded: " + undecoded : Object.entries(signals)
+          .filter(([name]) => !integrity.has(name))
           .map(([name, field]) => name + " " + number(field.value) + (field.unit ? " " + field.unit : ""))
           .join(" · ") || "—";
-        cells.counter.textContent = m.counters.map(name => signals[name] ? number(signals[name].value) : "?")
-          .join(" / ") || "—";
-        cells.checksum.textContent = m.checksums.map(name => signals[name] ?
+        cells.counter.textContent = undecoded ? "—" : m.counters.map(name => signals[name] ?
+          number(signals[name].value) : "?").join(" / ") || "—";
+        cells.checksum.textContent = undecoded ? "—" : m.checksums.map(name => signals[name] ?
           "0x" + Number(signals[name].value).toString(16).toUpperCase().padStart(2, "0") : "?").join(" / ") || "—";
         measured(cells["measured-period"], entry.intervals);
       }
     }
-    const bits = session.bits.reduce((total, [, size]) => total + size, 0);
     const parts = [session.carFrames.toLocaleString("en") + " car frames seen on the bus"];
-    if (session.bitrate) parts.push("bus load seen " + (bits / 2 / session.bitrate * 100).toFixed(1) + "% of " +
-      kbit(session.bitrate) + " (frame bits without stuffing)");
+    if (session.bitrate) {
+      const {span, since} = loadWindow(session);
+      const bits = session.bits.reduce((total, [time, size]) => time > since ? total + size : total, 0);
+      parts.push("bus load seen " + (span > 0 ? (bits / (span / 1e6) / session.bitrate * 100).toFixed(1) + "%" :
+        "measuring") + " of " + kbit(session.bitrate) + " (frame bits without stuffing, last " +
+        (Math.max(span, 0) / 1e6).toFixed(1) + " s of bus time)");
+    }
     parts.push("error frames " + session.errorFrames);
     if (session.link) {
       const show = value => value == null ? "n/a" : value.toLocaleString("en");
       parts.push("bus errors " + show(session.link.bus_errors), "bus-off " + show(session.link.bus_off),
-        "tx dropped (kernel) " + show(session.link.tx_dropped), "link " + (session.link.state || "unknown"));
+        "tx dropped (kernel) " + show(session.link.tx_dropped), "link " + (session.link.state ||
+          (session.link.virtual ? "has no CAN state (virtual interface)" : "state unknown")));
     }
     if (session.paused) parts.unshift("Display paused");
     if (session === live || session === lastLive) $("car-live-stats").textContent = parts.join(" · ");
@@ -777,20 +803,34 @@
       if (live !== session) return;
       session.baseline ??= link;
       session.link = link;
+      // The CAN state as ip reports it: STOPPED is a link that is down, BUS-OFF is reported however long it has
+      // lasted (also when it was already so at Play), and a virtual interface has none (null).
       let notice = "";
-      if (link.state === "DOWN") notice = "down";
-      else if ((link.bus_off ?? 0) > (session.baseline.bus_off ?? 0)) notice = "bus-off";
-      if (notice && notice !== session.linkNotice) {
-        const [cause, next] = notice === "down" ? failure("Network is down", session.iface) :
-          failure("bus-off reported by the interface", session.iface);
-        problem(cause, next);
-      }
+      if (link.state === "STOPPED") notice = "down";
+      else if (link.state === "BUS-OFF" || (link.bus_off ?? 0) > (session.baseline.bus_off ?? 0)) notice = "bus-off";
+      if (notice && notice !== session.linkNotice) linkProblem(notice, session);
+      else if (!notice && session.linkNotice === "unreadable" && banner.dataset.kind === "unreadable") clearProblem();
       session.linkNotice = notice;
     } catch (error) {
-      if (live === session) {
-        const [cause, next] = failure(error.message, session.iface);
-        problem(cause, next);
+      if (live !== session) return;
+      if (session.linkNotice !== "unreadable" || banner.dataset.kind === "unreadable") {
+        problem("The interface could not be read: " + error.message, "check that " + session.iface + " still " +
+          "exists. The run itself is not stopped by this; its state is shown above.", "unreadable");
       }
+      session.linkNotice = "unreadable";
+    }
+  }
+  function linkProblem(notice, session) {
+    const iface = session.iface;
+    if (notice === "down") {
+      problem("The interface " + iface + " is down (link state STOPPED).",
+        "bring it up with: sudo ip link set up " + iface + ", then press Play again.");
+    } else {
+      const state = session.link.state === "BUS-OFF" ? "link state BUS-OFF" : "bus-off counter " +
+        session.link.bus_off + ", " + (session.baseline.bus_off ?? 0) + " at Play";
+      problem("The interface " + iface + " is bus-off (" + state + "). Frames sent now are not acknowledged.",
+        "stop the run, check that a second node acknowledges frames, the wiring, termination and bitrate, " +
+        "restart the interface, then press Play again.");
     }
   }
   function endLive(ended) {
@@ -822,7 +862,7 @@
     live.paused = !live.paused;
     $("car-live-pause").setAttribute("aria-pressed", String(live.paused));
     $("car-live-pause").textContent = live.paused ? "Resume display" : "Pause display";
-    if (!live.paused) for (const entry of live.rows.values()) entry.dirty = entry.signals != null;
+    if (!live.paused) for (const entry of live.rows.values()) entry.dirty = entry.last != null;
     paint();
   };
 

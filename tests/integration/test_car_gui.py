@@ -15,6 +15,8 @@ from contextlib import contextmanager
 from itertools import pairwise
 from pathlib import Path
 
+import pytest
+
 from ecu_simulator.car.catalog import load_catalog
 from tests.integration.test_gui_control_vcan import browser, expect, server  # noqa: F401
 
@@ -273,7 +275,10 @@ def test_recorded_source_disables_integrity_column(browser, vcan, tmp_path):  # 
     layout = corolla_layouts()["STEERING_LKA"]
     frame = bytes([0b0010_1000, 0x00, 0x00, 0x00, 0x00])  # COUNTER 20 in bits 6..1 of byte 0
     frame = frame[:4] + bytes([toyota_checksum(layout["id"], frame)])
-    log = "".join(f"({1000 + i * 0.05:.3f}) vcan0 {layout['id']:03X}#{frame.hex().upper()}\n" for i in range(6))
+    # PCS_HUD is skipped by the generated drive (layout error), but a recorded log may carry it.
+    skipped = corolla_layouts()["PCS_HUD"]["id"]
+    log = "".join(f"({1000 + i * 0.05:.3f}) vcan0 {layout['id']:03X}#{frame.hex().upper()}\n"
+                  f"({1000.01 + i * 0.05:.3f}) vcan0 {skipped:03X}#0000000000000000\n" for i in range(6))
     with server(tmp_path) as url:
         page = browser.new_page()
         page.goto(url)
@@ -298,6 +303,9 @@ def test_recorded_source_disables_integrity_column(browser, vcan, tmp_path):  # 
         expect(row.locator(".counter")).to_have_text(str(read_bits(frame, *layout["signals"]["COUNTER"])))
         expect(row.locator(".checksum")).to_have_text(f"0x{frame[4]:02X}")
         expect(row.locator(".integrity")).to_have_text("as recorded")
+        hud = page.locator('#car-live-rows tr[data-message="PCS_HUD"]')
+        expect(hud.locator(".values")).to_contain_text("not decoded: ")
+        expect(hud.locator(".measured-period")).to_have_text(MEASURED)
         expect(page.locator("#car-step-3")).to_contain_text("recorded log")
         expect(page.locator("#state")).to_have_text("Stopped")  # a replay is not an ECU run
         page.close()
@@ -603,4 +611,174 @@ def test_run_bar_start_of_a_car_profile_is_described(browser, vcan, tmp_path):  
         expect(page.locator("#car-run-status")).to_contain_text(f"Running on {vcan} · generated drive")
         expect(page.locator("#car-run-status")).to_contain_text("elapsed")  # seen while Starting
         stop(page)
+        page.close()
+
+
+# --- a stubbed running car: the server's /run, /car/run, /capture and /car/link answers replaced in the page ---------
+
+
+def probe_car(interface: str = "vcan0", bitrate: int | None = 500000) -> dict:
+    return {"platform": None, "dbc": {"filename": "probe.dbc", "sha256": "c" * 64}, "revision": None, "rule": None,
+            "bus_load": {"estimate": 0.01, "bitrate": bitrate, "assumed": interface.startswith("vcan"),
+                         "worst_case": True},
+            "counts": {"valid": 0, "counter_only": 0, "user_rule": 0, "none": 1, "skipped": 0}}
+
+
+def probe_message(name: str = "PROBE", can_id: int = 0x123, period_ms: int = 12) -> dict:
+    return {"name": name, "id": can_id, "extended": False, "dlc": 8, "period_ms": period_ms, "period_source": "dbc",
+            "clamped": False, "integrity": "none", "detail": None, "counters": [], "checksums": [], "skipped": None}
+
+
+def probe_frames(times_us: list[int], name: str = "PROBE", can_id: str = "123") -> list[dict]:
+    return [{"time": t, "id": can_id, "kind": "", "length": 8, "bytes": [0] * 8,
+             "dbc": {"name": name, "signals": {"VALUE": {"value": 1, "unit": ""}}, "period_ms": None}}
+            for t in times_us]
+
+
+def stub_running_car(page, frames: list[dict] | None, link, interface: str = "vcan0",
+                     bitrate: int | None = 500000) -> dict:
+    """Make the page adopt a Running car whose capture sends ``frames`` and then ends, or with ``frames`` None never
+    answers (a quiet bus). ``link`` is the /car/link JSON, or a route handler. Returns the stubbed status, which a test
+    may change to end the run."""
+    car = probe_car(interface, bitrate)
+    status = {"state": "Running", "id": "probe-run", "interface": interface, "endpoints": [], "error": "",
+              "restbus": None, "dbc": None, "car": car}
+    page.route("**/run", lambda route: route.fulfill(json=status))
+    page.route("**/car/run", lambda route: route.fulfill(json={**car, "messages": [probe_message()]}))
+    if frames is None:
+        page.route("**/capture", lambda route: None)  # left pending: the stream neither sends nor ends
+    else:
+        body = '{"ready":true}\n' + json.dumps({"frames": frames, "dropped": 0}) + "\n"
+        page.route("**/capture", lambda route: route.fulfill(body=body, content_type="application/x-ndjson",
+                                                             headers={"X-Capture-Id": "probe"}))
+    page.route("**/car/link*", link if callable(link) else lambda route: route.fulfill(json=link))
+    return status
+
+
+VCAN_LINK = {"interface": "vcan0", "virtual": True, "bitrate": None, "state": None, "bus_off": None,
+             "bus_errors": None, "tx_dropped": 0}
+
+
+def can0_link(state: str | None, bus_off: int | None = 0) -> dict:
+    return {"interface": "can0", "virtual": False, "bitrate": 500000, "state": state, "bus_off": bus_off,
+            "bus_errors": 0, "tx_dropped": 0}
+
+
+def test_a_live_stream_the_server_ends_raises_a_banner(browser, tmp_path):  # noqa: F811
+    """The server ends /capture on its own (shutdown, or a page 3 s behind): the Running panel must say so."""
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        stub_running_car(page, probe_frames([1_000_000_000 + i * 12_000 for i in range(3)]), VCAN_LINK)
+        page.goto(url)
+        expect(page.locator('#car-live-rows tr[data-message="PROBE"] .values')).to_have_text("VALUE 1")
+        banner = page.locator("#car-banner")
+        expect(banner).to_contain_text("Live data stopped: the server ended the live data stream")
+        expect(banner).to_contain_text("Next: ")
+        page.close()
+
+
+def test_recorded_play_whose_stream_ends_before_ready_does_not_hang(browser, vcan, tmp_path):  # noqa: F811
+    """A stream that ends before its ready line settles the replay's wait: Play reports it and can be pressed again."""
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        replays = []
+        page.on("request", lambda r: replays.append(r.url) if "/replay" in r.url and r.method == "POST" else None)
+        page.goto(url)
+        choose_corolla(page)
+        page.get_by_role("button", name="Change car or source").click()
+        page.locator("#car-source-recorded").check()
+        page.locator("#car-log-file").set_input_files({"name": "x.log", "mimeType": "text/plain",
+                                                       "buffer": b"(1000.000) vcan0 0AA#0000000000000000\n"})
+        page.route("**/capture", lambda route: route.fulfill(body="", content_type="application/x-ndjson"))
+        page.locator("#car-play").click()
+        banner = page.locator("#car-banner")
+        expect(banner).to_contain_text("Play failed: the server ended the live data stream")
+        expect(page.locator("#car-play")).to_be_enabled()
+        assert replays == []
+        page.close()
+
+
+LINK_CASES = [
+    # link answer, interface, banner text that must appear (or None for no banner), stats text
+    (can0_link("STOPPED"), "can0", "The interface can0 is down (link state STOPPED).", "link STOPPED"),
+    (can0_link("BUS-OFF", bus_off=0), "can0", "The interface can0 is bus-off (link state BUS-OFF).", "link BUS-OFF"),
+    (can0_link("ERROR-ACTIVE"), "can0", None, "link ERROR-ACTIVE"),
+    (VCAN_LINK, "vcan0", None, "link has no CAN state (virtual interface)"),
+]
+
+
+@pytest.mark.parametrize(("link", "interface", "notice", "stats"), LINK_CASES,
+                         ids=["stopped", "bus-off-at-play", "error-active", "vcan"])
+def test_link_state_is_read_as_the_interface_reports_it(browser, tmp_path, link, interface, notice, stats):  # noqa: F811
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        stub_running_car(page, None, link, interface)
+        page.goto(url)
+        expect(page.locator("#car-live-stats")).to_contain_text(stats)
+        banner = page.locator("#car-banner")
+        if notice is None:
+            expect(banner).not_to_contain_text("is down")
+            expect(banner).not_to_contain_text("bus-off")
+        else:
+            expect(banner).to_contain_text(notice)
+        expect(banner).not_to_contain_text("The run failed")
+        page.close()
+
+
+def test_a_failed_link_poll_is_not_a_run_failure(browser, tmp_path):  # noqa: F811
+    def unreadable(route):
+        route.fulfill(status=400, json={"error": "ip timed out after 2 s"})
+
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        stub_running_car(page, None, unreadable, "can0")
+        page.goto(url)
+        banner = page.locator("#car-banner")
+        expect(banner).to_contain_text("The interface could not be read: ip timed out after 2 s")
+        expect(banner).not_to_contain_text("The run failed")
+        expect(page.locator("#car-run-status")).to_contain_text("Running on can0")
+        page.close()
+
+
+def test_switching_the_source_keeps_a_run_failure_banner(browser, tmp_path):  # noqa: F811
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        status = stub_running_car(page, None, VCAN_LINK)
+        page.goto(url)
+        expect(page.locator("#car-run-status")).to_contain_text("Running on vcan0")
+        status.update(state="Failed", error="sending PROBE: [Errno 105] No buffer space available")
+        banner = page.locator("#car-banner")
+        expect(banner).to_contain_text("Send failed: the transmit queue of vcan0 is full")
+        page.locator("#car-source-recorded").check()
+        expect(banner).to_contain_text("Send failed: the transmit queue of vcan0 is full")
+        page.close()
+
+
+@pytest.mark.parametrize(("frames", "shown"), [(101, "2.2% of 500 kbit/s"), (401, "2.2% of 500 kbit/s")],
+                         ids=["one-second-run", "four-second-run"])
+def test_bus_load_seen_is_measured_over_bus_time(browser, tmp_path, frames, shown):  # noqa: F811
+    """8-byte standard frames (111 bits without stuffing) every 10 ms are 11,100 bit/s, 2.2% of 500 kbit/s, whether the
+    capture holds 1 s or 4 s of bus time and however fast the browser receives it."""
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        stub_running_car(page, probe_frames([1_000_000_000 + i * 10_000 for i in range(frames)]), VCAN_LINK)
+        page.goto(url)
+        expect(page.locator("#car-live-stats")).to_contain_text(f"bus load seen {shown}")
+        page.close()
+
+
+def test_measured_period_keeps_the_last_100_intervals(browser, tmp_path):  # noqa: F811
+    """10 intervals of 50 ms, then 60 of 30 ms, then 40 of 10 ms: the last 100 have median 30, min 10 and max 30. A
+    shorter window reads 10 ms; a longer one shows max 50."""
+    times, now = [], 1_000_000_000
+    for interval in [0] + [50] * 10 + [30] * 60 + [10] * 40:
+        now += interval * 1000
+        times.append(now)
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        stub_running_car(page, probe_frames(times), VCAN_LINK)
+        page.goto(url)
+        cell = page.locator('#car-live-rows tr[data-message="PROBE"] .measured-period')
+        expect(cell).to_have_text(re.compile(r"^30\.00 ms"))
+        expect(cell.locator(".measured-spread")).to_have_text("min 10.00 / max 30.00 ms")
         page.close()
