@@ -12,7 +12,7 @@ caller's encoder wrote, its DBC default.
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ecu_simulator.car.bits import BitField
 from ecu_simulator.car.checksums import (
@@ -23,10 +23,15 @@ from ecu_simulator.car.checksums import (
     is_hyundai_checksum,
 )
 
+if TYPE_CHECKING:
+    # rules.py imports this module; the engine only reads ``.counters`` and ``.checksums`` from a user rule.
+    from ecu_simulator.car.rules import UserRule
+
 # The two WHL_SPD11 signals together carry one 4-bit counter.
 _HYUNDAI_SPLIT_COUNTER_MAX = 15
 
 _NOT_COMPUTED = "checksum not computed"
+_USER_RULE = "computed as the supplied rule says"
 _POSSIBLE = "possible integrity field held at its initial value"
 
 
@@ -90,8 +95,13 @@ def _is_checksum(rule: str, name: str, field: BitField) -> bool:
     return name == "CHECKSUM"
 
 
-def plan_message(message: Mapping[str, Any], *, rule: str | None) -> MessagePlan:
-    """The plan for ``message`` under ``rule`` (a key of ``RULES``), or with no rule only a ``COUNTER`` advancing."""
+def plan_message(message: Mapping[str, Any], *, rule: str | None, user: "UserRule | None" = None) -> MessagePlan:
+    """The plan for ``message`` under ``rule`` (a key of ``RULES``), or with no rule only a ``COUNTER`` advancing.
+
+    A ``user`` rule, the counter and checksum a rule file defines for this message, wins over ``rule``: the plan has
+    exactly its fields and the state ``user_rule``. The named rule's own signals are then reported in
+    ``possible_fields`` like any other integrity-named signal the plan does not generate.
+    """
     address, extended, size = int(message["id"]), bool(message["extended"]), int(message["dlc"])
 
     def plan(
@@ -111,15 +121,18 @@ def plan_message(message: Mapping[str, Any], *, rule: str | None) -> MessagePlan
     counters: list[CounterField] = []
     checksums: list[ChecksumField] = []
     uncomputed_checksum = False
-    for signal in message["signals"]:
-        name = str(signal["name"])
-        field = BitField(int(signal["start"]), int(signal["length"]), bool(signal["little_endian"]))
-        if (counter := _counter(rule, name, field)) is not None:
-            counters.append(counter)
-        elif rule is not None and _is_checksum(rule, name, field):
-            checksums.append(ChecksumField(name, field, RULES[rule]))
-        elif rule is None and name == "CHECKSUM":
-            uncomputed_checksum = True
+    if user is not None:
+        counters, checksums = list(user.counters), list(user.checksums)
+    else:
+        for signal in message["signals"]:
+            name = str(signal["name"])
+            field = BitField(int(signal["start"]), int(signal["length"]), bool(signal["little_endian"]))
+            if (counter := _counter(rule, name, field)) is not None:
+                counters.append(counter)
+            elif rule is not None and _is_checksum(rule, name, field):
+                checksums.append(ChecksumField(name, field, RULES[rule]))
+            elif rule is None and name == "CHECKSUM":
+                uncomputed_checksum = True
 
     placed: list[CounterField | ChecksumField] = [*counters, *checksums]
     for item in placed:
@@ -131,12 +144,18 @@ def plan_message(message: Mapping[str, Any], *, rule: str | None) -> MessagePlan
         recognised.add("CHECKSUM")
     possible = tuple(name for name in message["integrity_fields"] if name not in recognised)
 
-    details = [_NOT_COMPUTED] if uncomputed_checksum else []
+    details: list[str] = []
+    if user is not None:
+        details.append(_USER_RULE)
+    elif uncomputed_checksum:
+        details.append(_NOT_COMPUTED)
     if possible:
         details.append(_POSSIBLE)
     detail = "; ".join(details) or None
 
-    if rule is None:
+    if user is not None:
+        state = IntegrityState.USER_RULE
+    elif rule is None:
         state = IntegrityState.COUNTER_ONLY if counters else IntegrityState.NONE
     else:
         state = IntegrityState.VALID if counters or checksums else IntegrityState.NONE

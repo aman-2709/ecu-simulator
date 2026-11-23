@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from ecu_simulator.car.algorithms import build_checksum
 from ecu_simulator.car.bits import BitField
 from ecu_simulator.car.catalog import load_catalog
 from ecu_simulator.car.checksums import honda_checksum, toyota_checksum
@@ -24,6 +25,7 @@ from ecu_simulator.car.integrity import (
     Stamper,
     plan_message,
 )
+from ecu_simulator.car.rules import ChecksumSpec, UserRule
 from ecu_simulator.dbc import DbcStore, ImportedDb
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "car" / "integrity_vectors.json"
@@ -361,3 +363,95 @@ def test_plan_types_are_frozen_values() -> None:
     with pytest.raises(dataclasses.FrozenInstanceError):
         plan.size = 3  # type: ignore[misc]
     assert {s.value for s in IntegrityState} == {"none", "valid", "counter_only", "user_rule", "unsupported"}
+
+
+def _user_rule(message: dict[str, Any], *, counter: str | None, checksum: str | None, **spec: Any) -> UserRule:
+    """A user rule over ``message``'s own signals: sum8 into ``checksum``, ``counter`` advancing from 0."""
+    fields = {s["name"]: BitField(s["start"], s["length"], s["little_endian"]) for s in message["signals"]}
+    counters = (CounterField(counter, fields[counter], 0, (1 << fields[counter].size) - 1),) if counter else ()
+    checksums = ()
+    if checksum:
+        checksum_spec = ChecksumSpec.model_validate({"signal": checksum, "algorithm": "sum8", **spec})
+        checksums = (ChecksumField(checksum, fields[checksum], build_checksum(checksum_spec, fields[checksum].size)),)
+    return UserRule(message["name"], counters, checksums)
+
+
+USER_DETAIL = "computed as the supplied rule says"
+
+
+def test_user_rule_wins_over_the_named_rule() -> None:
+    # Under toyota COUNTER and CHECKSUM are the fields; the user rule names SEQ and SUM instead.
+    message = _synthetic([("COUNTER", 0, 4, True), ("SEQ", 4, 4, True), ("CHECKSUM", 56, 8, True), ("SUM", 48, 8, True)], 8)
+    message["integrity_fields"] = ["COUNTER", "CHECKSUM"]
+    named = plan_message(message, rule="toyota")
+    assert [c.signal for c in named.counters] == ["COUNTER"] and named.state == IntegrityState.VALID
+
+    user = _user_rule(message, counter="SEQ", checksum="SUM")
+    plan = plan_message(message, rule="toyota", user=user)
+    assert plan.state == IntegrityState.USER_RULE
+    assert [c.signal for c in plan.counters] == ["SEQ"]
+    assert [c.signal for c in plan.checksums] == ["SUM"]
+    # The named rule's own signals stay what they were: reported as possible, never generated.
+    assert set(plan.possible_fields) == {"COUNTER", "CHECKSUM"}
+    assert plan.detail == f"{USER_DETAIL}; {POSSIBLE}"
+    assert (plan.address, plan.extended, plan.size) == (0x123, False, 8)
+
+    # With no named rule at all, the user rule still applies.
+    bare = plan_message(message, rule=None, user=user)
+    assert bare.state == IntegrityState.USER_RULE and bare.counters == plan.counters and bare.checksums == plan.checksums
+
+
+def test_user_rule_detail_is_exact_when_it_covers_every_integrity_name() -> None:
+    message = _synthetic([("COUNTER", 0, 4, True), ("CHECKSUM", 56, 8, True)], 8)
+    plan = plan_message(message, rule="honda", user=_user_rule(message, counter="COUNTER", checksum="CHECKSUM"))
+    assert (plan.state, plan.detail, plan.possible_fields) == (IntegrityState.USER_RULE, USER_DETAIL, ())
+
+
+def test_stamping_with_a_user_rule_reproduces_the_algorithm_output() -> None:
+    message = _synthetic([("DATA", 8, 8, True), ("SEQ", 0, 4, True), ("SUM", 56, 8, True)], 8)
+    user = _user_rule(message, counter="SEQ", checksum="SUM", covers=[0, 1, 2, 3, 4, 5, 6], init=0x10, data_id=0x03)
+    plan = plan_message(message, rule="toyota", user=user)
+    stamper = Stamper(plan)
+    seq, data, total = BitField(0, 4, True), BitField(8, 8, True), BitField(56, 8, True)
+    payload = bytearray(8)
+    data.write(payload, 0x2C)
+    for k in range(20):
+        frame = stamper.stamp(bytes(payload))
+        assert seq.read(frame) == k % 16
+        # sum8 with init 0x10 over bytes 0 to 6 (the counter nibble and 0x2C) and the data id 0x03, computed by hand.
+        assert total.read(frame) == (0x10 + (k % 16) + 0x2C + 0x03) & 0xFF, k
+        assert data.read(frame) == 0x2C
+
+
+def test_user_rule_counter_wraps_at_its_own_maximum() -> None:
+    message = _synthetic([("SEQ", 0, 4, True)], 2)
+    fields = BitField(0, 4, True)
+    user = UserRule("Synthetic", (CounterField("SEQ", fields, 0, 5),), ())
+    stamper = Stamper(plan_message(message, rule=None, user=user))
+    assert [fields.read(stamper.stamp(bytes(2))) for _ in range(8)] == [0, 1, 2, 3, 4, 5, 0, 1]
+
+
+def test_user_rule_on_a_layout_error_is_unsupported() -> None:
+    message = _synthetic([("COUNTER", 0, 4, True), ("CHECKSUM", 56, 8, True)], 8)
+    user = _user_rule(message, counter="COUNTER", checksum="CHECKSUM")
+    message["layout_issue"] = "Signal overlap"
+    for rule in ("toyota", None):
+        plan = plan_message(message, rule=rule, user=user)
+        assert plan.state == IntegrityState.UNSUPPORTED
+        assert plan.detail == "Signal overlap"
+        assert plan.counters == () and plan.checksums == () and plan.possible_fields == ()
+
+
+def test_user_rule_field_outside_the_frame_is_unsupported() -> None:
+    message = _synthetic([("COUNTER", 0, 4, True), ("CHECKSUM", 56, 8, True)], 8)
+    user = _user_rule(message, counter="COUNTER", checksum="CHECKSUM")
+    short = {**message, "dlc": 4}  # the user rule was bound to the 8-byte layout; the message now has 4 bytes
+    plan = plan_message(short, rule=None, user=user)
+    assert plan.state == IntegrityState.UNSUPPORTED
+    assert plan.detail is not None and "CHECKSUM" in plan.detail and "4-byte frame" in plan.detail
+    assert plan.counters == () and plan.checksums == ()
+
+
+def test_without_a_user_rule_the_plan_is_unchanged() -> None:
+    message = _synthetic([("COUNTER", 0, 4, True), ("CHECKSUM", 56, 8, True)], 8)
+    assert plan_message(message, rule="toyota", user=None) == plan_message(message, rule="toyota")
