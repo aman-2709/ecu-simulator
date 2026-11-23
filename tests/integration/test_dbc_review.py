@@ -6,6 +6,8 @@ import struct
 from pathlib import Path
 
 import pytest
+
+pytest.importorskip("aiohttp", reason="needs the optional [gui] extra (aiohttp)")
 from aiohttp.test_utils import TestClient, TestServer
 
 from ecu_simulator.cli import default_profile_path
