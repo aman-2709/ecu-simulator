@@ -7,19 +7,18 @@ the profile's ``rule``, the catalog's rule for that DBC, none. Each message's pe
 
 A message that cannot be sent is listed with the reason and the run goes on: CAN FD, a SecOC authenticator, a layout
 error, a collision with the simulated ECUs' own diagnostic identifiers, or an encode failure in a trial encode of the
-first drive sample. The run is refused when nothing is left to send, or when the bus-load gate refuses the link.
+first drive sample or of each driven signal alone at its lowest and its highest value. The run is refused when nothing
+is left to send, or when the bus-load gate refuses the link.
 
 Every frame is sampled as ``sync()``, the drive values, ``ImportedDb.encode`` and the message's own ``Stamper``, so a
-counter advances once per transmitted frame and runs on across a loop of the scenario. Should an encode fail at run
-time, the message's last good payload is stamped and sent again, and the failure is counted in
-``PreparedCar.encode_failures`` and logged once per message.
+counter advances once per transmitted frame and runs on across a loop of the scenario. An encode error at run time is
+not caught: it leaves the sample, stops the publisher and ends the run with that error.
 """
 
-import logging
 import re
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -35,8 +34,6 @@ from ecu_simulator.config import ConfigError
 from ecu_simulator.config.schema import CarConfig
 from ecu_simulator.publisher import CyclicFrame, wire_id
 from ecu_simulator.vehicle import VehicleState
-
-logger = logging.getLogger(__name__)
 
 CLASSICAL_MAX_DLC = 8
 
@@ -83,11 +80,8 @@ class CarMessage:
 
 @dataclass
 class PreparedCar:
-    """What a car run sends. ``encode_failures`` counts, by message, the frames whose encode failed at run time."""
-
     metadata: dict[str, Any]
     frames: list[CyclicFrame]
-    encode_failures: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,24 +143,26 @@ def _sampler(
     values: Callable[[], dict[str, float]],
     stamper: Stamper,
     sync: Callable[[], None] | None,
-    held: bytes,
-    failures: dict[str, int],
 ) -> Callable[[], bytes]:
-    last_good = held
-
     def sample() -> bytes:
-        nonlocal last_good
         if sync is not None:
             sync()
-        try:
-            last_good = database.encode(name, values(), integrity_ok=True)
-        except ValueError as error:
-            failures[name] = failures.get(name, 0) + 1
-            if failures[name] == 1:
-                logger.warning("car: encode failed for %s (%s); resending its last good payload", name, error)
-        return stamper.stamp(last_good)
+        return stamper.stamp(database.encode(name, values(), integrity_ok=True))
 
     return sample
+
+
+def _trial_values(message: Mapping[str, Any], first: dict[str, float]) -> list[dict[str, float]]:
+    """The first drive sample, then each driven signal alone at its lowest and highest value (where it has one).
+
+    The drive clamps a driven value into the signal's range, so the ends of that range are the values a run can reach
+    that the first sample may not; every other signal stays at its default, as the encoder fills it.
+    """
+    limits = {str(s["name"]): (s.get("min"), s.get("max")) for s in message["signals"]}
+    trials = [first]
+    for signal in first:
+        trials += [{signal: float(end)} for end in limits[signal] if end is not None]
+    return trials
 
 
 def prepare_car(
@@ -199,7 +195,6 @@ def prepare_car(
     def elapsed() -> float:
         return clock.now() - origin
 
-    failures: dict[str, int] = {}
     listed: list[CarMessage] = []
     frames: list[CyclicFrame] = []
     for message in messages:
@@ -221,11 +216,12 @@ def prepare_car(
         if plan is not None and skipped is None:
             values = drive_sampler(message, vehicle, elapsed)
             try:
-                held = source.database.encode(name, values(), integrity_ok=True)
+                for trial in _trial_values(message, values()):
+                    source.database.encode(name, trial, integrity_ok=True)
             except ValueError as error:
                 skipped = f"encode failed: {error}"
             else:
-                sample = _sampler(name, source.database, values, Stamper(plan), sync, held, failures)
+                sample = _sampler(name, source.database, values, Stamper(plan), sync)
                 frames.append(CyclicFrame(name, wire_id(can_id, extended), period.ms / 1000, sample))
                 listed.append(CarMessage(
                     name, can_id, extended, int(message["dlc"]), period, plan.state, plan.detail,
@@ -266,4 +262,4 @@ def prepare_car(
         },
         "messages": [m.metadata() for m in listed],
     }
-    return PreparedCar(metadata, frames, failures)
+    return PreparedCar(metadata, frames)

@@ -316,57 +316,134 @@ def test_secoc_pattern_is_case_insensitive_and_matches_a_secoc_signal():
     assert messages["LOWER"]["skipped"] == messages["FRESH"]["skipped"] == "SecOC authenticator"
 
 
-def test_encode_failure_at_prepare_time_is_skipped():
-    # A selector default with no branch of its own and a driven value outside a branch member's range would both be
-    # caught here; the simplest real case is a speed whose range the vehicle's speed falls outside.
-    raw = (
-        b'BO_ 256 OK: 8 XXX\n SG_ VALUE : 7|16@0+ (1,0) [0|65535] "" XXX\n\n'
-        b'BO_ 257 SPEEDY: 8 XXX\n SG_ VEHICLE_SPEED : 7|8@0+ (1,0) [0|255] "km/h" XXX\n'
-    )
-    db = database(raw)
+# Two signals the real ImportedDb accepts whose limit does not encode: with a tiny scale on a huge offset the physical
+# limit rounds to a raw value one past the field (found by a search over scales and offsets). VEHICLE_SPEED is driven
+# by the vehicle's speed, which the drive clamps to the signal's range.
+FAILS_AT_MAX = b'BO_ 257 TOP: 8 XXX\n SG_ VEHICLE_SPEED : 7|7@0+ (1E-7,1e9) [0|0] "km/h" XXX\n\n'
+FAILS_AT_MIN = b'BO_ 258 BOTTOM: 8 XXX\n SG_ VEHICLE_SPEED : 7|7@0- (7E-8,1e9) [0|0] "km/h" XXX\n\n'
+CLEAN = b'BO_ 256 CLEAN: 8 XXX\n SG_ VEHICLE_SPEED : 7|16@0+ (0.01,-67.67) [0|0] "km/h" XXX\n\n'
+
+
+def test_the_limit_cases_fail_in_the_real_encoder_only_at_that_limit():
+    db = database(FAILS_AT_MAX + FAILS_AT_MIN)
+    for name, failing, passing in (("TOP", "max", "min"), ("BOTTOM", "min", "max")):
+        info = db.message(name)["signals"][0]
+        db.encode(name, {"VEHICLE_SPEED": info[passing]}, integrity_ok=True)
+        with pytest.raises(ValueError, match="out of range"):
+            db.encode(name, {"VEHICLE_SPEED": info[failing]}, integrity_ok=True)
+
+
+@pytest.mark.parametrize("raw,name", [(FAILS_AT_MAX, "TOP"), (FAILS_AT_MIN, "BOTTOM")])
+def test_a_driven_signal_that_fails_at_a_limit_is_skipped(raw, name):
+    raw = CLEAN + raw
+    prepared = prepare(upload(raw), database=database(raw))
+    messages = by_name(prepared)
+    assert messages[name]["integrity"] == "unsupported"
+    assert messages[name]["skipped"].startswith("encode failed: Cannot encode " + name)
+    assert (messages["CLEAN"]["skipped"], messages["CLEAN"]["integrity"]) == (None, "none")
+    assert [f.name for f in prepared.frames] == ["CLEAN"]
+
+
+@pytest.mark.parametrize("limit", ["min", "max"])
+def test_a_limit_above_the_first_sample_is_tried_too(limit):
+    # CLEAN's speed runs -67.67 to 587.68 km/h and the first sample is 0 km/h, so only the limit trial reaches either
+    # end. The stand-in refuses exactly that end.
+    db = database(CLEAN)
+    refused = db.message("CLEAN")["signals"][0][limit]
 
     class Refusing:
         def catalog(self, filename: str) -> dict[str, Any]:
             return db.catalog(filename)
 
         def encode(self, name: str, values: dict[str, float], *, integrity_ok: bool = False) -> bytes:
-            if name == "SPEEDY":
-                raise ValueError("VEHICLE_SPEED is outside its physical range")
+            if values.get("VEHICLE_SPEED") == refused:
+                raise ValueError(f"VEHICLE_SPEED {refused} does not fit")
             return db.encode(name, values, integrity_ok=integrity_ok)
 
-    messages = by_name(prepare(upload(raw), database=Refusing()))
-    assert messages["SPEEDY"]["skipped"] == "encode failed: VEHICLE_SPEED is outside its physical range"
-    assert messages["OK"]["skipped"] is None
+    with pytest.raises(ConfigError, match=r"\(1 encode failed\)"):
+        prepare(upload(CLEAN), database=Refusing())
 
 
-def test_run_time_encode_failure_resends_the_last_good_payload_with_a_fresh_counter(caplog):
-    raw = synthetic_dbc([("A", 0x100, 8, False, 10, True)])
+def test_the_limits_are_tried_with_only_the_driven_signal_set():
+    raw = CLEAN
     db = database(raw)
-    calls = {"count": 0}
+    tried: list[dict[str, float]] = []
 
-    class Flaky:
+    class Recording:
         def catalog(self, filename: str) -> dict[str, Any]:
             return db.catalog(filename)
 
         def encode(self, name: str, values: dict[str, float], *, integrity_ok: bool = False) -> bytes:
-            calls["count"] += 1
-            if calls["count"] > 2:  # the prepare-time trial and the first frame succeed
+            assert integrity_ok
+            tried.append(dict(values))
+            return db.encode(name, values, integrity_ok=True)
+
+    prepare(upload(raw), database=Recording())
+    info = db.message("CLEAN")["signals"][0]
+    assert {"VEHICLE_SPEED": info["min"]} in tried and {"VEHICLE_SPEED": info["max"]} in tried
+
+
+def test_nothing_transmittable_when_every_message_fails_at_a_limit():
+    raw = FAILS_AT_MAX + FAILS_AT_MIN
+    with pytest.raises(ConfigError, match=r"no message can be transmitted \(2 encode failed\)"):
+        prepare(upload(raw), database=database(raw))
+
+
+def test_a_run_time_encode_error_reaches_the_caller_of_the_sample():
+    raw = synthetic_dbc([("A", 0x100, 8, False, 10, True)])
+    db = database(raw)
+    broken = False
+
+    class Breaking:
+        def catalog(self, filename: str) -> dict[str, Any]:
+            return db.catalog(filename)
+
+        def encode(self, name: str, values: dict[str, float], *, integrity_ok: bool = False) -> bytes:
+            if broken:
                 raise ValueError("VALUE is outside its physical range")
             return db.encode(name, values, integrity_ok=integrity_ok)
 
-    prepared = prepare(upload(raw, rule="toyota"), database=Flaky())
-    a = frame(prepared, "A")
-    counter, checksum = field(db, "A", "COUNTER"), field(db, "A", "CHECKSUM")
-    first, second, third = a.sample(), a.sample(), a.sample()
-    assert [counter.read(f) for f in (first, second, third)] == [0, 1, 2]
-    for sent in (second, third):
-        assert sent[:6] == first[:6]
-        data = bytearray(sent)
-        value = checksum.read(data)
-        checksum.write(data, 0)
-        assert RULES["toyota"](0x100, data, checksum, "CHECKSUM") == value
-    assert prepared.encode_failures == {"A": 2}
-    assert sum("encode failed for A" in record.getMessage() for record in caplog.records) == 1
+    a = frame(prepare(upload(raw, rule="toyota"), database=Breaking()), "A")
+    a.sample()
+    broken = True
+    with pytest.raises(ValueError, match="VALUE is outside its physical range"):
+        a.sample()
+
+
+@pytest.mark.asyncio
+async def test_a_run_time_encode_error_ends_app_run_with_that_error(monkeypatch):
+    import asyncio
+    from unittest.mock import Mock
+
+    from ecu_simulator import publisher
+    from tests.unit.test_restbus_publisher import FakeTransport
+
+    sock = Mock()
+    sent: list[bytes] = []
+    real_encode = ImportedDb.encode
+
+    def send(data: bytes) -> int:
+        sent.append(data)
+        return len(data)
+
+    def encode(self: ImportedDb, name: str, values: dict[str, float], *, integrity_ok: bool = False) -> bytes:
+        if sent:
+            raise ValueError(f"{name} cannot be encoded")
+        return real_encode(self, name, values, integrity_ok=integrity_ok)
+
+    sock.send.side_effect = send
+    monkeypatch.setattr(publisher, "open_broadcast", lambda interface: sock)
+    monkeypatch.setattr("ecu_simulator.car.run.read_link", lambda interface: VCAN)
+    monkeypatch.setattr(ImportedDb, "encode", encode)
+    transport, ready = FakeTransport(), Mock()
+    with pytest.raises(ValueError, match="cannot be encoded"):
+        await asyncio.wait_for(
+            app.run(corolla(), ready=ready, transport_factory=lambda *_: transport, install_signal_handlers=False),
+            timeout=2,
+        )
+    assert len(sent) == 1 and ready.call_count == 0
+    assert transport.closed
+    sock.close.assert_called_once()
 
 
 # --- rules ------------------------------------------------------------------------------------------------------------
