@@ -5,8 +5,8 @@
 Honda and Hyundai rules: the function reads the frame with its own checksum field still zero and returns the field's
 new value.
 
-For the generic algorithms, the covered bytes are the ``covers`` list in the order given, or by default every byte
-that does not overlap the checksum field; a ``data_id`` is one more byte after them. The algorithms:
+The covered bytes are the ``covers`` list in the order given, or by default every byte that does not overlap the
+checksum field; a ``data_id`` is one more byte after them. The algorithms:
 
 - ``xor``: the covered bytes XORed together, then ``^ init``, then ``^ xorout``.
 - ``sum8``: ``(init + sum of the bytes) & 0xFF``, then ``^ xorout``.
@@ -14,9 +14,6 @@ that does not overlap the checksum field; a ``data_id`` is one more byte after t
 - ``crc8`` and ``crc16``: the Rocksoft model, parameterised by ``poly``, ``init``, ``xorout`` and ``reflect``, which
   reflects both the input bytes and the final register. The catalogue values over ``123456789`` (for example
   CRC-16/XMODEM 0x31C3) are pinned in the tests.
-- ``e2e_p01`` and ``e2e_p02``: the AUTOSAR E2E Profile 1 and Profile 2 CRCs, built by ``ecu_simulator.car.e2e``,
-  which documents them and their sources. They take a Data ID (``data_id`` and ``data_id_mode``, or
-  ``data_id_list``) and nothing else: the profile fixes the CRC, the covered bytes and the positions.
 
 The result is masked to the width of the checksum field. A spec arrives already validated against its algorithm (see
 ``ecu_simulator.car.rules``): ``poly``, ``init`` and ``xorout`` fit the algorithm's width, ``poly`` is present for a
@@ -31,21 +28,17 @@ from typing import TYPE_CHECKING, Literal
 
 from ecu_simulator.car.bits import BitField
 from ecu_simulator.car.checksums import ChecksumFn
-from ecu_simulator.car.crc import crc
-from ecu_simulator.car.e2e import e2e_p01, e2e_p02
 
 if TYPE_CHECKING:
     from ecu_simulator.car.rules import ChecksumSpec
 
-Algorithm = Literal["xor", "sum8", "nibble_sum", "crc8", "crc16", "e2e_p01", "e2e_p02"]
+Algorithm = Literal["xor", "sum8", "nibble_sum", "crc8", "crc16"]
 
 # The width of each algorithm's result, which bounds its ``poly``, ``init`` and ``xorout``.
 ALGORITHM_BITS: Mapping[Algorithm, int] = MappingProxyType(
-    {"xor": 8, "sum8": 8, "nibble_sum": 4, "crc8": 8, "crc16": 16, "e2e_p01": 8, "e2e_p02": 8}
+    {"xor": 8, "sum8": 8, "nibble_sum": 4, "crc8": 8, "crc16": 16}
 )
 CRC_ALGORITHMS: frozenset[Algorithm] = frozenset({"crc8", "crc16"})
-# The presets fix their own CRC, coverage and positions; a rule names only their Data ID parameters.
-E2E_ALGORITHMS: frozenset[Algorithm] = frozenset({"e2e_p01", "e2e_p02"})
 
 _Reduction = Callable[[Sequence[int]], int]
 
@@ -54,10 +47,6 @@ def build_checksum(spec: "ChecksumSpec", field_size: int) -> ChecksumFn:
     """The checksum function for ``spec``, writing a field of ``field_size`` bits."""
     if field_size < 1:
         raise ValueError(f"A checksum field needs a field size of 1 or more bits, got {field_size}")
-    if spec.algorithm == "e2e_p01":
-        return e2e_p01(spec, field_size)
-    if spec.algorithm == "e2e_p02":
-        return e2e_p02(spec, field_size)
     mask = (1 << field_size) - 1
     reduction = _reduction(spec)
     covers = None if spec.covers is None else tuple(spec.covers)
@@ -89,6 +78,20 @@ def _reduction(spec: "ChecksumSpec") -> _Reduction:
             if spec.poly is None:
                 raise ValueError(f"A {spec.algorithm} needs a poly")
             width, poly, reflect = ALGORITHM_BITS[spec.algorithm], spec.poly, spec.reflect
-            return lambda data: crc(data, width, poly, init, xorout, reflect)
-        case "e2e_p01" | "e2e_p02":
-            raise ValueError(f"{spec.algorithm} is built by ecu_simulator.car.e2e")
+            return lambda data: _crc(data, width, poly, init, xorout, reflect)
+
+
+def _crc(data: Sequence[int], width: int, poly: int, init: int, xorout: int, reflect: bool) -> int:
+    """The Rocksoft-model CRC of ``data``: ``reflect`` applies to each input byte and to the final register."""
+    top, mask = 1 << (width - 1), (1 << width) - 1
+    register = init
+    for byte in data:
+        register ^= (_reverse(byte, 8) if reflect else byte) << (width - 8)
+        for _ in range(8):
+            register = ((register << 1) ^ poly if register & top else register << 1) & mask
+    return (_reverse(register, width) if reflect else register) ^ xorout
+
+
+def _reverse(value: int, bits: int) -> int:
+    """``value`` with its ``bits`` low bits in reverse order."""
+    return int(f"{value:0{bits}b}"[::-1], 2)

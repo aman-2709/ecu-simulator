@@ -1,8 +1,8 @@
 """The worked rule-file example in README.md parses, binds to its DBC and stamps the frames the README shows.
 
 The three fenced blocks under "Rule files" in the README (``dbc``, ``yaml`` and ``text``) are read from the file, so
-the README cannot drift from what the code does. The CRCs are recomputed here with a bitwise CRC-8 that shares no code
-with ``ecu_simulator.car``.
+the README cannot drift from what the code does. The checksums are recomputed here (a bitwise CRC-8 and a plain XOR)
+with no code shared with ``ecu_simulator.car``.
 """
 
 import re
@@ -42,9 +42,9 @@ def gearbox_crc(frame_bytes: bytes) -> int:
     return crc8([*frame_bytes[:7], 0x5A], 0x1D, 0xFF, 0xFF)
 
 
-def brake_crc(frame_bytes: bytes) -> int:
-    """AUTOSAR E2E Profile 1, mode both, data_id 0x123: the Data ID low then high byte, then bytes 1 to 3."""
-    return crc8([0x23, 0x01, *frame_bytes[1:]], 0x1D, 0x00, 0x00)
+def brake_xor(frame_bytes: bytes) -> int:
+    """The example's xor with no covers: bytes 1 to 3, every byte the checksum in byte 0 does not overlap."""
+    return frame_bytes[1] ^ frame_bytes[2] ^ frame_bytes[3]
 
 
 @pytest.fixture
@@ -86,14 +86,14 @@ def test_the_frames_the_readme_shows_are_what_the_rule_stamps(dbc: bytes, tmp_pa
     assert len({data[7] for data in stamped[:10]}) == 10
 
 
-def test_the_brake_rule_is_e2e_profile_1_with_a_counter_that_wraps_at_14(dbc: bytes, tmp_path: Path) -> None:
+def test_the_brake_rule_xors_bytes_1_to_3_with_a_counter_that_wraps_after_15(dbc: bytes, tmp_path: Path) -> None:
     found = messages(dbc, tmp_path)
     user = parse_rule_text(fenced("yaml")).resolve(list(found.values()))["Brake"]
     stamper = Stamper(plan_message(found["Brake"], rule=None, user=user))
-    stamped = [stamper.stamp(BRAKE_PAYLOAD) for _ in range(31)]
-    assert [data[1] & 0xF for data in stamped] == [number % 15 for number in range(31)]
+    stamped = [stamper.stamp(BRAKE_PAYLOAD) for _ in range(33)]
+    assert [data[1] & 0xF for data in stamped] == [number % 16 for number in range(33)]
     for number, data in enumerate(stamped):
-        assert data[0] == brake_crc(data), number
+        assert data[0] == brake_xor(data), number
         assert data[2:] == BRAKE_PAYLOAD[2:]
 
 
@@ -113,6 +113,6 @@ def test_the_example_runs_as_a_car_with_a_rule_file(
     sent = [gearbox.sample() for _ in range(12)]
     assert [data[6] for data in sent] == [number % 10 for number in range(12)]
     assert all(data[7] == gearbox_crc(data) for data in sent)
-    sent = [brake.sample() for _ in range(16)]
-    assert [data[1] & 0xF for data in sent] == [number % 15 for number in range(16)]
-    assert all(data[0] == brake_crc(data) for data in sent)
+    sent = [brake.sample() for _ in range(18)]
+    assert [data[1] & 0xF for data in sent] == [number % 16 for number in range(18)]
+    assert all(data[0] == brake_xor(data) for data in sent)
