@@ -970,6 +970,15 @@ def test_rule_store_round_trip_by_hash(tmp_path: Path) -> None:
     assert [p.name for p in (tmp_path / "rules").iterdir()] == [f"{digest}.yaml"]
 
 
+def test_rule_store_import_parsed_returns_the_digest_and_the_rule_file_from_one_parse(tmp_path: Path) -> None:
+    store = RuleStore(tmp_path / "rules")
+    digest, parsed = store.import_parsed(GEARBOX_RULES)
+    assert digest == store.import_text(GEARBOX_RULES)
+    assert parsed == parse_rule_text(GEARBOX_RULES) == store.load(digest)
+    with pytest.raises(RuleError):
+        store.import_parsed(GEARBOX_RULES + "extra: 1\n")
+
+
 def test_rule_store_hashes_the_utf8_bytes_of_the_text(tmp_path: Path) -> None:
     text = GEARBOX_RULES + "# Getriebesteuergerät, 変速機\n"
     digest = RuleStore(tmp_path).import_text(text)

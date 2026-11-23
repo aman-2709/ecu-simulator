@@ -491,7 +491,14 @@ class RuleStore:
         3 s for a realistic 1000-rule file, in pure Python holding the GIL. A caller on an async server must run it in
         a worker thread and serialise uploads (one at a time), never on the event loop.
         """
-        parse_rule_text(text)
+        return self.import_parsed(text)[0]
+
+    def import_parsed(self, text: str) -> tuple[str, RuleFile]:
+        """``import_text`` that also returns the validated ``RuleFile``, for a caller that reports on what it stored.
+
+        The text is parsed once, at the cost ``import_text`` describes.
+        """
+        parsed = parse_rule_text(text)
         raw = text.encode("utf-8")
         digest = hashlib.sha256(raw).hexdigest()
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -499,7 +506,7 @@ class RuleStore:
             staging.write(raw)
             staging.close()
             os.replace(staging.name, self.directory / f"{digest}.yaml")
-        return digest
+        return digest, parsed
 
     def load(self, sha256: str) -> RuleFile:
         """The ``RuleFile`` stored under ``sha256``; it is parsed again, at the cost ``import_text`` describes."""
