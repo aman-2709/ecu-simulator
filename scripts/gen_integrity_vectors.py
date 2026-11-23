@@ -10,17 +10,23 @@ The fixture is tests/fixtures/car/integrity_vectors.json, which the unit tests r
 
 For every message in the shipped DBCs that opendbc's packer gives a counter or a checksum, it records the message's
 integrity fields as opendbc's parser reads them, a base frame, and the frames `CANPacker.pack` returns on consecutive
-calls. A fresh packer per vector starts the counter at 0, and the call count is `max + 3` (3 when there is no counter),
-so every vector shows the counter wrapping and the cycle repeating. Vectors with the same rule, address and field layout
-are written once, from the first DBC by name; `dbcs` lists every DBC that shares them, where the message may be named
-differently.
+calls. A fresh packer per vector starts the counter at 0. Layouts (rule, address, size and integrity fields) are written
+once, from the first DBC by name; `dbcs` lists every DBC that shares one, where the message may be named differently.
+
+Each layout is written as variant 0 and as variants 1 to 3 with other payloads. Variant 0 makes `max + 3` calls (3 when
+there is no counter), so it shows the counter wrapping and the cycle repeating. A variant makes only 3 calls, counter
+values 0, 1 and 2 reduced modulo `max + 1`. Several payloads keep a checksum that is constant for one payload, such as
+Hyundai 0x386's, from passing unchecked.
 
 Which signals count: the packer's own test. A counter is a signal of counter type or one named COUNTER, a checksum is a
 signal with a checksum function. The `rule` label is only the catalog's label for the DBC (null for a DBC with no rule,
 whose packer still counts a signal named COUNTER).
 
-The non-integrity signals take fixed-seed raw values (`random.Random(address)`), passed to the packer as the physical
-value `raw * factor + offset`, so rounding never hits a tie. Counter and checksum signals are never passed in, so the
+The non-integrity signals take fixed-seed raw values, `random.Random(address)` for variant 0 and
+`random.Random(address * 1000 + variant)` for the others, passed to the packer as the physical value
+`raw * factor + offset`, so rounding never hits a tie. A variant whose payload repeats an earlier variant's is drawn
+again from the same stream, up to 64 times; a message with one free bit has only two payloads, and the run lists the
+layouts left with a repeated payload. Counter and checksum signals are never passed in, so the
 packer counts and checksums them itself. The run fails unless the frames agree with that account: the base frame holds
 the seeded values, differs from every frame only in the integrity fields, and frame k holds counter `k mod (max + 1)`.
 
@@ -38,6 +44,8 @@ from extract_opendbc import PINNED_REVISION, _load_opendbc
 
 from ecu_simulator.car.catalog import load_catalog
 
+VARIANTS = 4
+PAYLOAD_REDRAWS = 64
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "car" / "integrity_vectors.json"
 
 RECIPE = f"""\
@@ -83,8 +91,19 @@ def _seeded_raw(rng: random.Random, signal: Any) -> int:
     return raw
 
 
-def _vector(dbc_name: str, rule: str | None, message: Any) -> dict[str, Any] | None:
-    """The vector for one message, or None when the packer gives it neither a counter nor a checksum."""
+def _seed(address: int, variant: int) -> int:
+    return address if variant == 0 else address * 1000 + variant
+
+
+def _vector(
+    dbc_name: str, rule: str | None, message: Any, variant: int = 0, taken: frozenset[str] | set[str] = frozenset()
+) -> dict[str, Any] | None:
+    """One variant of one message's vector, or None when the packer gives the message neither counter nor checksum.
+
+    Variant 0 packs the whole counter cycle and a bit more; the others pack another payload for the first 3 calls.
+    A payload whose base frame is in `taken` (the layout's earlier variants) is drawn again from the same seeded
+    stream, up to PAYLOAD_REDRAWS times, so a message with few free bits still gets different payloads where it can.
+    """
     from opendbc.can.dbc import SignalType
     from opendbc.can.packer import CANPacker, set_value
 
@@ -95,25 +114,28 @@ def _vector(dbc_name: str, rule: str | None, message: Any) -> dict[str, Any] | N
     if not counters and not checksums:
         return None
     integrity = {s.name for s in [*counters, *checksums]}
-    label = f"{dbc_name} {message.name} 0x{message.address:X}"
+    label = f"{dbc_name} {message.name} 0x{message.address:X} variant {variant}"
 
     masks = {s.name: _mask(s, message.size) for s in signals}
-    rng = random.Random(message.address)
-    raw = {s.name: _seeded_raw(rng, s) for s in signals if s.name not in integrity}
-    values = {s.name: raw[s.name] * s.factor + s.offset for s in signals if s.name in raw}
-
-    period = (counters[0].max_counter if counters else 0) + 1
-    packer = CANPacker(dbc_name)
-    frames = [bytes(packer.pack(message.address, values)) for _ in range(period + 2)]
-    if any(len(frame) != message.size for frame in frames):
-        raise SystemExit(f"{label}: the packer returned a frame that is not {message.size} bytes")
-
-    base = bytearray(frames[0])
-    for signal in [*counters, *checksums]:
-        set_value(base, signal, 0)
     integrity_bits = 0
     for name in integrity:
         integrity_bits |= masks[name]
+    period = (counters[0].max_counter if counters else 0) + 1
+    calls = period + 2 if variant == 0 else 3
+    rng = random.Random(_seed(message.address, variant))
+    for _ in range(PAYLOAD_REDRAWS + 1):
+        raw = {s.name: _seeded_raw(rng, s) for s in signals if s.name not in integrity}
+        values = {s.name: raw[s.name] * s.factor + s.offset for s in signals if s.name in raw}
+        packer = CANPacker(dbc_name)
+        frames = [bytes(packer.pack(message.address, values)) for _ in range(calls)]
+        if any(len(frame) != message.size for frame in frames):
+            raise SystemExit(f"{label}: the packer returned a frame that is not {message.size} bytes")
+        base = bytearray(frames[0])
+        for signal in [*counters, *checksums]:
+            set_value(base, signal, 0)
+        if bytes(base).hex() not in taken:
+            break
+
     base_int = int.from_bytes(base, "little")
     for k, frame in enumerate(frames):
         if (int.from_bytes(frame, "little") ^ base_int) & ~integrity_bits:
@@ -140,14 +162,18 @@ def _vector(dbc_name: str, rule: str | None, message: Any) -> dict[str, Any] | N
         "counters": [_counter_field(s) for s in counters],
         "checksums": [_field(s) for s in checksums],
         "frames_hex": [frame.hex() for frame in frames],
+        "variant": variant,
     }
 
 
 def build() -> list[dict[str, Any]]:
-    """The vectors of every shipped DBC, deduplicated by rule, address and layout, in DBC name then address order."""
+    """The vectors of every shipped DBC, deduplicated by rule, address and layout, in DBC name then address order.
+
+    Each layout comes with its variants, from the first DBC by name that has it.
+    """
     from opendbc.can.dbc import DBC
 
-    vectors: dict[tuple[Any, ...], dict[str, Any]] = {}
+    groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
     for dbc_name, entry in sorted(load_catalog().dbcs.items()):
         for address, message in sorted(DBC(dbc_name).msgs.items()):
             vector = _vector(dbc_name, entry.rule, message)
@@ -160,11 +186,17 @@ def build() -> list[dict[str, Any]]:
                 json.dumps(vector["counters"], sort_keys=True),
                 json.dumps(vector["checksums"], sort_keys=True),
             )
-            if key in vectors:
-                vectors[key]["dbcs"].append(dbc_name)
-            else:
-                vectors[key] = vector
-    return list(vectors.values())
+            if key in groups:
+                groups[key][0]["dbcs"].append(dbc_name)
+                continue
+            groups[key] = [vector]
+            for variant in range(1, VARIANTS):
+                taken = {earlier["base_hex"] for earlier in groups[key]}
+                groups[key].append(_vector(dbc_name, entry.rule, message, variant, taken))
+    for group in groups.values():
+        for vector in group[1:]:
+            vector["dbcs"] = group[0]["dbcs"]
+    return [vector for group in groups.values() for vector in group]
 
 
 def render(vectors: list[dict[str, Any]]) -> str:
@@ -174,18 +206,31 @@ def render(vectors: list[dict[str, Any]]) -> str:
 
 
 def summary(vectors: list[dict[str, Any]], size: int) -> str:
-    by_rule: dict[str, int] = {}
+    groups: list[list[dict[str, Any]]] = []
     for vector in vectors:
+        if vector["variant"] == 0:
+            groups.append([])
+        groups[-1].append(vector)
+    layouts = [group[0] for group in groups]
+    by_rule: dict[str, int] = {}
+    for vector in layouts:
         by_rule[str(vector["rule"])] = by_rule.get(str(vector["rule"]), 0) + 1
-    no_counter = sum(not vector["counters"] for vector in vectors)
-    no_checksum = sum(not vector["checksums"] for vector in vectors)
-    many_checksums = sum(len(vector["checksums"]) > 1 for vector in vectors)
+    no_counter = sum(not vector["counters"] for vector in layouts)
+    no_checksum = sum(not vector["checksums"] for vector in layouts)
+    many_checksums = sum(len(vector["checksums"]) > 1 for vector in layouts)
     frames = sum(len(vector["frames_hex"]) for vector in vectors)
+    repeated = [
+        f"{group[0]['rule']} 0x{group[0]['address']:X} {group[0]['message']} "
+        f"({len({vector['base_hex'] for vector in group})} payloads)"
+        for group in groups
+        if len({vector["base_hex"] for vector in group}) < len(group)
+    ]
     return (
-        f"{len(vectors)} vectors, {frames} frames, {size} bytes\n"
-        f"  per rule: {', '.join(f'{rule} {count}' for rule, count in sorted(by_rule.items()))}\n"
-        f"  without a counter: {no_counter}; without a checksum: {no_checksum}; "
-        f"with several checksums: {many_checksums}"
+        f"{len(layouts)} layouts, {len(vectors)} vectors, {frames} frames, {size} bytes\n"
+        f"  layouts per rule: {', '.join(f'{rule} {count}' for rule, count in sorted(by_rule.items()))}\n"
+        f"  layouts without a counter: {no_counter}; without a checksum: {no_checksum}; "
+        f"with several checksums: {many_checksums}\n"
+        f"  layouts with a repeated payload: {', '.join(repeated) or 'none'}"
     )
 
 
