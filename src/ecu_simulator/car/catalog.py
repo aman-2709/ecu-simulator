@@ -88,7 +88,7 @@ def load_catalog() -> Catalog:
 
 
 def rule_for_sha(sha256: str) -> str | None:
-    """The normalisation rule of the catalog DBC with this digest, or None.
+    """The integrity rule (counter and checksum rule) of the catalog DBC with this digest, or None.
 
     Matches the shipped bytes and opendbc's original bytes alike, so an operator who uploads the original file gets the
     same rule as the bundled copy.

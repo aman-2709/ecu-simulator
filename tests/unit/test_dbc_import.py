@@ -171,7 +171,8 @@ BO_ 2 Wide: 12 XXX
             db.encode(name, {})
         with pytest.raises(ValueError) as car:
             db.encode(name, {}, integrity_ok=True)
-        assert str(car.value) == str(default.value) == message["tx_issue"]
+        assert str(default.value) == message["tx_issue"]
+        assert str(car.value) == message["layout_issue"]  # the car path names what blocks it, not the counter rule
 
 
 def _layouts(db, message, name, cantools_db):

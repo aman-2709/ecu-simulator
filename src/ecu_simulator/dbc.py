@@ -139,7 +139,7 @@ class ImportedDb:
         info = self.message(name)
         blocking = info["layout_issue"] if integrity_ok else info["tx_issue"]
         if blocking:
-            raise ValueError(info["tx_issue"])
+            raise ValueError(blocking)
         frame = self._frames[info["id"], info["extended"]]
         fields = {s["name"]: s for s in info["signals"]}
         selected = {s: f["default"] for s, f in fields.items()}

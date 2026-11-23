@@ -196,6 +196,19 @@ def test_physical_link_down_refuses() -> None:
     assert caught.value.over == []
 
 
+def test_a_never_configured_adapter_gets_the_setup_hint_not_down() -> None:
+    """The common bench case: a fresh adapter is STOPPED with no bitrate. It cannot be brought up before a bitrate is
+    set, so the setup hint comes first; "interface is down" is for a configured link that is down."""
+    link = LinkInfo("can0", False, None, "STOPPED")
+    with pytest.raises(BusLoadError) as caught:
+        check_bus_load([("EngineData", 8, False, 0.02)], link)
+    assert str(caught.value) == (
+        "can0 has no bitrate set. Configure it with scripts/setup_can.sh (sudo scripts/setup_can.sh can0 500000); "
+        "the simulator never sets a bitrate"
+    )
+    assert caught.value.over == []
+
+
 def test_down_wins_over_the_ceiling() -> None:
     link = LinkInfo("can0", False, 500000, "STOPPED")
     with pytest.raises(BusLoadError) as caught:
