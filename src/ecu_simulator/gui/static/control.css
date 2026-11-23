@@ -200,3 +200,4 @@ button[aria-pressed="true"] { background: #d9eee8; border-color: #14635d; color:
 #car-table { min-width: 30rem; }
 #car-live table { min-width: 52rem; }
 .car-scroll tbody td:nth-child(2) { white-space: nowrap; overflow-wrap: normal; }
+.measured-spread { font-size: .8rem; color: #415953; white-space: nowrap; }

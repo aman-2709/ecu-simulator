@@ -4,6 +4,7 @@ The counters and checksums the live panel shows are compared with an independent
 a bit reader of the test's own; the message is found from the catalog's DBC file, parsed here too.
 """
 
+import json
 import re
 import socket
 import struct
@@ -11,6 +12,7 @@ import subprocess
 import threading
 import time
 from contextlib import contextmanager
+from itertools import pairwise
 from pathlib import Path
 
 from ecu_simulator.car.catalog import load_catalog
@@ -18,6 +20,8 @@ from tests.integration.test_gui_control_vcan import browser, expect, server  # n
 
 CATALOG_ROOT = Path(__file__).parents[2] / "src" / "ecu_simulator" / "_opendbc"
 FORD = Path(__file__).parents[1] / "fixtures" / "dbc" / "ford_fusion_2018_pt.dbc"
+TIMESTAMP_NS = getattr(socket, "SO_TIMESTAMPNS", 35)
+MEASURED = re.compile(r"^(\d+\.\d{2}) ms\s*min (\d+\.\d{2}) / max (\d+\.\d{2}) ms$")
 MARKUP = "<img src=x onerror=window.pwned=1>"
 SMALL_DBC = f"""VERSION ""
 BS_:
@@ -87,9 +91,11 @@ class Listener:
     def __init__(self, interface: str, can_id: int) -> None:
         self.sock = socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
         self.sock.setsockopt(socket.SOL_CAN_RAW, socket.CAN_RAW_FILTER, struct.pack("=II", can_id, socket.CAN_SFF_MASK))
+        self.sock.setsockopt(socket.SOL_SOCKET, TIMESTAMP_NS, 1)
         self.sock.bind((interface,))
         self.sock.settimeout(0.05)
         self.frames: list[bytes] = []
+        self.times: list[float] = []  # the kernel's receive timestamp of each frame, in seconds since the epoch
         self.running = True
         self.thread = threading.Thread(target=self._drain, daemon=True)
         self.thread.start()
@@ -97,11 +103,14 @@ class Listener:
     def _drain(self) -> None:
         while self.running:
             try:
-                raw = self.sock.recv(16)
+                raw, ancillary, _, _ = self.sock.recvmsg(16, socket.CMSG_SPACE(16))
             except TimeoutError:
                 continue
+            stamp = next((struct.unpack("@ll", data[:16]) for level, kind, data in ancillary
+                          if level == socket.SOL_SOCKET and kind == TIMESTAMP_NS), None)
             _, length, payload = struct.unpack("=IB3x8s", raw)
             self.frames.append(payload[:length])
+            self.times.append(stamp[0] + stamp[1] / 1e9 if stamp else time.time())
 
     def close(self) -> None:
         self.running = False
@@ -198,7 +207,7 @@ def test_walk_three_steps_on_vcan(browser, vcan, tmp_path):  # noqa: F811
             row = page.locator(f'#car-live-rows tr[data-message="{name}"]')
             expect(row.locator(".counter")).to_have_text(re.compile(r"^\d+$"))
             expect(row.locator(".checksum")).to_have_text(re.compile(r"^0x[0-9A-F]{2}$"))
-            expect(row.locator(".measured-period")).to_have_text(re.compile(r"\d+(\.\d+)? ms"))
+            expect(row.locator(".measured-period")).to_have_text(MEASURED, timeout=10000)
             expect(row.locator(".set-period")).to_have_text(re.compile(r"^\d+ ms"))
             page.locator("#car-live-pause").click()
             expect(page.locator("#car-live-pause")).to_have_attribute("aria-pressed", "true")
@@ -435,4 +444,163 @@ def test_untrusted_text_is_not_interpreted(browser, vcan, tmp_path):  # noqa: F8
         assert page.locator("#car-panel img").count() == 0
         assert page.evaluate("window.pwned") is None
         assert dialogs == []
+        page.close()
+
+
+def test_measured_period_is_the_bus_median_with_its_spread(browser, vcan, tmp_path):  # noqa: F811
+    """The busiest message's measured period is the median of the bus timestamps, with min and max, not a mean."""
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        page.goto(url)
+        choose_corolla(page)
+        periods = {row.get_attribute("data-message"): int(row.locator(".period-value").inner_text().split()[0])
+                   for row in page.locator("#car-table tbody tr").all()
+                   if row.locator("button").is_enabled()}
+        name = min(periods, key=periods.get)
+        layout = corolla_layouts()[name]
+        header = page.get_by_role("columnheader", name=re.compile("Period measured on the bus"))
+        expect(header).to_have_text("Period measured on the bus (median, min / max of the last 100 frames)")
+        listener = Listener(vcan, layout["id"])
+        try:
+            play(page)
+            cell = page.locator(f'#car-live-rows tr[data-message="{name}"] .measured-period')
+            expect(cell).to_have_text(MEASURED, timeout=10000)
+            page.wait_for_timeout(100 * periods[name] + 1500)
+            page.locator("#car-live-pause").click()
+            paused = time.time()
+            shown = MEASURED.match(cell.inner_text())
+            assert "median" in (cell.get_attribute("title") or "").lower()
+            time.sleep(0.2)
+        finally:
+            listener.close()
+        stamps = [t for t in listener.times if t <= paused][-101:]
+        assert len(stamps) == 101, f"the raw capture saw {len(stamps)} frames of {name}"
+        intervals = sorted((b - a) * 1000 for a, b in pairwise(stamps))
+        raw_median = (intervals[49] + intervals[50]) / 2
+        median, low, high = (float(value) for value in shown.groups())
+        assert abs(median - raw_median) <= max(0.5, 0.05 * raw_median), (median, raw_median)
+        assert low <= raw_median <= high, (low, raw_median, high)
+        stop(page)
+        page.close()
+
+
+def test_measured_period_statistic_is_the_median_not_the_mean(browser, tmp_path):  # noqa: F811
+    """A synthetic capture with known intervals: [12, 12, 12, 12, 25, 3, 12] ms has median 12 and mean 12.57."""
+    message = {"name": "PROBE", "id": 0x123, "extended": False, "dlc": 1, "period_ms": 12, "period_source": "dbc",
+               "clamped": False, "integrity": "none", "detail": None, "counters": [], "checksums": [],
+               "skipped": None}
+    car = {"platform": None, "dbc": {"filename": "probe.dbc", "sha256": "c" * 64}, "revision": None, "rule": None,
+           "bus_load": {"estimate": 0.01, "bitrate": 500000, "assumed": True, "worst_case": True},
+           "counts": {"valid": 0, "counter_only": 0, "user_rule": 0, "none": 1, "skipped": 0}}
+    status = {"state": "Running", "id": "probe-run", "interface": "vcan0", "endpoints": [], "error": "",
+              "restbus": None, "dbc": None, "car": car}
+    times, now = [], 1_000_000_000
+    for interval in (0, 12, 12, 12, 12, 25, 3, 12):
+        now += interval * 1000
+        times.append(now)
+    frames = [{"time": t, "id": "123", "kind": "", "length": 1, "bytes": [0],
+               "dbc": {"name": "PROBE", "signals": {"VALUE": {"value": 1, "unit": ""}}, "period_ms": None}}
+              for t in times]
+    body = '{"ready":true}\n' + json.dumps({"frames": frames, "dropped": 0}) + "\n"
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        page.route("**/run", lambda route: route.fulfill(json=status))
+        page.route("**/car/run", lambda route: route.fulfill(json={**car, "messages": [message]}))
+        page.route("**/capture", lambda route: route.fulfill(body=body, content_type="application/x-ndjson",
+                                                             headers={"X-Capture-Id": "probe"}))
+        page.route("**/car/link*", lambda route: route.fulfill(json={
+            "interface": "vcan0", "virtual": True, "bitrate": None, "state": "UP", "bus_off": None,
+            "bus_errors": None, "tx_dropped": 0}))
+        page.goto(url)
+        cell = page.locator('#car-live-rows tr[data-message="PROBE"] .measured-period')
+        expect(cell).to_have_text(re.compile(r"^12\.00 ms"))
+        expect(cell.locator(".measured-spread")).to_have_text("min 3.00 / max 25.00 ms")
+        assert "12.57" not in cell.inner_text()
+        page.close()
+
+
+def test_measured_period_waits_for_five_intervals(browser, tmp_path):  # noqa: F811
+    car = {"platform": None, "dbc": {"filename": "probe.dbc", "sha256": "c" * 64}, "revision": None, "rule": None,
+           "bus_load": {"estimate": 0.01, "bitrate": 500000, "assumed": True, "worst_case": True},
+           "counts": {"valid": 0, "counter_only": 0, "user_rule": 0, "none": 1, "skipped": 0}}
+    message = {"name": "PROBE", "id": 0x123, "extended": False, "dlc": 1, "period_ms": 12, "period_source": "dbc",
+               "clamped": False, "integrity": "none", "detail": None, "counters": [], "checksums": [],
+               "skipped": None}
+    frames = [{"time": 1_000_000_000 + i * 12_000, "id": "123", "kind": "", "length": 1, "bytes": [0],
+               "dbc": {"name": "PROBE", "signals": {"VALUE": {"value": 1, "unit": ""}}, "period_ms": None}}
+              for i in range(5)]
+    body = '{"ready":true}\n' + json.dumps({"frames": frames, "dropped": 0}) + "\n"
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        page.route("**/run", lambda route: route.fulfill(json={
+            "state": "Running", "id": "probe-run", "interface": "vcan0", "endpoints": [], "error": "",
+            "restbus": None, "dbc": None, "car": car}))
+        page.route("**/car/run", lambda route: route.fulfill(json={**car, "messages": [message]}))
+        page.route("**/capture", lambda route: route.fulfill(body=body, content_type="application/x-ndjson"))
+        page.route("**/car/link*", lambda route: route.fulfill(json={
+            "interface": "vcan0", "virtual": True, "bitrate": None, "state": "UP", "bus_off": None,
+            "bus_errors": None, "tx_dropped": 0}))
+        page.goto(url)
+        row = page.locator('#car-live-rows tr[data-message="PROBE"]')
+        expect(row.locator(".values")).to_have_text("VALUE 1")
+        expect(row.locator(".measured-period")).to_have_text("measuring...")
+        page.close()
+
+
+def describe_running_corolla(page, run_status, where: str) -> None:
+    """What an adopted Corolla run must show, from the run's own status. The status names no bus, so ``where`` is the
+    bus when the working copy names it, else the run's DBC file."""
+    expect(page.locator("#car-step-1")).to_have_attribute("data-state", "done")
+    expect(page.locator("#car-summary-1")).to_have_text(f"Toyota Corolla 2017-19 · {where} · generated drive")
+    expect(page.locator("#car-step-2")).to_have_attribute("data-state", "done")
+    counts = run_status["car"]["counts"]
+    expect(page.locator("#car-summary-2")).to_be_visible()
+    expect(page.locator("#car-summary-2")).to_contain_text(f"{counts['valid']} valid")
+    expect(page.locator("#car-chips [data-state=valid]")).to_have_text(f"{counts['valid']} valid")
+    expect(page.locator("#car-chips [data-state=none]")).to_have_text(f"{counts['none']} no counter or checksum")
+    expect(page.locator("#car-chips [data-state=skipped]")).to_have_text(f"{counts['skipped']} skipped")
+    identity = page.locator("#car-identity")
+    expect(identity).to_be_visible()
+    whole = page.evaluate("async () => (await fetch('/car/run')).json()")
+    expect(page.locator("#car-identity-sha")).to_have_text(whole["dbc"]["sha256"])
+    expect(page.locator("#car-identity-file")).to_have_text(whole["dbc"]["filename"])
+    expect(page.locator("#car-identity-revision")).to_have_text(load_catalog().revision)
+    expect(page.locator("#car-play")).to_be_disabled()
+    expect(page.locator("#car-stop")).to_be_enabled()
+    expect(page.locator("#car-live-rows tr").first).to_be_visible()
+
+
+def test_reload_while_a_car_runs_describes_the_run(browser, vcan, tmp_path):  # noqa: F811
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        page.goto(url)
+        choose_corolla(page)
+        play(page)
+        expect(page.locator("#car-run-status")).to_contain_text("elapsed")
+        page.reload()
+        expect(page.locator("#state")).to_have_text("Running")
+        run_status = page.evaluate("async () => (await fetch('/run')).json()")
+        describe_running_corolla(page, run_status, run_status["car"]["dbc"]["filename"])
+        status = page.locator("#car-run-status")
+        expect(status).to_contain_text(f"Running on {vcan} · generated drive")
+        expect(status).to_contain_text("since this page opened")
+        expect(status).not_to_contain_text("elapsed")
+        stop(page)
+        page.close()
+
+
+def test_run_bar_start_of_a_car_profile_is_described(browser, vcan, tmp_path):  # noqa: F811
+    with server(tmp_path) as url:
+        page = browser.new_page()
+        page.goto(url)
+        expect(page.locator("#draft")).not_to_have_value("")
+        page.locator("#profile").select_option("shipped/car_toyota_demo")
+        expect(page.locator("#draft")).to_have_value(re.compile("platform: TOYOTA_COROLLA"))
+        page.locator("#start").click()
+        expect(page.locator("#state")).to_have_text("Running", timeout=15000)
+        run_status = page.evaluate("async () => (await fetch('/run')).json()")
+        describe_running_corolla(page, run_status, "pt bus")
+        expect(page.locator("#car-run-status")).to_contain_text(f"Running on {vcan} · generated drive")
+        expect(page.locator("#car-run-status")).to_contain_text("elapsed")  # seen while Starting
+        stop(page)
         page.close()

@@ -7,6 +7,10 @@
   const draft = $("draft");
   const banner = $("car-banner");
   const FIRST_ROWS = 25;
+  const KEPT_INTERVALS = 100;   // bus-timestamp intervals kept per message for the measured period
+  const MIN_INTERVALS = 5;      // fewer than this shows "measuring..."
+  const MEASURED_TITLE = "Median of the intervals between this message's last " + KEPT_INTERVALS +
+    " frames, from the capture's kernel timestamps, with the shortest and longest interval. Nothing is smoothed.";
   const MAX_LOG_BYTES = 16 * 1024 * 1024;
   const PERIOD_SOURCES = {override: "set by you", log: "from log", dbc: "from DBC",
     table: "opendbc safety table, approximate", assumed: "assumed"};
@@ -359,13 +363,14 @@
   }
   function renderChecked() {
     const recorded = source() === "recorded";
-    $("car-chips").hidden = recorded || !checked;
+    const info = described();
+    $("car-chips").hidden = recorded || !info;
     $("car-recorded-note").hidden = !recorded || !checked;
     $("car-chips").replaceChildren(...CHIPS.map(([key, label]) => {
       const chip = document.createElement("li");
       chip.className = "chip";
       chip.dataset.state = key;
-      chip.textContent = (checked?.counts[key] ?? 0) + " " + label;
+      chip.textContent = (info?.counts[key] ?? 0) + " " + label;
       return chip;
     }));
     $("car-integrity-note").textContent = checked?.rule === "hyundai_can" && !recorded ? HYUNDAI_NOTE : "";
@@ -380,11 +385,11 @@
       (ruleFile.rules === 1 ? " rule" : " rules") + " · applied to the messages it names" : "";
     $("car-rule-clear").hidden = !ruleFile;
     renderTable();
-    const fields = {"car-identity-file": checked?.dbc.filename, "car-identity-sha": checked?.dbc.sha256,
-      "car-identity-revision": checked ? (checked.revision || "not a catalog DBC") : "",
-      "car-identity-rule": checked ? (RULES[checked.rule] || checked.rule || "none") : ""};
+    const fields = {"car-identity-file": info?.dbc.filename, "car-identity-sha": info?.dbc.sha256,
+      "car-identity-revision": info ? (info.revision || "not a catalog DBC") : "",
+      "car-identity-rule": info ? (RULES[info.rule] || info.rule || "none") : ""};
     for (const [id, value] of Object.entries(fields)) $(id).textContent = value || "—";
-    $("car-identity").hidden = !checked;
+    $("car-identity").hidden = !info;
   }
 
   // --- step 3: run -----------------------------------------------------------------------------------------------------
@@ -409,6 +414,12 @@
   $("interface").addEventListener("change", syncInterfaces);
 
   function busLoadText() {
+    if (!checked && active?.car) {
+      const load = active.car.bus_load;
+      return "Estimated bus load " + (load.estimate == null ? "unknown" : (load.estimate * 100).toFixed(1) + "%") +
+        " of " + kbit(load.bitrate) + " on " + active.interface + (load.assumed ? " (virtual interface, bitrate " +
+        "assumed)" : "") + (load.worst_case ? ", worst case" : "") + ", as the run reported it";
+    }
     if (!checked) return "Choose a car to estimate the bus load.";
     if (source() === "recorded") return "Recorded frames are sent on vcan0 at their recorded timing; no estimate.";
     const load = checked.bus_load;
@@ -543,7 +554,16 @@
     render();
   }
 
+  // When this page first saw each run, and whether the run was already Running in the page's first status: the
+  // status carries no start time, so an adopted run's clock can only start then.
+  const firstSeen = new Map();
+  let statusCount = 0;
   window.addEventListener("run-update", () => {
+    statusCount += 1;
+    if (run.id && !firstSeen.has(run.id)) {
+      firstSeen.set(run.id, {at: Date.now(), alreadyRunning: run.state === "Running", pageOpen: statusCount === 1});
+    }
+    if (active?.kind === "run" && run.id === active.id && run.car) active.car = run.car;
     if (active?.kind === "run") {
       if (run.id !== active.id) {
         if (active.seen) finishRun();
@@ -557,8 +577,12 @@
       if (run.state === "Failed") return finishRun(run);
       if (run.state === "Stopped") return finishRun();
     } else if (!active && run.state === "Running" && run.car) {
-      active = {kind: "run", id: run.id, interface: run.interface, source: "generated", started: Date.now(),
-        seen: true};
+      const seen = firstSeen.get(run.id);
+      // Seen while Starting, the clock is close to the run's start; seen already Running, it is not.
+      const clock = !seen.alreadyRunning ? "elapsed" : seen.pageOpen ? "since this page opened" :
+        "since this page saw it";
+      active = {kind: "run", id: run.id, interface: run.interface, source: "generated", started: seen.at,
+        seen: true, adopted: true, clock, car: run.car};
       phase = "running";
       statusNote = "";
       openLive(run.interface, run.car.dbc.sha256, null, run.car.bus_load.bitrate);
@@ -602,11 +626,17 @@
     $("car-live-rows").replaceChildren();
     $("car-live-pause").setAttribute("aria-pressed", "false");
     $("car-live-pause").textContent = "Pause display";
-    if (messages) buildRows(session, messages);
-    else api("/car/run").then(car => { if (live === session) buildRows(session, car.messages); })
-      .catch(error => { if (live === session) problem("The run's messages could not be read: " + error.message,
-        "stop the run and press Play again."); });
-    stream(session, iface, sha256, signalReady);
+    // The rows exist before the first frame arrives, so no frame is dropped for want of its row.
+    const rows = messages ? Promise.resolve(messages) : api("/car/run").then(car => car.messages);
+    rows.then(list => {
+      if (live !== session) return;
+      buildRows(session, list);
+      stream(session, iface, sha256, signalReady);
+    }).catch(error => {
+      signalReady(error);
+      if (live === session) problem("The run's messages could not be read: " + error.message,
+        "stop the run and press Play again.");
+    });
     if (!recorded) {
       pollLink(session);
       session.linkTimer = setInterval(() => pollLink(session), 2000);
@@ -632,6 +662,7 @@
       }
       cells["set-period"].textContent = session.recorded ? "as recorded" :
         m.period_ms + " ms · " + (PERIOD_SOURCES[m.period_source] || m.period_source);
+      cells["measured-period"].title = MEASURED_TITLE;
       cells.integrity.textContent = session.recorded ? "as recorded" : SHORT_INTEGRITY[m.integrity] || m.integrity;
       session.rows.set(m.name, {message: m, row, cells, signals: null, last: null, intervals: [], dirty: false});
     }
@@ -681,7 +712,7 @@
       session.carFrames += 1;
       if (entry.last != null) {
         entry.intervals.push((frame.time - entry.last) / 1000);
-        if (entry.intervals.length > 20) entry.intervals.shift();
+        if (entry.intervals.length > KEPT_INTERVALS) entry.intervals.shift();
       }
       entry.last = frame.time;
       entry.signals = decoded.signals;
@@ -691,6 +722,23 @@
   }
   function number(value) {
     return typeof value === "number" && !Number.isInteger(value) ? String(Number(value.toFixed(3))) : String(value);
+  }
+  function periodStats(intervals) {
+    const sorted = [...intervals].sort((a, b) => a - b);
+    const middle = sorted.length >> 1;
+    const median = sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+    return {median, min: sorted[0], max: sorted[sorted.length - 1]};
+  }
+  function measured(cell, intervals) {
+    if (intervals.length < MIN_INTERVALS) {
+      cell.textContent = "measuring...";
+      return;
+    }
+    const {median, min, max} = periodStats(intervals);
+    const spread = document.createElement("div");
+    spread.className = "measured-spread";
+    spread.textContent = "min " + min.toFixed(2) + " / max " + max.toFixed(2) + " ms";
+    cell.replaceChildren(median.toFixed(2) + " ms", spread);
   }
   function paint(session = live) {
     if (!session) return;
@@ -707,10 +755,7 @@
           .join(" / ") || "—";
         cells.checksum.textContent = m.checksums.map(name => signals[name] ?
           "0x" + Number(signals[name].value).toString(16).toUpperCase().padStart(2, "0") : "?").join(" / ") || "—";
-        if (entry.intervals.length) {
-          const mean = entry.intervals.reduce((a, b) => a + b, 0) / entry.intervals.length;
-          cells["measured-period"].textContent = mean.toFixed(1) + " ms";
-        }
+        measured(cells["measured-period"], entry.intervals);
       }
     }
     const bits = session.bits.reduce((total, [, size]) => total + size, 0);
@@ -787,12 +832,30 @@
     const seconds = Math.floor((Date.now() - since) / 1000);
     return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
   }
-  function summary() {
-    if (!checked) return "";
+  function described() {
+    // A run of a car reports its own platform, DBC, revision, rule and counts; describe what runs, not the check.
+    const car = active?.kind === "run" ? active.car : null;
+    if (car) {
+      const [, platform] = findPlatform(car.platform);
+      // The status names no bus: take it from a working copy of the same platform, or from a one-bus platform;
+      // otherwise the summary names the run's DBC file instead.
+      const drafted = new RegExp("^ {2}platform: " + car.platform + "$", "m").test(draft.value);
+      const bus = !platform ? null : drafted ? /^ {2}bus: (\w+)/m.exec(draft.value)?.[1] || platform.buses[0] :
+        platform.buses.length === 1 ? platform.buses[0] : null;
+      return {platform, bus, dbc: car.dbc, revision: car.revision, rule: car.rule, counts: car.counts,
+        source: "generated"};
+    }
+    if (!checked) return null;
     const [, platform] = findPlatform(checked.platform);
-    const what = platform ? platform.names[0] + " · " + (/^ {2}bus: (\w+)/m.exec(draft.value)?.[1] || "pt") +
-      " bus" : checked.dbc.filename + " (uploaded DBC)";
-    return what + " · " + (source() === "recorded" ? "recorded log, played as recorded" : "generated drive");
+    return {platform, bus: /^ {2}bus: (\w+)/m.exec(draft.value)?.[1] || "pt", dbc: checked.dbc,
+      revision: checked.revision, rule: checked.rule, counts: checked.counts, source: source()};
+  }
+  function summary() {
+    const info = described();
+    if (!info) return "";
+    const what = info.platform ? info.platform.names[0] + " · " + (info.bus ? info.bus + " bus" : info.dbc.filename) :
+      info.dbc.filename + " (uploaded DBC)";
+    return what + " · " + (info.source === "recorded" ? "recorded log, played as recorded" : "generated drive");
   }
   function setStep(id, state, collapsed) {
     const element = $(id);
@@ -807,7 +870,7 @@
     if (active) {
       text = (active.kind === "replay" ? "Playing the recorded log " + active.name + " on vcan0" :
         (live ? "Running on " : "Starting on ") + active.interface + " · generated drive") + " · " +
-        elapsed(active.started) + " elapsed";
+        elapsed(active.started) + " " + (active.clock || "elapsed");
     }
     if ($("car-run-status").textContent !== text) $("car-run-status").textContent = text;
   }
@@ -825,9 +888,10 @@
     $("car-change-1").hidden = one !== "done" || running;
     $("car-change-1").setAttribute("aria-expanded", String(stepOneOpen));
     $("car-change-1").textContent = stepOneOpen ? "Close" : "Change car or source";
-    $("car-summary-2").textContent = checked ? CHIPS.map(([key, label]) => checked.counts[key] + " " + label)
+    const info = described();
+    $("car-summary-2").textContent = info ? CHIPS.map(([key, label]) => info.counts[key] + " " + label)
       .join(", ") : "";
-    $("car-summary-2").hidden = !(running && checked);
+    $("car-summary-2").hidden = !(running && info);
     for (const id of ["car-brand", "car-bus", "car-upload", "car-source-generated", "car-source-recorded",
       "car-rule", "car-rule-file", "car-rule-clear", "car-timing-log", "car-log-file"]) {
       $(id).disabled = busy || running;

@@ -98,12 +98,6 @@
             </table>
           </div>
           <button type="button" id="car-table-more" aria-controls="car-table" hidden></button>
-          <details id="car-identity" class="wheel-source" hidden><summary>DBC identity</summary>
-            <dl><dt>DBC file</dt><dd id="car-identity-file"></dd>
-              <dt>SHA-256</dt><dd id="car-identity-sha"></dd>
-              <dt>Catalog revision</dt><dd id="car-identity-revision"></dd>
-              <dt>Integrity rule</dt><dd id="car-identity-rule"></dd></dl>
-          </details>
         </div>
       </li>
       <li id="car-step-3" data-state="todo" aria-labelledby="car-step-3-heading">
@@ -114,6 +108,12 @@
           <div class="actions"><button type="button" id="car-play" class="primary" disabled>Play</button>
             <button type="button" id="car-stop" disabled>Stop</button></div>
           <p id="car-run-status" role="status"></p>
+          <details id="car-identity" class="wheel-source" hidden><summary>DBC identity</summary>
+            <dl><dt>DBC file</dt><dd id="car-identity-file"></dd>
+              <dt>SHA-256</dt><dd id="car-identity-sha"></dd>
+              <dt>Catalog revision</dt><dd id="car-identity-revision"></dd>
+              <dt>Integrity rule</dt><dd id="car-identity-rule"></dd></dl>
+          </details>
         </div>
       </li>
     </ol>
@@ -128,7 +128,7 @@
       <div class="car-scroll" role="region" tabindex="0" aria-label="Live values of the car's messages">
         <table>
           <thead><tr><th scope="col">Message</th><th scope="col">ID</th><th scope="col">Sending now</th><th scope="col">Period set</th>
-            <th scope="col">Period measured on the bus</th><th scope="col">Counter</th><th scope="col">Checksum</th><th scope="col">Integrity</th></tr></thead>
+            <th scope="col">Period measured on the bus (median, min / max of the last 100 frames)</th><th scope="col">Counter</th><th scope="col">Checksum</th><th scope="col">Integrity</th></tr></thead>
           <tbody id="car-live-rows"></tbody>
         </table>
       </div>
