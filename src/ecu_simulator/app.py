@@ -630,7 +630,7 @@ async def run(
 
         async with scenario_tick(runtime.sync, config.profile.scenario.tick), scenario_tick(publish_periodic, 0.05):
             if car is not None:
-                await publish_frames(config.interface, car.frames, broadcast_paused, announce_ready, stop)
+                await publish_frames(config.interface, car.frames, broadcast_paused, announce_ready, stop, stagger=True)
             elif dbc is not None and dbc.frames:
                 await publish_frames(config.interface, dbc.frames, broadcast_paused, announce_ready, stop)
             elif restbus is None:

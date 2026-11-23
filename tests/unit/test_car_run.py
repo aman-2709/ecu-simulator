@@ -446,6 +446,29 @@ async def test_a_run_time_encode_error_ends_app_run_with_that_error(monkeypatch)
     sock.close.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_a_car_run_staggers_its_first_deadlines(monkeypatch):
+    """The car run, and only it, asks the publisher to spread its frames' first deadlines (a dbc or restbus profile
+    keeps the default, which the characterization tests pin)."""
+    import asyncio
+    from unittest.mock import Mock
+
+    from tests.unit.test_restbus_publisher import FakeTransport
+
+    calls: list[dict[str, Any]] = []
+
+    async def publish_frames(interface, frames, paused, ready, stop, **options):
+        calls.append({"frames": len(frames), **options})
+
+    monkeypatch.setattr(app, "publish_frames", publish_frames)
+    monkeypatch.setattr("ecu_simulator.car.run.read_link", lambda interface: VCAN)
+    transport = FakeTransport()
+    await asyncio.wait_for(
+        app.run(corolla(), ready=Mock(), transport_factory=lambda *_: transport, install_signal_handlers=False), 5
+    )
+    assert calls == [{"frames": 57, "stagger": True}]
+
+
 # --- rules ------------------------------------------------------------------------------------------------------------
 
 
