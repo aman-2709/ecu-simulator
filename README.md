@@ -183,6 +183,175 @@ python -m playwright install chromium
 bash scripts/run_integration_tests.sh -k "gui_control_vcan or wheel_speed_demo" -q
 ```
 
+### Run a whole car
+
+Pick a car from the catalog (or upload a DBC) and press **Play**. The simulator then sends every message of that car's DBC that it can transmit, each at its own period, with signal values from a generated drive and with counters and checksums computed for the bytes actually sent, until you press **Stop**. It is for test engineers who need believable, repeating bus traffic from a whole car on `vcan0` or on a bench `can0`, for example to exercise a logger, a gateway or a receiver that validates counters and checksums, and for engineers who run it on their own network with their own DBC and their own checksum rules. The traffic is generated from the DBC; it is not a recording of a real car and is labelled as generated. The simulated ECU still answers OBD and UDS as the profile's own vehicle, not as the chosen car, and the manual **DBC messages** panel above is unchanged (it still refuses messages that have counter or checksum fields).
+
+The catalog has 121 platforms (Toyota 39, Honda 30, Hyundai 52, classic CAN only) from 21 DBCs. Everything below was checked on `vcan0` or by unit tests. The physical-bus acceptance has not been run; see [docs/validation/car-from-dbc.md](docs/validation/car-from-dbc.md) for what was measured and for the procedure that remains.
+
+#### In the browser
+
+```sh
+ecu-simulator-gui --port 8766
+```
+
+Open the printed loopback address. The **Car** panel is on the **Simulator** tab, above **DBC messages**.
+
+1. **Choose.** Pick a brand and platform, and the bus if the car has more than one (the Corolla has `pt` and `radar`; one bus runs at a time), or upload a DBC. Then pick the source: a **generated drive**, optionally with a candump log attached only to measure each message's period, or a **recorded log** played as recorded (`vcan0` only, once through).
+2. **Check.** Chips count the messages in each integrity state. The table lists every message with its ID, its period and where the period came from (with an **Edit** button), and its integrity state with the reason. Here you also pick the integrity rule: the catalog's, Toyota, Honda, Hyundai (classic CAN), or an uploaded rule file. Nothing is sent yet.
+3. **Run.** Pick the interface and read the estimated bus load against the interface's bitrate, then press **Play**. The live data panel below the steps shows, for each message, the signal values as sent, the period set and the period measured on the bus, the counter, and the checksum with its integrity state. It also shows the bus load seen, and on a physical interface the adapter's bus-error and bus-off counters and the kernel's tx-dropped counter.
+
+Selecting the shipped `car_toyota_demo` profile and clicking **Start ECU** runs the same Toyota car. The run shows the DBC's SHA-256, the opendbc revision and each message's integrity state.
+
+#### From the command line
+
+With `vcan0` set up as under [Usage](#usage):
+
+```sh
+ecu-simulator validate-config --profile src/ecu_simulator/profiles/car_toyota_demo.yaml
+ecu-simulator --profile src/ecu_simulator/profiles/car_toyota_demo.yaml --interface vcan0
+candump -L vcan0
+```
+
+`car_toyota_demo` is a 2017-19 Toyota Corolla on its powertrain bus. It sends 57 of the bus's 58 messages (`PCS_HUD` is skipped: its DBC layout has overlapping signals). Vehicle speed steps 0, 40 and 0 km/h every 10 seconds, and the car's speed signals follow it, so an OBD request `01 0D` agrees with the wheel speeds on the bus.
+
+#### The `car:` profile section
+
+```yaml
+car:
+  platform: TOYOTA_COROLLA
+  bus: pt
+  periods:
+    WHEEL_SPEEDS: 20
+```
+
+| Key | Meaning |
+|---|---|
+| `platform` | A catalog platform ID such as `TOYOTA_COROLLA` or `HONDA_CIVIC_BOSCH`. Give `platform`, or `sha256` with `filename`, not both. |
+| `bus` | A bus of that platform, `pt` by default. An uploaded DBC has one bus. |
+| `sha256`, `filename` | An uploaded DBC: the digest the importer shows, and a display name. The name is never used as a path. |
+| `rule` | `toyota`, `honda` or `hyundai_can`. Overrides the catalog's rule for the DBC. |
+| `rule_file` | The SHA-256 of an uploaded rule file (see below). |
+| `periods` | Your overrides in milliseconds, 10 to 60000, by DBC message name. |
+| `log_periods` | Periods measured from an attached log. The panel writes this; you rarely edit it. |
+
+`car` cannot be combined with `restbus` or `dbc`. A name in `periods` that is not a message of the DBC is ignored by the run, and the Check step lists it as a warning. The importer keeps uploaded DBCs and rule files by digest under `$XDG_CONFIG_HOME/ecu-simulator` (normally `~/.config/ecu-simulator`), so a profile that names a digest runs only on a machine that has imported the same files.
+
+#### On a physical bus
+
+- Never point this at a vehicle network that carries a real car. It is for a dedicated, terminated test bus.
+- A lone transmitter gets no acknowledgement and ends up bus-off, so the bus needs a second active node.
+- The simulator never sets the bitrate. Configure the interface first with `scripts/setup_can.sh`, as under [Usage](#usage).
+- On a physical interface the run refuses to start when its estimated load is above 70% of the interface's configured bitrate, and names the three largest messages. It also refuses when the interface has no bitrate configured or is down (state `STOPPED`). A link in `BUS-OFF` is not refused at start; the run reports bus-off while it runs. The estimate counts worst-case stuff bits. On `vcan0` it is informational and never refuses.
+- Starting a car on a physical interface asks for the same bench transmission review as the manual DBC messages: a dialog lists every message with one stamped sample frame and any identifier already seen on the bus during a 500 ms observation. A silent window can miss a slower or intermittent sender.
+- Any failed send stops the run with its cause (tested by taking the interface down mid-run), and so does a run-time encode error. Nothing is resent silently.
+
+#### What the integrity labels mean
+
+| Label | Meaning |
+|---|---|
+| `valid` | A rule for this DBC is known and the message has fields it recognises. The counter advances on every transmission and wraps at its maximum, and the checksum is computed over the bytes sent. For Toyota and Honda the bytes equal opendbc's packer's for the same field values (740 stored vectors), and opendbc's own `CANParser` accepts the frames of a Corolla and a Honda Civic run. For **Hyundai classic CAN**, `valid` means only that the bytes equal opendbc's packer's for the signals it names: opendbc's own parser ignores that DBC's checksums and counters, nothing here was checked against a real Hyundai, and a given model may not use those fields. |
+| `counter only: checksum not computed` | There is no rule for this DBC. A signal named `COUNTER` advances; a signal named `CHECKSUM` stays at its DBC default (normally zero). |
+| `valid (user rule)` | Computed as the supplied rule file says. It has not been checked against a car. |
+| `no counter or checksum` | There is nothing to generate. A signal whose name only looks like a counter or checksum is held at its DBC initial value and the detail says so. |
+| `skipped: <reason>` | Not transmitted: `CAN FD`, `layout error: ...`, `SecOC authenticator`, `collides with <ecu>.<endpoint> on 0x...` (the simulated ECU's own diagnostic IDs), or `encode failed: ...`. The run goes on with the rest. It fails only when nothing can be transmitted or the interface cannot be used. |
+
+Rules are chosen by the DBC's SHA-256, never by guessing from a file name. An upload whose bytes equal a catalog DBC's, shipped or original, gets that DBC's rule. Any other uploaded DBC has no rule until you pick one in the Check step or upload a rule file.
+
+#### Where the periods come from
+
+Each message's period comes from the first of these that exists:
+
+1. **set by you**: the Edit button, or `car.periods`.
+2. **from log**: measured from a candump log you attached (needs at least three frames of that message).
+3. **from DBC**: the message's `GenMsgCycleTime`. opendbc's DBCs have none.
+4. **opendbc safety table, approximate**: the expected frequency in opendbc's safety receive tables. Only 16 messages have one (Toyota 3, Honda 5, Hyundai 8), and ambiguous addresses are left out.
+5. **assumed**: 100 ms. Most messages end up here (55 of the Corolla's 58).
+
+A period below 10 ms or above 60000 ms is clamped and labelled. The **period measured on the bus** column in the live panel is the median of the last 100 intervals between that message's frames, with the shortest and longest of them, taken from the capture's kernel receive timestamps rather than the sender's own timer. A mean would hide scheduling jitter, so none is shown. The column reads "measuring..." until five intervals exist.
+
+#### Rule files
+
+A DBC that the catalog does not cover can have its counters and checksums generated by a rule file: YAML, data only, uploaded in the Check step. For a catalog car it replaces the catalog's rule for the messages it matches. Nothing in it is executed, and YAML anchors, aliases and tags are refused. Each rule picks its messages exactly (`messages: [Gearbox]`) or by `glob: "Gear*"` (case-sensitive), and gives a `counter`, a `checksum`, or both. The first rule in the file that matches a message wins. A rule that matches no message of the DBC, names a missing signal or puts a field outside the frame is refused with its dotted path, for example `rules.0.checksum.signal`. A file is at most 256 KiB and 1000 rules.
+
+Checksum algorithms: `xor`, `sum8` and `nibble_sum` over the bytes in `covers` (by default every byte that does not overlap the checksum field), `crc8` and `crc16` with `poly`, `init`, `xorout` and `reflect`, and the AUTOSAR presets `e2e_p01` and `e2e_p02`. An optional `data_id` is one more byte after the covered bytes. The counter is written before the checksum is computed, so a checksum whose `covers` include the counter's byte covers the counter.
+
+This DBC fragment has two messages (`XXX` is the node name opendbc DBCs use):
+
+```dbc
+BO_ 512 Gearbox: 8 XXX
+ SG_ GEAR : 0|4@1+ (1,0) [0|15] "" XXX
+ SG_ OUTPUT_RPM : 8|16@1+ (1,0) [0|65535] "rpm" XXX
+ SG_ ALIVE : 48|4@1+ (1,0) [0|15] "" XXX
+ SG_ CRC : 56|8@1+ (1,0) [0|255] "" XXX
+
+BO_ 291 Brake: 4 XXX
+ SG_ CRC : 0|8@1+ (1,0) [0|255] "" XXX
+ SG_ ALIVE : 8|4@1+ (1,0) [0|15] "" XXX
+ SG_ PRESSURE : 16|16@1+ (1,0) [0|65535] "" XXX
+```
+
+and this rule file covers both:
+
+```yaml
+version: 1
+rules:
+  - messages: [Gearbox]
+    counter: {signal: ALIVE, max: 9}      # counts 0 to 9, then 0 again
+    checksum:
+      signal: CRC
+      algorithm: crc8
+      poly: 0x1D
+      init: 0xFF
+      xorout: 0xFF                        # reflect is false unless you set it
+      covers: [0, 1, 2, 3, 4, 5, 6]
+      data_id: 0x5A                       # appended after byte 6
+  - messages: [Brake]
+    counter: {signal: ALIVE}              # AUTOSAR E2E Profile 1: low nibble of byte 1
+    checksum:
+      signal: CRC                         # byte 0
+      algorithm: e2e_p01
+      data_id: 0x123
+      data_id_mode: both                  # both, low, alt or nibble
+```
+
+With `GEAR` 3 and `OUTPUT_RPM` 2500 and every other signal 0, the `Gearbox` rule produces (byte 6 is `ALIVE`, byte 7 is `CRC`):
+
+```text
+frame  bytes
+0      03 C4 09 00 00 00 00 5E
+1      03 C4 09 00 00 00 01 12
+2      03 C4 09 00 00 00 02 C6
+9      03 C4 09 00 00 00 09 48
+10     03 C4 09 00 00 00 00 5E
+```
+
+`Brake` counts 0 to 14 and then wraps. A unit test reads the three blocks above from this README, parses the rule file, binds it to the DBC, stamps the frames and compares them with a separate bitwise CRC (`tests/unit/test_car_readme_example.py`). Parsing is pure Python and slows the GUI server while it runs: a dense 256 KiB file took 7.7 to 10.5 seconds on the development machine and a realistic 1000-rule file about 3 seconds.
+
+**AUTOSAR presets and their licence.** `e2e_p01` and `e2e_p02` fix the CRC, the bytes it covers and the position of the CRC (byte 0) and the counter (low nibble of byte 1), so a preset rule names only its Data ID: `data_id` and `data_id_mode` for Profile 1, a `data_id_list` of 16 values for Profile 2. They need a counter. Profile 1 counts 0 to 14 and then wraps, as the specification says. Profile 2 counts 0 to 15 and starts at 0, where AUTOSAR's reference example starts at 1. Only the standard positions are supported. The presets follow AUTOSAR's published specification of the E2E protocols (PRS_E2EProtocol, release R22-11) and its CRC library specification (R22-11), and the specification's own worked examples (8 for Profile 1, 16 for Profile 2) are reproduced bit for bit in the tests. AUTOSAR's disclaimer allows reproduction "for informational purposes only" and says that commercial exploitation of the material requires a licence. Whether implementing these two presets here falls under that has not been decided. It is a question for the project owner, not something this README can settle.
+
+#### Catalog source and licence
+
+The catalog and the DBCs come from comma.ai's [opendbc](https://github.com/commaai/opendbc) (MIT licence, the text is in `src/ecu_simulator/_opendbc/LICENSE`) at revision `af54130d51111197d34384e7dad9ace229b724e4`. The Toyota, Honda and Hyundai counter and checksum rules are ported from opendbc's `toyotacan.py`, `hondacan.py` and `hyundaican.py`. The simulator does not import opendbc at run time; a dev-only extractor wrote the catalog (`scripts/extract_opendbc.py`). Thirteen of the 21 shipped DBCs are not byte-identical to opendbc's: malformed comment lines were dropped and identifiers above `0x7FF` were flagged as extended, so that the DBC parser used here can read them. `cars.json` records, for each DBC, opendbc's SHA-256, the shipped SHA-256 and what changed, and the extractor checks that every message and signal reads the same as in opendbc's own parse. The wheel-speed demo's pinned DBC (opendbc `79ddcc7bb72d557fc5b20d038c0fad9c9d423446`) is separate and unchanged.
+
+#### Known limits
+
+- The physical-bus acceptance has not been run. The evidence is from `vcan0` and unit tests.
+- Classical CAN only. 27 platforms are skipped as CAN FD (Hyundai CAN FD and Honda CAN FD DBCs). The `honda_common_canfd` name rule also skips `ACURA_MDX_4G`, which is a classic CAN car that shares that DBC.
+- One bus per run. A car with a powertrain DBC and a radar DBC runs one of them.
+- Only 16 messages carry a catalog rate; every other message is 100 ms, labelled assumed, unless the DBC has a cycle time, an attached log supplies one, or you set it.
+- The generated drive animates vehicle speed, engine speed, steering angle and one pedal. Gear and brake keep their DBC defaults. Hyundai gets no steering and Honda and Hyundai get no pedals (their units are missing or differ). A few signals that are not the vehicle's speed or engine speed still follow them: `SPDVAL1`, `HUD_SPEED_KPH`, `HUD_SPEED_MPH`, `PCM_SPEED`, `R_NEngIdlTgC`, `CR_Opi_Spd_Rpm`, `N_TC` and `N_TC_RAW`. Signals with SET, REL, TGT, TARGET, TRGT, REQ, LIMIT, OFFSET, DECIMAL or CRUISE as a whole word in their names are deliberately left at their defaults.
+- About 38 messages across the 21 DBCs cannot be encoded by the DBC parser (layout errors). They are listed as skipped with the reason; four Acura ones carry counters. The 9 SecOC authenticator messages in the Toyota SecOC DBC are skipped.
+- Hyundai classic CAN is checked against opendbc's packer only.
+- Rule files: the first matching rule wins, uploaded files are data only, a worst-case 256 KiB file can take 7 to 10 seconds to parse, and the E2E presets work only at their default positions.
+- A replayed recorded log sends its own counters, so they restart where a repeated recording loops. Replay is `vcan0` only.
+- "tx dropped (kernel)" is the interface's tx-dropped counter. It may not count a frame refused because the queue was full.
+- The simulator never sets the bitrate and must never be pointed at a live vehicle network.
+
+#### After upgrading
+
+A `ecu-simulator-gui` that was started before an upgrade keeps serving the old code until you restart it. It reads its page HTML fresh from disk but not its routes, so the new page loads and the Car panel stays empty. Stop the old process and start it again. If `ecu-simulator-gui --port 8766` ends with `address already in use`, an older GUI still holds the port.
+
 ## Usage
 
 Configure the CAN interface once, with privileges, then run the simulator unprivileged.
